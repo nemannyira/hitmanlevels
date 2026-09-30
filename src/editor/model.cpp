@@ -69,9 +69,56 @@ Transform GetTransform(engine::ZGEOM* geom)
     return t;
 }
 
+// The world setter of the engine does not reliably take rotations, so the
+// transform is expressed relative to the parent node and set as local.
 void SetTransform(engine::ZGEOM* geom, const Transform& t)
 {
-    game::SetWorldTransform(geom, t.mat, t.pos);
+    engine::ZBaseGeom* parent = geom->node->parent;
+    engine::ZGEOM* parentGeom = parent && engine::IsReadable(parent, sizeof(*parent)) ? parent->geom : nullptr;
+    if (!parentGeom || !IsLive(parentGeom)) {
+        game::SetLocalTransform(geom, t.mat, t.pos);
+        return;
+    }
+    Transform p = GetTransform(parentGeom);
+    const float* pf = p.mat;
+    const float* pu = p.mat + 3;
+    const float* pr = p.mat + 6;
+    // local coordinates of a world vector: (x, y, z) = (right, up, forward) components
+    auto local = [&](const float* v, float* out) {
+        out[0] = v[0] * pr[0] + v[1] * pr[1] + v[2] * pr[2];
+        out[1] = v[0] * pu[0] + v[1] * pu[1] + v[2] * pu[2];
+        out[2] = v[0] * pf[0] + v[1] * pf[1] + v[2] * pf[2];
+    };
+    Transform l;
+    for (int row = 0; row < 3; ++row)
+        local(t.mat + row * 3, l.mat + row * 3);
+    float d[3] = {t.pos[0] - p.pos[0], t.pos[1] - p.pos[1], t.pos[2] - p.pos[2]};
+    local(d, l.pos);
+    game::SetLocalTransform(geom, l.mat, l.pos);
+
+    static int mismatches;
+    Transform back = GetTransform(geom);
+    float err = 0;
+    for (int i = 0; i < 9; ++i)
+        err += std::fabs(back.mat[i] - t.mat[i]);
+    if (err > 0.01f && mismatches++ < 10)
+        Log("SetTransform: engine kept a different rotation (error %.3f)", err);
+}
+
+bool GetBounds(engine::ZGEOM* geom, float center[3], float& radius)
+{
+    engine::ZBaseGeom* n = geom->node;
+    float c[3] = {n->boundCenter[0], n->boundCenter[1], n->boundCenter[2]};
+    radius = n->boundRadius;
+    if (!(radius > 0.0f && radius < 1e6f))
+        return false;
+    Transform t = GetTransform(geom);
+    const float* f = t.mat;
+    const float* u = t.mat + 3;
+    const float* r = t.mat + 6;
+    for (int i = 0; i < 3; ++i)
+        center[i] = t.pos[i] + c[0] * r[i] + c[1] * u[i] + c[2] * f[i];
+    return true;
 }
 
 bool IsHidden(engine::ZGEOM* geom) { return (geom->node->flags & g_config.hideFlag) != 0; }

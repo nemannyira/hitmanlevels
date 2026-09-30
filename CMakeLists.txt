@@ -44,6 +44,7 @@ add_library(h2fix SHARED
     src/scene.cpp
     src/game.cpp
     src/editor/freecam.cpp
+    src/editor/highlight.cpp
     src/editor/history.cpp
     src/editor/level.cpp
     src/editor/model.cpp

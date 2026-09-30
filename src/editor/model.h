@@ -27,6 +27,8 @@ struct ObjectState {
 bool IsLive(engine::ZGEOM* geom);
 Transform GetTransform(engine::ZGEOM* geom);
 void SetTransform(engine::ZGEOM* geom, const Transform& t);
+// World bounding sphere of the node (as used by the renderer's culling).
+bool GetBounds(engine::ZGEOM* geom, float center[3], float& radius);
 bool IsHidden(engine::ZGEOM* geom);
 void SetHidden(engine::ZGEOM* geom, bool hidden);
 ObjectState GetState(engine::ZGEOM* geom);

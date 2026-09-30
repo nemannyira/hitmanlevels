@@ -12,6 +12,7 @@
 #include "diag.h"
 #include "display.h"
 #include "editor/freecam.h"
+#include "editor/highlight.h"
 #include "editor/level.h"
 #include "editor/scene_panel.h"
 #include "editor/viewport.h"
@@ -91,6 +92,7 @@ void Init()
     h2::InstallUiScaling();
     h2::editor::InstallFreeCam();
     h2::editor::InstallViewport();
+    h2::editor::InstallHighlight();
     h2::editor::InstallScenePanels();
     h2::editor::InstallLevelPanel();
     h2::InstallD3DHooks();

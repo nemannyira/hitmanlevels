@@ -59,6 +59,7 @@ constexpr uintptr_t ZEngineDataBase_FrameUpdate = 0x4228E0;        // ?FrameUpda
 // ZGEOM transform virtuals (all forward to the ZBaseGeom node at geom+8).
 // Matrices are 3x3 floats with rows [Z axis, Y axis, X axis] = forward, up, right;
 // world is left-handed with +Y up, units are centimetres.
+constexpr int ZGEOM_SetLocalTransform = 0x78 / 4;  // (float mat[9], float pos[3]) relative to the parent node
 constexpr int ZGEOM_SetWorldTransform = 0x80 / 4;  // (float mat[9], float pos[3])
 constexpr int ZGEOM_GetWorldTransform = 0x84 / 4;  // (float mat[9], float pos[3])
 
@@ -67,6 +68,13 @@ void GetWorldTransform(Geom* geom, float mat[9], float pos[3])
 {
     using Fn = void(__thiscall*)(Geom*, float*, float*);
     (*reinterpret_cast<Fn**>(geom))[ZGEOM_GetWorldTransform](geom, mat, pos);
+}
+
+template <typename Geom>
+void SetLocalTransform(Geom* geom, const float mat[9], const float pos[3])
+{
+    using Fn = void(__thiscall*)(Geom*, const float*, const float*);
+    (*reinterpret_cast<Fn**>(geom))[ZGEOM_SetLocalTransform](geom, mat, pos);
 }
 
 template <typename Geom>

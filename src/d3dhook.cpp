@@ -7,6 +7,7 @@
 #include "d3d8types.h"
 #include "config.h"
 #include "display.h"
+#include "editor/highlight.h"
 #include "screenshot.h"
 #include "overlay/overlay.h"
 #include "hook.h"
@@ -233,6 +234,7 @@ HRESULT WINAPI hkCreateDevice(void* self, UINT adapter, DWORD type, HWND focus, 
             Hook("IDirect3DDevice8::Release", VtableEntry(*device, Dev_Release), hkDeviceRelease, &oDeviceRelease);
         }
         overlay::OnDeviceCreated(*device, pp->hDeviceWindow ? pp->hDeviceWindow : focus);
+        editor::SetHighlightDevice(*device);
     }
     if (hr >= 0 && !oSetTransform && g_config.logRender)
     {

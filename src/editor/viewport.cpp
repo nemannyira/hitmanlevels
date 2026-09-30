@@ -52,28 +52,53 @@ Transform FromGizmo(const float m[16])
 
 bool FreeCamLooking() { return ImGui::IsMouseDown(ImGuiMouseButton_Right); }
 
+// Ray through the mouse against the objects' bounding spheres: the nearest
+// entry wins, big spheres (rooms, groups) only when nothing smaller is hit.
 void Pick()
 {
     ImGuiIO& io = ImGui::GetIO();
+    game::ZCAMERA* cam = game::MainCamera();
+    if (!cam)
+        return;
+    float cm[9], origin[3];
+    game::GetWorldTransform(cam, cm, origin);
+    float tanH = std::tan(cam->fov * 0.5f) * HorizontalTanScale();
+    float tanV = tanH * float(RenderHeight()) / float(RenderWidth());
+    float nx = (io.MousePos.x / io.DisplaySize.x) * 2.0f - 1.0f;
+    float ny = 1.0f - (io.MousePos.y / io.DisplaySize.y) * 2.0f;
+    float dir[3];
+    for (int i = 0; i < 3; ++i)
+        dir[i] = cm[i] + cm[6 + i] * nx * tanH + cm[3 + i] * ny * tanV;
+    float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+    for (float& v : dir)
+        v /= len;
+
     const auto& snap = SceneModel(2000);
-    float best = 30.0f * 30.0f;  // pick radius (pixels, squared)
-    engine::ZGEOM* pick = nullptr;
+    engine::ZGEOM* best = nullptr;
+    float bestScore = 1e30f;
     for (const auto& g : snap.geoms) {
         if (g.depth == 0 || !IsLive(g.geom) || IsHidden(g.geom))
             continue;
-        float p[3], sx, sy;
-        engine::WorldPosition(g.geom, p);
-        if (p[0] == 0 && p[1] == 0 && p[2] == 0)
-            continue;  // logical groups sit at the origin
-        if (!WorldToScreen(p, sx, sy))
+        float c[3], r;
+        if (!GetBounds(g.geom, c, r))
             continue;
-        float dx = sx - io.MousePos.x, dy = sy - io.MousePos.y, d2 = dx * dx + dy * dy;
-        if (d2 < best) {
-            best = d2;
-            pick = g.geom;
+        float oc[3] = {c[0] - origin[0], c[1] - origin[1], c[2] - origin[2]};
+        float dist2 = oc[0] * oc[0] + oc[1] * oc[1] + oc[2] * oc[2];
+        if (dist2 < r * r)
+            continue;  // the camera is inside it (room, big group)
+        float tc = oc[0] * dir[0] + oc[1] * dir[1] + oc[2] * dir[2];
+        float miss2 = dist2 - tc * tc;
+        if (tc < 0 || miss2 > r * r)
+            continue;
+        float entry = tc - std::sqrt(r * r - miss2);
+        // prefer what is in front, and small objects over the groups containing them
+        float score = entry + r * 2.0f;
+        if (score < bestScore) {
+            bestScore = score;
+            best = g.geom;
         }
     }
-    Select(pick);
+    Select(best);
 }
 
 void Shortcuts()

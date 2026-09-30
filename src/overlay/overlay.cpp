@@ -81,7 +81,8 @@ void DrawMenuBar()
     ImGui::TextDisabled("H2 Editor");
     if (ImGui::BeginMenu("Windows")) {
         for (Panel& p : g_panels)
-            ImGui::MenuItem(p.name, nullptr, p.visible);
+            if (p.name)
+                ImGui::MenuItem(p.name, nullptr, p.visible);
         ImGui::MenuItem("Stats", nullptr, &g_showStats);
         ImGui::Separator();
         ImGui::MenuItem("ImGui demo", nullptr, &g_showDemo);

@@ -9,4 +9,7 @@ namespace h2 {
 // and the visibility culling done during the render pass both see it.
 void InstallFovFix();
 
+// Multiplier the world camera's tan(fov / 2) currently gets (Hor+ and FovScale).
+float HorizontalTanScale();
+
 } // namespace h2

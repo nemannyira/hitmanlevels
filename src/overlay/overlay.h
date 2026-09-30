@@ -17,7 +17,7 @@ bool IsOpen();
 void SetOpen(bool open);
 
 // Editor panels register themselves here and are drawn every frame the
-// overlay is open (also listed in the "Windows" menu).
+// overlay is open (listed in the "Windows" menu unless name is null).
 struct Panel {
     const char* name;
     bool* visible;

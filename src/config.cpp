@@ -46,6 +46,7 @@ void LoadConfig()
     GetPrivateProfileStringA("Debug", "ScreenshotEvery", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.screenshotEvery = atof(buf);
+    g_config.luaMemory = get("Debug", "LuaMemory", g_config.luaMemory) != 0;
     g_config.logRender = get("Debug", "LogRender", g_config.logRender) != 0;
     g_config.watchResolution = get("Debug", "WatchResolution", g_config.watchResolution) != 0;
 }

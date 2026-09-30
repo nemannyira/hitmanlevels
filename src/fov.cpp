@@ -122,6 +122,11 @@ void OnRendererLoaded(HMODULE mod)
 
 } // namespace
 
+float HorizontalTanScale()
+{
+    return (g_config.horPlus || g_config.fovScale != 1.0) ? TanScale() : 1.0f;
+}
+
 void InstallFovFix()
 {
     // always hooked: besides the FOV it tracks the main camera for the editor

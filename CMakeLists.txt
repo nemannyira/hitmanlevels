@@ -43,12 +43,16 @@ add_library(h2fix SHARED
     src/scene.cpp
     src/game.cpp
     src/editor/freecam.cpp
+    src/editor/scene_panel.cpp
+    src/engine/geoms.cpp
     src/screenshot.cpp
     src/input/dinput.cpp
     src/overlay/console.cpp
     src/overlay/imgui_impl_dx8.cpp
     src/overlay/overlay.cpp
     src/script/api.cpp
+    src/script/events.cpp
+    src/script/memapi.cpp
     src/script/lua_vm.cpp
     src/display.cpp
     src/fov.cpp

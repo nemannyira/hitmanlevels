@@ -18,6 +18,7 @@ struct Config {
     bool stallWatchdog = false;  // sample the main thread's stack when no frame completes
     bool watchResolution = false;  // hardware-watch writes to the resolution fields
     double screenshotEvery = 0;  // seconds between automatic screenshots (0 = off)
+    bool luaMemory = false;   // expose h2.mem (raw memory access) to Lua
     bool logRender = false;   // log cameras, projections, viewports and draw stats
 };
 

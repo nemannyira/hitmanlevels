@@ -261,7 +261,8 @@ void DrawViewport()
     float view[16], proj[16];
     bool haveCamera = CameraMatrices(view, proj);
     bool using_ = false;
-    if (sel && IsLive(sel) && haveCamera && !FreeCamLooking()) {
+    bool actor = sel && IsLive(sel) && IsActor(sel);
+    if (sel && IsLive(sel) && haveCamera && !FreeCamLooking() && !actor) {
         float m[16];
         ToGizmo(GetTransform(sel), m);
         float snap[3] = {g_snapMove, g_snapMove, g_snapMove};

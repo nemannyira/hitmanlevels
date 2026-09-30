@@ -193,6 +193,10 @@ void DrawInspector()
     ImGui::Separator();
 
     Transform t = GetTransform(geom);
+    bool actor = engine::IsA(geom, "ZActor");
+    if (actor)
+        ImGui::TextDisabled("characters are driven by their AI: moving them is not supported yet");
+    ImGui::BeginDisabled(actor);
     if (ImGui::DragFloat3("position", t.pos, 1.0f, 0, 0, "%.1f"))
         SetTransform(geom, t);
     TrackContinuous(geom, "move");
@@ -203,6 +207,7 @@ void DrawInspector()
         SetTransform(geom, t);
     }
     TrackContinuous(geom, "rotate");
+    ImGui::EndDisabled();
 
     bool hidden = IsHidden(geom);
     if (ImGui::Checkbox("hidden (H)", &hidden)) {

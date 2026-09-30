@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstring>
+#include <utility>
+#include <vector>
 
 #include "../config.h"
 #include "../game.h"
@@ -71,13 +73,44 @@ Transform GetTransform(engine::ZGEOM* geom)
 
 // Static objects live in bound trees built at load time; moved without this
 // their collision stays behind.
+// Nodes the editor made dynamic. The engine only converts nodes while loading
+// and unloading a scene with runtime-converted static nodes corrupts its
+// bookkeeping (crash in a tree erase), so they are converted back before the
+// scene is left.
+std::vector<std::pair<engine::ZBaseGeom*, engine::ZGEOM*>> g_madeDynamic;
+
+void SetDynamic(engine::ZBaseGeom* node, bool dynamic)
+{
+    using Fn = void(__thiscall*)(engine::ZBaseGeom*, bool);
+    reinterpret_cast<Fn>(game::ZBaseGeom_SetDynamic)(node, dynamic);
+}
+
+void RevertDynamic(const std::string&)
+{
+    int n = 0;
+    for (auto& [node, geom] : g_madeDynamic) {
+        if (IsLive(geom) && geom->node == node && (node->flags & game::kNodeDynamic)) {
+            SetDynamic(node, false);
+            ++n;
+        }
+    }
+    if (!g_madeDynamic.empty())
+        Log("reverted %d/%d editor-dynamic nodes before leaving the scene", n, int(g_madeDynamic.size()));
+    g_madeDynamic.clear();
+}
+
 void EnsureDynamic(engine::ZGEOM* geom)
 {
     engine::ZBaseGeom* node = geom->node;
-    if (node->flags & game::kNodeDynamic)
-        return;
-    using Fn = void(__thiscall*)(engine::ZBaseGeom*, bool);
-    reinterpret_cast<Fn>(game::ZBaseGeom_SetDynamic)(node, true);
+    if ((node->flags & game::kNodeDynamic) || engine::IsA(geom, "ZActor"))
+        return;  // characters have their own movement; converting them breaks their rendering
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnSceneLeaving(RevertDynamic);
+    }
+    SetDynamic(node, true);
+    g_madeDynamic.push_back({node, geom});
     Log("made %p dynamic (flags %08X)", static_cast<void*>(geom), node->flags);
 }
 

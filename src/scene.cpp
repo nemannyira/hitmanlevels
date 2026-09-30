@@ -12,11 +12,15 @@ namespace {
 
 std::string g_scene;
 std::vector<SceneCallback> g_callbacks;
+std::vector<SceneCallback> g_leaving;
 
 using PushScene_t = void*(__fastcall*)(void* self, void* edx, const char* name);
 PushScene_t oPushScene;
 void* __fastcall hkPushScene(void* self, void* edx, const char* name)
 {
+    if (!g_scene.empty())
+        for (SceneCallback cb : g_leaving)
+            cb(g_scene);
     g_scene = name ? name : "";
     game::ResetMainCamera();
     Log("PushScene(\"%s\")", g_scene.c_str());
@@ -36,5 +40,6 @@ void InstallSceneHooks()
 const std::string& CurrentScene() { return g_scene; }
 
 void OnScenePushed(SceneCallback cb) { g_callbacks.push_back(cb); }
+void OnSceneLeaving(SceneCallback cb) { g_leaving.push_back(cb); }
 
 } // namespace h2

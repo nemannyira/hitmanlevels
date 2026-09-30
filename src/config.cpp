@@ -30,8 +30,14 @@ void LoadConfig()
     if (*buf)
         g_config.fovScale = atof(buf);
     g_config.uiHeight = get("Display", "UIHeight", g_config.uiHeight);
+    GetPrivateProfileStringA("Editor", "ToggleKey", "", buf, sizeof(buf), ini.c_str());
+    if (*buf)
+        g_config.editorKey = int(strtol(buf, nullptr, 0));
     g_config.diagnostics = get("Debug", "Diagnostics", g_config.diagnostics) != 0;
     g_config.logFiles = get("Debug", "LogFiles", g_config.logFiles) != 0;
+    GetPrivateProfileStringA("Debug", "ScreenshotEvery", "", buf, sizeof(buf), ini.c_str());
+    if (*buf)
+        g_config.screenshotEvery = atof(buf);
     g_config.logRender = get("Debug", "LogRender", g_config.logRender) != 0;
     g_config.watchResolution = get("Debug", "WatchResolution", g_config.watchResolution) != 0;
 }

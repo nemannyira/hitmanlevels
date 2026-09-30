@@ -7,6 +7,8 @@
 #include "d3d8types.h"
 #include "config.h"
 #include "display.h"
+#include "screenshot.h"
+#include "overlay/overlay.h"
 #include "hook.h"
 #include "loader.h"
 #include "log.h"
@@ -147,6 +149,10 @@ using Present_t = HRESULT(WINAPI*)(void* dev, const RECT* src, const RECT* dst, 
 Present_t oPresent;
 HRESULT WINAPI hkPresent(void* dev, const RECT* src, const RECT* dst, HWND wnd, const void* dirty)
 {
+    overlay::OnPresent(dev);
+    PeriodicScreenshot(dev);
+    if (!g_config.logRender)
+        return oPresent(dev, src, dst, wnd, dirty);
     static double last;
     double now = NowMs();
     if (now - last > 3000) {
@@ -187,7 +193,6 @@ void HookDeviceDebug(void* dev)
     Hook("DrawIndexedPrimitive", VtableEntry(dev, 71), hkDrawIndexedPrimitive, &oDrawIndexedPrimitive);
     Hook("DrawPrimitiveUP", VtableEntry(dev, 72), hkDrawPrimitiveUP, &oDrawPrimitiveUP);
     Hook("DrawIndexedPrimitiveUP", VtableEntry(dev, 73), hkDrawIndexedPrimitiveUP, &oDrawIndexedPrimitiveUP);
-    Hook("Present", VtableEntry(dev, Dev_Present), hkPresent, &oPresent);
 }
 
 using CreateDevice_t = HRESULT(WINAPI*)(void* self, UINT adapter, DWORD type, HWND focus, DWORD flags,
@@ -204,8 +209,12 @@ HRESULT WINAPI hkCreateDevice(void* self, UINT adapter, DWORD type, HWND focus, 
         pp->FullScreen_RefreshRateInHz, pp->FullScreen_PresentationInterval, flags);
     HRESULT hr = oCreateDevice(self, adapter, type, focus, flags, pp, device);
     Log("CreateDevice -> %08lx", hr);
-    if (hr >= 0)
+    if (hr >= 0) {
         OnDeviceCreated();
+        if (!oPresent)
+            Hook("IDirect3DDevice8::Present", VtableEntry(*device, Dev_Present), hkPresent, &oPresent);
+        overlay::OnDeviceCreated(*device, pp->hDeviceWindow ? pp->hDeviceWindow : focus);
+    }
     if (hr >= 0 && !oSetTransform && g_config.logRender)
     {
         Hook("IDirect3DDevice8::SetTransform", VtableEntry(*device, Dev_SetTransform), hkSetTransform, &oSetTransform);

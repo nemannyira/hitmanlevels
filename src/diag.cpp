@@ -93,14 +93,6 @@ void CountFrame()
     g_totalFrames++;
 }
 
-using PushScene_t = void*(__fastcall*)(void* self, void* edx, const char* name);
-PushScene_t oPushScene;
-void* __fastcall hkPushScene(void* self, void* edx, const char* name)
-{
-    Log("PushScene(\"%s\")", name ? name : "<null>");
-    return oPushScene(self, edx, name);
-}
-
 using ControlSceneChange_t = void(__fastcall*)(void* self, void* edx);
 ControlSceneChange_t oControlSceneChange;
 void __fastcall hkControlSceneChange(void* self, void* edx)
@@ -207,7 +199,6 @@ void InstallDiagnostics()
     HookApi("kernel32.dll", "Sleep", hkSleep, &oSleep);
     HookApi("kernel32.dll", "WaitForSingleObject", hkWaitForSingleObject, &oWaitForSingleObject);
     OnFrameEnd(CountFrame);
-    Hook("PushScene", game::ZEngineDataBase_PushScene, hkPushScene, &oPushScene);
     Hook("ControlSceneChange", game::ZEngineDataBase_ControlSceneChange, hkControlSceneChange,
          &oControlSceneChange);
     CloseHandle(CreateThread(nullptr, 0, StatsThread, nullptr, 0, nullptr));

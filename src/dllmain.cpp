@@ -14,7 +14,11 @@
 #include "fov.h"
 #include "framelimit.h"
 #include "game.h"
+#include "input/dinput.h"
 #include "log.h"
+#include "scene.h"
+#include "script/api.h"
+#include "script/lua_vm.h"
 #include "ui.h"
 #include "watch.h"
 
@@ -60,6 +64,9 @@ void Init()
     if (h2::g_config.diagnostics)
         h2::InstallDiagnostics();
     h2::InstallFrameLimiter(h2::g_config.fpsLimit);
+    h2::InstallSceneHooks();
+    h2::script::Init();
+    h2::script::RegisterApi();
     h2::InstallDisplayFixes();
     h2::InstallFovFix();
     h2::InstallUiScaling();
@@ -84,7 +91,10 @@ extern "C" {
 HRESULT WINAPI DirectInput8Create(HINSTANCE inst, DWORD ver, REFIID riid, LPVOID* out, LPUNKNOWN outer)
 {
     using Fn = HRESULT(WINAPI*)(HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
-    return Real<Fn>("DirectInput8Create")(inst, ver, riid, out, outer);
+    HRESULT hr = Real<Fn>("DirectInput8Create")(inst, ver, riid, out, outer);
+    if (hr >= 0 && out)
+        h2::HookDirectInput(*out);
+    return hr;
 }
 
 HRESULT WINAPI DllCanUnloadNow() { return Real<HRESULT(WINAPI*)()>("DllCanUnloadNow")(); }

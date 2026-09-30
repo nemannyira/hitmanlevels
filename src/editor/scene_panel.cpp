@@ -98,12 +98,6 @@ void DrawTreeNode(const engine::SceneSnapshot& s, int i)
 
 void DrawScenePanel()
 {
-    ImGui::SetNextWindowSize(ImVec2(520, 700), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 540, 40), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Scene", &g_sceneVisible)) {
-        ImGui::End();
-        return;
-    }
     const engine::SceneSnapshot& s = Snap();
     if (ImGui::Button("Refresh"))
         SceneModel(0);
@@ -114,7 +108,7 @@ void DrawScenePanel()
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##filter", "filter by name or class", g_filter, sizeof(g_filter));
 
-    if (ImGui::BeginChild("tree", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
+    if (ImGui::BeginChild("tree", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
         std::string filter = Lower(g_filter);
         if (filter.empty()) {
             for (int r : s.roots)
@@ -146,7 +140,6 @@ void DrawScenePanel()
         }
     }
     ImGui::EndChild();
-    ImGui::End();
 }
 
 // Continuous edit of a widget: history entry when the widget is released.
@@ -160,16 +153,10 @@ void TrackContinuous(engine::ZGEOM* geom, const char* what)
 
 void DrawInspector()
 {
-    ImGui::SetNextWindowSize(ImVec2(520, 360), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 540, 760), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Inspector", &g_inspectorVisible)) {
-        ImGui::End();
-        return;
-    }
     const engine::GeomInfo* info = g_selected ? FindInfo(g_selected) : nullptr;
     if (!info || !IsLive(g_selected)) {
-        ImGui::TextDisabled("select an object in the Scene panel or click it in the world");
-        ImGui::End();
+        ImGui::TextWrapped("Nothing selected.");
+        ImGui::TextDisabled("Click an object in the world, or pick it\nin the Scene tab. Models: place new ones.");
         return;
     }
     engine::ZGEOM* geom = info->geom;
@@ -234,7 +221,6 @@ void DrawInspector()
             DeleteSelection();
         ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());
     }
-    ImGui::End();
 }
 
 void DrawSelectionMarker()
@@ -288,8 +274,8 @@ bool WorldToScreen(const float world[3], float& sx, float& sy)
 
 void InstallScenePanels()
 {
-    overlay::AddPanel({"Scene", &g_sceneVisible, DrawScenePanel});
-    overlay::AddPanel({"Inspector", &g_inspectorVisible, DrawInspector});
+    overlay::AddPanel({"Scene", &g_sceneVisible, DrawScenePanel, overlay::Dock::Left});
+    overlay::AddPanel({"Inspector", &g_inspectorVisible, DrawInspector, overlay::Dock::Right});
     static bool always = true;
     overlay::AddPanel({nullptr, &always, DrawSelectionMarker});
     OnScenePushed(OnScene);

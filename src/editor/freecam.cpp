@@ -137,7 +137,7 @@ void InstallFreeCam()
 {
     Hook("ZEngineDataBase::FrameUpdate", game::ZEngineDataBase_FrameUpdate, hkFrameUpdate, &oFrameUpdate);
     OnScenePushed(OnScene);
-    overlay::AddPanel({"Camera", &g_panelVisible, DrawCameraPanel});
+    overlay::AddPanel({"Camera", &g_panelVisible, DrawCameraPanel, overlay::Dock::Right});
 }
 
 bool FreeCamEnabled() { return g_enabled; }
@@ -171,11 +171,6 @@ bool* CameraPanelVisible() { return &g_panelVisible; }
 
 void DrawCameraPanel()
 {
-    ImGui::SetNextWindowPos(ImVec2(10, 120), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Camera", &g_panelVisible, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::End();
-        return;
-    }
     game::ZCAMERA* cam = game::MainCamera();
     bool enabled = g_enabled;
     ImGui::BeginDisabled(!cam);
@@ -190,8 +185,7 @@ void DrawCameraPanel()
     if (ImGui::InputFloat3("position", pos, "%.1f") && g_enabled)
         SetFreeCamPosition(pos);
     ImGui::Text("yaw %.1f  pitch %.1f", g_yaw * 180 / kPi, g_pitch * 180 / kPi);
-    ImGui::TextDisabled("hold right mouse: look, WASD move, Q/E down/up, Shift fast, wheel speed");
-    ImGui::End();
+    ImGui::TextDisabled("right mouse: look, WASD move, Q/E down/up,\nShift fast, wheel speed");
 }
 
 } // namespace h2::editor

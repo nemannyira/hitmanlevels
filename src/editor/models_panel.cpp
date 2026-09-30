@@ -17,6 +17,7 @@
 #include "freecam.h"
 #include "level.h"
 #include "model.h"
+#include "placement.h"
 #include "scene_panel.h"
 
 namespace h2::editor {
@@ -85,55 +86,10 @@ void Build()
     g_builtFor = CurrentScene();
 }
 
-// In front of the camera, upright as the model was authored.
-bool PlacementInFront(engine::ZGEOM* source, float radius, Transform& t)
-{
-    game::ZCAMERA* cam = game::MainCamera();
-    if (!cam)
-        return false;
-    float m[9], c[3];
-    game::GetWorldTransform(cam, m, c);
-    float dist = radius * 2.5f;
-    dist = dist < 300.0f ? 300.0f : (dist > 3000.0f ? 3000.0f : dist);
-    t = GetTransform(source);
-    for (int i = 0; i < 3; ++i)
-        t.pos[i] = c[i] + m[i] * dist;
-    return true;
-}
-
-void Place(const ModelEntry& e)
-{
-    engine::ZGEOM* source = Resolve(e.sourcePath);
-    if (!source) {
-        g_message = "source object not found (press Refresh)";
-        return;
-    }
-    Transform at;
-    if (!PlacementInFront(source, e.radius, at)) {
-        g_message = "no camera";
-        return;
-    }
-    std::string err;
-    if (engine::ZGEOM* g = DuplicateObject(source, &err, &at)) {
-        Select(g);
-        const SpawnedObject* s = FindSpawned(g);
-        g_message = "placed " + (s ? s->id : e.name);
-    } else {
-        g_message = "place failed: " + err;
-    }
-}
-
 void DrawPanel()
 {
-    ImGui::SetNextWindowSize(ImVec2(440, 560), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(480, 60), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Models", &g_visible)) {
-        ImGui::End();
-        return;
-    }
     if (CurrentScene().empty()) {
         ImGui::TextDisabled("no scene loaded");
-        ImGui::End();
         return;
     }
     if (g_builtFor != CurrentScene() || g_models.empty())
@@ -144,7 +100,14 @@ void DrawPanel()
     ImGui::TextDisabled("%d models in %s", int(g_models.size()), g_builtFor.c_str());
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##filter", "filter by name or class", g_filter, sizeof(g_filter));
-    ImGui::TextDisabled("Place: in front of the camera, as a new level object");
+    if (Placing()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "placing: move the mouse over the world, click");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancel (Esc)"))
+            CancelPlacement();
+    } else {
+        ImGui::TextDisabled("click a model, then click in the world to place it");
+    }
 
     std::string filter = Lower(g_filter);
     std::vector<int> shown;
@@ -161,7 +124,7 @@ void DrawPanel()
         ImGui::TableSetupColumn("model", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("uses", ImGuiTableColumnFlags_WidthFixed, 36);
         ImGui::TableSetupColumn("size", ImGuiTableColumnFlags_WidthFixed, 56);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 96);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 40);
         ImGui::TableHeadersRow();
         ImGuiListClipper clipper;
         clipper.Begin(int(shown.size()));
@@ -171,7 +134,14 @@ void DrawPanel()
                 ImGui::PushID(shown[k]);
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
-                ImGui::TextUnformatted(e.name.c_str());
+                bool current = PlacementSource() == e.sourcePath;
+                if (ImGui::Selectable(e.name.c_str(), current, ImGuiSelectableFlags_SpanAllColumns |
+                                                                   ImGuiSelectableFlags_AllowOverlap)) {
+                    if (current)
+                        CancelPlacement();
+                    else
+                        BeginPlacement(e.sourcePath, e.name);
+                }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s\nclass %s\nmesh %08X\nfrom %s", e.name.c_str(), e.className.c_str(), e.mesh,
                                       e.sourcePath.c_str());
@@ -180,9 +150,6 @@ void DrawPanel()
                 ImGui::TableNextColumn();
                 ImGui::Text("%.1f m", e.radius * 2.0f / 100.0f);  // bounding sphere diameter
                 ImGui::TableNextColumn();
-                if (ImGui::SmallButton("Place"))
-                    Place(e);
-                ImGui::SameLine();
                 if (ImGui::SmallButton("Find")) {
                     if (engine::ZGEOM* g = Resolve(e.sourcePath)) {
                         Select(g);
@@ -199,14 +166,13 @@ void DrawPanel()
     }
     if (!g_message.empty())
         ImGui::TextDisabled("%s", g_message.c_str());
-    ImGui::End();
 }
 
 } // namespace
 
 void InstallModelsPanel()
 {
-    overlay::AddPanel({"Models", &g_visible, DrawPanel});
+    overlay::AddPanel({"Models", &g_visible, DrawPanel, overlay::Dock::Left});
     OnScenePushed([](const std::string&) {
         g_models.clear();
         g_builtFor.clear();

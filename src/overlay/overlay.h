@@ -16,13 +16,29 @@ void OnDeviceReleased();
 bool IsOpen();
 void SetOpen(bool open);
 
-// Editor panels register themselves here and are drawn every frame the
-// overlay is open (listed in the "Windows" menu unless name is null).
+// Fixed editor layout:
+//   main menu bar (File / Edit / View / Help)
+//   toolbar                              (Dock::Toolbar panels, one row each)
+//   left sidebar: tabs | game view | right sidebar: sections
+//                      | bottom     |               (Dock::Bottom, e.g. console)
+// Docked panels draw only their contents; the layout owns the windows.
+// Floating panels open their own window, Dock::None ones draw no window
+// (gizmos, markers). A panel without a name is always Dock::None.
+enum class Dock { None, Floating, Toolbar, Left, Right, Bottom };
+
 struct Panel {
     const char* name;
     bool* visible;
     void (*draw)();
+    Dock dock = Dock::Floating;
 };
 void AddPanel(const Panel& panel);
+
+// Brings a panel forward (its left tab selected, made visible).
+void ShowPanel(const char* name);
+
+// Items of a main menu ("File", "Edit", "View", "Help"): `items` is called
+// inside the open menu. Menus appear in the order of their first registration.
+void AddMenu(const char* menu, void (*items)());
 
 } // namespace h2::overlay

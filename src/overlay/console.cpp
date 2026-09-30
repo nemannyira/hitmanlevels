@@ -11,7 +11,7 @@ namespace h2::overlay {
 
 namespace {
 
-bool g_visible = true;
+bool g_visible = false;
 char g_input[1024];
 std::vector<std::string> g_history;
 int g_historyPos = -1;  // -1: editing a new line
@@ -42,14 +42,13 @@ void FocusConsoleInput() { g_focusInput = true; }
 
 void DrawConsole()
 {
-    ImGui::SetNextWindowSize(ImVec2(700, 400), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(10, 200), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Lua console", &g_visible)) {
-        ImGui::End();
-        return;
-    }
+    ImGui::TextDisabled("Lua console");
+    ImGui::SameLine();
     if (ImGui::SmallButton("Clear"))
         script::ClearConsole();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Close (`)"))
+        g_visible = false;
     ImGui::Separator();
 
     float footer = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
@@ -84,12 +83,11 @@ void DrawConsole()
         g_input[0] = 0;
         ImGui::SetKeyboardFocusHere(-1);
     }
-    if (g_focusInput || ImGui::IsWindowAppearing()) {
+    if (g_focusInput) {
         g_focusInput = false;
         ImGui::SetWindowFocus();
         ImGui::SetKeyboardFocusHere(-1);
     }
-    ImGui::End();
 }
 
 } // namespace h2::overlay

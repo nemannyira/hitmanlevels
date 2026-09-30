@@ -23,8 +23,11 @@ bool WasDrawnRecently(engine::ZBaseGeom* node);
 
 // GPU picking: during the next frame every recognised draw is also rendered
 // into a 1x1 target that sees only the pixel (x, y), with the object id as
-// colour; the callback gets the object visible there (or null).
-using PickCallback = void (*)(engine::ZGEOM* hit);
+// colour; the callback gets the object visible there (or null) and the world
+// position of that surface point (null when the depth could not be read).
+using PickCallback = void (*)(engine::ZGEOM* hit, const float* point);
 void RequestPick(float x, float y, PickCallback cb);
+// An object the picking looks through (e.g. the model being placed).
+void SetPickIgnore(engine::ZGEOM* geom);
 
 } // namespace h2::editor

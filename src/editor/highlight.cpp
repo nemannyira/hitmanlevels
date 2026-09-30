@@ -32,7 +32,7 @@ constexpr uintptr_t kRenderD3D_DrawNode = 0x175D0;
 
 constexpr DWORD D3DRS_ZFUNC = 23, D3DRS_TEXTUREFACTOR = 60, D3DFILL_WIREFRAME = 2, D3DCMP_LESSEQUAL = 4;
 constexpr DWORD D3DTOP_SELECTARG1 = 2, D3DTA_TFACTOR = 3;
-constexpr DWORD D3DFMT_X8R8G8B8 = 22, D3DFMT_D16 = 80;
+constexpr DWORD D3DFMT_X8R8G8B8 = 22, D3DFMT_D16 = 80, D3DFMT_D16_LOCKABLE = 70;
 constexpr DWORD D3DCLEAR_TARGET = 1, D3DCLEAR_ZBUFFER = 2;
 constexpr DWORD kColor = 0xFFFFC828;
 constexpr int kDev_CreateRenderTarget = 25, kDev_CreateDepthStencilSurface = 26, kDev_SetRenderTarget = 31,
@@ -67,6 +67,10 @@ void* g_pickTarget;
 void* g_pickDepth;
 std::vector<engine::ZGEOM*> g_pickIds;  // id - 1 -> geom
 PickCallback g_pickCallback;
+bool g_pickDepthLockable;    // the depth surface can be read back
+bool g_noLockableDepth;      // the device refused a lockable depth surface once
+float g_pickProj[4];         // _11 _22 _33 _43 of the projection the ids were drawn with
+engine::ZGEOM* g_pickIgnore;
 
 struct Override {
     DWORD state, value;
@@ -188,6 +192,8 @@ void HighlightDraw(void* dev, Draw draw)
 template <typename Draw>
 void IdDraw(void* dev, engine::ZGEOM* geom, Draw draw)
 {
+    if (geom == g_pickIgnore)
+        return;
     DWORD id = 0;
     for (; id < g_pickIds.size() && g_pickIds[id] != geom; ++id) {
     }
@@ -216,6 +222,10 @@ void IdDraw(void* dev, engine::ZGEOM* geom, Draw draw)
     D3DMATRIX pixel = {{{w * 0.5f, 0, 0, 0}, {0, h * 0.5f, 0, 0}, {0, 0, 1, 0}, {-nx * w * 0.5f, -ny * h * 0.5f, 0, 1}}};
     D3DMATRIX zoomed;
     Multiply(proj, pixel, zoomed);
+    g_pickProj[0] = proj.m[0][0];
+    g_pickProj[1] = proj.m[1][1];
+    g_pickProj[2] = proj.m[2][2];
+    g_pickProj[3] = proj.m[3][2];
     oSetTransform(dev, D3DTS_PROJECTION, &zoomed);
     for (const Override& o : kIdStates)
         Call<HRESULT>(dev, Dev_SetRenderState, o.state, o.value);
@@ -293,6 +303,32 @@ void ReleasePickSurfaces()
     g_pickTarget = g_pickDepth = nullptr;
 }
 
+// World position of the picked pixel from its depth (post-projection z).
+bool DepthToWorld(float zndc, float out[3])
+{
+    if (!(zndc > 0.0f && zndc < 0.99999f) || g_pickProj[0] == 0.0f || g_pickProj[1] == 0.0f)
+        return false;
+    float viewZ = g_pickProj[3] / (zndc - g_pickProj[2]);
+    if (!(viewZ > 0.0f && viewZ < 1e6f))
+        return false;
+    float view[16], proj[16];
+    if (!CameraMatrices(view, proj))
+        return false;
+    // view = inverse of the camera: rows of its rotation are the view columns
+    float right[3] = {view[0], view[4], view[8]}, up[3] = {view[1], view[5], view[9]},
+          fwd[3] = {view[2], view[6], view[10]};
+    float cam[3];
+    for (int i = 0; i < 3; ++i)
+        cam[i] = -(view[12] * right[i] + view[13] * up[i] + view[14] * fwd[i]);
+    float w = float(RenderWidth()), h = float(RenderHeight());
+    float nx = (g_pickX + 0.5f) / w * 2.0f - 1.0f;
+    float ny = 1.0f - (g_pickY + 0.5f) / h * 2.0f;
+    float vx = nx * viewZ / g_pickProj[0], vy = ny * viewZ / g_pickProj[1];
+    for (int i = 0; i < 3; ++i)
+        out[i] = cam[i] + right[i] * vx + up[i] * vy + fwd[i] * viewZ;
+    return true;
+}
+
 // End of a pick frame: read the pixel, report the object.
 void FinishPick()
 {
@@ -304,10 +340,18 @@ void FinishPick()
         if (id > 0 && id <= g_pickIds.size())
             hit = g_pickIds[id - 1];
     }
+    float point[3];
+    bool havePoint = false;
+    if (hit && g_pickDepthLockable &&
+        Call<HRESULT>(g_pickDepth, kSurf_LockRect, &lr, static_cast<const RECT*>(nullptr), DWORD(0x10)) >= 0) {
+        float z = *static_cast<const uint16_t*>(lr.pBits) / 65535.0f;
+        Call<HRESULT>(g_pickDepth, kSurf_UnlockRect);
+        havePoint = DepthToWorld(z, point);
+    }
     ReleasePickSurfaces();
     g_pickActive = false;
     if (g_pickCallback)
-        g_pickCallback(hit);
+        g_pickCallback(hit, havePoint ? point : nullptr);
 }
 
 // Start of a pick frame: 1x1 lockable target + depth, cleared.
@@ -315,14 +359,25 @@ void StartPick()
 {
     g_pickRequested = false;
     g_pickIds.clear();
-    if (Call<HRESULT>(g_device, kDev_CreateRenderTarget, UINT(1), UINT(1), D3DFMT_X8R8G8B8, DWORD(0), BOOL(TRUE),
-                      &g_pickTarget) < 0 ||
-        Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(1), UINT(1), D3DFMT_D16, DWORD(0),
-                      &g_pickDepth) < 0) {
+    g_pickDepthLockable = false;
+    bool ok = Call<HRESULT>(g_device, kDev_CreateRenderTarget, UINT(1), UINT(1), D3DFMT_X8R8G8B8, DWORD(0),
+                            BOOL(TRUE), &g_pickTarget) >= 0;
+    if (ok && !g_noLockableDepth) {
+        g_pickDepthLockable = Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(1), UINT(1),
+                                            D3DFMT_D16_LOCKABLE, DWORD(0), &g_pickDepth) >= 0;
+        if (!g_pickDepthLockable) {
+            g_noLockableDepth = true;
+            Log("pick: no lockable depth surface, surface positions unavailable");
+        }
+    }
+    if (ok && !g_pickDepthLockable)
+        ok = Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(1), UINT(1), D3DFMT_D16, DWORD(0),
+                           &g_pickDepth) >= 0;
+    if (!ok) {
         Log("pick: cannot create the 1x1 target");
         ReleasePickSurfaces();
         if (g_pickCallback)
-            g_pickCallback(nullptr);
+            g_pickCallback(nullptr, nullptr);
         return;
     }
     void* oldTarget = nullptr;
@@ -379,6 +434,8 @@ void RequestPick(float x, float y, PickCallback cb)
     g_pickY = y;
     g_pickCallback = cb;
 }
+
+void SetPickIgnore(engine::ZGEOM* geom) { g_pickIgnore = geom; }
 
 void InstallHighlight() { OnModuleLoad("RenderD3D.dll", OnRendererLoaded); }
 

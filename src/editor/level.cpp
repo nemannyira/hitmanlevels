@@ -180,57 +180,25 @@ void OnFrame()
 
 void DrawPanel()
 {
-    ImGui::SetNextWindowSize(ImVec2(460, 420), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(10, 420), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Level", &g_panelVisible)) {
-        ImGui::End();
-        return;
-    }
     LevelDocument& L = g_level;
     ImGui::Text("%s%s", L.name.c_str(), L.dirty ? " *" : "");
-    ImGui::TextDisabled("folder: Mods\\%s   base scene: %s", L.folder.empty() ? "-" : L.folder.c_str(),
-                        L.baseScene.empty() ? "-" : L.baseScene.c_str());
-    ImGui::Text("%d edited objects, %d new objects, %d scripts", int(L.objects.size()), int(L.spawned.size()),
+    if (L.folder.empty())
+        ImGui::TextWrapped("Not saved anywhere yet: File > New level creates a level for this scene, "
+                           "File > Open level loads one.");
+    else
+        ImGui::TextDisabled("Mods\\%s", L.folder.c_str());
+    ImGui::TextDisabled("scene %s", L.baseScene.empty() ? "-" : L.baseScene.c_str());
+    ImGui::Text("%d edits, %d new objects, %d scripts", int(L.objects.size()), int(L.spawned.size()),
                 int(L.scripts.size()));
-
     ImGui::BeginDisabled(L.folder.empty());
     if (ImGui::Button("Save")) {
         std::string err;
         g_status = SaveLevel(&err) ? "saved" : "save failed: " + err;
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Apply"))
-        g_status = "applied " + std::to_string(ApplyLevel()) + " edits";
-    ImGui::SameLine();
-    if (ImGui::Button("Revert in scene")) {
-        RevertLevel();
-        g_status = "reverted";
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("auto apply", &g_autoApply);
-
-    ImGui::SeparatorText("New level on the current scene");
-    ImGui::SetNextItemWidth(220);
-    ImGui::InputText("##name", g_newName, sizeof(g_newName));
-    ImGui::SameLine();
-    ImGui::BeginDisabled(CurrentScene().empty());
-    if (ImGui::Button("Create")) {
-        NewLevel(g_newName, CurrentScene());
-        g_status = "created Mods\\" + g_level.folder;
-    }
-    ImGui::EndDisabled();
-
-    ImGui::SeparatorText("Open");
-    for (const std::string& folder : ListLevels()) {
-        ImGui::PushID(folder.c_str());
-        if (ImGui::SmallButton("Load")) {
-            std::string err;
-            g_status = LoadLevel(folder, &err) ? "loaded " + folder : "load failed: " + err;
-        }
+    if (!g_status.empty()) {
         ImGui::SameLine();
-        ImGui::TextUnformatted(folder.c_str());
-        ImGui::PopID();
+        ImGui::TextDisabled("%s", g_status.c_str());
     }
 
     ImGui::SeparatorText("New objects");
@@ -278,9 +246,45 @@ void DrawPanel()
         else
             L.objects.erase(toRevert), L.dirty = true;
     }
-    if (!g_status.empty())
-        ImGui::TextDisabled("%s", g_status.c_str());
-    ImGui::End();
+}
+
+void FileMenu()
+{
+    LevelDocument& L = g_level;
+    ImGui::TextDisabled("level: %s%s", L.name.c_str(), L.dirty ? " (unsaved)" : "");
+    ImGui::Separator();
+    if (ImGui::BeginMenu("New level on this scene", !CurrentScene().empty())) {
+        ImGui::SetNextItemWidth(200);
+        ImGui::InputText("name", g_newName, sizeof(g_newName));
+        if (ImGui::Button("Create")) {
+            NewLevel(g_newName, CurrentScene());
+            g_status = "created Mods\\" + g_level.folder;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Open level")) {
+        auto levels = ListLevels();
+        if (levels.empty())
+            ImGui::TextDisabled("no levels in Mods\\");
+        for (const std::string& folder : levels) {
+            if (ImGui::MenuItem(folder.c_str())) {
+                std::string err;
+                g_status = LoadLevel(folder, &err) ? "loaded " + folder : "load failed: " + err;
+            }
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::MenuItem("Save level", nullptr, false, !L.folder.empty())) {
+        std::string err;
+        g_status = SaveLevel(&err) ? "saved" : "save failed: " + err;
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Apply to the scene"))
+        g_status = "applied " + std::to_string(ApplyLevel()) + " objects and edits";
+    if (ImGui::MenuItem("Revert the scene"))
+        RevertLevel(), g_status = "reverted";
+    ImGui::MenuItem("Apply automatically", nullptr, &g_autoApply);
 }
 
 } // namespace
@@ -556,7 +560,8 @@ std::vector<std::string> ListLevels()
 
 void InstallLevelPanel()
 {
-    overlay::AddPanel({"Level", &g_panelVisible, DrawPanel});
+    overlay::AddPanel({"Level", &g_panelVisible, DrawPanel, overlay::Dock::Left});
+    overlay::AddMenu("File", FileMenu);
     OnScenePushed(OnScene);
     OnFrameEnd(OnFrame);
 }

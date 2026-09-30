@@ -16,6 +16,7 @@
 #include "history.h"
 #include "level.h"
 #include "model.h"
+#include "placement.h"
 #include "scene_panel.h"
 
 namespace h2::editor {
@@ -165,7 +166,7 @@ void Pick()
         PickSphere(g_clickX, g_clickY);
         return;
     }
-    RequestPick(g_clickX, g_clickY, [](engine::ZGEOM* hit) {
+    RequestPick(g_clickX, g_clickY, [](engine::ZGEOM* hit, const float*) {
         if (hit)
             Select(hit);
         else
@@ -210,11 +211,6 @@ void Shortcuts()
 
 void DrawToolbar()
 {
-    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, 34), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0));
-    if (!ImGui::Begin("Tools", &g_toolbarVisible, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::End();
-        return;
-    }
     if (ImGui::RadioButton("Objects", !g_npcMode)) g_npcMode = false;
     ImGui::SameLine();
     if (ImGui::RadioButton("NPCs", g_npcMode)) g_npcMode = true;
@@ -250,9 +246,32 @@ void DrawToolbar()
     if (ImGui::Button("Redo"))
         Redo();
     ImGui::EndDisabled();
-    if (!g_message.empty())
-        ImGui::TextDisabled("%s", g_message.c_str());
-    ImGui::End();
+    if (!g_message.empty()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("  %s", g_message.c_str());
+    }
+}
+
+void EditMenu()
+{
+    engine::ZGEOM* sel = Selected();
+    bool have = sel && IsLive(sel);
+    if (ImGui::MenuItem(("Undo " + UndoLabel()).c_str(), "Ctrl+Z", false, CanUndo()))
+        Undo();
+    if (ImGui::MenuItem(("Redo " + RedoLabel()).c_str(), "Ctrl+Y", false, CanRedo()))
+        Redo();
+    ImGui::Separator();
+    if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, have))
+        DuplicateSelection();
+    if (ImGui::MenuItem("Delete", "Del", false, have && FindSpawned(sel)))
+        DeleteSelection();
+    if (ImGui::MenuItem(have && IsHidden(sel) ? "Show" : "Hide", "H", false, have)) {
+        ObjectState before = GetState(sel), after = before;
+        after.hidden = !before.hidden;
+        Change(sel, before, after, after.hidden ? "hide" : "show");
+    }
+    if (ImGui::MenuItem("Deselect", "Esc", false, have))
+        Select(nullptr);
 }
 
 void DrawViewport()
@@ -262,9 +281,11 @@ void DrawViewport()
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-    if (g_toolbarVisible)
-        DrawToolbar();
     Shortcuts();
+    if (Placing()) {
+        UpdatePlacement();
+        return;
+    }
 
     engine::ZGEOM* sel = Selected();
     float view[16], proj[16];
@@ -356,7 +377,8 @@ void InstallViewport()
 {
     static bool always = true;
     overlay::AddPanel({nullptr, &always, DrawViewport});
-    overlay::AddPanel({"Tools", &g_toolbarVisible, [] {}});  // listed in the menu; drawn by the viewport
+    overlay::AddPanel({"Toolbar", &g_toolbarVisible, DrawToolbar, overlay::Dock::Toolbar});
+    overlay::AddMenu("Edit", EditMenu);
 }
 
 } // namespace h2::editor

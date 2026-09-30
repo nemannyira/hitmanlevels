@@ -1,5 +1,6 @@
 #include "overlay.h"
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -30,8 +31,17 @@ bool g_ready;
 bool g_open;
 std::string g_iniPath;
 std::vector<Panel> g_panels;
-bool g_showStats = true;
+struct Menu {
+    std::string name;
+    std::vector<void (*)()> items;
+};
+std::vector<Menu> g_menus;
 bool g_showDemo = false;
+bool g_panelsHidden = false;  // Tab: game view only (toolbar stays)
+std::string g_selectTab;      // left tab to select on the next frame
+
+constexpr ImGuiWindowFlags kDockedFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
+                                          ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus;
 
 bool IsInputMessage(UINT msg)
 {
@@ -60,37 +70,166 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     return CallWindowProcA(g_gameWndProc, wnd, msg, wp, lp);
 }
 
-void DrawStats()
+Menu& MenuNamed(const char* name)
 {
-    ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Stats", &g_showStats, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::End();
-        return;
-    }
-    ImGuiIO& io = ImGui::GetIO();
-    ImGui::Text("%.1f fps (%.2f ms)", io.Framerate, 1000.0f / io.Framerate);
-    ImGui::Text("scene: %s", CurrentScene().c_str());
-    ImGui::Text("render: %d x %d, UI scale %.2f", RenderWidth(), RenderHeight(), UiScale());
-    ImGui::End();
+    for (Menu& m : g_menus)
+        if (m.name == name)
+            return m;
+    g_menus.push_back({name, {}});
+    return g_menus.back();
+}
+
+void ViewMenu()
+{
+    for (Dock dock : {Dock::Left, Dock::Right, Dock::Bottom, Dock::Floating, Dock::Toolbar})
+        for (Panel& p : g_panels)
+            if (p.dock == dock && p.name)
+                ImGui::MenuItem(p.name, nullptr, p.visible);
+    ImGui::Separator();
+    ImGui::MenuItem("Hide panels", "Tab", &g_panelsHidden);
+    ImGui::MenuItem("ImGui demo", nullptr, &g_showDemo);
+}
+
+void HelpMenu()
+{
+    ImGui::TextDisabled("F8           editor on / off");
+    ImGui::TextDisabled("Tab          hide / show the panels");
+    ImGui::TextDisabled("`            Lua console");
+    ImGui::Separator();
+    ImGui::TextDisabled("click        select");
+    ImGui::TextDisabled("W / E / Q    move / rotate / local-world");
+    ImGui::TextDisabled("H  F         hide  focus camera");
+    ImGui::TextDisabled("Ctrl+D  Del  duplicate  delete");
+    ImGui::TextDisabled("Ctrl+Z / Y   undo / redo");
+    ImGui::Separator();
+    ImGui::TextDisabled("right mouse  look (free camera)");
+    ImGui::TextDisabled("  + WASD QE  move, Shift fast, wheel speed");
 }
 
 void DrawMenuBar()
 {
     if (!ImGui::BeginMainMenuBar())
         return;
-    ImGui::TextDisabled("H2 Editor");
-    if (ImGui::BeginMenu("Windows")) {
-        for (Panel& p : g_panels)
-            if (p.name)
-                ImGui::MenuItem(p.name, nullptr, p.visible);
-        ImGui::MenuItem("Stats", nullptr, &g_showStats);
-        ImGui::Separator();
-        ImGui::MenuItem("ImGui demo", nullptr, &g_showDemo);
-        ImGui::EndMenu();
+    for (Menu& m : g_menus) {
+        if (ImGui::BeginMenu(m.name.c_str())) {
+            for (auto items : m.items)
+                items();
+            ImGui::EndMenu();
+        }
     }
-    ImGui::SameLine(ImGui::GetWindowWidth() - 220);
-    ImGui::TextDisabled("F8: back to game");
+    ImGuiIO& io = ImGui::GetIO();
+    char right[160];
+    snprintf(right, sizeof(right), "%s   %.0f fps   F8: back to game",
+             CurrentScene().empty() ? "no scene" : CurrentScene().c_str(), io.Framerate);
+    ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(right).x - ImGui::GetStyle().ItemSpacing.x * 2);
+    ImGui::TextDisabled("%s", right);
     ImGui::EndMainMenuBar();
+}
+
+bool AnyVisible(Dock dock)
+{
+    for (Panel& p : g_panels)
+        if (p.dock == dock && *p.visible)
+            return true;
+    return false;
+}
+
+// Toolbar strip under the menu; returns its bottom edge.
+float DrawToolbar(float top)
+{
+    if (!AnyVisible(Dock::Toolbar))
+        return top;
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(0, top));
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 0));
+    ImGui::Begin("##toolbar", nullptr,
+                 kDockedFlags | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoSavedSettings);
+    for (Panel& p : g_panels)
+        if (p.dock == Dock::Toolbar && *p.visible)
+            p.draw();
+    float bottom = top + ImGui::GetWindowHeight();
+    ImGui::End();
+    return bottom;
+}
+
+void DrawLayout()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    float W = io.DisplaySize.x, H = io.DisplaySize.y;
+    DrawMenuBar();
+    float top = DrawToolbar(ImGui::GetFrameHeight());
+    float height = H - top;
+    float leftW = 0, rightW = 0;
+    if (!g_panelsHidden && AnyVisible(Dock::Left)) {
+        ImGui::SetNextWindowPos(ImVec2(0, top));
+        ImGui::SetNextWindowSize(ImVec2(W * 0.2f, height), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(200, height), ImVec2(W * 0.45f, height));
+        ImGui::Begin("Left panel", nullptr, kDockedFlags);
+        leftW = ImGui::GetWindowWidth();
+        if (ImGui::BeginTabBar("left")) {
+            for (Panel& p : g_panels) {
+                if (p.dock != Dock::Left || !*p.visible)
+                    continue;
+                ImGuiTabItemFlags flags = g_selectTab == p.name ? ImGuiTabItemFlags_SetSelected : 0;
+                if (ImGui::BeginTabItem(p.name, nullptr, flags)) {
+                    p.draw();
+                    ImGui::EndTabItem();
+                }
+            }
+            g_selectTab.clear();
+            ImGui::EndTabBar();
+        }
+        ImGui::End();
+    }
+    if (!g_panelsHidden && AnyVisible(Dock::Right)) {
+        float w = W * 0.2f;
+        ImGui::SetNextWindowSize(ImVec2(w, height), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(220, height), ImVec2(W * 0.45f, height));
+        ImGui::Begin("Right panel", nullptr, kDockedFlags);
+        rightW = ImGui::GetWindowWidth();
+        ImGui::SetWindowPos(ImVec2(W - rightW, top));
+        bool first = true;
+        for (Panel& p : g_panels) {
+            if (p.dock != Dock::Right || !*p.visible)
+                continue;
+            if (!first)
+                ImGui::Spacing();
+            first = false;
+            ImGui::PushID(p.name);
+            if (ImGui::CollapsingHeader(p.name, ImGuiTreeNodeFlags_DefaultOpen))
+                p.draw();
+            ImGui::PopID();
+        }
+        ImGui::End();
+    }
+    if (!g_panelsHidden && AnyVisible(Dock::Bottom)) {
+        float w = W - leftW - rightW;
+        ImGui::SetNextWindowSize(ImVec2(w, H * 0.25f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(w, 80), ImVec2(w, H * 0.7f));
+        ImGui::Begin("Bottom panel", nullptr, kDockedFlags);
+        ImGui::SetWindowPos(ImVec2(leftW, H - ImGui::GetWindowHeight()));
+        for (Panel& p : g_panels)
+            if (p.dock == Dock::Bottom && *p.visible)
+                p.draw();
+        ImGui::End();
+    }
+    for (Panel& p : g_panels)
+        if ((p.dock == Dock::Floating && *p.visible) || p.dock == Dock::None)
+            if (*p.visible)
+                p.draw();
+    if (g_showDemo)
+        ImGui::ShowDemoWindow(&g_showDemo);
+
+    if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !io.KeyCtrl)
+        g_panelsHidden = !g_panelsHidden;
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false)) {
+        *ConsoleVisible() = !*ConsoleVisible();
+        if (*ConsoleVisible()) {
+            g_panelsHidden = false;
+            FocusConsoleInput();
+        }
+    }
 }
 
 } // namespace
@@ -125,7 +264,9 @@ void OnDeviceCreated(void* device, HWND window)
     g_device = device;
     g_gameWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrA(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&WndProc)));
-    AddPanel({"Lua console", ConsoleVisible(), DrawConsole});
+    AddPanel({"Lua console", ConsoleVisible(), DrawConsole, Dock::Bottom});
+    AddMenu("View", ViewMenu);
+    AddMenu("Help", HelpMenu);
     g_ready = true;
     Log("overlay ready (toggle key %02X), UI scale %.3f", g_config.editorKey, UiScale());
     script::ExecFile(GameDir() + "Mods\\autoexec.lua");
@@ -139,16 +280,8 @@ void OnPresent(void* device)
     ImGui_ImplDX8_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
-    if (g_open) {
-        DrawMenuBar();
-        for (Panel& p : g_panels)
-            if (*p.visible)
-                p.draw();
-        if (g_showStats)
-            DrawStats();
-        if (g_showDemo)
-            ImGui::ShowDemoWindow(&g_showDemo);
-    }
+    if (g_open)
+        DrawLayout();
     ImGui::Render();
     ImDrawData* dd = ImGui::GetDrawData();
     if (dd->CmdListsCount > 0 && d3d8::Call<HRESULT>(device, d3d8::Dev_BeginScene) >= 0) {
@@ -176,12 +309,36 @@ void SetOpen(bool open)
 {
     g_open = open;
     SetGameInputBlocked(open);
-    if (open)
-        FocusConsoleInput();
     if (g_ready)
         ImGui::GetIO().MouseDrawCursor = open;
 }
 
-void AddPanel(const Panel& panel) { g_panels.push_back(panel); }
+void AddPanel(const Panel& panel)
+{
+    g_panels.push_back(panel);
+    if (!panel.name)
+        g_panels.back().dock = Dock::None;
+}
+
+void ShowPanel(const char* name)
+{
+    for (Panel& p : g_panels) {
+        if (p.name && std::string(p.name) == name) {
+            *p.visible = true;
+            g_panelsHidden = false;
+            if (p.dock == Dock::Left)
+                g_selectTab = name;
+        }
+    }
+}
+
+void AddMenu(const char* menu, void (*items)())
+{
+    // keep the conventional order whoever registers first
+    if (g_menus.empty())
+        for (const char* m : {"File", "Edit", "View", "Help"})
+            g_menus.push_back({m, {}});
+    MenuNamed(menu).items.push_back(items);
+}
 
 } // namespace h2::overlay

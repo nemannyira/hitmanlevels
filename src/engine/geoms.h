@@ -67,6 +67,9 @@ struct GeomInfo {
     std::string className;
     int depth = 0;
     std::vector<int> children;  // indices into the snapshot
+    // Stable identity across sessions: names from the root, "#k" for the k-th
+    // (k > 0) sibling with the same name, e.g. "ROOT/Garden/Crate#2".
+    std::string path;
 };
 
 // Snapshot of every scene object currently loaded (static + dynamic nodes),
@@ -74,6 +77,10 @@ struct GeomInfo {
 struct SceneSnapshot {
     std::vector<GeomInfo> geoms;
     std::vector<int> roots;
+
+    int Find(const ZGEOM* geom) const;
+    int FindPath(const std::string& path) const;
+    std::vector<int> FindName(const std::string& name) const;
 };
 SceneSnapshot TakeSnapshot();
 

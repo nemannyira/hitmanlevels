@@ -29,8 +29,9 @@ add_library(imgui STATIC
     third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_tables.cpp
     third_party/imgui/imgui_widgets.cpp
-    third_party/imgui/backends/imgui_impl_win32.cpp)
-target_include_directories(imgui PUBLIC third_party/imgui)
+    third_party/imgui/backends/imgui_impl_win32.cpp
+    third_party/imguizmo/src/ImGuizmo.cpp)
+target_include_directories(imgui PUBLIC third_party/imgui third_party/imguizmo/src)
 
 # dinput8.dll proxy: hitman2.exe imports DINPUT8 statically, so the packer stub
 # loads us right after it has decompressed .text and before the game's OEP runs.
@@ -43,7 +44,11 @@ add_library(h2fix SHARED
     src/scene.cpp
     src/game.cpp
     src/editor/freecam.cpp
+    src/editor/history.cpp
+    src/editor/level.cpp
+    src/editor/model.cpp
     src/editor/scene_panel.cpp
+    src/editor/viewport.cpp
     src/engine/geoms.cpp
     src/screenshot.cpp
     src/input/dinput.cpp
@@ -53,6 +58,7 @@ add_library(h2fix SHARED
     src/script/api.cpp
     src/script/events.cpp
     src/script/memapi.cpp
+    src/script/objects_api.cpp
     src/script/lua_vm.cpp
     src/display.cpp
     src/fov.cpp
@@ -63,6 +69,7 @@ add_library(h2fix SHARED
     src/watch.cpp
     src/dinput8.def)
 target_link_libraries(h2fix PRIVATE minhook lua imgui)
+target_include_directories(h2fix PRIVATE third_party/json)
 target_compile_definitions(h2fix PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 target_compile_options(h2fix PRIVATE /W4 /permissive-)
 set_target_properties(h2fix PROPERTIES OUTPUT_NAME dinput8)

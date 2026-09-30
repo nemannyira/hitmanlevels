@@ -12,7 +12,9 @@
 #include "diag.h"
 #include "display.h"
 #include "editor/freecam.h"
+#include "editor/level.h"
 #include "editor/scene_panel.h"
+#include "editor/viewport.h"
 #include "fov.h"
 #include "framelimit.h"
 #include "game.h"
@@ -23,6 +25,7 @@
 #include "script/api.h"
 #include "script/events.h"
 #include "script/memapi.h"
+#include "script/objects_api.h"
 #include "script/lua_vm.h"
 #include "ui.h"
 #include "watch.h"
@@ -73,6 +76,7 @@ void Init()
     h2::script::Init();
     h2::script::RegisterApi();
     h2::script::RegisterEvents();
+    h2::script::RegisterObjectsApi();
     if (h2::g_config.luaMemory)
         h2::script::RegisterMemApi();
     h2::OnScenePushed([](const std::string& scene) { h2::script::FireScene(scene); });
@@ -86,7 +90,9 @@ void Init()
     h2::InstallFovFix();
     h2::InstallUiScaling();
     h2::editor::InstallFreeCam();
+    h2::editor::InstallViewport();
     h2::editor::InstallScenePanels();
+    h2::editor::InstallLevelPanel();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {
         // debug: who writes SysInterface's resolution fields?

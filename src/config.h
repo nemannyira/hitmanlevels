@@ -12,6 +12,7 @@ struct Config {
     bool horPlus = true;       // keep the 4:3 vertical FOV on wider screens
     double fovScale = 1.0;     // extra multiplier on tan(fov/2)
     int editorKey = VK_F8;     // toggles the editor overlay
+    unsigned hideFlag = 0x800; // ZBaseGeom flag bit the renderer skips (used to hide objects)
     int uiHeight = 600;        // virtual screen height for UI layout (0 = no UI scaling)
     bool diagnostics = true;  // periodic timing/IO statistics in H2Fix.log
     bool logFiles = false;    // log every file the game opens

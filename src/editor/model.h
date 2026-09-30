@@ -1,0 +1,44 @@
+#pragma once
+// Editor-side view of the loaded scene: a cached snapshot of all objects and
+// the editable state of an object (world transform, visibility).
+#include <string>
+
+#include "../engine/geoms.h"
+
+namespace h2::editor {
+
+// Snapshot of the loaded scene, refreshed when older than maxAgeMs (or forced).
+const engine::SceneSnapshot& SceneModel(double maxAgeMs = 1000.0);
+void InvalidateSceneModel();
+
+struct Transform {
+    float mat[9];  // engine layout: rows forward, up, right
+    float pos[3];
+};
+
+struct ObjectState {
+    Transform transform;
+    bool hidden = false;
+
+    bool operator==(const ObjectState& o) const;
+    bool operator!=(const ObjectState& o) const { return !(*this == o); }
+};
+
+bool IsLive(engine::ZGEOM* geom);
+Transform GetTransform(engine::ZGEOM* geom);
+void SetTransform(engine::ZGEOM* geom, const Transform& t);
+bool IsHidden(engine::ZGEOM* geom);
+void SetHidden(engine::ZGEOM* geom, bool hidden);
+ObjectState GetState(engine::ZGEOM* geom);
+void SetState(engine::ZGEOM* geom, const ObjectState& s);
+
+// Stable path of a live object ("" when unknown) and the reverse lookup.
+std::string PathOf(engine::ZGEOM* geom);
+engine::ZGEOM* Resolve(const std::string& path);
+
+// Euler helpers (degrees): yaw about +Y, pitch about right, roll about forward.
+void MatrixToEuler(const float m[9], float& yaw, float& pitch, float& roll);
+void EulerToMatrix(float yaw, float pitch, float roll, float m[9]);
+void Orthonormalize(float m[9]);
+
+} // namespace h2::editor

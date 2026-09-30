@@ -37,6 +37,9 @@ void LoadConfig()
     if (*buf)
         g_config.fovScale = atof(buf);
     g_config.uiHeight = get("Display", "UIHeight", g_config.uiHeight);
+    GetPrivateProfileStringA("Editor", "HideFlag", "", buf, sizeof(buf), ini.c_str());
+    if (*buf)
+        g_config.hideFlag = unsigned(strtoul(buf, nullptr, 0));
     GetPrivateProfileStringA("Editor", "ToggleKey", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.editorKey = int(strtol(buf, nullptr, 0));

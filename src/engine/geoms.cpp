@@ -212,8 +212,22 @@ SceneSnapshot TakeSnapshot()
         else
             snap.roots.push_back(i);
     }
-    // depths (iterative, guards against cycles)
-    std::vector<int> stack(snap.roots.begin(), snap.roots.end());
+    // depths and paths (iterative, guards against cycles)
+    auto segment = [&](const std::vector<int>& siblings, int i) {
+        const std::string& name = snap.geoms[i].name;
+        int k = 0;
+        for (int s : siblings) {
+            if (s == i)
+                break;
+            k += snap.geoms[s].name == name;
+        }
+        return k ? name + "#" + std::to_string(k) : name;
+    };
+    std::vector<int> stack;
+    for (int r : snap.roots) {
+        snap.geoms[r].path = segment(snap.roots, r);
+        stack.push_back(r);
+    }
     std::vector<char> visited(snap.geoms.size(), 0);
     while (!stack.empty()) {
         int i = stack.back();
@@ -223,10 +237,36 @@ SceneSnapshot TakeSnapshot()
         visited[i] = 1;
         for (int c : snap.geoms[i].children) {
             snap.geoms[c].depth = snap.geoms[i].depth + 1;
+            snap.geoms[c].path = snap.geoms[i].path + "/" + segment(snap.geoms[i].children, c);
             stack.push_back(c);
         }
     }
     return snap;
+}
+
+int SceneSnapshot::Find(const ZGEOM* geom) const
+{
+    for (int i = 0; i < int(geoms.size()); ++i)
+        if (geoms[i].geom == geom)
+            return i;
+    return -1;
+}
+
+int SceneSnapshot::FindPath(const std::string& path) const
+{
+    for (int i = 0; i < int(geoms.size()); ++i)
+        if (geoms[i].path == path)
+            return i;
+    return -1;
+}
+
+std::vector<int> SceneSnapshot::FindName(const std::string& name) const
+{
+    std::vector<int> out;
+    for (int i = 0; i < int(geoms.size()); ++i)
+        if (geoms[i].name == name)
+            out.push_back(i);
+    return out;
 }
 
 } // namespace h2::engine

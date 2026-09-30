@@ -12,36 +12,25 @@
 #include "../engine/geoms.h"
 #include "../fov.h"
 #include "../game.h"
-#include "../log.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
 #include "freecam.h"
+#include "history.h"
+#include "model.h"
 
 namespace h2::editor {
 
 namespace {
 
-engine::SceneSnapshot g_snap;
-double g_lastRefresh = -1e9;
 bool g_sceneVisible = true;
 bool g_inspectorVisible = true;
 bool g_autoRefresh = true;
 char g_filter[128];
 engine::ZGEOM* g_selected;
+bool g_scrollToSelected;
 std::vector<int> g_matches;
 std::string g_matchFilter;
-
-void Refresh()
-{
-    g_snap = engine::TakeSnapshot();
-    g_lastRefresh = NowMs();
-    g_matchFilter = "\x01";  // force re-filter
-    bool stillThere = false;
-    for (auto& g : g_snap.geoms)
-        stillThere |= g.geom == g_selected;
-    if (!stillThere)
-        g_selected = nullptr;
-}
+const engine::SceneSnapshot* g_matchSnap;
 
 std::string Lower(std::string s)
 {
@@ -49,30 +38,57 @@ std::string Lower(std::string s)
     return s;
 }
 
+const engine::SceneSnapshot& Snap() { return SceneModel(g_autoRefresh ? 2000.0 : 1e18); }
+
 const engine::GeomInfo* FindInfo(engine::ZGEOM* geom)
 {
-    for (auto& g : g_snap.geoms)
-        if (g.geom == geom)
-            return &g;
-    return nullptr;
+    const auto& s = Snap();
+    int i = s.Find(geom);
+    return i >= 0 ? &s.geoms[i] : nullptr;
 }
 
-void DrawTreeNode(int i)
+bool IsAncestorOfSelected(const engine::SceneSnapshot& s, int i)
 {
-    const engine::GeomInfo& g = g_snap.geoms[i];
+    int sel = g_selected ? s.Find(g_selected) : -1;
+    for (int k = 0; sel >= 0 && k < 64; ++k) {
+        int parent = -1;
+        for (int c = 0; c < int(s.geoms.size()) && parent < 0; ++c)
+            if (s.geoms[sel].parent == s.geoms[c].node)
+                parent = c;
+        if (parent == i)
+            return true;
+        sel = parent;
+    }
+    return false;
+}
+
+void DrawTreeNode(const engine::SceneSnapshot& s, int i)
+{
+    const engine::GeomInfo& g = s.geoms[i];
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                ImGuiTreeNodeFlags_SpanAvailWidth;
     if (g.children.empty())
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     if (g.geom == g_selected)
         flags |= ImGuiTreeNodeFlags_Selected;
+    if (g_scrollToSelected && !g.children.empty() && IsAncestorOfSelected(s, i))
+        ImGui::SetNextItemOpen(true);
+    bool hidden = IsLive(g.geom) && IsHidden(g.geom);
+    if (hidden)
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     bool open = ImGui::TreeNodeEx(static_cast<void*>(g.node), flags, "%s  (%s)",
                                   g.name.empty() ? "<unnamed>" : g.name.c_str(), g.className.c_str());
+    if (hidden)
+        ImGui::PopStyleColor();
+    if (g_scrollToSelected && g.geom == g_selected) {
+        ImGui::SetScrollHereY();
+        g_scrollToSelected = false;
+    }
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
         g_selected = g.geom;
     if (open && !g.children.empty()) {
         for (int c : g.children)
-            DrawTreeNode(c);
+            DrawTreeNode(s, c);
         ImGui::TreePop();
     }
 }
@@ -85,38 +101,38 @@ void DrawScenePanel()
         ImGui::End();
         return;
     }
-    if (g_autoRefresh && NowMs() - g_lastRefresh > 2000)
-        Refresh();
+    const engine::SceneSnapshot& s = Snap();
     if (ImGui::Button("Refresh"))
-        Refresh();
+        SceneModel(0);
     ImGui::SameLine();
     ImGui::Checkbox("auto", &g_autoRefresh);
     ImGui::SameLine();
-    ImGui::TextDisabled("%d objects", int(g_snap.geoms.size()));
+    ImGui::TextDisabled("%d objects", int(s.geoms.size()));
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##filter", "filter by name or class", g_filter, sizeof(g_filter));
 
     if (ImGui::BeginChild("tree", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
         std::string filter = Lower(g_filter);
         if (filter.empty()) {
-            for (int r : g_snap.roots)
-                DrawTreeNode(r);
+            for (int r : s.roots)
+                DrawTreeNode(s, r);
         } else {
-            if (filter != g_matchFilter) {
+            if (filter != g_matchFilter || g_matchSnap != &s || g_matches.size() > s.geoms.size()) {
                 g_matchFilter = filter;
+                g_matchSnap = &s;
                 g_matches.clear();
-                for (int i = 0; i < int(g_snap.geoms.size()); ++i) {
-                    const auto& g = g_snap.geoms[i];
-                    if (Lower(g.name).find(filter) != std::string::npos ||
-                        Lower(g.className).find(filter) != std::string::npos)
+                for (int i = 0; i < int(s.geoms.size()); ++i)
+                    if (Lower(s.geoms[i].name).find(filter) != std::string::npos ||
+                        Lower(s.geoms[i].className).find(filter) != std::string::npos)
                         g_matches.push_back(i);
-                }
             }
             ImGuiListClipper clipper;
             clipper.Begin(int(g_matches.size()));
             while (clipper.Step()) {
                 for (int k = clipper.DisplayStart; k < clipper.DisplayEnd; ++k) {
-                    const auto& g = g_snap.geoms[g_matches[k]];
+                    if (g_matches[k] >= int(s.geoms.size()))
+                        continue;
+                    const auto& g = s.geoms[g_matches[k]];
                     char label[256];
                     snprintf(label, sizeof(label), "%s  (%s)##%p", g.name.empty() ? "<unnamed>" : g.name.c_str(),
                              g.className.c_str(), static_cast<void*>(g.node));
@@ -130,46 +146,73 @@ void DrawScenePanel()
     ImGui::End();
 }
 
+// Continuous edit of a widget: history entry when the widget is released.
+void TrackContinuous(engine::ZGEOM* geom, const char* what)
+{
+    if (ImGui::IsItemActivated())
+        BeginContinuous(geom);
+    if (ImGui::IsItemDeactivated())
+        EndContinuous(geom, what);
+}
+
 void DrawInspector()
 {
-    ImGui::SetNextWindowSize(ImVec2(520, 320), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(520, 360), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 540, 760), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Inspector", &g_inspectorVisible)) {
         ImGui::End();
         return;
     }
     const engine::GeomInfo* info = g_selected ? FindInfo(g_selected) : nullptr;
-    if (!info) {
-        ImGui::TextDisabled("select an object in the Scene panel");
+    if (!info || !IsLive(g_selected)) {
+        ImGui::TextDisabled("select an object in the Scene panel or click it in the world");
         ImGui::End();
         return;
     }
+    engine::ZGEOM* geom = info->geom;
     ImGui::Text("%s", info->name.empty() ? "<unnamed>" : info->name.c_str());
-    ImGui::TextWrapped("class: %s", engine::ClassChain(info->geom).c_str());
-    ImGui::TextDisabled("geom %p  node %p  flags %08X", static_cast<void*>(info->geom),
-                        static_cast<void*>(info->node), info->node->flags);
+    ImGui::TextWrapped("class: %s", engine::ClassChain(geom).c_str());
+    ImGui::TextDisabled("path: %s", info->path.c_str());
+    ImGui::TextDisabled("geom %p  node %p  flags %08X", static_cast<void*>(geom), static_cast<void*>(info->node),
+                        info->node->flags);
     if (info->parent) {
         const engine::GeomInfo* parent = FindInfo(info->parent->geom);
         ImGui::Text("parent: %s", parent ? parent->name.c_str() : "?");
         if (parent) {
             ImGui::SameLine();
-            if (ImGui::SmallButton("select parent"))
+            if (ImGui::SmallButton("select parent")) {
                 g_selected = parent->geom;
+                g_scrollToSelected = true;
+            }
         }
     }
     ImGui::Text("children: %d", int(info->children.size()));
+    ImGui::SameLine();
+    if (ImGui::SmallButton("show in tree"))
+        g_scrollToSelected = true;
     ImGui::Separator();
 
-    float m[9], pos[3];
-    game::GetWorldTransform(info->geom, m, pos);
-    float edited[3] = {pos[0], pos[1], pos[2]};
-    if (ImGui::DragFloat3("world position", edited, 1.0f, 0, 0, "%.1f"))
-        game::SetWorldTransform(info->geom, m, edited);
-    ImGui::TextDisabled("forward %.2f %.2f %.2f", m[0], m[1], m[2]);
-    ImGui::TextDisabled("up      %.2f %.2f %.2f", m[3], m[4], m[5]);
-    if (ImGui::Button("Fly camera here")) {
-        // stand 3 m back and 1.5 m up, looking at the object
-        float cam[3] = {pos[0] - m[0] * 300.0f, pos[1] + 150.0f, pos[2] - m[2] * 300.0f};
+    Transform t = GetTransform(geom);
+    if (ImGui::DragFloat3("position", t.pos, 1.0f, 0, 0, "%.1f"))
+        SetTransform(geom, t);
+    TrackContinuous(geom, "move");
+    float e[3];
+    MatrixToEuler(t.mat, e[0], e[1], e[2]);
+    if (ImGui::DragFloat3("yaw/pitch/roll", e, 0.5f, 0, 0, "%.1f")) {
+        EulerToMatrix(e[0], e[1], e[2], t.mat);
+        SetTransform(geom, t);
+    }
+    TrackContinuous(geom, "rotate");
+
+    bool hidden = IsHidden(geom);
+    if (ImGui::Checkbox("hidden (H)", &hidden)) {
+        ObjectState before = GetState(geom), after = before;
+        after.hidden = hidden;
+        Change(geom, before, after, hidden ? "hide" : "show");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Fly camera here (F)")) {
+        float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 150.0f, t.pos[2] - t.mat[2] * 300.0f};
         SetFreeCamEnabled(true);
         SetFreeCamPosition(cam);
     }
@@ -178,37 +221,31 @@ void DrawInspector()
 
 void DrawSelectionMarker()
 {
-    if (!g_selected || !FindInfo(g_selected))
+    if (!g_selected || !IsLive(g_selected))
         return;
-    float m[9], pos[3], sx, sy;
-    game::GetWorldTransform(g_selected, m, pos);
+    float pos[3], sx, sy;
+    engine::WorldPosition(g_selected, pos);
     if (!WorldToScreen(pos, sx, sy))
         return;
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImU32 col = IM_COL32(255, 200, 40, 255);
     dl->AddCircle(ImVec2(sx, sy), 10.0f, col, 16, 2.0f);
-    dl->AddLine(ImVec2(sx - 16, sy), ImVec2(sx - 6, sy), col, 2.0f);
-    dl->AddLine(ImVec2(sx + 6, sy), ImVec2(sx + 16, sy), col, 2.0f);
     const engine::GeomInfo* info = FindInfo(g_selected);
-    dl->AddText(ImVec2(sx + 14, sy - 22), col, info->name.c_str());
+    if (info)
+        dl->AddText(ImVec2(sx + 14, sy - 22), col, info->name.c_str());
 }
 
-void DrawAll()
-{
-    DrawScenePanel();
-}
-
-void OnScene(const std::string&)
-{
-    g_selected = nullptr;
-    g_snap = {};
-    g_lastRefresh = -1e9;
-}
+void OnScene(const std::string&) { g_selected = nullptr; }
 
 } // namespace
 
 engine::ZGEOM* Selected() { return g_selected; }
-void Select(engine::ZGEOM* geom) { g_selected = geom; }
+
+void Select(engine::ZGEOM* geom)
+{
+    g_selected = geom;
+    g_scrollToSelected = geom != nullptr;
+}
 
 bool WorldToScreen(const float world[3], float& sx, float& sy)
 {
@@ -233,7 +270,7 @@ bool WorldToScreen(const float world[3], float& sx, float& sy)
 
 void InstallScenePanels()
 {
-    overlay::AddPanel({"Scene", &g_sceneVisible, DrawAll});
+    overlay::AddPanel({"Scene", &g_sceneVisible, DrawScenePanel});
     overlay::AddPanel({"Inspector", &g_inspectorVisible, DrawInspector});
     static bool always = true;
     overlay::AddPanel({nullptr, &always, DrawSelectionMarker});

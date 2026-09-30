@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../config.h"
+#include "../engine/spawn.h"
 #include "../game.h"
 #include "../log.h"
 #include "../scene.h"
@@ -15,6 +16,7 @@ namespace h2::editor {
 namespace {
 
 engine::SceneSnapshot g_snapshot;
+std::vector<std::pair<engine::ZBaseGeom*, engine::ZGEOM*>> g_spawned;
 double g_snapshotTime = -1e12;
 bool g_hooked;
 
@@ -37,7 +39,10 @@ const engine::SceneSnapshot& SceneModel(double maxAgeMs)
         OnScenePushed([](const std::string&) { InvalidateSceneModel(); });
     }
     if (NowMs() - g_snapshotTime > maxAgeMs) {
-        g_snapshot = engine::TakeSnapshot();
+        std::vector<engine::ZBaseGeom*> extra;
+        for (auto& [node, geom] : g_spawned)
+            extra.push_back(node);
+        g_snapshot = engine::TakeSnapshot(extra);
         g_snapshotTime = NowMs();
     }
     return g_snapshot;
@@ -112,6 +117,54 @@ void EnsureDynamic(engine::ZGEOM* geom)
     SetDynamic(node, true);
     g_madeDynamic.push_back({node, geom});
     Log("made %p dynamic (flags %08X)", static_cast<void*>(geom), node->flags);
+}
+
+void DestroyAllSpawned(const std::string&)
+{
+    int n = 0;
+    for (auto& [node, geom] : g_spawned)
+        if (IsLive(geom) && geom->node == node)
+            n += engine::DestroyGeom(geom);
+    if (!g_spawned.empty())
+        Log("destroyed %d/%d editor objects before leaving the scene", n, int(g_spawned.size()));
+    g_spawned.clear();
+    InvalidateSceneModel();
+}
+
+engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error)
+{
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnSceneLeaving(DestroyAllSpawned);
+    }
+    engine::ZGEOM* geom = engine::CloneGeom(source, name, error);
+    if (geom) {
+        g_spawned.push_back({geom->node, geom});
+        InvalidateSceneModel();
+    }
+    return geom;
+}
+
+bool DestroySpawned(engine::ZGEOM* geom)
+{
+    for (auto it = g_spawned.begin(); it != g_spawned.end(); ++it) {
+        if (it->second != geom)
+            continue;
+        bool ok = IsLive(geom) && geom->node == it->first && engine::DestroyGeom(geom);
+        g_spawned.erase(it);
+        InvalidateSceneModel();
+        return ok;
+    }
+    return false;
+}
+
+bool IsSpawned(engine::ZGEOM* geom)
+{
+    for (auto& [node, g] : g_spawned)
+        if (g == geom)
+            return true;
+    return false;
 }
 
 // The world setter of the engine does not reliably take rotations, so the

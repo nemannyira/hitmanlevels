@@ -64,6 +64,8 @@ bool IsLiveNode(ZBaseGeom* node, ZGEOM*& geom)
     return true;
 }
 
+} // namespace
+
 void* GeomTable()
 {
     auto sys = reinterpret_cast<char*>(game::SysInterface());
@@ -73,8 +75,6 @@ void* GeomTable()
         return nullptr;
     return table;
 }
-
-} // namespace
 
 bool IsReadable(const void* p, size_t n)
 {
@@ -154,7 +154,7 @@ void WorldPosition(ZGEOM* geom, float pos[3])
     game::GetWorldTransform(geom, m, pos);
 }
 
-SceneSnapshot TakeSnapshot()
+SceneSnapshot TakeSnapshot(const std::vector<ZBaseGeom*>& extra)
 {
     SceneSnapshot snap;
     void* table = GeomTable();
@@ -190,6 +190,10 @@ SceneSnapshot TakeSnapshot()
                 add(node);
         }
     }
+
+    // runtime created nodes the tables above may not reach
+    for (ZBaseGeom* node : extra)
+        add(node);
 
     std::unordered_map<ZBaseGeom*, int> index;
     snap.geoms.reserve(found.size());

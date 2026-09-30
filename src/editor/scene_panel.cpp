@@ -10,13 +10,16 @@
 
 #include "../display.h"
 #include "../engine/geoms.h"
+#include "../engine/spawn.h"
 #include "../fov.h"
 #include "../game.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
 #include "freecam.h"
 #include "history.h"
+#include "level.h"
 #include "model.h"
+#include "viewport.h"
 
 namespace h2::editor {
 
@@ -220,6 +223,16 @@ void DrawInspector()
         float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 150.0f, t.pos[2] - t.mat[2] * 300.0f};
         SetFreeCamEnabled(true);
         SetFreeCamPosition(cam);
+    }
+    ImGui::BeginDisabled(actor || !engine::MeshOf(geom));
+    if (ImGui::Button("Duplicate (Ctrl+D)"))
+        DuplicateSelection();
+    ImGui::EndDisabled();
+    if (const SpawnedObject* spawned = FindSpawned(geom)) {
+        ImGui::SameLine();
+        if (ImGui::Button("Delete (Del)"))
+            DeleteSelection();
+        ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());
     }
     ImGui::End();
 }

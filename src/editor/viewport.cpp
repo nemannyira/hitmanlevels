@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <string>
 
 #include "imgui.h"
 #include "ImGuizmo.h"
@@ -13,6 +14,7 @@
 #include "freecam.h"
 #include "highlight.h"
 #include "history.h"
+#include "level.h"
 #include "model.h"
 #include "scene_panel.h"
 
@@ -27,6 +29,7 @@ float g_snapMove = 25.0f;   // cm
 float g_snapAngle = 15.0f;  // degrees
 bool g_wasUsing;
 bool g_toolbarVisible = true;
+std::string g_message;  // result of the last duplicate/delete, shown in the toolbar
 bool g_pickInvisible = false;  // also pick objects without a drawn mesh (triggers, markers...)
 bool g_npcMode = false;        // only characters (ZActor) are pickable
 
@@ -188,7 +191,11 @@ void Shortcuts()
     else if (ImGui::IsKeyPressed(ImGuiKey_Escape))
         Select(nullptr);
     else if (engine::ZGEOM* sel = Selected(); sel && IsLive(sel)) {
-        if (ImGui::IsKeyPressed(ImGuiKey_H)) {
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
+            DuplicateSelection();
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+            DeleteSelection();
+        } else if (ImGui::IsKeyPressed(ImGuiKey_H)) {
             ObjectState before = GetState(sel), after = before;
             after.hidden = !before.hidden;
             Change(sel, before, after, after.hidden ? "hide" : "show");
@@ -243,6 +250,8 @@ void DrawToolbar()
     if (ImGui::Button("Redo"))
         Redo();
     ImGui::EndDisabled();
+    if (!g_message.empty())
+        ImGui::TextDisabled("%s", g_message.c_str());
     ImGui::End();
 }
 
@@ -289,6 +298,32 @@ void DrawViewport()
 }
 
 } // namespace
+
+void DuplicateSelection()
+{
+    engine::ZGEOM* sel = Selected();
+    std::string err;
+    if (engine::ZGEOM* g = DuplicateObject(sel, &err)) {
+        Select(g);
+        const SpawnedObject* s = FindSpawned(g);
+        g_message = "created " + (s ? s->id : std::string("object")) + " (Ctrl+Z undoes)";
+    } else {
+        g_message = "duplicate failed: " + err;
+    }
+}
+
+void DeleteSelection()
+{
+    engine::ZGEOM* sel = Selected();
+    if (!sel || !IsLive(sel))
+        return;
+    if (!FindSpawned(sel)) {
+        g_message = "only objects created by the level can be deleted (H hides scene objects)";
+        return;
+    }
+    Select(nullptr);
+    g_message = DeleteObject(sel) ? "deleted (Ctrl+Z undoes)" : "delete failed";
+}
 
 bool CameraMatrices(float view[16], float proj[16])
 {

@@ -35,6 +35,12 @@ void SetHidden(engine::ZGEOM* geom, bool hidden);
 ObjectState GetState(engine::ZGEOM* geom);
 void SetState(engine::ZGEOM* geom, const ObjectState& s);
 
+// Objects created by the editor (visual clones, see engine/spawn.h). They are
+// part of the scene model and destroyed before the scene is left.
+engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error = nullptr);
+bool DestroySpawned(engine::ZGEOM* geom);
+bool IsSpawned(engine::ZGEOM* geom);
+
 // Stable path of a live object ("" when unknown) and the reverse lookup.
 std::string PathOf(engine::ZGEOM* geom);
 engine::ZGEOM* Resolve(const std::string& path);

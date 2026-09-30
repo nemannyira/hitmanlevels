@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "json.hpp"
 
+#include "../engine/spawn.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
@@ -14,6 +15,7 @@
 #include "../script/events.h"
 #include "../script/lua_vm.h"
 #include "history.h"
+#include "scene_panel.h"
 
 using json = nlohmann::json;
 
@@ -22,6 +24,7 @@ namespace h2::editor {
 namespace {
 
 LevelDocument g_level;
+std::map<std::string, engine::ZGEOM*> g_live;  // spawned id -> its object in the loaded scene
 bool g_panelVisible = true;
 bool g_autoApply = true;
 bool g_applyPending;
@@ -58,6 +61,90 @@ bool StateFromJson(const json& j, ObjectState& s)
     return true;
 }
 
+SpawnedObject* EntryOf(engine::ZGEOM* geom)
+{
+    if (!geom)
+        return nullptr;
+    for (auto& s : g_level.spawned) {
+        auto it = g_live.find(s.id);
+        if (it != g_live.end() && it->second == geom)
+            return &s;
+    }
+    return nullptr;
+}
+
+engine::ZGEOM* LiveSpawned(const std::string& id)
+{
+    auto it = g_live.find(id);
+    if (it == g_live.end())
+        return nullptr;
+    if (!IsSpawned(it->second) || !IsLive(it->second)) {
+        g_live.erase(it);
+        return nullptr;
+    }
+    return it->second;
+}
+
+// Creates the object of a spawned entry in the loaded scene (if not there yet).
+engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
+{
+    if (engine::ZGEOM* g = LiveSpawned(s.id))
+        return g;
+    engine::ZGEOM* source = Resolve(s.sourcePath);
+    if (!source) {
+        if (error)
+            *error = "source object not found: " + s.sourcePath;
+        Log("level: spawned '%s': source '%s' not found", s.id.c_str(), s.sourcePath.c_str());
+        return nullptr;
+    }
+    engine::ZGEOM* g = SpawnClone(source, s.id, error);
+    if (!g)
+        return nullptr;
+    g_live[s.id] = g;
+    ObjectState st;
+    st.transform = s.transform;
+    st.hidden = s.hidden;
+    SetState(g, st);
+    return g;
+}
+
+bool RemoveSpawned(const std::string& id)
+{
+    if (engine::ZGEOM* g = LiveSpawned(id))
+        DestroySpawned(g);
+    g_live.erase(id);
+    for (auto it = g_level.spawned.begin(); it != g_level.spawned.end(); ++it) {
+        if (it->id == id) {
+            g_level.spawned.erase(it);
+            g_level.dirty = true;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AddSpawned(const SpawnedObject& s)
+{
+    engine::ZGEOM* g = Materialize(s);
+    if (!g)
+        return false;
+    g_level.spawned.push_back(s);
+    g_level.dirty = true;
+    return true;
+}
+
+std::string UniqueId(const std::string& base)
+{
+    for (int n = 1;; ++n) {
+        std::string id = base + "+" + std::to_string(n);
+        bool used = false;
+        for (auto& s : g_level.spawned)
+            used |= s.id == id;
+        if (!used)
+            return id;
+    }
+}
+
 void RunLevelScripts()
 {
     script::ClearHandlers("level");
@@ -74,6 +161,7 @@ void OnScene(const std::string& scene)
 {
     g_applyPending = g_autoApply && !g_level.baseScene.empty() && scene == g_level.baseScene;
     g_applyWaitFrames = 2;  // let the scene finish creating its objects
+    g_live.clear();         // the editor destroyed them when the previous scene was left
     for (auto& [path, e] : g_level.objects)
         e.hasOriginal = false;  // originals belong to the previous load
 }
@@ -85,7 +173,8 @@ void OnFrame()
     g_applyPending = false;
     InvalidateSceneModel();
     int n = ApplyLevel();
-    Log("level '%s': applied %d/%d object edits", g_level.name.c_str(), n, int(g_level.objects.size()));
+    Log("level '%s': applied %d/%d objects and edits", g_level.name.c_str(), n,
+        int(g_level.objects.size() + g_level.spawned.size()));
     RunLevelScripts();
 }
 
@@ -101,7 +190,8 @@ void DrawPanel()
     ImGui::Text("%s%s", L.name.c_str(), L.dirty ? " *" : "");
     ImGui::TextDisabled("folder: Mods\\%s   base scene: %s", L.folder.empty() ? "-" : L.folder.c_str(),
                         L.baseScene.empty() ? "-" : L.baseScene.c_str());
-    ImGui::Text("%d edited objects, %d scripts", int(L.objects.size()), int(L.scripts.size()));
+    ImGui::Text("%d edited objects, %d new objects, %d scripts", int(L.objects.size()), int(L.spawned.size()),
+                int(L.scripts.size()));
 
     ImGui::BeginDisabled(L.folder.empty());
     if (ImGui::Button("Save")) {
@@ -143,6 +233,33 @@ void DrawPanel()
         ImGui::PopID();
     }
 
+    ImGui::SeparatorText("New objects");
+    std::string toDelete;
+    for (auto& s : L.spawned) {
+        ImGui::PushID(s.id.c_str());
+        if (ImGui::SmallButton("delete"))
+            toDelete = s.id;
+        ImGui::SameLine();
+        engine::ZGEOM* g = LiveSpawned(s.id);
+        if (g) {
+            if (ImGui::SmallButton("select"))
+                Select(g);
+            ImGui::SameLine();
+        }
+        ImGui::TextUnformatted(s.id.c_str());
+        if (!g) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(not in this scene)");
+        }
+        ImGui::PopID();
+    }
+    if (!toDelete.empty()) {
+        if (engine::ZGEOM* g = LiveSpawned(toDelete))
+            DeleteObject(g);
+        else
+            RemoveSpawned(toDelete);
+    }
+
     ImGui::SeparatorText("Edited objects");
     std::string toRevert;
     for (auto& [path, e] : L.objects) {
@@ -172,6 +289,12 @@ LevelDocument& CurrentLevel() { return g_level; }
 
 void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectState& after)
 {
+    if (SpawnedObject* s = EntryOf(geom)) {
+        s->transform = after.transform;
+        s->hidden = after.hidden;
+        g_level.dirty = true;
+        return;
+    }
     std::string path = PathOf(geom);
     if (path.empty())
         return;
@@ -221,6 +344,7 @@ bool SaveLevel(std::string* error)
         o["id"] = s.id;
         o["source_scene"] = s.sourceScene;
         o["source_path"] = s.sourcePath;
+        o["hidden"] = s.hidden;
         j["spawned"].push_back(o);
     }
     j["scripts"] = g_level.scripts;
@@ -274,6 +398,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         if (!StateFromJson(o, st))
             continue;
         s.transform = st.transform;
+        s.hidden = st.hidden;
         s.id = o.value("id", "");
         s.sourceScene = o.value("source_scene", "");
         s.sourcePath = o.value("source_path", "");
@@ -282,7 +407,8 @@ bool LoadLevel(const std::string& folder, std::string* error)
     L.scripts = j.value("scripts", std::vector<std::string>{});
     g_level = std::move(L);
     ClearHistory();
-    Log("level loaded: %s (%d edits)", folder.c_str(), int(g_level.objects.size()));
+    Log("level loaded: %s (%d edits, %d new objects)", folder.c_str(), int(g_level.objects.size()),
+        int(g_level.spawned.size()));
     if (CurrentScene() == g_level.baseScene) {  // already in the base scene: apply now
         ApplyLevel();
         RunLevelScripts();
@@ -311,9 +437,73 @@ void NewLevel(const std::string& name, const std::string& baseScene)
     }
 }
 
+engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error)
+{
+    auto fail = [&](const std::string& why) -> engine::ZGEOM* {
+        if (error)
+            *error = why;
+        return nullptr;
+    };
+    if (!IsLive(source))
+        return fail("nothing selected");
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return fail("the level is for scene " + g_level.baseScene);
+    SpawnedObject s;
+    std::string base;
+    if (const SpawnedObject* from = EntryOf(source)) {  // copy of a copy: same source
+        s.sourcePath = from->sourcePath;
+        base = from->id.substr(0, from->id.rfind('+'));
+    } else {
+        s.sourcePath = PathOf(source);
+        base = engine::SafeString(source->name);
+    }
+    if (s.sourcePath.empty())
+        return fail("the object has no stable path");
+    if (!engine::MeshOf(source))
+        return fail("only objects with a mesh can be duplicated");
+    if (base.empty())
+        base = "Object";
+    s.id = UniqueId(base);
+    s.sourceScene = CurrentScene();
+    s.transform = GetTransform(source);
+    // next to the original, so both are visible
+    float c[3], r = 100.0f;
+    if (!GetBounds(source, c, r))
+        r = 100.0f;
+    s.transform.pos[0] += r < 50.0f ? 50.0f : (r > 500.0f ? 500.0f : r);
+    s.hidden = false;
+    std::string err;
+    engine::ZGEOM* g = Materialize(s, &err);
+    if (!g)
+        return fail(err.empty() ? "the engine refused to create it" : err);
+    g_level.spawned.push_back(s);
+    g_level.dirty = true;
+    std::string id = s.id;
+    PushAction("duplicate", [id] { return RemoveSpawned(id); }, [s] { return AddSpawned(s); });
+    return g;
+}
+
+bool DeleteObject(engine::ZGEOM* geom)
+{
+    SpawnedObject* e = EntryOf(geom);
+    if (!e)
+        return false;
+    SpawnedObject copy = *e;
+    RemoveSpawned(copy.id);
+    PushAction("delete", [copy] { return AddSpawned(copy); }, [copy] { return RemoveSpawned(copy.id); });
+    return true;
+}
+
+const SpawnedObject* FindSpawned(engine::ZGEOM* geom) { return EntryOf(geom); }
+
 int ApplyLevel()
 {
     int n = 0;
+    for (const SpawnedObject& s : g_level.spawned)
+        if (s.sourceScene.empty() || s.sourceScene == CurrentScene())
+            n += Materialize(s) != nullptr;
     for (auto& [path, e] : g_level.objects) {
         engine::ZGEOM* geom = Resolve(path);
         if (!geom || !IsLive(geom))
@@ -330,6 +520,10 @@ int ApplyLevel()
 
 void RevertLevel()
 {
+    for (auto& [id, g] : g_live)
+        if (IsSpawned(g))
+            DestroySpawned(g);
+    g_live.clear();
     for (auto& [path, e] : g_level.objects) {
         if (!e.hasOriginal)
             continue;

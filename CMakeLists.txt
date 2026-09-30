@@ -51,6 +51,7 @@ add_library(h2fix SHARED
     src/editor/scene_panel.cpp
     src/editor/viewport.cpp
     src/engine/geoms.cpp
+    src/engine/spawn.cpp
     src/screenshot.cpp
     src/input/dinput.cpp
     src/overlay/console.cpp

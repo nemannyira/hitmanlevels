@@ -14,6 +14,7 @@ struct Entry {
     std::string path;
     ObjectState before, after;
     std::string what;
+    std::function<bool()> undo, redo;  // actions instead of a state change
 };
 
 std::vector<Entry> g_undo, g_redo;
@@ -33,6 +34,8 @@ void Hook()
 
 bool ApplyEntry(const Entry& e, bool forward)
 {
+    if (e.undo)
+        return forward ? e.redo() : e.undo();
     engine::ZGEOM* geom = Resolve(e.path);
     if (!geom || !IsLive(geom)) {
         Log("history: %s not found", e.path.c_str());
@@ -65,6 +68,16 @@ void Change(engine::ZGEOM* geom, const ObjectState& before, const ObjectState& a
     RecordEdit(geom, before, after);
     if (!path.empty())
         Push({path, before, after, what});
+}
+
+void PushAction(const char* what, std::function<bool()> undo, std::function<bool()> redo)
+{
+    Hook();
+    Entry e;
+    e.what = what;
+    e.undo = std::move(undo);
+    e.redo = std::move(redo);
+    Push(std::move(e));
 }
 
 void BeginContinuous(engine::ZGEOM* geom)

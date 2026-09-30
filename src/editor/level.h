@@ -9,8 +9,9 @@
 //   "objects": [                                // edits of objects of the base scene
 //     { "path": "ROOT/.../Crate#2", "class": "ZSTDOBJ",
 //       "pos": [x, y, z], "matrix": [9 floats], "hidden": false } ],
-//   "spawned": [],                              // new objects (cloned from a source scene
-//                                               // object; filled once cloning exists)
+//   "spawned": [                                // new objects: visual clones of a scene object
+//     { "id": "Crate_01+1", "source_scene": "C1-1\C1-1__MAIN",
+//       "source_path": "ROOT/.../Crate_01", "pos": [...], "matrix": [...], "hidden": false } ],
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
 //
@@ -31,10 +32,11 @@ struct ObjectEdit {
 };
 
 struct SpawnedObject {
-    std::string id;
-    std::string sourceScene;
+    std::string id;           // also the object's name in the scene
+    std::string sourceScene;  // clones currently come from the base scene itself
     std::string sourcePath;
     Transform transform;
+    bool hidden = false;
 };
 
 struct LevelDocument {
@@ -56,7 +58,13 @@ void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectStat
 bool SaveLevel(std::string* error = nullptr);
 bool LoadLevel(const std::string& folder, std::string* error = nullptr);
 void NewLevel(const std::string& name, const std::string& baseScene);
-// Applies the level's object edits to the loaded scene; returns how many applied.
+// Creates a copy of the object next to it and adds it to the level (undoable).
+engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error = nullptr);
+// Deletes an object the level created (undoable); false for scene objects.
+bool DeleteObject(engine::ZGEOM* geom);
+const SpawnedObject* FindSpawned(engine::ZGEOM* geom);
+
+// Applies the level's spawned objects and object edits to the loaded scene; returns how many applied.
 int ApplyLevel();
 // Undoes every edit of the level in the loaded scene (restores originals).
 void RevertLevel();

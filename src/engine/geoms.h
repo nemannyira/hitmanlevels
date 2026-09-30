@@ -84,7 +84,11 @@ struct SceneSnapshot {
     int FindPath(const std::string& path) const;
     std::vector<int> FindName(const std::string& name) const;
 };
-SceneSnapshot TakeSnapshot();
+// `extra`: nodes created at runtime (see spawn.h), included when live.
+SceneSnapshot TakeSnapshot(const std::vector<ZBaseGeom*>& extra = {});
+
+// The geom table (ZEngineDataBase+4) of the loaded scene, or null.
+void* GeomTable();
 
 std::string ClassName(const ZGEOM* geom);
 // "ZCAMERA : ZGEOM : ..." (most derived first)

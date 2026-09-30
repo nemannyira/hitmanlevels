@@ -56,7 +56,9 @@ bool FreeCamLooking() { return ImGui::IsMouseDown(ImGuiMouseButton_Right); }
 
 // Ray through the mouse against the objects' bounding spheres: the nearest
 // entry wins, big spheres (rooms, groups) only when nothing smaller is hit.
-void Pick()
+float g_clickX, g_clickY;
+
+void PickSphere(float mx, float my)
 {
     ImGuiIO& io = ImGui::GetIO();
     game::ZCAMERA* cam = game::MainCamera();
@@ -66,8 +68,8 @@ void Pick()
     game::GetWorldTransform(cam, cm, origin);
     float tanH = std::tan(cam->fov * 0.5f) * HorizontalTanScale();
     float tanV = tanH * float(RenderHeight()) / float(RenderWidth());
-    float nx = (io.MousePos.x / io.DisplaySize.x) * 2.0f - 1.0f;
-    float ny = 1.0f - (io.MousePos.y / io.DisplaySize.y) * 2.0f;
+    float nx = (mx / io.DisplaySize.x) * 2.0f - 1.0f;
+    float ny = 1.0f - (my / io.DisplaySize.y) * 2.0f;
     float dir[3];
     for (int i = 0; i < 3; ++i)
         dir[i] = cm[i] + cm[6 + i] * nx * tanH + cm[3 + i] * ny * tanV;
@@ -103,6 +105,21 @@ void Pick()
         }
     }
     Select(best);
+}
+
+// Exact pick of what is drawn under the cursor; bounding spheres as fallback
+// (e.g. skinned characters drawn through vertex shaders).
+void Pick()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    g_clickX = io.MousePos.x;
+    g_clickY = io.MousePos.y;
+    RequestPick(g_clickX, g_clickY, [](engine::ZGEOM* hit) {
+        if (hit)
+            Select(hit);
+        else
+            PickSphere(g_clickX, g_clickY);
+    });
 }
 
 void Shortcuts()

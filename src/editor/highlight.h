@@ -2,6 +2,7 @@
 
 namespace h2::engine {
 struct ZBaseGeom;
+struct ZGEOM;
 }
 
 namespace h2::editor {
@@ -19,5 +20,11 @@ void HighlightBeginFrame();
 // Whether RenderD3D queued the node for drawing in the last frames (visible,
 // not culled, has a mesh). Used to skip invisible objects when picking.
 bool WasDrawnRecently(engine::ZBaseGeom* node);
+
+// GPU picking: during the next frame every recognised draw is also rendered
+// into a 1x1 target that sees only the pixel (x, y), with the object id as
+// colour; the callback gets the object visible there (or null).
+using PickCallback = void (*)(engine::ZGEOM* hit);
+void RequestPick(float x, float y, PickCallback cb);
 
 } // namespace h2::editor

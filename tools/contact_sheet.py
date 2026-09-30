@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 d = sys.argv[1]
 cols = int(sys.argv[2]) if len(sys.argv) > 2 else 8
 files = sorted(glob.glob(os.path.join(d, "*s.png")))
-w, h = 200, 150
+w, h = Image.open(files[0]).size
 sheet = Image.new("RGB", (w * cols, h * ((len(files) + cols - 1) // cols)))
 for i, f in enumerate(files):
     im = Image.open(f).convert("RGB")

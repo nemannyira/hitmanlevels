@@ -23,9 +23,15 @@ add_library(h2fix SHARED
     src/dllmain.cpp
     src/log.cpp
     src/config.cpp
+    src/d3dhook.cpp
     src/diag.cpp
+    src/display.cpp
+    src/fov.cpp
+    src/loader.cpp
     src/framelimit.cpp
     src/mainloop.cpp
+    src/ui.cpp
+    src/watch.cpp
     src/dinput8.def)
 target_link_libraries(h2fix PRIVATE minhook)
 target_compile_definitions(h2fix PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)

@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <windows.h>
+#include <cstdio>
 #include <cstdlib>
 
 #include "log.h"
@@ -19,8 +20,20 @@ void LoadConfig()
     GetPrivateProfileStringA("Fixes", "FpsLimit", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.fpsLimit = atof(buf);
+    GetPrivateProfileStringA("Display", "Resolution", "", buf, sizeof(buf), ini.c_str());
+    if (_stricmp(buf, "auto") == 0)
+        g_config.width = g_config.height = -1;
+    else
+        sscanf(buf, "%dx%d", &g_config.width, &g_config.height);
+    g_config.horPlus = get("Display", "HorPlus", g_config.horPlus) != 0;
+    GetPrivateProfileStringA("Display", "FovScale", "", buf, sizeof(buf), ini.c_str());
+    if (*buf)
+        g_config.fovScale = atof(buf);
+    g_config.uiHeight = get("Display", "UIHeight", g_config.uiHeight);
     g_config.diagnostics = get("Debug", "Diagnostics", g_config.diagnostics) != 0;
     g_config.logFiles = get("Debug", "LogFiles", g_config.logFiles) != 0;
+    g_config.logRender = get("Debug", "LogRender", g_config.logRender) != 0;
+    g_config.watchResolution = get("Debug", "WatchResolution", g_config.watchResolution) != 0;
 }
 
 } // namespace h2

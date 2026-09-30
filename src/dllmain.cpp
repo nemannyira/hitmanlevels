@@ -8,10 +8,15 @@
 #include <MinHook.h>
 
 #include "config.h"
+#include "d3dhook.h"
 #include "diag.h"
+#include "display.h"
+#include "fov.h"
 #include "framelimit.h"
 #include "game.h"
 #include "log.h"
+#include "ui.h"
+#include "watch.h"
 
 namespace {
 
@@ -55,6 +60,21 @@ void Init()
     if (h2::g_config.diagnostics)
         h2::InstallDiagnostics();
     h2::InstallFrameLimiter(h2::g_config.fpsLimit);
+    h2::InstallDisplayFixes();
+    h2::InstallFovFix();
+    h2::InstallUiScaling();
+    h2::InstallD3DHooks();
+    if (h2::g_config.watchResolution) {
+        // debug: who writes SysInterface's resolution fields?
+        h2::WatchInit();
+        h2::WatchWrite(0, 0x6A6C5C, [](int, uintptr_t, uint32_t sys) {
+            if (sys) {
+                h2::WatchWrite(1, sys + 0x64);
+                h2::WatchWrite(2, sys + 0x68);
+            }
+        });
+        h2::WatchArmNow();
+    }
 }
 
 } // namespace

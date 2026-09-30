@@ -1,0 +1,8 @@
+/build/
+/re/
+/dumps/
+/x32dbg/
+/Hitman2.gpr
+/Hitman2.rep/
+/Hitman2.lock*
+__pycache__/

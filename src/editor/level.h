@@ -58,8 +58,9 @@ void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectStat
 bool SaveLevel(std::string* error = nullptr);
 bool LoadLevel(const std::string& folder, std::string* error = nullptr);
 void NewLevel(const std::string& name, const std::string& baseScene);
-// Creates a copy of the object next to it and adds it to the level (undoable).
-engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error = nullptr);
+// Creates a copy of the object next to it (or at `at`, world space) and adds
+// it to the level (undoable).
+engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error = nullptr, const Transform* at = nullptr);
 // Deletes an object the level created (undoable); false for scene objects.
 bool DeleteObject(engine::ZGEOM* geom);
 const SpawnedObject* FindSpawned(engine::ZGEOM* geom);

@@ -437,7 +437,7 @@ void NewLevel(const std::string& name, const std::string& baseScene)
     }
 }
 
-engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error)
+engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const Transform* at)
 {
     auto fail = [&](const std::string& why) -> engine::ZGEOM* {
         if (error)
@@ -467,12 +467,16 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error)
         base = "Object";
     s.id = UniqueId(base);
     s.sourceScene = CurrentScene();
-    s.transform = GetTransform(source);
-    // next to the original, so both are visible
-    float c[3], r = 100.0f;
-    if (!GetBounds(source, c, r))
-        r = 100.0f;
-    s.transform.pos[0] += r < 50.0f ? 50.0f : (r > 500.0f ? 500.0f : r);
+    if (at) {
+        s.transform = *at;
+    } else {
+        s.transform = GetTransform(source);
+        // next to the original, so both are visible
+        float c[3], r = 100.0f;
+        if (!GetBounds(source, c, r))
+            r = 100.0f;
+        s.transform.pos[0] += r < 50.0f ? 50.0f : (r > 500.0f ? 500.0f : r);
+    }
     s.hidden = false;
     std::string err;
     engine::ZGEOM* g = Materialize(s, &err);
@@ -481,7 +485,7 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error)
     g_level.spawned.push_back(s);
     g_level.dirty = true;
     std::string id = s.id;
-    PushAction("duplicate", [id] { return RemoveSpawned(id); }, [s] { return AddSpawned(s); });
+    PushAction(at ? "place" : "duplicate", [id] { return RemoveSpawned(id); }, [s] { return AddSpawned(s); });
     return g;
 }
 

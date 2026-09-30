@@ -14,6 +14,7 @@
 #include "editor/freecam.h"
 #include "editor/highlight.h"
 #include "editor/level.h"
+#include "editor/models_panel.h"
 #include "editor/scene_panel.h"
 #include "editor/viewport.h"
 #include "fov.h"
@@ -95,6 +96,7 @@ void Init()
     h2::editor::InstallHighlight();
     h2::editor::InstallScenePanels();
     h2::editor::InstallLevelPanel();
+    h2::editor::InstallModelsPanel();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {
         // debug: who writes SysInterface's resolution fields?

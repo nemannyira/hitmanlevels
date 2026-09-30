@@ -14,7 +14,9 @@
 #include "../game.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
+#include "../display.h"
 #include "freecam.h"
+#include "highlight.h"
 #include "level.h"
 #include "model.h"
 #include "placement.h"
@@ -42,6 +44,18 @@ std::vector<ModelEntry> g_models;
 std::string g_builtFor;  // scene the list was built for
 std::string g_message;
 
+// Thumbnail of the hovered model: a clone of it stands in front of the camera
+// (so the engine draws it) and its draws are rendered into a turning picture.
+std::string g_hoverPath;       // model hovered this frame
+std::string g_hoverCandidate;  // hovered since g_hoverSince
+double g_hoverSince, g_lastHover;
+std::string g_thumbPath;       // model the clone is made of
+engine::ZGEOM* g_thumb;
+engine::ZGEOM* g_viewRoom;     // room of what is in the middle of the screen
+double g_viewRoomTime = -1e9;
+bool g_viewRoomPending;
+constexpr double kHoverDelay = 0.15, kHoverLinger = 0.5;
+
 std::string Lower(std::string s)
 {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -65,7 +79,7 @@ void Build()
     const engine::SceneSnapshot& snap = SceneModel(0);
     std::map<uint32_t, ModelEntry> byMesh;
     for (const engine::GeomInfo& g : snap.geoms) {
-        if (!IsLive(g.geom) || IsSpawned(g.geom) || engine::IsA(g.geom, "ZActor"))
+        if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom))
             continue;
         uint32_t mesh = engine::MeshOf(g.geom);
         if (!mesh || (g.node->flags & kHelperFlags))
@@ -87,6 +101,94 @@ void Build()
         return la != lb ? la < lb : a.mesh < b.mesh;
     });
     g_builtFor = CurrentScene();
+}
+
+void DestroyThumb()
+{
+    SetThumbnailGeom(nullptr);
+    if (g_thumb && IsSpawned(g_thumb))
+        DestroySpawned(g_thumb);
+    g_thumb = nullptr;
+    g_thumbPath.clear();
+}
+
+void PlaceThumb()
+{
+    game::ZCAMERA* cam = game::MainCamera();
+    if (!cam || !g_thumb || !IsLive(g_thumb))
+        return;
+    float m[9], c[3];
+    game::GetWorldTransform(cam, m, c);
+    Transform t = GetTransform(g_thumb);
+    for (int i = 0; i < 3; ++i)
+        t.pos[i] = c[i] + m[i] * 300.0f;
+    Transform cur = GetTransform(g_thumb);
+    if (std::fabs(cur.pos[0] - t.pos[0]) + std::fabs(cur.pos[1] - t.pos[1]) + std::fabs(cur.pos[2] - t.pos[2]) > 1.0f)
+        SetTransform(g_thumb, t);
+}
+
+// Every frame the overlay is open (also when the Models tab is not shown).
+void ThumbTick()
+{
+    double now = ImGui::GetTime();
+    std::string hovered = g_hoverPath;
+    g_hoverPath.clear();
+    if (!hovered.empty()) {
+        g_lastHover = now;
+        if (hovered != g_hoverCandidate) {
+            g_hoverCandidate = hovered;
+            g_hoverSince = now;
+        }
+        // keep track of the room in view: the clone must be in a room the engine draws
+        if (!g_viewRoomPending && now - g_viewRoomTime > 1.0) {
+            g_viewRoomPending = true;
+            RequestPick(RenderWidth() * 0.5f, RenderHeight() * 0.5f, [](engine::ZGEOM* hit, const float*) {
+                g_viewRoomPending = false;
+                g_viewRoomTime = ImGui::GetTime();
+                if (engine::ZGEOM* room = hit ? RoomOf(hit) : nullptr)
+                    g_viewRoom = room;
+            });
+        }
+        if (now - g_viewRoomTime > 3.0)
+            g_viewRoomPending = false;  // the request was taken over
+        if (now - g_hoverSince >= kHoverDelay && g_thumbPath != hovered && !Placing()) {
+            DestroyThumb();
+            if (engine::ZGEOM* source = Resolve(hovered)) {
+                std::string err;
+                engine::ZGEOM* room = g_viewRoom && IsLive(g_viewRoom) ? g_viewRoom : nullptr;
+                g_thumb = SpawnClone(source, "EditorThumb", &err, room);
+                g_thumbPath = hovered;
+                if (g_thumb) {
+                    PlaceThumb();
+                    SetThumbnailGeom(g_thumb);
+                }
+            }
+        }
+    } else if (g_thumb && now - g_lastHover > kHoverLinger) {
+        DestroyThumb();
+        ReleaseThumbnail();
+    }
+    if (g_thumb) {
+        if (!IsLive(g_thumb))
+            DestroyThumb();
+        else
+            PlaceThumb();
+    }
+}
+
+void DrawTooltip(const ModelEntry& e)
+{
+    ImGui::BeginTooltip();
+    ImGui::TextUnformatted(e.name.c_str());
+    ImGui::TextDisabled("%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f, e.uses);
+    float size = 220.0f * ImGui::GetIO().FontGlobalScale * (ImGui::GetFontSize() / 16.0f);
+    void* tex = g_thumbPath == e.sourcePath ? ThumbnailTexture() : nullptr;
+    if (tex)
+        ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size, size));
+    else
+        ImGui::Dummy(ImVec2(size, size));  // keeps the tooltip from jumping when the picture arrives
+    ImGui::TextDisabled("click to place");
+    ImGui::EndTooltip();
 }
 
 void DrawPanel()
@@ -145,9 +247,10 @@ void DrawPanel()
                     else
                         BeginPlacement(e.sourcePath, e.name);
                 }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("%s\nclass %s\nmesh %08X\nfrom %s", e.name.c_str(), e.className.c_str(), e.mesh,
-                                      e.sourcePath.c_str());
+                if (ImGui::IsItemHovered() && !Placing()) {
+                    g_hoverPath = e.sourcePath;
+                    DrawTooltip(e);
+                }
                 ImGui::TableNextColumn();
                 ImGui::Text("%d", e.uses);
                 ImGui::TableNextColumn();
@@ -176,9 +279,15 @@ void DrawPanel()
 void InstallModelsPanel()
 {
     overlay::AddPanel({"Models", &g_visible, DrawPanel, overlay::Dock::Left});
+    static bool always = true;
+    overlay::AddPanel({nullptr, &always, ThumbTick});
     OnScenePushed([](const std::string&) {
         g_models.clear();
         g_builtFor.clear();
+        g_thumb = nullptr;  // destroyed with the editor's objects when the scene was left
+        g_thumbPath.clear();
+        g_viewRoom = nullptr;
+        SetThumbnailGeom(nullptr);
     });
 }
 

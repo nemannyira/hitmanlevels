@@ -97,7 +97,8 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
         Log("level: spawned '%s': source '%s' not found", s.id.c_str(), s.sourcePath.c_str());
         return nullptr;
     }
-    engine::ZGEOM* g = SpawnClone(source, s.id, error);
+    engine::ZGEOM* parent = s.parentPath.empty() ? nullptr : Resolve(s.parentPath);
+    engine::ZGEOM* g = SpawnClone(source, s.id, error, parent);
     if (!g)
         return nullptr;
     g_live[s.id] = g;
@@ -348,6 +349,8 @@ bool SaveLevel(std::string* error)
         o["id"] = s.id;
         o["source_scene"] = s.sourceScene;
         o["source_path"] = s.sourcePath;
+        if (!s.parentPath.empty())
+            o["parent"] = s.parentPath;
         o["hidden"] = s.hidden;
         j["spawned"].push_back(o);
     }
@@ -406,6 +409,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         s.id = o.value("id", "");
         s.sourceScene = o.value("source_scene", "");
         s.sourcePath = o.value("source_path", "");
+        s.parentPath = o.value("parent", "");
         L.spawned.push_back(s);
     }
     L.scripts = j.value("scripts", std::vector<std::string>{});
@@ -441,7 +445,8 @@ void NewLevel(const std::string& name, const std::string& baseScene)
     }
 }
 
-engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const Transform* at)
+engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const Transform* at,
+                               engine::ZGEOM* parent)
 {
     auto fail = [&](const std::string& why) -> engine::ZGEOM* {
         if (error)
@@ -467,6 +472,12 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         return fail("the object has no stable path");
     if (!engine::MeshOf(source))
         return fail("only objects with a mesh can be duplicated");
+    if (InActor(source))
+        return fail("parts of characters cannot be copied");
+    if (parent)
+        s.parentPath = PathOf(parent);
+    else if (const SpawnedObject* from = EntryOf(source))
+        s.parentPath = from->parentPath;
     if (base.empty())
         base = "Object";
     s.id = UniqueId(base);

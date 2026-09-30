@@ -26,6 +26,8 @@ constexpr float kRotateStep = 15.0f;  // degrees per wheel notch
 std::string g_sourcePath;
 std::string g_label;
 engine::ZGEOM* g_preview;
+engine::ZGEOM* g_previewRoom;  // room the preview was created in
+engine::ZGEOM* g_hitRoom;      // room of the surface under the mouse
 Transform g_base;      // source orientation (as authored)
 float g_yaw;           // extra turn around the world up axis, degrees
 float g_point[3];      // where the preview stands
@@ -64,11 +66,14 @@ void PointOnRay(float sx, float sy)
         g_point[i] = o[i] + d[i] * g_distance;
 }
 
-void OnPick(engine::ZGEOM*, const float* point)
+void OnPick(engine::ZGEOM* hit, const float* point)
 {
     g_pickPending = false;
     if (!g_preview)
         return;
+    if (hit)
+        if (engine::ZGEOM* room = RoomOf(hit))
+            g_hitRoom = room;
     if (point) {
         memcpy(g_point, point, sizeof(g_point));
         g_haveHit = true;
@@ -112,7 +117,7 @@ void Commit(bool keepPlacing)
     if (!keepPlacing)
         DestroyPreview();
     std::string err;
-    engine::ZGEOM* placed = source ? DuplicateObject(source, &err, &t) : nullptr;
+    engine::ZGEOM* placed = source ? DuplicateObject(source, &err, &t, g_hitRoom) : nullptr;
     if (!placed)
         Log("place %s failed: %s", g_label.c_str(), source ? err.c_str() : "source object not found");
     if (!keepPlacing) {
@@ -150,6 +155,8 @@ void BeginPlacement(const std::string& sourcePath, const std::string& label)
         return;
     }
     SetPickIgnore(g_preview);
+    g_previewRoom = RoomOf(g_preview);
+    g_hitRoom = nullptr;
     g_sourcePath = sourcePath;
     g_label = label;
     g_base = GetTransform(source);
@@ -200,6 +207,19 @@ void UpdatePlacement()
             g_yaw = std::fmod(g_yaw + (io.MouseWheel > 0 ? kRotateStep : -kRotateStep) + 360.0f, 360.0f);
         DrawHint();
     }
+    if (g_hitRoom && g_hitRoom != g_previewRoom && IsLive(g_hitRoom)) {
+        engine::ZGEOM* source = Resolve(g_sourcePath);
+        std::string err;
+        engine::ZGEOM* moved = source ? SpawnClone(source, "EditorPreview", &err, g_hitRoom) : nullptr;
+        if (moved) {
+            DestroyPreview();
+            g_preview = moved;
+            g_previewRoom = g_hitRoom;
+            SetPickIgnore(g_preview);
+        } else {
+            g_previewRoom = g_hitRoom;  // keep the old one, do not retry every frame
+        }
+    }
     Transform t = CurrentTransform();
     Transform cur = GetTransform(g_preview);
     if (memcmp(&t, &cur, sizeof(t)) != 0)
@@ -212,6 +232,7 @@ void InstallPlacement()
 {
     OnScenePushed([](const std::string&) {
         g_preview = nullptr;  // destroyed with the scene objects of the editor
+        g_previewRoom = g_hitRoom = nullptr;
         SetPickIgnore(nullptr);
         g_sourcePath.clear();
     });

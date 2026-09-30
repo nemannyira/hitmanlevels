@@ -205,8 +205,9 @@ Release_t oDeviceRelease;
 ULONG WINAPI hkDeviceRelease(void* dev)
 {
     ULONG refs = oDeviceRelease(dev);
-    if (refs > 0 && refs == overlay::DeviceRefsHeld(dev)) {
+    if (refs > 0 && refs == overlay::DeviceRefsHeld(dev) + editor::ThumbnailDeviceRefs(dev)) {
         Log("device %p released by the game, freeing overlay resources", dev);
+        editor::ReleaseThumbnail();
         overlay::OnDeviceReleased();
         refs = 0;
     }

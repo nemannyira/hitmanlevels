@@ -30,4 +30,14 @@ void RequestPick(float x, float y, PickCallback cb);
 // An object the picking looks through (e.g. the model being placed).
 void SetPickIgnore(engine::ZGEOM* geom);
 
+// Model thumbnail: the draw calls of `geom` go into a small texture (the
+// model turning in front of its own camera) instead of the screen. The
+// object must be drawn by the engine (in view, in a visible room).
+void SetThumbnailGeom(engine::ZGEOM* geom);
+// IDirect3DTexture8* of the thumbnail (null until something was drawn in it).
+void* ThumbnailTexture();
+// Frees the texture; references it holds on `device` (for the Release hook).
+void ReleaseThumbnail();
+unsigned long ThumbnailDeviceRefs(void* device);
+
 } // namespace h2::editor

@@ -35,6 +35,7 @@ struct SpawnedObject {
     std::string id;           // also the object's name in the scene
     std::string sourceScene;  // clones currently come from the base scene itself
     std::string sourcePath;
+    std::string parentPath;   // room it is placed in ("" = the source's parent)
     Transform transform;
     bool hidden = false;
 };
@@ -60,7 +61,8 @@ bool LoadLevel(const std::string& folder, std::string* error = nullptr);
 void NewLevel(const std::string& name, const std::string& baseScene);
 // Creates a copy of the object next to it (or at `at`, world space) and adds
 // it to the level (undoable).
-engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error = nullptr, const Transform* at = nullptr);
+engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error = nullptr, const Transform* at = nullptr,
+                               engine::ZGEOM* parent = nullptr);
 // Deletes an object the level created (undoable); false for scene objects.
 bool DeleteObject(engine::ZGEOM* geom);
 const SpawnedObject* FindSpawned(engine::ZGEOM* geom);

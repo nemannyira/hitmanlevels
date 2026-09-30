@@ -37,7 +37,13 @@ void SetState(engine::ZGEOM* geom, const ObjectState& s);
 
 // Objects created by the editor (visual clones, see engine/spawn.h). They are
 // part of the scene model and destroyed before the scene is left.
-engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error = nullptr);
+engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error = nullptr,
+                          engine::ZGEOM* parent = nullptr);
+// The room (ZROOM) an object belongs to: the engine draws a room's contents
+// only when the room is visible, so new objects go into the room they stand in.
+engine::ZGEOM* RoomOf(engine::ZGEOM* geom);
+// Whether the object is part of a character (NPC or Hitman).
+bool InActor(engine::ZGEOM* geom);
 bool DestroySpawned(engine::ZGEOM* geom);
 bool IsSpawned(engine::ZGEOM* geom);
 

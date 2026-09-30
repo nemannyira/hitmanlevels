@@ -19,14 +19,16 @@ constexpr int kGeom_Init = 0x148 / 4;
 constexpr int kGeom_PostInit = 0x14C / 4;
 constexpr int kGeom_DeletingDtor = 0x1FC / 4;   // (int flags), 1 = free
 constexpr uint32_t kFlagInitialized = 0x800000;  // set by InitializeGeoms between Init and PostInit
-// Only the flags of a plain static object are copied (as found over the
-// meshed objects of the .GMS files): render bits (low byte), 0x100 (stairs,
-// collision planes) and 0x20000 (common static bit). The others give the node
-// a role in some engine system that the clone has no data for:
-//   0x00400 helper/fragment   0x02000 sound/sight helpers   0x04000 fragments
-//   0x08000 items/breakables (gets a handle from a manager at +0x6C)
-//   0x10000 lights            0x40000 dynamic               0x80000 doors (crash)
-constexpr uint32_t kCopyFlags = 0x000FF | 0x00100 | 0x20000;
+// Node flags (low 20 bits, as CreateGeoms takes them from the record) are
+// copied except the ones that give the node a role in an engine system the
+// clone has no data for (meaning found over the meshed objects of the .GMS
+// files):
+//   0x02000 sound/sight helpers   0x04000 fragments   0x10000 lights
+//   0x40000 dynamic (set separately)                  0x80000 doors (crash)
+// 0x08000 must stay: with it the node gets its render instance (SetFlags asks
+// the manager at engine+0x5D1F for a handle into +0x6C); without it the clone
+// is invisible.
+constexpr uint32_t kCopyFlags = 0xFFFFF & ~(0x02000 | 0x04000 | 0x10000 | 0x40000 | 0x80000);
 
 template <typename T>
 T VFunc(void* obj, int index)
@@ -117,7 +119,7 @@ uint32_t MeshOf(const ZGEOM* geom)
     return mesh;
 }
 
-ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error)
+ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGEOM* parent)
 {
     auto fail = [&](const char* why) -> ZGEOM* {
         if (error)
@@ -138,8 +140,13 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error)
     if (!a.mesh)
         return fail("the source object has no mesh");
     a.flags = src->flags & kCopyFlags;
-    a.parent = src->parent;
-    a.parentGeom = a.parent && IsReadable(a.parent, sizeof(ZBaseGeom)) ? a.parent->geom : nullptr;
+    if (parent && IsReadable(parent, sizeof(ZGEOM))) {
+        a.parent = parent->node;
+        a.parentGeom = parent;
+    } else {
+        a.parent = src->parent;
+        a.parentGeom = a.parent && IsReadable(a.parent, sizeof(ZBaseGeom)) ? a.parent->geom : nullptr;
+    }
     memcpy(a.mat, src->mat, sizeof(a.mat));  // parent space, like the source
     memcpy(a.pos, src->pos, sizeof(a.pos));
     Log("clone '%s' from '%s': mesh %08X, flags %08X of %08X", name.c_str(), SafeString(source->name).c_str(),

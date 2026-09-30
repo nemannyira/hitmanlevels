@@ -39,6 +39,10 @@ constexpr int kDev_CreateRenderTarget = 25, kDev_CreateDepthStencilSurface = 26,
               kDev_GetRenderTarget = 32, kDev_GetDepthStencilSurface = 33, kDev_Clear = 36;
 constexpr int kDev_DrawPrimitive = 70, kDev_DrawIndexedPrimitive = 71;
 constexpr int kSurf_Release = 2, kSurf_LockRect = 9, kSurf_UnlockRect = 10;
+constexpr int kTex_Release = 2, kTex_GetSurfaceLevel = 15;
+constexpr DWORD D3DUSAGE_RENDERTARGET = 1, D3DPOOL_DEFAULT = 0, D3DRS_AMBIENT = 139;
+constexpr UINT kThumbSize = 256;
+constexpr DWORD kThumbBackground = 0xFF141416;
 
 void* g_device;
 unsigned g_frame;
@@ -54,6 +58,7 @@ struct Candidate {
     D3DMATRIX m;
     engine::ZGEOM* geom;
     bool selected;
+    bool thumb;
 };
 std::vector<Candidate> g_candidates;
 unsigned g_candidatesFrame = ~0u;
@@ -71,6 +76,15 @@ bool g_pickDepthLockable;    // the depth surface can be read back
 bool g_noLockableDepth;      // the device refused a lockable depth surface once
 float g_pickProj[4];         // _11 _22 _33 _43 of the projection the ids were drawn with
 engine::ZGEOM* g_pickIgnore;
+
+// thumbnail
+engine::ZGEOM* g_thumbGeom;
+void* g_thumbTexture;   // IDirect3DTexture8*
+void* g_thumbSurface;   // its level 0
+void* g_thumbDepth;
+bool g_thumbDrawn;      // something was drawn into it since it was cleared
+unsigned long g_thumbRefs;  // device references the resources hold
+float g_thumbAngle;
 
 struct Override {
     DWORD state, value;
@@ -121,29 +135,40 @@ void BuildCandidates()
     g_candidatesFrame = g_frame;
     engine::ZGEOM* sel = Selected();
     bool wantSelection = overlay::IsOpen() && sel && IsLive(sel);
-    if (!wantSelection && !g_pickActive)
+    bool wantThumb = g_thumbGeom && g_thumbTexture && IsLive(g_thumbGeom);
+    if (!wantSelection && !g_pickActive && !wantThumb)
         return;
     float view[16], proj[16];
     if (!CameraMatrices(view, proj))
         return;
     D3DMATRIX v;
     memcpy(&v, view, sizeof(v));
+    auto objectToView = [&](engine::ZGEOM* geom, D3DMATRIX& out) {
+        Transform t = GetTransform(geom);
+        const float* f = t.mat;
+        const float* u = t.mat + 3;
+        const float* r = t.mat + 6;
+        D3DMATRIX w = {{{r[0], r[1], r[2], 0}, {u[0], u[1], u[2], 0}, {f[0], f[1], f[2], 0},
+                        {t.pos[0], t.pos[1], t.pos[2], 1}}};
+        Multiply(w, v, out);
+    };
+    if (wantThumb) {
+        Candidate c{};
+        objectToView(g_thumbGeom, c.m);
+        c.geom = g_thumbGeom;
+        c.thumb = true;
+        g_candidates.push_back(c);
+    }
     const auto& snap = SceneModel(2000);
     for (const auto& g : snap.geoms) {
         bool selected = wantSelection && InSelectedSubtree(g.node, sel->node);
         bool drawn = g_drawn.count(g.node) && g_frame - g_drawn[g.node] <= 2;
         if (!selected && !(g_pickActive && drawn))
             continue;
-        if (!IsLive(g.geom))
+        if (!IsLive(g.geom) || g.geom == g_thumbGeom)
             continue;
-        Transform t = GetTransform(g.geom);
-        const float* f = t.mat;
-        const float* u = t.mat + 3;
-        const float* r = t.mat + 6;
-        D3DMATRIX w = {{{r[0], r[1], r[2], 0}, {u[0], u[1], u[2], 0}, {f[0], f[1], f[2], 0},
-                        {t.pos[0], t.pos[1], t.pos[2], 1}}};
-        Candidate c;
-        Multiply(w, v, c.m);
+        Candidate c{};
+        objectToView(g.geom, c.m);
         c.geom = g.geom;
         c.selected = selected;
         g_candidates.push_back(c);
@@ -251,6 +276,80 @@ void IdDraw(void* dev, engine::ZGEOM* geom, Draw draw)
         Call<ULONG>(oldDepth, kSurf_Release);
 }
 
+// Draws the current geometry (the thumbnail object) into the thumbnail
+// texture: its own turntable transform and projection, no fog.
+template <typename Draw>
+void ThumbDraw(void* dev, Draw draw)
+{
+    engine::ZBaseGeom* node = g_thumbGeom->node;
+    float r = node->boundRadius > 1.0f && node->boundRadius < 1e5f ? node->boundRadius : 50.0f;
+    const float* bc = node->boundCenter;
+    // object -> thumbnail view: centre, turn around up, tilt towards the camera, push away
+    float ca = std::cos(g_thumbAngle), sa = std::sin(g_thumbAngle);
+    const float tilt = 0.35f;
+    float ct = std::cos(tilt), st = std::sin(tilt);
+    D3DMATRIX center = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {-bc[0], -bc[1], -bc[2], 1}}};
+    D3DMATRIX turn = {{{ca, 0, -sa, 0}, {0, 1, 0, 0}, {sa, 0, ca, 0}, {0, 0, 0, 1}}};
+    D3DMATRIX tiltM = {{{1, 0, 0, 0}, {0, ct, st, 0}, {0, -st, ct, 0}, {0, 0, 0, 1}}};
+    const float tanHalf = 0.36397f;  // 40 degree field of view
+    float d = r / tanHalf * 1.05f;
+    D3DMATRIX push = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, d, 1}}};
+    D3DMATRIX a, b, world;
+    Multiply(center, turn, a);
+    Multiply(a, tiltM, b);
+    Multiply(b, push, world);
+    float zn = d - r * 1.5f, zf = d + r * 1.5f;
+    if (zn < d * 0.02f)
+        zn = d * 0.02f;
+    float q = zf / (zf - zn), s = 1.0f / tanHalf;
+    D3DMATRIX proj = {{{s, 0, 0, 0}, {0, s, 0, 0}, {0, 0, q, 1}, {0, 0, -q * zn, 0}}};
+    D3DMATRIX identity = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}};
+
+    void* oldTarget = nullptr;
+    void* oldDepth = nullptr;
+    Call<HRESULT>(dev, kDev_GetRenderTarget, &oldTarget);
+    Call<HRESULT>(dev, kDev_GetDepthStencilSurface, &oldDepth);
+    DWORD block = 0;
+    Call<HRESULT>(dev, Dev_CreateStateBlock, DWORD(D3DSBT_ALL), &block);
+    D3DMATRIX oldWorld, oldView, oldProj;
+    Call<HRESULT>(dev, Dev_GetTransform, DWORD(D3DTS_WORLD), &oldWorld);
+    Call<HRESULT>(dev, Dev_GetTransform, DWORD(D3DTS_VIEW), &oldView);
+    Call<HRESULT>(dev, Dev_GetTransform, DWORD(D3DTS_PROJECTION), &oldProj);
+    D3DVIEWPORT8 oldVp;
+    Call<HRESULT>(dev, Dev_GetViewport, &oldVp);
+
+    Call<HRESULT>(dev, kDev_SetRenderTarget, g_thumbSurface, g_thumbDepth);
+    D3DVIEWPORT8 vp = {0, 0, kThumbSize, kThumbSize, 0.0f, 1.0f};
+    Call<HRESULT>(dev, Dev_SetViewport, &vp);
+    oSetTransform(dev, D3DTS_WORLD, &world);
+    oSetTransform(dev, D3DTS_VIEW, &identity);
+    oSetTransform(dev, D3DTS_PROJECTION, &proj);
+    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_FOGENABLE), DWORD(FALSE));
+    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_ZENABLE), DWORD(TRUE));
+    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_ZWRITEENABLE), DWORD(TRUE));
+    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_ZFUNC), D3DCMP_LESSEQUAL);
+    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_STENCILENABLE), DWORD(FALSE));
+    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_AMBIENT), DWORD(0xFF909090));
+    draw();
+    g_thumbDrawn = true;
+
+    Call<HRESULT>(dev, kDev_SetRenderTarget, oldTarget, oldDepth);
+    Call<HRESULT>(dev, Dev_SetViewport, &oldVp);
+    oSetTransform(dev, D3DTS_WORLD, &oldWorld);
+    oSetTransform(dev, D3DTS_VIEW, &oldView);
+    oSetTransform(dev, D3DTS_PROJECTION, &oldProj);
+    if (block) {
+        Call<HRESULT>(dev, Dev_ApplyStateBlock, block);
+        Call<HRESULT>(dev, Dev_DeleteStateBlock, block);
+    }
+    if (oldTarget)
+        Call<ULONG>(oldTarget, kSurf_Release);
+    if (oldDepth)
+        Call<ULONG>(oldDepth, kSurf_Release);
+}
+
+bool IsThumbDraw() { return g_current && g_current->thumb && g_thumbSurface && g_thumbGeom && IsLive(g_thumbGeom); }
+
 template <typename Draw>
 void AfterDraw(void* dev, Draw draw)
 {
@@ -267,6 +366,10 @@ using DrawIndexedPrimitive_t = HRESULT(WINAPI*)(void* dev, DWORD type, UINT minI
 DrawIndexedPrimitive_t oDrawIndexedPrimitive;
 HRESULT WINAPI hkDrawIndexedPrimitive(void* dev, DWORD type, UINT minIndex, UINT numVerts, UINT start, UINT count)
 {
+    if (IsThumbDraw()) {  // into the thumbnail only, not on screen
+        ThumbDraw(dev, [&] { oDrawIndexedPrimitive(dev, type, minIndex, numVerts, start, count); });
+        return 0;
+    }
     HRESULT hr = oDrawIndexedPrimitive(dev, type, minIndex, numVerts, start, count);
     AfterDraw(dev, [&] { oDrawIndexedPrimitive(dev, type, minIndex, numVerts, start, count); });
     return hr;
@@ -276,6 +379,10 @@ using DrawPrimitive_t = HRESULT(WINAPI*)(void* dev, DWORD type, UINT start, UINT
 DrawPrimitive_t oDrawPrimitive;
 HRESULT WINAPI hkDrawPrimitive(void* dev, DWORD type, UINT start, UINT count)
 {
+    if (IsThumbDraw()) {
+        ThumbDraw(dev, [&] { oDrawPrimitive(dev, type, start, count); });
+        return 0;
+    }
     HRESULT hr = oDrawPrimitive(dev, type, start, count);
     AfterDraw(dev, [&] { oDrawPrimitive(dev, type, start, count); });
     return hr;
@@ -327,6 +434,49 @@ bool DepthToWorld(float zndc, float out[3])
     for (int i = 0; i < 3; ++i)
         out[i] = cam[i] + right[i] * vx + up[i] * vy + fwd[i] * viewZ;
     return true;
+}
+
+ULONG DeviceRefCount(void* dev)
+{
+    Call<ULONG>(dev, 1);  // AddRef
+    return Call<ULONG>(dev, 2);  // Release
+}
+
+// Creates the thumbnail texture when needed and clears it for the next frame.
+void PrepareThumbnail()
+{
+    if (!g_thumbGeom || !g_device)
+        return;
+    if (!g_thumbTexture) {
+        ULONG before = DeviceRefCount(g_device);
+        bool ok = Call<HRESULT>(g_device, Dev_CreateTexture, kThumbSize, kThumbSize, UINT(1), D3DUSAGE_RENDERTARGET,
+                                D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &g_thumbTexture) >= 0 &&
+                  Call<HRESULT>(g_thumbTexture, kTex_GetSurfaceLevel, UINT(0), &g_thumbSurface) >= 0 &&
+                  Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, kThumbSize, kThumbSize, D3DFMT_D16, DWORD(0),
+                                &g_thumbDepth) >= 0;
+        if (!ok) {
+            Log("thumbnail: cannot create the render target");
+            ReleaseThumbnail();
+            g_thumbGeom = nullptr;
+            return;
+        }
+        g_thumbRefs = DeviceRefCount(g_device) - before;
+    }
+    void* oldTarget = nullptr;
+    void* oldDepth = nullptr;
+    Call<HRESULT>(g_device, kDev_GetRenderTarget, &oldTarget);
+    Call<HRESULT>(g_device, kDev_GetDepthStencilSurface, &oldDepth);
+    Call<HRESULT>(g_device, kDev_SetRenderTarget, g_thumbSurface, g_thumbDepth);
+    Call<HRESULT>(g_device, kDev_Clear, DWORD(0), static_cast<const void*>(nullptr),
+                  DWORD(D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER), kThumbBackground, 1.0f, DWORD(0));
+    Call<HRESULT>(g_device, kDev_SetRenderTarget, oldTarget, oldDepth);
+    if (oldTarget)
+        Call<ULONG>(oldTarget, kSurf_Release);
+    if (oldDepth)
+        Call<ULONG>(oldDepth, kSurf_Release);
+    g_thumbAngle += 0.02f;
+    if (g_thumbAngle > 6.2831853f)
+        g_thumbAngle -= 6.2831853f;
 }
 
 // End of a pick frame: read the pixel, report the object.
@@ -417,6 +567,7 @@ void HighlightBeginFrame()
     g_current = nullptr;
     if (g_pickRequested && g_device)
         StartPick();
+    PrepareThumbnail();
     if (g_drawn.size() > 50000)
         g_drawn.clear();  // scene changes leave stale nodes behind
 }
@@ -436,6 +587,30 @@ void RequestPick(float x, float y, PickCallback cb)
 }
 
 void SetPickIgnore(engine::ZGEOM* geom) { g_pickIgnore = geom; }
+
+void SetThumbnailGeom(engine::ZGEOM* geom)
+{
+    if (geom != g_thumbGeom)
+        g_thumbDrawn = false;
+    g_thumbGeom = geom;
+}
+
+void* ThumbnailTexture() { return g_thumbDrawn ? g_thumbTexture : nullptr; }
+
+void ReleaseThumbnail()
+{
+    if (g_thumbSurface)
+        Call<ULONG>(g_thumbSurface, kSurf_Release);
+    if (g_thumbDepth)
+        Call<ULONG>(g_thumbDepth, kSurf_Release);
+    if (g_thumbTexture)
+        Call<ULONG>(g_thumbTexture, kTex_Release);
+    g_thumbSurface = g_thumbDepth = g_thumbTexture = nullptr;
+    g_thumbDrawn = false;
+    g_thumbRefs = 0;
+}
+
+unsigned long ThumbnailDeviceRefs(void* device) { return device == g_device && g_thumbTexture ? g_thumbRefs : 0; }
 
 void InstallHighlight() { OnModuleLoad("RenderD3D.dll", OnRendererLoaded); }
 

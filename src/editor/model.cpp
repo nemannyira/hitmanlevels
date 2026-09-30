@@ -131,14 +131,15 @@ void DestroyAllSpawned(const std::string&)
     InvalidateSceneModel();
 }
 
-engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error)
+engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error,
+                          engine::ZGEOM* parent)
 {
     static bool hooked;
     if (!hooked) {
         hooked = true;
         OnSceneLeaving(DestroyAllSpawned);
     }
-    engine::ZGEOM* geom = engine::CloneGeom(source, name, error);
+    engine::ZGEOM* geom = engine::CloneGeom(source, name, error, parent);
     if (geom) {
         g_spawned.push_back({geom->node, geom});
         InvalidateSceneModel();
@@ -155,6 +156,33 @@ bool DestroySpawned(engine::ZGEOM* geom)
         g_spawned.erase(it);
         InvalidateSceneModel();
         return ok;
+    }
+    return false;
+}
+
+engine::ZGEOM* RoomOf(engine::ZGEOM* geom)
+{
+    engine::ZBaseGeom* node = geom && IsLive(geom) ? geom->node->parent : nullptr;
+    for (int depth = 0; node && depth < 64; ++depth) {
+        if (!engine::IsReadable(node, sizeof(*node)))
+            return nullptr;
+        engine::ZGEOM* g = node->geom;
+        if (g && IsLive(g) && engine::IsA(g, "ZROOM"))
+            return g;
+        node = node->parent;
+    }
+    return nullptr;
+}
+
+bool InActor(engine::ZGEOM* geom)
+{
+    engine::ZBaseGeom* node = geom && IsLive(geom) ? geom->node : nullptr;
+    for (int depth = 0; node && depth < 64; ++depth) {
+        if (!engine::IsReadable(node, sizeof(*node)))
+            return false;
+        if (node->geom && IsLive(node->geom) && engine::IsA(node->geom, "ZActor"))
+            return true;
+        node = node->parent;
     }
     return false;
 }

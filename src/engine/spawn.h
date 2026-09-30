@@ -18,10 +18,11 @@
 
 namespace h2::engine {
 
-// Creates a visual copy of `source` (same mesh, render flags, parent group and
-// transform) as a plain ZSTDOBJ named `name`. Behaviour (doors, items, AI...)
-// is not copied. Returns null (and the reason) on failure.
-ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error = nullptr);
+// Creates a visual copy of `source` (same mesh, render flags and transform) as
+// a plain ZSTDOBJ named `name`, a child of `parent` (a group; default: the
+// source's parent). Behaviour (doors, items, AI...) is not copied. Returns
+// null (and the reason) on failure.
+ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error = nullptr, ZGEOM* parent = nullptr);
 
 // Destroys an object created by CloneGeom.
 bool DestroyGeom(ZGEOM* geom);

@@ -11,6 +11,7 @@
 #include "d3dhook.h"
 #include "diag.h"
 #include "display.h"
+#include "editor/freecam.h"
 #include "fov.h"
 #include "framelimit.h"
 #include "game.h"
@@ -70,6 +71,7 @@ void Init()
     h2::InstallDisplayFixes();
     h2::InstallFovFix();
     h2::InstallUiScaling();
+    h2::editor::InstallFreeCam();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {
         // debug: who writes SysInterface's resolution fields?

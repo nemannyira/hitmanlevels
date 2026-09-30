@@ -41,6 +41,8 @@ add_library(h2fix SHARED
     src/d3dhook.cpp
     src/diag.cpp
     src/scene.cpp
+    src/game.cpp
+    src/editor/freecam.cpp
     src/screenshot.cpp
     src/input/dinput.cpp
     src/overlay/console.cpp

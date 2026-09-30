@@ -97,9 +97,10 @@ void __fastcall hkRenderCamera(void* self, void* edx, game::ZCAMERA* cam, int ar
     if (!cam)
         return oRenderCamera(self, edx, cam, arg);
     LogCamera(cam, arg);
+    game::NoteRenderedCamera(cam);
     // Overlay cameras (menus, HUD, screen effects) draw on top without
     // clearing; their content is laid out in pixels, so keep their FOV.
-    if (cam->flags & game::ZCAMERA::kOverlay)
+    if ((cam->flags & game::ZCAMERA::kOverlay) || (!g_config.horPlus && g_config.fovScale == 1.0))
         return oRenderCamera(self, edx, cam, arg);
     float original = cam->fov;
     float widened = 2.0f * std::atan(std::tan(original * 0.5f) * TanScale());
@@ -123,8 +124,8 @@ void OnRendererLoaded(HMODULE mod)
 
 void InstallFovFix()
 {
-    if (g_config.horPlus || g_config.fovScale != 1.0)
-        OnModuleLoad("RenderD3D.dll", OnRendererLoaded);
+    // always hooked: besides the FOV it tracks the main camera for the editor
+    OnModuleLoad("RenderD3D.dll", OnRendererLoaded);
 }
 
 } // namespace h2

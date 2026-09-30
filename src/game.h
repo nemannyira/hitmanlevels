@@ -41,6 +41,12 @@ static_assert(offsetof(ZCAMERA, fov) == 0x58);
 // Import address table slots
 constexpr uintptr_t IAT_ScreenToClient = 0x6391F4;
 
+// The camera the world was last rendered through (non-overlay, full screen
+// width); tracked by the RenderCamera hook, cleared on scene changes.
+ZCAMERA* MainCamera();
+void NoteRenderedCamera(ZCAMERA* cam);
+void ResetMainCamera();
+
 constexpr uintptr_t g_pSysInterface = 0x6A6C5C;
 inline ZSysInterface* SysInterface() { return *reinterpret_cast<ZSysInterface**>(g_pSysInterface); }
 
@@ -48,6 +54,27 @@ inline ZSysInterface* SysInterface() { return *reinterpret_cast<ZSysInterface**>
 constexpr uintptr_t ZEngineDataBase_MainLoop = 0x422920;           // ?MainLoop@ZEngineDataBase@@QAEX_N@Z
 constexpr uintptr_t ZEngineDataBase_PushScene = 0x41B460;          // ?PushScene@ZEngineDataBase@@QAEPAUNewScene@@PBD@Z
 constexpr uintptr_t ZEngineDataBase_ControlSceneChange = 0x421D50; // ?ControlSceneChange@ZEngineDataBase@@QAEXXZ
+constexpr uintptr_t ZEngineDataBase_FrameUpdate = 0x4228E0;        // ?FrameUpdate@ZEngineDataBase@@QAEXXZ
+
+// ZGEOM transform virtuals (all forward to the ZBaseGeom node at geom+8).
+// Matrices are 3x3 floats with rows [Z axis, Y axis, X axis] = forward, up, right;
+// world is left-handed with +Y up, units are centimetres.
+constexpr int ZGEOM_SetWorldTransform = 0x80 / 4;  // (float mat[9], float pos[3])
+constexpr int ZGEOM_GetWorldTransform = 0x84 / 4;  // (float mat[9], float pos[3])
+
+template <typename Geom>
+void GetWorldTransform(Geom* geom, float mat[9], float pos[3])
+{
+    using Fn = void(__thiscall*)(Geom*, float*, float*);
+    (*reinterpret_cast<Fn**>(geom))[ZGEOM_GetWorldTransform](geom, mat, pos);
+}
+
+template <typename Geom>
+void SetWorldTransform(Geom* geom, const float mat[9], const float pos[3])
+{
+    using Fn = void(__thiscall*)(Geom*, const float*, const float*);
+    (*reinterpret_cast<Fn**>(geom))[ZGEOM_SetWorldTransform](geom, mat, pos);
+}
 
 // Worker threads
 constexpr uintptr_t StreamThreadProc = 0x5F9E20; // polls request events, fseek/fread, Sleep(15)

@@ -18,6 +18,7 @@ PushScene_t oPushScene;
 void* __fastcall hkPushScene(void* self, void* edx, const char* name)
 {
     g_scene = name ? name : "";
+    game::ResetMainCamera();
     Log("PushScene(\"%s\")", g_scene.c_str());
     void* r = oPushScene(self, edx, name);
     for (SceneCallback cb : g_callbacks)

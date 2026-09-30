@@ -8,6 +8,7 @@ extern "C" {
 #include "imgui.h"
 
 #include "../display.h"
+#include "../editor/freecam.h"
 #include "../log.h"
 #include "../scene.h"
 #include "../ui.h"
@@ -46,6 +47,33 @@ int UiScaleFn(lua_State* L)
     return 1;
 }
 
+// h2.freecam([enable]) -> enabled
+int FreeCam(lua_State* L)
+{
+    if (lua_gettop(L) >= 1)
+        editor::SetFreeCamEnabled(lua_toboolean(L, 1));
+    lua_pushboolean(L, editor::FreeCamEnabled());
+    return 1;
+}
+
+// h2.campos() -> x, y, z (camera position, centimetres, +Y up)
+int CamPos(lua_State* L)
+{
+    float p[3];
+    editor::FreeCamPosition(p);
+    for (float v : p)
+        lua_pushnumber(L, v);
+    return 3;
+}
+
+// h2.setcampos(x, y, z): moves the free camera
+int SetCamPos(lua_State* L)
+{
+    float p[3] = {float(luaL_checknumber(L, 1)), float(luaL_checknumber(L, 2)), float(luaL_checknumber(L, 3))};
+    editor::SetFreeCamPosition(p);
+    return 0;
+}
+
 // h2.log(...) -> writes to H2Fix.log
 int LogFn(lua_State* L)
 {
@@ -62,6 +90,9 @@ void RegisterApi()
     Register("resolution", Resolution);
     Register("log", LogFn);
     Register("uiscale", UiScaleFn);
+    Register("freecam", FreeCam);
+    Register("campos", CamPos);
+    Register("setcampos", SetCamPos);
 }
 
 } // namespace h2::script

@@ -19,9 +19,14 @@ constexpr int kGeom_Init = 0x148 / 4;
 constexpr int kGeom_PostInit = 0x14C / 4;
 constexpr int kGeom_DeletingDtor = 0x1FC / 4;   // (int flags), 1 = free
 constexpr uint32_t kFlagInitialized = 0x800000;  // set by InitializeGeoms between Init and PostInit
-// Flags that describe how the node is drawn (low 20 bits, as CreateGeoms takes
-// them from the record) minus the ones the engine manages itself.
-constexpr uint32_t kCopyFlags = 0xFFFFF & ~(game::kNodeDynamic | 0x4000);
+// Only the flags of a plain static object are copied (as found over the
+// meshed objects of the .GMS files): render bits (low byte), 0x100 (stairs,
+// collision planes) and 0x20000 (common static bit). The others give the node
+// a role in some engine system that the clone has no data for:
+//   0x00400 helper/fragment   0x02000 sound/sight helpers   0x04000 fragments
+//   0x08000 items/breakables (gets a handle from a manager at +0x6C)
+//   0x10000 lights            0x40000 dynamic               0x80000 doors (crash)
+constexpr uint32_t kCopyFlags = 0x000FF | 0x00100 | 0x20000;
 
 template <typename T>
 T VFunc(void* obj, int index)
@@ -41,6 +46,16 @@ struct CloneArgs {
     ZBaseGeom* result;
     int step;  // how far it got, for the log
 };
+
+void* g_faultAddress;
+DWORD g_faultCode;
+
+int Filter(EXCEPTION_POINTERS* ep)
+{
+    g_faultCode = ep->ExceptionRecord->ExceptionCode;
+    g_faultAddress = ep->ExceptionRecord->ExceptionAddress;
+    return EXCEPTION_EXECUTE_HANDLER;
+}
 
 // Only POD here: SEH and C++ unwinding do not mix.
 bool DoClone(CloneArgs& a)
@@ -77,7 +92,7 @@ bool DoClone(CloneArgs& a)
         reinterpret_cast<void(__thiscall*)(ZBaseGeom*, bool)>(game::ZBaseGeom_SetDynamic)(node, true);
         a.step = 9;
         return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (Filter(GetExceptionInformation())) {
         return false;
     }
 }
@@ -87,7 +102,7 @@ bool DoDestroy(ZGEOM* geom)
     __try {
         VFunc<void*(__thiscall*)(ZGEOM*, int)>(geom, kGeom_DeletingDtor)(geom, 1);
         return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (Filter(GetExceptionInformation())) {
         return false;
     }
 }
@@ -127,12 +142,15 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error)
     a.parentGeom = a.parent && IsReadable(a.parent, sizeof(ZBaseGeom)) ? a.parent->geom : nullptr;
     memcpy(a.mat, src->mat, sizeof(a.mat));  // parent space, like the source
     memcpy(a.pos, src->pos, sizeof(a.pos));
+    Log("clone '%s' from '%s': mesh %08X, flags %08X of %08X", name.c_str(), SafeString(source->name).c_str(),
+        a.mesh, a.flags, src->flags);
     bool ok = DoClone(a);
     if (!ok) {
         if (a.result && a.result->geom && a.step > 1)
             DoDestroy(a.result->geom);
-        char buf[96];
-        snprintf(buf, sizeof(buf), "engine call failed (step %d)", a.step);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "engine call failed (step %d, exception %08lX at %p)", a.step, g_faultCode,
+                 g_faultAddress);
         return fail(buf);
     }
     ZBaseGeom* n = a.result;
@@ -147,7 +165,10 @@ bool DestroyGeom(ZGEOM* geom)
     if (!geom || !IsReadable(geom, sizeof(ZGEOM)))
         return false;
     bool ok = DoDestroy(geom);
-    Log("destroyed geom %p: %s", static_cast<void*>(geom), ok ? "ok" : "failed");
+    if (ok)
+        Log("destroyed geom %p", static_cast<void*>(geom));
+    else
+        Log("destroying geom %p failed: exception %08lX at %p", static_cast<void*>(geom), g_faultCode, g_faultAddress);
     return ok;
 }
 

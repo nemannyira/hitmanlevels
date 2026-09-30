@@ -33,6 +33,9 @@ struct ModelEntry {
     int uses = 0;
 };
 
+// sound/sight helper boxes and light volumes: not models to place
+constexpr uint32_t kHelperFlags = 0x2000 | 0x10000;
+
 bool g_visible = true;
 char g_filter[128];
 std::vector<ModelEntry> g_models;
@@ -65,7 +68,7 @@ void Build()
         if (!IsLive(g.geom) || IsSpawned(g.geom) || engine::IsA(g.geom, "ZActor"))
             continue;
         uint32_t mesh = engine::MeshOf(g.geom);
-        if (!mesh)
+        if (!mesh || (g.node->flags & kHelperFlags))
             continue;
         ModelEntry& e = byMesh[mesh];
         if (e.uses++ == 0) {

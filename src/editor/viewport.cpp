@@ -11,6 +11,7 @@
 #include "../game.h"
 #include "../overlay/overlay.h"
 #include "freecam.h"
+#include "highlight.h"
 #include "history.h"
 #include "model.h"
 #include "scene_panel.h"
@@ -26,6 +27,7 @@ float g_snapMove = 25.0f;   // cm
 float g_snapAngle = 15.0f;  // degrees
 bool g_wasUsing;
 bool g_toolbarVisible = true;
+bool g_pickInvisible = false;  // also pick objects without a drawn mesh (triggers, markers...)
 
 // engine [forward, up, right] + pos  <->  gizmo rows [X=right, Y=up, Z=forward, T]
 void ToGizmo(const Transform& t, float m[16])
@@ -78,6 +80,8 @@ void Pick()
     float bestScore = 1e30f;
     for (const auto& g : snap.geoms) {
         if (g.depth == 0 || !IsLive(g.geom) || IsHidden(g.geom))
+            continue;
+        if (!g_pickInvisible && !WasDrawnRecently(g.node))
             continue;
         float c[3], r;
         if (!GetBounds(g.geom, c, r))
@@ -156,6 +160,8 @@ void DrawToolbar()
         else
             ImGui::DragFloat("##snap", &g_snapMove, 1.0f, 1.0f, 1000.0f, "%.0f cm");
     }
+    ImGui::SameLine();
+    ImGui::Checkbox("Pick invisible", &g_pickInvisible);
     ImGui::SameLine();
     ImGui::BeginDisabled(!CanUndo());
     if (ImGui::Button("Undo"))

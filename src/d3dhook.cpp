@@ -152,6 +152,7 @@ HRESULT WINAPI hkPresent(void* dev, const RECT* src, const RECT* dst, HWND wnd, 
 {
     overlay::OnPresent(dev);
     PeriodicScreenshot(dev);
+    editor::HighlightBeginFrame();
     if (!g_config.logRender)
         return oPresent(dev, src, dst, wnd, dirty);
     static double last;

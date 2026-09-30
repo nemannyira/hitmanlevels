@@ -1,13 +1,23 @@
 #pragma once
 
+namespace h2::engine {
+struct ZBaseGeom;
+}
+
 namespace h2::editor {
 
-// Draws the selected object (and its children) a second time as a bright
-// wireframe on top of everything, by re-running RenderD3D's per-node draw
-// (vtable +0x174) with overridden render states.
+// Selection highlight: the selected object (and its children) is drawn a
+// second time as a bright see-through wireframe. The batched renderer gives
+// no node for a draw call, so draws are matched by their world matrix against
+// the selection's expected matrices (computed once per frame).
 void InstallHighlight();
 
-// Called by the D3D hooks with the game's device.
+// Called by the D3D hooks: device creation, and once per presented frame.
 void SetHighlightDevice(void* device);
+void HighlightBeginFrame();
+
+// Whether RenderD3D queued the node for drawing in the last frames (visible,
+// not culled, has a mesh). Used to skip invisible objects when picking.
+bool WasDrawnRecently(engine::ZBaseGeom* node);
 
 } // namespace h2::editor

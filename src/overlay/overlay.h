@@ -8,6 +8,11 @@ void OnDeviceCreated(void* device, HWND window);
 // Called right before IDirect3DDevice8::Present: draws the overlay.
 void OnPresent(void* device);
 
+// References the overlay holds on `device` (its font texture), and releasing
+// them once the game has let go of the device.
+unsigned long DeviceRefsHeld(void* device);
+void OnDeviceReleased();
+
 bool IsOpen();
 void SetOpen(bool open);
 

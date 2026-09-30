@@ -195,6 +195,22 @@ void HookDeviceDebug(void* dev)
     Hook("DrawIndexedPrimitiveUP", VtableEntry(dev, 73), hkDrawIndexedPrimitiveUP, &oDrawIndexedPrimitiveUP);
 }
 
+// When the game drops its last reference, only the overlay's resources keep
+// the device alive: free them so the device (and, in exclusive fullscreen,
+// the display mode) is released right away instead of at process exit.
+using Release_t = ULONG(WINAPI*)(void* dev);
+Release_t oDeviceRelease;
+ULONG WINAPI hkDeviceRelease(void* dev)
+{
+    ULONG refs = oDeviceRelease(dev);
+    if (refs > 0 && refs == overlay::DeviceRefsHeld(dev)) {
+        Log("device %p released by the game, freeing overlay resources", dev);
+        overlay::OnDeviceReleased();
+        refs = 0;
+    }
+    return refs;
+}
+
 using CreateDevice_t = HRESULT(WINAPI*)(void* self, UINT adapter, DWORD type, HWND focus, DWORD flags,
                                         D3DPRESENT_PARAMETERS* pp, void** device);
 CreateDevice_t oCreateDevice;
@@ -207,12 +223,15 @@ HRESULT WINAPI hkCreateDevice(void* self, UINT adapter, DWORD type, HWND focus, 
         pp->BackBufferWidth, pp->BackBufferHeight, pp->BackBufferFormat, pp->BackBufferCount, pp->MultiSampleType,
         pp->SwapEffect, pp->Windowed, pp->EnableAutoDepthStencil, pp->AutoDepthStencilFormat, pp->Flags,
         pp->FullScreen_RefreshRateInHz, pp->FullScreen_PresentationInterval, flags);
+    PrepareDeviceWindow(pp->hDeviceWindow ? pp->hDeviceWindow : focus);
     HRESULT hr = oCreateDevice(self, adapter, type, focus, flags, pp, device);
     Log("CreateDevice -> %08lx", hr);
     if (hr >= 0) {
         OnDeviceCreated();
-        if (!oPresent)
+        if (!oPresent) {
             Hook("IDirect3DDevice8::Present", VtableEntry(*device, Dev_Present), hkPresent, &oPresent);
+            Hook("IDirect3DDevice8::Release", VtableEntry(*device, Dev_Release), hkDeviceRelease, &oDeviceRelease);
+        }
         overlay::OnDeviceCreated(*device, pp->hDeviceWindow ? pp->hDeviceWindow : focus);
     }
     if (hr >= 0 && !oSetTransform && g_config.logRender)

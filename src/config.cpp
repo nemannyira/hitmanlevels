@@ -20,6 +20,13 @@ void LoadConfig()
     GetPrivateProfileStringA("Fixes", "FpsLimit", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.fpsLimit = atof(buf);
+    GetPrivateProfileStringA("Display", "Mode", "", buf, sizeof(buf), ini.c_str());
+    if (_stricmp(buf, "fullscreen") == 0)
+        g_config.displayMode = DisplayMode::Fullscreen;
+    else if (_stricmp(buf, "windowed") == 0)
+        g_config.displayMode = DisplayMode::Windowed;
+    else if (_stricmp(buf, "borderless") == 0)
+        g_config.displayMode = DisplayMode::Borderless;
     GetPrivateProfileStringA("Display", "Resolution", "", buf, sizeof(buf), ini.c_str());
     if (_stricmp(buf, "auto") == 0)
         g_config.width = g_config.height = -1;
@@ -35,6 +42,7 @@ void LoadConfig()
         g_config.editorKey = int(strtol(buf, nullptr, 0));
     g_config.diagnostics = get("Debug", "Diagnostics", g_config.diagnostics) != 0;
     g_config.logFiles = get("Debug", "LogFiles", g_config.logFiles) != 0;
+    g_config.stallWatchdog = get("Debug", "StallWatchdog", g_config.stallWatchdog) != 0;
     GetPrivateProfileStringA("Debug", "ScreenshotEvery", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.screenshotEvery = atof(buf);

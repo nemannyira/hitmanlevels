@@ -120,25 +120,29 @@ void SampleMainThread(HANDLE thread)
 {
     if (SuspendThread(thread) == DWORD(-1))
         return;
+    // While the thread is suspended it may own the heap or loader lock: no
+    // allocation, no logging, no loader calls until it is resumed.
     CONTEXT ctx{};
     ctx.ContextFlags = CONTEXT_CONTROL;
-    if (GetThreadContext(thread, &ctx)) {
+    DWORD rets[12];
+    int found = 0;
+    bool haveContext = GetThreadContext(thread, &ctx) != 0;
+    if (haveContext) {
         // Heuristic backtrace: return addresses into the game image on the stack.
-        std::string trace;
         const DWORD* sp = reinterpret_cast<const DWORD*>(ctx.Esp);
-        int found = 0;
         for (int i = 0; i < 4096 && found < 12; ++i) {
             DWORD v;
             if (!SafeRead(sp + i, v))
                 break;
-            if (v >= 0x401000 && v < 0x639000) {
-                char b[16];
-                snprintf(b, sizeof(b), " %06lX", v);
-                trace += b;
-                ++found;
-            }
+            if (v >= 0x401000 && v < 0x639000)
+                rets[found++] = v;
         }
-        ResumeThread(thread);
+    }
+    ResumeThread(thread);
+    if (haveContext) {
+        char trace[12 * 8 + 1] = "";
+        for (int i = 0; i < found; ++i)
+            snprintf(trace + i * 7, 8, " %06lX", rets[i]);
         char mod[MAX_PATH] = "?";
         HMODULE hm = nullptr;
         if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -146,10 +150,8 @@ void SampleMainThread(HANDLE thread)
             GetModuleFileNameA(hm, mod, MAX_PATH);
         const char* base = strrchr(mod, '\\');
         Log("  stall: eip=%08lX (%s+%lX) stack:%s", ctx.Eip, base ? base + 1 : mod,
-            ctx.Eip - reinterpret_cast<DWORD>(hm), trace.c_str());
-        return;
+            ctx.Eip - reinterpret_cast<DWORD>(hm), trace);
     }
-    ResumeThread(thread);
 }
 
 DWORD WINAPI StatsThread(void*)
@@ -162,7 +164,7 @@ DWORD WINAPI StatsThread(void*)
         Sleep(250);
         long total = g_totalFrames;
         double now = NowMs();
-        if (total == lastTotal && total > 0) {
+        if (g_config.stallWatchdog && total == lastTotal && total > 0) {
             if (stallSince == 0)
                 stallSince = now;
             if (now - stallSince > 500)

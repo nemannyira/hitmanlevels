@@ -137,6 +137,12 @@ void ImGui_ImplDX8_Shutdown()
     IM_DELETE(bd);
 }
 
+bool ImGui_ImplDX8_HasDeviceObjects()
+{
+    BackendData* bd = Data();
+    return bd && bd->fontTexture;
+}
+
 void ImGui_ImplDX8_NewFrame()
 {
     BackendData* bd = Data();

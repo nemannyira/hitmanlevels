@@ -24,6 +24,7 @@ namespace h2::overlay {
 namespace {
 
 HWND g_window;
+void* g_device;  // device the DX8 backend is bound to (its font texture holds a reference)
 WNDPROC g_gameWndProc;
 bool g_ready;
 bool g_open;
@@ -95,8 +96,15 @@ void DrawMenuBar()
 
 void OnDeviceCreated(void* device, HWND window)
 {
-    if (g_ready || !window)
+    if (!window)
         return;
+    if (g_ready) {  // a new device after the previous one was released
+        if (!g_device) {
+            ImGui_ImplDX8_Init(device);
+            g_device = device;
+        }
+        return;
+    }
     g_window = window;
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -113,6 +121,7 @@ void OnDeviceCreated(void* device, HWND window)
 
     ImGui_ImplWin32_Init(window);
     ImGui_ImplDX8_Init(device);
+    g_device = device;
     g_gameWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrA(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&WndProc)));
     AddPanel({"Lua console", ConsoleVisible(), DrawConsole});
@@ -123,7 +132,8 @@ void OnDeviceCreated(void* device, HWND window)
 
 void OnPresent(void* device)
 {
-    if (!g_ready)
+    UpdateCursorClip(g_window);
+    if (!g_ready || device != g_device)
         return;
     ImGui_ImplDX8_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -144,6 +154,19 @@ void OnPresent(void* device)
         ImGui_ImplDX8_RenderDrawData(dd);
         d3d8::Call<HRESULT>(device, d3d8::Dev_EndScene);
     }
+}
+
+unsigned long DeviceRefsHeld(void* device)
+{
+    return device == g_device && ImGui_ImplDX8_HasDeviceObjects() ? 1 : 0;
+}
+
+void OnDeviceReleased()
+{
+    if (!g_device)
+        return;
+    g_device = nullptr;
+    ImGui_ImplDX8_Shutdown();
 }
 
 bool IsOpen() { return g_open; }

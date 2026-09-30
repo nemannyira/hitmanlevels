@@ -8,3 +8,4 @@ bool ImGui_ImplDX8_Init(void* device);  // IDirect3DDevice8*
 void ImGui_ImplDX8_Shutdown();
 void ImGui_ImplDX8_NewFrame();
 void ImGui_ImplDX8_RenderDrawData(ImDrawData* drawData);
+bool ImGui_ImplDX8_HasDeviceObjects();  // font texture created (holds a device reference)

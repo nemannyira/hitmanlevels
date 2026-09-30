@@ -69,10 +69,23 @@ Transform GetTransform(engine::ZGEOM* geom)
     return t;
 }
 
+// Static objects live in bound trees built at load time; moved without this
+// their collision stays behind.
+void EnsureDynamic(engine::ZGEOM* geom)
+{
+    engine::ZBaseGeom* node = geom->node;
+    if (node->flags & game::kNodeDynamic)
+        return;
+    using Fn = void(__thiscall*)(engine::ZBaseGeom*, bool);
+    reinterpret_cast<Fn>(game::ZBaseGeom_SetDynamic)(node, true);
+    Log("made %p dynamic (flags %08X)", static_cast<void*>(geom), node->flags);
+}
+
 // The world setter of the engine does not reliably take rotations, so the
 // transform is expressed relative to the parent node and set as local.
 void SetTransform(engine::ZGEOM* geom, const Transform& t)
 {
+    EnsureDynamic(geom);
     engine::ZBaseGeom* parent = geom->node->parent;
     engine::ZGEOM* parentGeom = parent && engine::IsReadable(parent, sizeof(*parent)) ? parent->geom : nullptr;
     if (!parentGeom || !IsLive(parentGeom)) {

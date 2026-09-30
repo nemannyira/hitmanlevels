@@ -56,6 +56,12 @@ constexpr uintptr_t ZEngineDataBase_PushScene = 0x41B460;          // ?PushScene
 constexpr uintptr_t ZEngineDataBase_ControlSceneChange = 0x421D50; // ?ControlSceneChange@ZEngineDataBase@@QAEXXZ
 constexpr uintptr_t ZEngineDataBase_FrameUpdate = 0x4228E0;        // ?FrameUpdate@ZEngineDataBase@@QAEXXZ
 
+// ZBaseGeom::SetDynamic(bool): moves a node out of the static bound/collision
+// trees into the dynamically tracked set (flag 0x40000), as the engine does
+// for geoms that move (ZEngineDataBase::MakeDynamicGeomsDynamic).
+constexpr uintptr_t ZBaseGeom_SetDynamic = 0x5BAA00;
+constexpr uint32_t kNodeDynamic = 0x40000;
+
 // ZGEOM transform virtuals (all forward to the ZBaseGeom node at geom+8).
 // Matrices are 3x3 floats with rows [Z axis, Y axis, X axis] = forward, up, right;
 // world is left-handed with +Y up, units are centimetres.

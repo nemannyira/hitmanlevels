@@ -28,6 +28,20 @@ float g_snapAngle = 15.0f;  // degrees
 bool g_wasUsing;
 bool g_toolbarVisible = true;
 bool g_pickInvisible = false;  // also pick objects without a drawn mesh (triggers, markers...)
+bool g_npcMode = false;        // only characters (ZActor) are pickable
+
+bool IsActor(engine::ZGEOM* g) { return engine::IsA(g, "ZActor"); }
+
+// Pick volume of a character: a sphere around its body (the skinned mesh is
+// invisible to the GPU picking and the node bounds are not reliable for it).
+void ActorSphere(engine::ZGEOM* g, float c[3], float& r)
+{
+    Transform t = GetTransform(g);
+    c[0] = t.pos[0];
+    c[1] = t.pos[1] + 90.0f;
+    c[2] = t.pos[2];
+    r = 70.0f;
+}
 
 // engine [forward, up, right] + pos  <->  gizmo rows [X=right, Y=up, Z=forward, T]
 void ToGizmo(const Transform& t, float m[16])
@@ -83,11 +97,19 @@ void PickSphere(float mx, float my)
     for (const auto& g : snap.geoms) {
         if (g.depth == 0 || !IsLive(g.geom) || IsHidden(g.geom))
             continue;
-        if (!g_pickInvisible && !WasDrawnRecently(g.node))
-            continue;
         float c[3], r;
-        if (!GetBounds(g.geom, c, r))
-            continue;
+        if (g_npcMode) {
+            if (!IsActor(g.geom))
+                continue;
+            ActorSphere(g.geom, c, r);
+        } else {
+            if (IsActor(g.geom))
+                continue;
+            if (!g_pickInvisible && !WasDrawnRecently(g.node))
+                continue;
+            if (!GetBounds(g.geom, c, r))
+                continue;
+        }
         float oc[3] = {c[0] - origin[0], c[1] - origin[1], c[2] - origin[2]};
         float dist2 = oc[0] * oc[0] + oc[1] * oc[1] + oc[2] * oc[2];
         if (dist2 < r * r)
@@ -107,6 +129,28 @@ void PickSphere(float mx, float my)
     Select(best);
 }
 
+void DrawActorBox(engine::ZGEOM* g)
+{
+    Transform t = GetTransform(g);
+    const float* f = t.mat;
+    const float* r = t.mat + 6;
+    const float hw = 35.0f, h = 185.0f;
+    float corners[8][3];
+    for (int i = 0; i < 8; ++i) {
+        float sx = (i & 1) ? hw : -hw, sz = (i & 2) ? hw : -hw, y = (i & 4) ? h : 0.0f;
+        for (int k = 0; k < 3; ++k)
+            corners[i][k] = t.pos[k] + r[k] * sx + f[k] * sz + (k == 1 ? y : 0.0f);
+    }
+    ImVec2 s[8];
+    for (int i = 0; i < 8; ++i)
+        if (!WorldToScreen(corners[i], s[i].x, s[i].y))
+            return;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    const int edges[12][2] = {{0, 1}, {1, 3}, {3, 2}, {2, 0}, {4, 5}, {5, 7}, {7, 6}, {6, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+    for (auto& e : edges)
+        dl->AddLine(s[e[0]], s[e[1]], IM_COL32(80, 220, 255, 255), 2.0f);
+}
+
 // Exact pick of what is drawn under the cursor; bounding spheres as fallback
 // (e.g. skinned characters drawn through vertex shaders).
 void Pick()
@@ -114,6 +158,10 @@ void Pick()
     ImGuiIO& io = ImGui::GetIO();
     g_clickX = io.MousePos.x;
     g_clickY = io.MousePos.y;
+    if (g_npcMode) {
+        PickSphere(g_clickX, g_clickY);
+        return;
+    }
     RequestPick(g_clickX, g_clickY, [](engine::ZGEOM* hit) {
         if (hit)
             Select(hit);
@@ -160,6 +208,12 @@ void DrawToolbar()
         ImGui::End();
         return;
     }
+    if (ImGui::RadioButton("Objects", !g_npcMode)) g_npcMode = false;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("NPCs", g_npcMode)) g_npcMode = true;
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
     if (ImGui::RadioButton("Move (W)", g_op == ImGuizmo::TRANSLATE)) g_op = ImGuizmo::TRANSLATE;
     ImGui::SameLine();
     if (ImGui::RadioButton("Rotate (E)", g_op == ImGuizmo::ROTATE)) g_op = ImGuizmo::ROTATE;
@@ -227,6 +281,10 @@ void DrawViewport()
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !ImGuizmo::IsOver() && !using_ &&
         haveCamera)
         Pick();
+
+    // characters are skinned (no wireframe highlight): draw a box around them
+    if (sel && IsLive(sel) && IsActor(sel))
+        DrawActorBox(sel);
 }
 
 } // namespace

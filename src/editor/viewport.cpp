@@ -17,6 +17,7 @@
 #include "history.h"
 #include "level.h"
 #include "model.h"
+#include "npc_panel.h"
 #include "placement.h"
 #include "scene_panel.h"
 
@@ -249,7 +250,7 @@ void Pick()
 void Shortcuts()
 {
     ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing())  // placing/grabbing has its own keys
+    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing() || NpcPlacing())  // these have their own keys
         return;
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z))
         Undo();
@@ -370,6 +371,10 @@ void DrawViewport()
     Shortcuts();
     if (Placing()) {
         UpdatePlacement();
+        return;
+    }
+    if (NpcPlacing()) {
+        UpdateNpcPlacement();
         return;
     }
 

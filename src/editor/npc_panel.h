@@ -1,0 +1,14 @@
+#pragma once
+// NPCs tab: characters of the scene, their behaviour (SDL script and its
+// parameters), placing new NPCs with a chosen behaviour.
+
+namespace h2::editor {
+
+void InstallNpcPanel();
+
+// Placing an NPC: the viewport hands the mouse over while this is on.
+bool NpcPlacing();
+void UpdateNpcPlacement();
+void CancelNpcPlacement();
+
+} // namespace h2::editor

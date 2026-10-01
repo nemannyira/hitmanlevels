@@ -51,11 +51,14 @@ add_library(h2fix SHARED
     src/editor/model.cpp
     src/editor/model_catalog.cpp
     src/editor/models_panel.cpp
+    src/editor/npc_panel.cpp
     src/editor/placement.cpp
     src/editor/scene_panel.cpp
     src/editor/viewport.cpp
     src/engine/geoms.cpp
     src/engine/spawn.cpp
+    src/engine/npc.cpp
+    src/engine/scene_data.cpp
     src/screenshot.cpp
     src/input/dinput.cpp
     src/overlay/console.cpp

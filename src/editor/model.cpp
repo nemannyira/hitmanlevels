@@ -166,6 +166,20 @@ engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::s
     return geom;
 }
 
+void AdoptEngineOwned(engine::ZGEOM* geom)
+{
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnSceneLeaving(DestroyAllSpawned);
+    }
+    if (!geom)
+        return;
+    g_spawned.push_back({geom->node, geom});
+    g_engineOwned.push_back(geom);
+    InvalidateSceneModel();
+}
+
 engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error)
 {
     static bool hooked;

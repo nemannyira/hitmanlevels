@@ -51,6 +51,9 @@ bool IsSpawned(engine::ZGEOM* geom);
 // game deletes items itself when the scene unloads, so these are not
 // destroyed by the editor then (only on request).
 engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error = nullptr);
+// An object the editor made by other means that the game removes itself on
+// unload (NPCs): listed as spawned, not destroyed by the editor.
+void AdoptEngineOwned(engine::ZGEOM* geom);
 
 // The visible models of an object and its descendants, largest first (a
 // working item's template: body, slide, magazine; not its invisible position

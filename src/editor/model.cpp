@@ -452,8 +452,9 @@ void Orthonormalize(float m[9])
 
 std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root)
 {
-    // render instance (0x8000) and none of: sound/sight helper, fragment, light
-    constexpr uint32_t kShown = 0x8000, kNotShown = 0x2000 | 0x4000 | 0x10000;
+    // render instance (0x8000) and none of: sound/sight helper (PosBox_Hand),
+    // fragment. (0x10000 is set on the parts of weapon templates too.)
+    constexpr uint32_t kShown = 0x8000, kNotShown = 0x2000 | 0x4000;
     std::vector<engine::ZGEOM*> parts;
     if (!root || !IsLive(root))
         return parts;

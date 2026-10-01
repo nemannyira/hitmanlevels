@@ -44,7 +44,7 @@ constexpr int kSurf_Release = 2, kSurf_LockRect = 9, kSurf_UnlockRect = 10;
 constexpr int kTex_Release = 2, kTex_GetSurfaceLevel = 15;
 constexpr DWORD D3DUSAGE_RENDERTARGET = 1, D3DPOOL_DEFAULT = 0, D3DRS_AMBIENT = 139;
 constexpr UINT kThumbSize = 256;
-constexpr DWORD kThumbBackground = 0xFF141416;
+constexpr DWORD kThumbBackground = 0xFFEDEDEF;  // light: dark models stay visible
 // The pick target is 3x3 pixels, each seeing the screen kPickSpacing pixels
 // apart around the cursor: the centre gives the object, the depths of the
 // centre and two neighbours the surface normal.

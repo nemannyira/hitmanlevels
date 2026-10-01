@@ -343,6 +343,66 @@ void DrawSnapTarget(const float p[3], ImU32 color)
     dl->AddCircleFilled(s, 2.5f, color);
 }
 
+bool WorldToScreen(const float p[3], ImVec2& out)
+{
+    Camera cam;
+    if (!CurrentCamera(cam))
+        return false;
+    float v[3];
+    ToView(cam, p, v);
+    if (v[2] < kNear)
+        return false;
+    out = Project(cam, v);
+    return true;
+}
+
+void DrawArrow3D(const float a[3], const float b[3], ImU32 color, float thickness)
+{
+    Camera cam;
+    if (!CurrentCamera(cam))
+        return;
+    Line(cam, a, b, color, thickness);
+    float va[3], vb[3];
+    ToView(cam, a, va);
+    ToView(cam, b, vb);
+    if (vb[2] < kNear || !Clip(va, vb))
+        return;
+    ImVec2 sa = Project(cam, va), sb = Project(cam, vb);
+    float dx = sb.x - sa.x, dy = sb.y - sa.y, len = std::sqrt(dx * dx + dy * dy);
+    if (len < 12.0f)
+        return;
+    dx /= len;
+    dy /= len;
+    // head a little before the end point (the point marker sits there)
+    ImVec2 tip(sb.x - dx * 7.0f, sb.y - dy * 7.0f);
+    float s = 6.0f + thickness;
+    ImGui::GetBackgroundDrawList()->AddTriangleFilled(tip, ImVec2(tip.x - dx * s - dy * s * 0.6f, tip.y - dy * s + dx * s * 0.6f),
+                                                      ImVec2(tip.x - dx * s + dy * s * 0.6f, tip.y - dy * s - dx * s * 0.6f),
+                                                      color);
+}
+
+void DrawPoint3D(const float p[3], float radius, ImU32 color)
+{
+    ImVec2 s;
+    if (!WorldToScreen(p, s))
+        return;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    dl->AddCircleFilled(s, radius + 1.5f, IM_COL32(0, 0, 0, 170));
+    dl->AddCircleFilled(s, radius, color);
+}
+
+void DrawLabel3D(const float p[3], const char* text, ImU32 color)
+{
+    ImVec2 s;
+    if (!WorldToScreen(p, s))
+        return;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    ImVec2 size = ImGui::CalcTextSize(text);
+    ImVec2 at(s.x + 8, s.y - size.y - 4);
+    dl->AddRectFilled(ImVec2(at.x - 3, at.y - 1), ImVec2(at.x + size.x + 3, at.y + size.y + 1), IM_COL32(0, 0, 0, 160), 3);
+    dl->AddText(at, color, text);
+}
+
 void PlaneAxes(const float normal[3], float u[3], float v[3])
 {
     if (std::fabs(normal[1]) > 0.7f) {  // floor or ceiling: world X and Z

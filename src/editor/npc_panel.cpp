@@ -19,6 +19,7 @@
 #include "guides.h"
 #include "highlight.h"
 #include "model.h"
+#include "npc_docs.h"
 #include "scene_panel.h"
 
 namespace h2::editor {
@@ -49,8 +50,20 @@ int g_type = -1;            // chosen character
 int g_behaviour = -1;       // chosen behaviour (-1: none)
 engine::ScriptInfo g_edit;  // behaviour being edited for the next NPC
 std::vector<engine::ZGEOM*> g_spawned;
+std::vector<engine::ScriptInfo> g_spawnedScripts;  // their behaviour (runtime refs), same order
 std::string g_message;
 int g_counter;
+std::string g_info;        // "<table>:<parameter>" shown in the info box
+
+// expected movement: the points and lists in an NPC's parameters
+enum RoutesMode { kRoutesOff, kRoutesSelected, kRoutesAll };
+int g_routes = kRoutesSelected;
+struct Route {
+    std::string name;   // parameter
+    bool list = false;  // a list of points walked in order, or a single place
+    std::vector<engine::ZGEOM*> points;
+};
+std::map<int, std::vector<Route>> g_routeCache;  // actor record -> its routes
 
 // placing
 bool g_placing;
@@ -135,16 +148,6 @@ void ChooseType(int t)
     }
 }
 
-std::string RefLabel(uint32_t ref)
-{
-    if (!ref)
-        return "(none)";
-    engine::ZGEOM* g = engine::GeomOfRef(ref);
-    if (!g || !IsLive(g))
-        return "(missing)";
-    return engine::SafeString(g->name);
-}
-
 engine::ZGEOM* ActorOf(engine::ZGEOM* g)
 {
     engine::ZBaseGeom* node = g && IsLive(g) ? g->node : nullptr;
@@ -158,14 +161,208 @@ engine::ZGEOM* ActorOf(engine::ZGEOM* g)
     return nullptr;
 }
 
-// Parameter table; `editable` false shows the values only.
-void DrawParams(engine::ScriptInfo& s, bool editable)
+bool IsList(int record)
+{
+    const auto& records = engine::SceneRecords();
+    return record >= 0 && size_t(record) < records.size() && (records[record].classId & 0x8000000) != 0;
+}
+
+// A place an NPC can go to: not a character, item, list or scripted object.
+bool Positional(engine::ZGEOM* g)
+{
+    if (!g || !IsLive(g) || engine::IsA(g, "ZActor") || engine::IsA(g, "ZItem") ||
+        engine::IsA(g, "ZItemTemplate"))
+        return false;
+    int rec = engine::RecordOf(g);
+    if (rec < 0)
+        return true;
+    const engine::SceneRecord& r = engine::SceneRecords()[rec];
+    return !r.script && !(r.classId & 0x8000000);
+}
+
+// Elements of a list object (ZLIST / ZConditionList): its data block holds
+// them as an array of references, in order.
+std::vector<engine::ZGEOM*> ListPoints(int record)
+{
+    std::vector<engine::ZGEOM*> out;
+    std::vector<uint8_t> b = engine::RemappedBlock(engine::SceneRecords()[record].data);
+    size_t i = 4;
+    while (i < b.size() && b[i] != 0xFF) {
+        uint8_t tag = b[i] & 0x3F;
+        uint32_t v = 0;
+        if (tag == 9 || tag == 7 || tag == 0xC) {
+            uint32_t n;
+            memcpy(&n, &b[i + 1], 4);
+            if (tag == 9)
+                for (uint32_t k = 1; k < n / 4 && i + 5 + k * 4 <= b.size(); ++k) {
+                    memcpy(&v, &b[i + 5 + (k - 1) * 4], 4);
+                    if (engine::ZGEOM* g = engine::GeomOfRef(v))
+                        out.push_back(g);
+                }
+            i += 1 + n;
+        } else if (tag == 8) {
+            memcpy(&v, &b[i + 1], 4);
+            if (engine::ZGEOM* g = engine::GeomOfRef(v))
+                out.push_back(g);
+            i += 5;
+        } else if (tag == 1) {
+            i += 9;
+        } else if (tag == 2 || tag == 3 || tag == 10 || tag == 11) {
+            i += 5;
+        } else if (tag == 4 || tag == 5) {
+            i += 2 + strnlen(reinterpret_cast<const char*>(&b[i + 1]), b.size() - i - 1);
+        } else {
+            i += 1;
+        }
+    }
+    out.erase(std::remove_if(out.begin(), out.end(), [](engine::ZGEOM* g) { return !Positional(g); }), out.end());
+    return out;
+}
+
+std::vector<Route> RoutesOf(const engine::ScriptInfo& s)
+{
+    std::vector<Route> routes;
+    for (const engine::ScriptParam& p : s.params) {
+        if (p.type != engine::ParamType::Ref || !p.bits)
+            continue;
+        engine::ZGEOM* g = engine::GeomOfRef(p.bits);
+        if (!g || !IsLive(g))
+            continue;
+        int rec = engine::RecordOf(g);
+        if (IsList(rec)) {
+            std::vector<engine::ZGEOM*> pts = ListPoints(rec);
+            if (!pts.empty())
+                routes.push_back({p.name, true, pts});
+        } else if (Positional(g)) {
+            routes.push_back({p.name, false, {g}});
+        }
+    }
+    return routes;
+}
+
+const std::vector<Route>& RoutesOfRecord(int record)
+{
+    auto it = g_routeCache.find(record);
+    if (it != g_routeCache.end())
+        return it->second;
+    std::vector<Route> routes;
+    const engine::SceneRecord& r = engine::SceneRecords()[record];
+    engine::ScriptInfo info;
+    if (r.script && engine::ParseScript(r.script, info)) {
+        for (engine::ScriptParam& p : info.params)
+            if (p.type == engine::ParamType::Ref)
+                p.bits = p.bits ? engine::RemapRef(p.bits) : 0;
+        routes = RoutesOf(info);
+    }
+    return g_routeCache[record] = std::move(routes);
+}
+
+ImU32 RouteColor(size_t i)
+{
+    static const ImU32 colors[] = {IM_COL32(70, 220, 255, 255), IM_COL32(255, 200, 60, 255),
+                                   IM_COL32(150, 255, 110, 255), IM_COL32(255, 120, 200, 255),
+                                   IM_COL32(190, 150, 255, 255), IM_COL32(255, 140, 80, 255)};
+    return colors[i % (sizeof(colors) / sizeof(colors[0]))];
+}
+
+ImU32 Faded(ImU32 c, float a)
+{
+    return (c & ~IM_COL32_A_MASK) | (ImU32(((c >> IM_COL32_A_SHIFT) & 0xFF) * a) << IM_COL32_A_SHIFT);
+}
+
+// From the NPC (at `from`) to the places of its behaviour; lists as numbered
+// routes with arrows in walking order.
+void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool labels)
+{
+    for (size_t i = 0; i < routes.size(); ++i) {
+        const Route& r = routes[i];
+        ImU32 c = RouteColor(i);
+        std::vector<Transform> pts;
+        for (engine::ZGEOM* g : r.points)
+            if (IsLive(g))
+                pts.push_back(GetTransform(g));
+        if (pts.empty())
+            continue;
+        DrawLine3D(from, pts[0].pos, Faded(c, 0.45f), 1.5f);
+        for (size_t k = 0; k < pts.size(); ++k) {
+            if (r.list && k + 1 < pts.size())
+                DrawArrow3D(pts[k].pos, pts[k + 1].pos, c, 2.0f);
+            DrawPoint3D(pts[k].pos, r.list ? 4.0f : 5.0f, c);
+            if (labels && r.list) {
+                char n[80];
+                if (k == 0)
+                    snprintf(n, sizeof(n), "%s 1", r.name.c_str());
+                else
+                    snprintf(n, sizeof(n), "%d", int(k + 1));
+                DrawLabel3D(pts[k].pos, n, k == 0 ? c : Faded(c, 0.8f));
+            }
+        }
+        if (labels && !r.list)
+            DrawLabel3D(pts[0].pos, r.name.c_str(), c);
+    }
+}
+
+void DrawAllRoutes()
+{
+    if (g_routes == kRoutesOff || engine::SceneRecords().empty() || CurrentScene().empty())
+        return;
+    auto drawActor = [](engine::ZGEOM* actor) {
+        if (!actor || !IsLive(actor))
+            return;
+        Transform t = GetTransform(actor);
+        float from[3] = {t.pos[0], t.pos[1] + 100.0f, t.pos[2]};  // about the waist
+        auto spawned = std::find(g_spawned.begin(), g_spawned.end(), actor);
+        if (spawned != g_spawned.end()) {
+            DrawRoutes(from, RoutesOf(g_spawnedScripts[spawned - g_spawned.begin()]), true);
+            return;
+        }
+        int rec = engine::RecordOf(actor);
+        if (rec >= 0)
+            DrawRoutes(from, RoutesOfRecord(rec), true);
+    };
+    if (g_routes == kRoutesSelected) {
+        drawActor(ActorOf(Selected()));
+        return;
+    }
+    for (int rec : engine::ActorRecords())
+        drawActor(engine::RecordGeom(rec));
+    for (engine::ZGEOM* g : g_spawned)
+        drawActor(g);
+}
+
+std::string RefLabel(uint32_t ref)
+{
+    if (!ref)
+        return "(none)";
+    engine::ZGEOM* g = engine::GeomOfRef(ref);
+    if (!g || !IsLive(g))
+        return "(missing)";
+    return engine::SafeString(g->name);
+}
+
+void ParamTooltip(const engine::ScriptParam& p)
+{
+    ParamDoc doc = DescribeParam(p.name, p.typeName);
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
+    ImGui::Text("%s  (%s)", p.name.c_str(), p.typeName.c_str());
+    ImGui::TextDisabled("%s", doc.text.c_str());
+    if (doc.inferred)
+        ImGui::TextDisabled("(explained from the name)");
+    ImGui::TextDisabled("click: keep this in the info box");
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+}
+
+// Parameter table; `editable` false shows the values only. Hovering a name
+// explains it, clicking it keeps the explanation in the info box below.
+void DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
 {
     if (s.params.empty()) {
         ImGui::TextDisabled("no parameters");
         return;
     }
-    if (!ImGui::BeginTable("params", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+    if (!ImGui::BeginTable(table, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
         return;
     ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
     ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 1.3f);
@@ -175,9 +372,11 @@ void DrawParams(engine::ScriptInfo& s, bool editable)
         ImGui::PushID(int(i));
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        ImGui::TextUnformatted(p.name.c_str());
+        std::string key = std::string(table) + ":" + p.name;
+        if (ImGui::Selectable(p.name.c_str(), g_info == key))
+            g_info = g_info == key ? std::string() : key;
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s %s", p.typeName.c_str(), p.name.c_str());
+            ParamTooltip(p);
         ImGui::TableSetColumnIndex(1);
         ImGui::SetNextItemWidth(-1);
         switch (p.type) {
@@ -237,6 +436,26 @@ void DrawParams(engine::ScriptInfo& s, bool editable)
         ImGui::PopID();
     }
     ImGui::EndTable();
+    // info box: the parameter clicked last
+    std::string prefix = std::string(table) + ":";
+    if (g_info.rfind(prefix, 0) == 0) {
+        std::string name = g_info.substr(prefix.size());
+        for (const engine::ScriptParam& p : s.params) {
+            if (p.name != name)
+                continue;
+            ParamDoc doc = DescribeParam(p.name, p.typeName);
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+            if (ImGui::BeginChild((std::string(table) + "info").c_str(), ImVec2(0, 0),
+                                  ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders)) {
+                ImGui::Text("%s  (%s)", p.name.c_str(), p.typeName.c_str());
+                ImGui::TextWrapped("%s", doc.text.c_str());
+                if (doc.inferred)
+                    ImGui::TextDisabled("(explained from the name)");
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+        }
+    }
 }
 
 void DrawSelectedNpc()
@@ -263,9 +482,12 @@ void DrawSelectedNpc()
     ImGui::Text("Behaviour: %s", engine::ScriptShortName(info.name).c_str());
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", info.name.c_str());
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("%s", DescribeBehaviour(engine::ScriptShortName(info.name)).c_str());
+    ImGui::PopTextWrapPos();
     ImGui::TextDisabled("as authored in the level:");
     engine::ScriptInfo shown = Runtime(info);
-    DrawParams(shown, false);
+    DrawParams(shown, false, "authored");
     std::string model = engine::ActorModelName(r), script = engine::ScriptShortName(info.name);
     for (size_t t = 0; t < g_types.size(); ++t) {
         if (g_types[t].model != model || g_types[t].script != script)
@@ -290,6 +512,12 @@ void DrawPanel()
     }
     if (g_builtFor != CurrentScene())
         Build();
+
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+    ImGui::Combo("Routes", &g_routes, "off\0selected NPC\0all NPCs\0");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Where the NPCs will go: their routes (numbered, with arrows in walking order)\n"
+                          "and the places in their behaviour (guard point, protect point, ...)");
 
     ImGui::SeparatorText("Characters");
     ImGui::TextDisabled("%d kinds, %d behaviours in this level", int(g_types.size()), int(g_behaviours.size()));
@@ -327,8 +555,12 @@ void DrawPanel()
             }
             ImGui::EndCombo();
         }
-        if (g_behaviour >= 0)
-            DrawParams(g_edit, true);
+        if (g_behaviour >= 0) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", DescribeBehaviour(g_behaviours[g_behaviour].shortName).c_str());
+            ImGui::PopTextWrapPos();
+            DrawParams(g_edit, true, "next");
+        }
         if (g_placing) {
             ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "click in the world to place the NPC");
             ImGui::SameLine();
@@ -419,6 +651,7 @@ void Place()
     }
     AdoptEngineOwned(npc);
     g_spawned.push_back(npc);
+    g_spawnedScripts.push_back(g_behaviour >= 0 ? g_edit : engine::ScriptInfo{});
     Select(npc);
     g_message = std::string("placed ") + name +
                 (g_behaviour >= 0 ? " with behaviour " + g_behaviours[g_behaviour].shortName : " without behaviour");
@@ -454,6 +687,10 @@ void UpdateNpcPlacement()
         RequestPick(io.MousePos.x, io.MousePos.y, OnPick);
     }
     if (g_haveHit) {
+        if (g_routes != kRoutesOff && g_behaviour >= 0) {
+            float from[3] = {g_point[0], g_point[1] + 100.0f, g_point[2]};
+            DrawRoutes(from, RoutesOf(g_edit), true);
+        }
         DrawSnapTarget(g_point, IM_COL32(64, 224, 255, 255));
         float top[3] = {g_point[0], g_point[1] + 180.0f, g_point[2]};
         DrawLine3D(g_point, top, IM_COL32(64, 224, 255, 200), 2.0f);  // about a person's height
@@ -478,11 +715,19 @@ void InstallNpcPanel()
 {
     engine::InstallSceneData();
     overlay::AddPanel({"NPCs", &g_visible, DrawPanel, overlay::Dock::Left});
+    static bool always = true;
+    overlay::AddPanel({nullptr, &always, [] {
+                           if (!NpcPlacing())
+                               DrawAllRoutes();
+                       }});
     OnScenePushed([](const std::string&) {
         g_builtFor.clear();
         g_types.clear();
         g_behaviours.clear();
         g_spawned.clear();
+        g_spawnedScripts.clear();
+        g_routeCache.clear();
+        g_info.clear();
         g_type = g_behaviour = -1;
         g_hitRoom = nullptr;
         CancelNpcPlacement();

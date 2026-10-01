@@ -43,6 +43,15 @@ void DrawFootprint(const Box& box, const float point[3], const float normal[3], 
 // Blender's snap target: a ring with a dot.
 void DrawSnapTarget(const float p[3], ImU32 color);
 
+// Screen position of a world point (false when it is behind the camera).
+bool WorldToScreen(const float p[3], ImVec2& out);
+// Segment with an arrow head at b.
+void DrawArrow3D(const float a[3], const float b[3], ImU32 color, float thickness = 2.0f);
+// Filled dot (screen radius) with a dark rim.
+void DrawPoint3D(const float p[3], float radius, ImU32 color);
+// Text next to a world point, on a dark backing.
+void DrawLabel3D(const float p[3], const char* text, ImU32 color);
+
 // Unit vectors spanning the plane with `normal`: world X/Z for floors, the
 // horizontal and the in-plane "up" direction for walls.
 void PlaneAxes(const float normal[3], float u[3], float v[3]);

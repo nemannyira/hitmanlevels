@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 
 namespace h2::engine {
 struct ZBaseGeom;
@@ -30,14 +31,18 @@ using PickCallback = void (*)(engine::ZGEOM* hit, const float* point, const floa
 void RequestPick(float x, float y, PickCallback cb);
 // An object the picking looks through (e.g. the model being placed).
 void SetPickIgnore(engine::ZGEOM* geom);
+void SetPickIgnore(const std::vector<engine::ZGEOM*>& geoms);
 // A second object drawn with a highlight wireframe (ARGB colour), e.g. the
 // model being placed; null clears it.
 void SetHighlightExtra(engine::ZGEOM* geom, unsigned long color);
+void SetHighlightExtra(const std::vector<engine::ZGEOM*>& geoms, unsigned long color);
 
 // Model thumbnail: the draw calls of `geom` go into a small texture (the
 // model turning in front of its own camera) instead of the screen. The
-// object must be drawn by the engine (in view, in a visible room).
+// object must be drawn by the engine (in view, in a visible room). Several
+// objects (parts of one model) are shown together.
 void SetThumbnailGeom(engine::ZGEOM* geom);
+void SetThumbnailGeoms(const std::vector<engine::ZGEOM*>& geoms);
 // IDirect3DTexture8* of the thumbnail (null until something was drawn in it).
 void* ThumbnailTexture();
 // Frees the thumbnail texture.

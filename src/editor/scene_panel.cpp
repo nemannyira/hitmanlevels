@@ -19,6 +19,7 @@
 #include "history.h"
 #include "level.h"
 #include "model.h"
+#include "placement.h"
 #include "viewport.h"
 
 namespace h2::editor {
@@ -214,6 +215,11 @@ void DrawInspector()
     ImGui::BeginDisabled(actor || !engine::MeshOf(geom));
     if (ImGui::Button("Duplicate (Ctrl+D)"))
         DuplicateSelection();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(actor || Placing());
+    if (ImGui::Button("Grab (G)"))
+        BeginGrab(geom);
     ImGui::EndDisabled();
     if (const SpawnedObject* spawned = FindSpawned(geom)) {
         ImGui::SameLine();

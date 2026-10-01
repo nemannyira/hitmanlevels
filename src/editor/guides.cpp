@@ -123,17 +123,23 @@ void FaceAlong(const Box& box, const float dir[3], int corners[4])
 
 } // namespace
 
-bool ObjectBox(engine::ZGEOM* geom, const Transform& t, Box& box)
+namespace {
+
+// Bounding box of the node in its own space (x = right, y = up, z = forward).
+void LocalBounds(const engine::ZBaseGeom* n, float c[3], float h[3])
 {
-    if (!geom || !IsLive(geom))
-        return false;
-    const engine::ZBaseGeom* n = geom->node;
-    float c[3] = {n->boundCenter[0], n->boundCenter[1], n->boundCenter[2]};
-    float h[3] = {n->boundHalf[0], n->boundHalf[1], n->boundHalf[2]};
+    for (int k = 0; k < 3; ++k) {
+        c[k] = n->boundCenter[k];
+        h[k] = n->boundHalf[k];
+    }
     if (!(h[0] >= 0 && h[1] >= 0 && h[2] >= 0) || h[0] + h[1] + h[2] <= 0.0f || h[0] + h[1] + h[2] > 1e6f) {
         float r = n->boundRadius > 1.0f && n->boundRadius < 1e5f ? n->boundRadius : 25.0f;
         h[0] = h[1] = h[2] = r * 0.577f;
     }
+}
+
+void BoxFrom(const float c[3], const float h[3], const Transform& t, Box& box)
+{
     const float* f = t.mat;
     const float* u = t.mat + 3;
     const float* r = t.mat + 6;
@@ -145,6 +151,48 @@ bool ObjectBox(engine::ZGEOM* geom, const Transform& t, Box& box)
         for (int k = 0; k < 3; ++k)
             box.c[i][k] = t.pos[k] + r[k] * lx + u[k] * ly + f[k] * lz;
     }
+}
+
+} // namespace
+
+bool ObjectBox(engine::ZGEOM* geom, const Transform& t, Box& box)
+{
+    if (!geom || !IsLive(geom))
+        return false;
+    float c[3], h[3];
+    LocalBounds(geom->node, c, h);
+    BoxFrom(c, h, t, box);
+    return true;
+}
+
+bool PartsBox(const std::vector<engine::ZGEOM*>& parts, const std::vector<Transform>& offsets, const Transform& t,
+              Box& box)
+{
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    bool any = false;
+    for (size_t p = 0; p < parts.size() && p < offsets.size(); ++p) {
+        if (!parts[p] || !IsLive(parts[p]))
+            continue;
+        float c[3], h[3];
+        LocalBounds(parts[p]->node, c, h);
+        Box local;
+        BoxFrom(c, h, offsets[p], local);  // corners in the frame's space (x right, y up, z forward)
+        for (auto& corner : local.c) {
+            for (int k = 0; k < 3; ++k) {
+                lo[k] = std::fmin(lo[k], corner[k]);
+                hi[k] = std::fmax(hi[k], corner[k]);
+            }
+        }
+        any = true;
+    }
+    if (!any)
+        return false;
+    float c[3], h[3];
+    for (int k = 0; k < 3; ++k) {
+        c[k] = (lo[k] + hi[k]) * 0.5f;
+        h[k] = (hi[k] - lo[k]) * 0.5f;
+    }
+    BoxFrom(c, h, t, box);
     return true;
 }
 

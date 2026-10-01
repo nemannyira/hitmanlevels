@@ -249,7 +249,7 @@ void Pick()
 void Shortcuts()
 {
     ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard || FreeCamLooking())
+    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing())  // placing/grabbing has its own keys
         return;
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z))
         Undo();
@@ -268,6 +268,8 @@ void Shortcuts()
             DuplicateSelection();
         } else if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
             DeleteSelection();
+        } else if (ImGui::IsKeyPressed(ImGuiKey_G) && !IsActor(sel)) {
+            BeginGrab(sel);
         } else if (ImGui::IsKeyPressed(ImGuiKey_H)) {
             ObjectState before = GetState(sel), after = before;
             after.hidden = !before.hidden;
@@ -296,6 +298,16 @@ void DrawToolbar()
     if (ImGui::RadioButton("World", g_mode == ImGuizmo::WORLD)) g_mode = ImGuizmo::WORLD;
     ImGui::SameLine();
     if (ImGui::RadioButton("Local (Q)", g_mode == ImGuizmo::LOCAL)) g_mode = ImGuizmo::LOCAL;
+    ImGui::SameLine();
+    {
+        engine::ZGEOM* sel = Selected();
+        ImGui::BeginDisabled(!sel || !IsLive(sel) || IsActor(sel) || Placing());
+        if (ImGui::Button("Grab (G)"))
+            BeginGrab(sel);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Move the selected object onto the surface under the mouse; click drops it, Esc puts it back");
+    }
     ImGui::SameLine();
     ImGui::Checkbox("Snap", &g_snap);
     if (g_snap) {
@@ -335,6 +347,8 @@ void EditMenu()
     ImGui::Separator();
     if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, have))
         DuplicateSelection();
+    if (ImGui::MenuItem("Grab onto a surface", "G", false, have && !IsActor(sel) && !Placing()))
+        BeginGrab(sel);
     if (ImGui::MenuItem("Delete", "Del", false, have && FindSpawned(sel)))
         DeleteSelection();
     if (ImGui::MenuItem(have && IsHidden(sel) ? "Show" : "Hide", "H", false, have)) {

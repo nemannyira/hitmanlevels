@@ -436,4 +436,86 @@ void Orthonormalize(float m[9])
     u[2] = f[0] * r[1] - f[1] * r[0];
 }
 
+std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root)
+{
+    // render instance (0x8000) and none of: sound/sight helper, fragment, light
+    constexpr uint32_t kShown = 0x8000, kNotShown = 0x2000 | 0x4000 | 0x10000;
+    std::vector<engine::ZGEOM*> parts;
+    if (!root || !IsLive(root))
+        return parts;
+    const engine::SceneSnapshot& snap = SceneModel(0);
+    int start = snap.Find(root);
+    if (start < 0)
+        return parts;
+    std::vector<int> queue{start};
+    for (size_t q = 0; q < queue.size() && q < 512; ++q) {
+        const engine::GeomInfo& g = snap.geoms[queue[q]];
+        if (IsLive(g.geom) && engine::MeshOf(g.geom) && (g.node->flags & kShown) && !(g.node->flags & kNotShown))
+            parts.push_back(g.geom);
+        queue.insert(queue.end(), g.children.begin(), g.children.end());
+    }
+    std::stable_sort(parts.begin(), parts.end(), [](engine::ZGEOM* a, engine::ZGEOM* b) {
+        return a->node->boundRadius > b->node->boundRadius;
+    });
+    if (parts.size() > 24)
+        parts.resize(24);
+    return parts;
+}
+
+bool PartClones::Spawn(const std::vector<engine::ZGEOM*>& sources, const std::string& name, std::string* error,
+                       engine::ZGEOM* parent)
+{
+    Destroy();
+    if (sources.empty()) {
+        if (error)
+            *error = "nothing visible to copy";
+        return false;
+    }
+    Transform mainWorld = GetTransform(sources[0]);
+    for (engine::ZGEOM* src : sources) {
+        std::string err;
+        engine::ZGEOM* c = SpawnClone(src, name, &err, parent);
+        if (!c) {
+            if (parts.empty()) {  // without the main part there is nothing to show
+                if (error)
+                    *error = err;
+                return false;
+            }
+            continue;
+        }
+        parts.push_back(c);
+        offsets.push_back(Relative(mainWorld, GetTransform(src)));
+    }
+    return true;
+}
+
+void PartClones::Destroy()
+{
+    for (engine::ZGEOM* g : parts)
+        if (g && IsSpawned(g))
+            DestroySpawned(g);
+    parts.clear();
+    offsets.clear();
+}
+
+bool PartClones::Live() const
+{
+    for (engine::ZGEOM* g : parts)
+        if (!g || !IsLive(g))
+            return false;
+    return !parts.empty();
+}
+
+void PartClones::Place(const Transform& t)
+{
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (!parts[i] || !IsLive(parts[i]))
+            continue;
+        Transform want = i == 0 ? t : Compose(t, offsets[i]);
+        Transform cur = GetTransform(parts[i]);
+        if (memcmp(&want, &cur, sizeof(want)) != 0)
+            SetTransform(parts[i], want);
+    }
+}
+
 } // namespace h2::editor

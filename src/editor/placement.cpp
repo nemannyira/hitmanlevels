@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 #include "imgui.h"
 
@@ -10,11 +11,12 @@
 #include "../game.h"
 #include "../log.h"
 #include "../scene.h"
+#include "guides.h"
 #include "highlight.h"
+#include "history.h"
 #include "level.h"
 #include "model.h"
 #include "scene_panel.h"
-#include "guides.h"
 #include "viewport.h"
 
 namespace h2::editor {
@@ -23,15 +25,25 @@ namespace {
 
 constexpr float kRad = 3.14159265f / 180.0f;
 constexpr float kRotateStep = 15.0f;  // degrees per wheel notch
+constexpr float kLiftStep = 5.0f;     // cm per wheel notch (Ctrl: the grid step)
 
+// placing a model
 std::string g_sourcePath;
 std::string g_templatePath;  // placing a working item made from this template
 std::string g_label;
-engine::ZGEOM* g_preview;
+PartClones g_preview;          // the model's parts; Main() is the transform being placed
 engine::ZGEOM* g_previewRoom;  // room the preview was created in
 engine::ZGEOM* g_hitRoom;      // room of the surface under the mouse
-Transform g_base;      // source orientation (as authored)
+
+// grabbing an existing object
+engine::ZGEOM* g_grab;
+ObjectState g_grabBefore;
+std::vector<engine::ZGEOM*> g_grabParts;  // its visible parts (for the box)
+std::vector<Transform> g_grabOffsets;     // ... in its frame
+
+Transform g_base;      // orientation at the start (as authored / as it was)
 float g_yaw;           // extra turn around the world up axis, degrees
+float g_lift;          // distance from the surface along its normal, cm
 float g_point[3];      // the surface point under the mouse
 float g_normal[3] = {0, 1, 0};  // surface normal there
 bool g_haveNormal;
@@ -41,6 +53,15 @@ bool g_pickPending;
 int g_pickFrame;           // ImGui frame of the pending pick request
 bool g_haveHit;
 float g_mouseX, g_mouseY;  // mouse position of the pending pick
+std::string g_refused;     // why the last click did nothing
+double g_refusedTime;
+
+// the object being moved: the preview's main part or the grabbed object
+engine::ZGEOM* Moving() { return g_grab ? g_grab : g_preview.Main(); }
+const std::vector<engine::ZGEOM*>& ShapeParts() { return g_grab ? g_grabParts : g_preview.parts; }
+const std::vector<Transform>& ShapeOffsets() { return g_grab ? g_grabOffsets : g_preview.offsets; }
+
+bool ShapeBox(const Transform& t, Box& box) { return PartsBox(ShapeParts(), ShapeOffsets(), t, box); }
 
 // Ray through a screen position (origin = camera).
 bool ScreenRay(float sx, float sy, float origin[3], float dir[3])
@@ -74,7 +95,7 @@ void PointOnRay(float sx, float sy)
 void OnPick(engine::ZGEOM* hit, const float* point, const float* normal)
 {
     g_pickPending = false;
-    if (!g_preview)
+    if (!Moving())
         return;
     if (hit)
         if (engine::ZGEOM* room = RoomOf(hit))
@@ -96,7 +117,8 @@ void OnPick(engine::ZGEOM* hit, const float* point, const float* normal)
     } else {
         g_haveHit = false;
         g_haveNormal = false;
-        PointOnRay(g_mouseX, g_mouseY);
+        if (!g_grab)
+            PointOnRay(g_mouseX, g_mouseY);
     }
 }
 
@@ -106,11 +128,21 @@ const float* SurfaceNormal()
     return g_haveHit && g_haveNormal ? g_normal : up;
 }
 
-float PreviewSize()
+float ShapeSize()
 {
-    const engine::ZBaseGeom* n = g_preview->node;
-    float s = 2.0f * std::fmax(n->boundHalf[0], std::fmax(n->boundHalf[1], n->boundHalf[2]));
-    return s > 1.0f && s < 1e5f ? s : 2.0f * n->boundRadius;
+    engine::ZGEOM* m = Moving();
+    if (!m)
+        return 50.0f;
+    Box box;
+    if (!ShapeBox(GetTransform(m), box))
+        return 50.0f;
+    float s = 0;
+    for (int corner : {1, 2, 4}) {
+        float dx = box.c[corner][0] - box.c[0][0], dy = box.c[corner][1] - box.c[0][1],
+              dz = box.c[corner][2] - box.c[0][2];
+        s = std::fmax(s, std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    return s > 1.0f && s < 1e5f ? s : 50.0f;
 }
 
 float GridStepFor(float size)
@@ -127,7 +159,7 @@ void TargetPoint(float out[3])
         return;
     float u[3], v[3];
     PlaneAxes(SurfaceNormal(), u, v);
-    float step = GridStepFor(PreviewSize());
+    float step = GridStepFor(ShapeSize());
     float du = out[0] * u[0] + out[1] * u[1] + out[2] * u[2];
     float dv = out[0] * v[0] + out[1] * v[1] + out[2] * v[2];
     float su = std::round(du / step) * step - du, sv = std::round(dv / step) * step - dv;
@@ -137,7 +169,7 @@ void TargetPoint(float out[3])
 
 // Like Blender's surface placement: the model turned by the wheel (and with
 // N, stood up along the surface normal), its box face against the surface
-// resting on the point under the mouse.
+// resting on the point under the mouse, lifted along the normal by Alt+wheel.
 Transform CurrentTransform()
 {
     Transform t = g_base;
@@ -169,12 +201,12 @@ Transform CurrentTransform()
     t.pos[0] = t.pos[1] = t.pos[2] = 0;
     Box box;
     float face[3] = {0, 0, 0};
-    if (g_preview && ObjectBox(g_preview, t, box))
+    if (ShapeBox(t, box))
         BoxBottom(box, n, face);
     float target[3];
     TargetPoint(target);
     for (int i = 0; i < 3; ++i)
-        t.pos[i] = target[i] - face[i];
+        t.pos[i] = target[i] + n[i] * g_lift - face[i];
     return t;
 }
 
@@ -182,14 +214,37 @@ void DestroyPreview()
 {
     SetPickIgnore(nullptr);
     SetHighlightExtra(nullptr, 0);
-    if (g_preview && IsSpawned(g_preview))
-        DestroySpawned(g_preview);
-    g_preview = nullptr;
+    g_preview.Destroy();
+}
+
+// The objects the model is copied from: the visible parts of an item
+// template (largest first), or the scene object using the model.
+std::vector<engine::ZGEOM*> Sources()
+{
+    if (!g_templatePath.empty())
+        if (engine::ZGEOM* tmpl = Resolve(g_templatePath)) {
+            std::vector<engine::ZGEOM*> parts = VisibleParts(tmpl);
+            if (!parts.empty())
+                return parts;
+        }
+    engine::ZGEOM* source = Resolve(g_sourcePath);
+    return source ? std::vector<engine::ZGEOM*>{source} : std::vector<engine::ZGEOM*>{};
+}
+
+void Refuse(const char* why)
+{
+    g_refused = why;
+    g_refusedTime = ImGui::GetTime();
 }
 
 void Commit(bool keepPlacing)
 {
-    engine::ZGEOM* source = Resolve(g_sourcePath);
+    if (!g_haveHit) {
+        Refuse("no surface under the mouse: point at a floor, wall or object");
+        return;
+    }
+    std::vector<engine::ZGEOM*> sources = Sources();
+    engine::ZGEOM* source = sources.empty() ? nullptr : sources[0];
     Transform t = CurrentTransform();
     if (!keepPlacing)
         DestroyPreview();
@@ -217,34 +272,65 @@ void Commit(bool keepPlacing)
     }
 }
 
+void EndGrab(bool keep)
+{
+    engine::ZGEOM* g = g_grab;
+    g_grab = nullptr;
+    g_grabParts.clear();
+    g_grabOffsets.clear();
+    SetPickIgnore(nullptr);
+    if (!g || !IsLive(g))
+        return;
+    if (keep) {
+        ObjectState after = GetState(g);
+        SetState(g, g_grabBefore);  // Change() applies and records it
+        Change(g, g_grabBefore, after, "grab");
+    } else {
+        SetState(g, g_grabBefore);
+    }
+}
+
+void CommitGrab()
+{
+    if (!g_haveHit) {
+        Refuse("no surface under the mouse: point at a floor, wall or object");
+        return;
+    }
+    EndGrab(true);
+}
+
 // Grid in the plane of the surface, the model's box and its footprint on the
-// surface, the snap target; amber when nothing is under the mouse.
+// surface, the snap target; red when nothing is under the mouse.
 void DrawGuide(const Transform& t)
 {
-    if (!g_preview)
+    if (!Moving())
         return;
     bool hit = g_haveHit;
-    ImU32 main = hit ? IM_COL32(64, 224, 255, 255) : IM_COL32(255, 180, 60, 255);
+    ImU32 main = hit ? IM_COL32(64, 224, 255, 255) : IM_COL32(255, 80, 70, 255);
     const float* n = SurfaceNormal();
     float u[3], v[3];
     PlaneAxes(n, u, v);
-    float size = PreviewSize();
+    float size = ShapeSize();
     float step = GridStepFor(size);
     float radius = std::fmax(size * 2.0f, step * 6.0f);
     radius = std::fmin(radius, step * 50.0f);
     float target[3];
     TargetPoint(target);
     bool floor = std::fabs(n[1]) > 0.7f;
-    DrawGrid(target, u, v, step, radius, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 150), floor);
+    if (hit)
+        DrawGrid(target, u, v, step, radius, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 150), floor);
     Box box;
-    if (ObjectBox(g_preview, t, box)) {
-        DrawFootprint(box, target, n, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 45), main);
+    if (ShapeBox(t, box)) {
+        if (hit)
+            DrawFootprint(box, target, n, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 45), main);
         DrawBox(box, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 200), 1.5f);
     }
+    if (!hit)
+        return;
     float tip[3];
     for (int k = 0; k < 3; ++k)
-        tip[k] = target[k] + n[k] * std::fmin(size * 0.5f, step * 2.0f);
-    DrawLine3D(target, tip, main, 2.0f);  // surface normal
+        tip[k] = target[k] + n[k] * std::fmax(g_lift, std::fmin(size * 0.5f, step * 2.0f));
+    DrawLine3D(target, tip, main, 2.0f);  // surface normal (up to the lifted model)
     DrawSnapTarget(target, IM_COL32(255, 255, 255, 255));
 }
 
@@ -252,16 +338,55 @@ void DrawHint()
 {
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetForegroundDrawList();
-    char text[384];
+    char text[512];
+    char lift[32] = "on the surface";
+    if (g_lift > 0)
+        snprintf(lift, sizeof(lift), "%.0f cm", g_lift);
     snprintf(text, sizeof(text),
-             "%s\nclick: place   Shift+click: place more   Esc: cancel\n"
-             "wheel: turn (%.0f deg)   Ctrl: snap to grid   N: align to surface (%s)%s",
-             g_label.c_str(), g_yaw, g_alignToSurface ? "on" : "off",
-             g_haveHit ? "" : "\n(no surface under the mouse)");
+             "%s\n%s   Esc: cancel\n"
+             "wheel: turn (%.0f deg)   Alt+wheel: lift (%s)   Ctrl: snap to grid   N: align to surface (%s)",
+             g_grab ? ("moving " + PathOf(g_grab)).c_str() : g_label.c_str(),
+             g_grab ? "click: drop it here" : "click: place   Shift+click: place more", g_yaw, lift,
+             g_alignToSurface ? "on" : "off");
+    bool refused = !g_refused.empty() && ImGui::GetTime() - g_refusedTime < 2.0;
+    const char* warning = refused ? g_refused.c_str() : !g_haveHit ? "no surface under the mouse" : nullptr;
     ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
     ImVec2 size = ImGui::CalcTextSize(text);
-    dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170), 4);
+    ImVec2 warnSize = warning ? ImGui::CalcTextSize(warning) : ImVec2(0, 0);
+    float w = std::fmax(size.x, warnSize.x);
+    float h = size.y + (warning ? warnSize.y + 2 : 0);
+    dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + w + 6, p.y + h + 4), IM_COL32(0, 0, 0, 170), 4);
     dl->AddText(p, IM_COL32(255, 220, 120, 255), text);
+    if (warning)
+        dl->AddText(ImVec2(p.x, p.y + size.y + 2), IM_COL32(255, 90, 80, 255), warning);
+}
+
+// The object and everything under it (the pick looks through them).
+std::vector<engine::ZGEOM*> Subtree(engine::ZGEOM* root)
+{
+    std::vector<engine::ZGEOM*> out;
+    const engine::SceneSnapshot& snap = SceneModel(0);
+    int start = snap.Find(root);
+    if (start < 0)
+        return {root};
+    std::vector<int> queue{start};
+    for (size_t q = 0; q < queue.size() && q < 4096; ++q) {
+        const engine::GeomInfo& g = snap.geoms[queue[q]];
+        out.push_back(g.geom);
+        queue.insert(queue.end(), g.children.begin(), g.children.end());
+    }
+    return out;
+}
+
+void ResetCommon(const Transform& base)
+{
+    g_base = base;
+    g_yaw = 0;
+    g_lift = 0;
+    g_haveHit = false;
+    g_haveNormal = false;
+    g_pickPending = false;
+    g_refused.clear();
 }
 
 } // namespace
@@ -269,46 +394,68 @@ void DrawHint()
 void BeginPlacement(const std::string& sourcePath, const std::string& label, const std::string& templatePath)
 {
     CancelPlacement();
-    engine::ZGEOM* source = Resolve(sourcePath);
-    if (!source)
-        return;
-    std::string err;
-    g_preview = SpawnClone(source, "EditorPreview", &err);
-    if (!g_preview) {
-        Log("placement: cannot create the preview: %s", err.c_str());
-        return;
-    }
-    SetPickIgnore(g_preview);
-    g_previewRoom = RoomOf(g_preview);
-    g_hitRoom = nullptr;
     g_sourcePath = sourcePath;
     g_templatePath = templatePath;
+    std::vector<engine::ZGEOM*> sources = Sources();
+    std::string err;
+    if (sources.empty() || !g_preview.Spawn(sources, "EditorPreview", &err)) {
+        Log("placement: cannot create the preview: %s", sources.empty() ? "model not found" : err.c_str());
+        g_sourcePath.clear();
+        g_templatePath.clear();
+        return;
+    }
+    SetPickIgnore(g_preview.parts);
+    g_previewRoom = RoomOf(g_preview.Main());
+    g_hitRoom = nullptr;
     g_label = templatePath.empty() ? label : label + " (working item)";
-    g_base = GetTransform(source);
-    g_yaw = 0;
-    g_haveHit = false;
-    g_haveNormal = false;
-    g_pickPending = false;
+    ResetCommon(GetTransform(sources[0]));
     ImGuiIO& io = ImGui::GetIO();
     PointOnRay(io.MousePos.x, io.MousePos.y);
-    SetTransform(g_preview, CurrentTransform());
+    g_preview.Place(CurrentTransform());
     Select(nullptr);
+}
+
+void BeginGrab(engine::ZGEOM* geom)
+{
+    CancelPlacement();
+    if (!geom || !IsLive(geom))
+        return;
+    g_grab = geom;
+    g_grabBefore = GetState(geom);
+    Transform frame = GetTransform(geom);
+    g_grabParts = VisibleParts(geom);
+    if (g_grabParts.empty())
+        g_grabParts.push_back(geom);
+    for (engine::ZGEOM* part : g_grabParts)
+        g_grabOffsets.push_back(Relative(frame, GetTransform(part)));
+    SetPickIgnore(Subtree(geom));
+    ResetCommon(frame);
 }
 
 void CancelPlacement()
 {
+    if (g_grab)
+        EndGrab(false);
     DestroyPreview();
     g_sourcePath.clear();
+    g_templatePath.clear();
 }
 
-bool Placing() { return !g_sourcePath.empty(); }
+bool Placing() { return !g_sourcePath.empty() || g_grab; }
+bool Grabbing() { return g_grab != nullptr; }
 std::string PlacementSource() { return g_sourcePath; }
 
 void UpdatePlacement()
 {
     if (!Placing())
         return;
-    if (!g_preview || !IsLive(g_preview)) {
+    if (g_grab ? !IsLive(g_grab) : !g_preview.Live()) {
+        if (g_grab) {  // gone (scene change): nothing to put back
+            g_grab = nullptr;
+            g_grabParts.clear();
+            g_grabOffsets.clear();
+            SetPickIgnore(nullptr);
+        }
         CancelPlacement();
         return;
     }
@@ -329,42 +476,64 @@ void UpdatePlacement()
             g_mouseY = io.MousePos.y;
             RequestPick(g_mouseX, g_mouseY, OnPick);
         }
-        if (io.MouseWheel != 0.0f)
-            g_yaw = std::fmod(g_yaw + (io.MouseWheel > 0 ? kRotateStep : -kRotateStep) + 360.0f, 360.0f);
+        if (io.MouseWheel != 0.0f) {
+            float dir = io.MouseWheel > 0 ? 1.0f : -1.0f;
+            if (io.KeyAlt) {
+                float step = io.KeyCtrl ? GridStepFor(ShapeSize()) : kLiftStep;
+                g_lift = std::fmax(0.0f, std::round((g_lift + dir * step) / step) * step);
+            } else {
+                g_yaw = std::fmod(g_yaw + dir * kRotateStep + 360.0f, 360.0f);
+            }
+        }
         DrawHint();
     }
-    if (g_hitRoom && g_hitRoom != g_previewRoom && IsLive(g_hitRoom)) {
-        engine::ZGEOM* source = Resolve(g_sourcePath);
+    if (!g_grab && g_hitRoom && g_hitRoom != g_previewRoom && IsLive(g_hitRoom)) {
+        // the engine draws a room's objects only with the room: move the preview over
+        PartClones moved;
         std::string err;
-        engine::ZGEOM* moved = source ? SpawnClone(source, "EditorPreview", &err, g_hitRoom) : nullptr;
-        if (moved) {
+        std::vector<engine::ZGEOM*> sources = Sources();
+        if (!sources.empty() && moved.Spawn(sources, "EditorPreview", &err, g_hitRoom)) {
             DestroyPreview();
             g_preview = moved;
-            g_previewRoom = g_hitRoom;
-            SetPickIgnore(g_preview);
-        } else {
-            g_previewRoom = g_hitRoom;  // keep the old one, do not retry every frame
+            SetPickIgnore(g_preview.parts);
         }
+        g_previewRoom = g_hitRoom;  // also when it failed: do not retry every frame
     }
     if (overWorld && ImGui::IsKeyPressed(ImGuiKey_N, false))
         g_alignToSurface = !g_alignToSurface;
-    SetHighlightExtra(g_preview, 0xFF40E0FF);
-    Transform t = CurrentTransform();
+    if (!g_grab)
+        SetHighlightExtra(g_preview.parts, 0xFF40E0FF);
+    // a grabbed object stays where it is while the mouse is not over a surface
+    Transform t = g_grab && !g_haveHit ? GetTransform(g_grab) : CurrentTransform();
     DrawGuide(t);
-    Transform cur = GetTransform(g_preview);
-    if (memcmp(&t, &cur, sizeof(t)) != 0)
-        SetTransform(g_preview, t);
-    if (overWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-        Commit(io.KeyShift);
+    if (g_grab) {
+        Transform cur = GetTransform(g_grab);
+        if (g_haveHit && memcmp(&t, &cur, sizeof(t)) != 0)
+            SetTransform(g_grab, t);
+    } else {
+        g_preview.Place(t);
+    }
+    if (overWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (g_grab)
+            CommitGrab();
+        else
+            Commit(io.KeyShift);
+    }
 }
 
 void InstallPlacement()
 {
     OnScenePushed([](const std::string&) {
-        g_preview = nullptr;  // destroyed with the scene objects of the editor
+        g_preview.parts.clear();  // destroyed with the scene objects of the editor
+        g_preview.offsets.clear();
         g_previewRoom = g_hitRoom = nullptr;
+        g_grab = nullptr;
+        g_grabParts.clear();
+        g_grabOffsets.clear();
         SetPickIgnore(nullptr);
+        SetHighlightExtra(nullptr, 0);
         g_sourcePath.clear();
+        g_templatePath.clear();
     });
 }
 

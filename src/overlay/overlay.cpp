@@ -187,10 +187,16 @@ void HelpMenu()
     ImGui::TextDisabled("W / E / Q    move / rotate / local-world");
     ImGui::TextDisabled("H  F         hide  focus camera");
     ImGui::TextDisabled("Ctrl+D  Del  duplicate  delete");
+    ImGui::TextDisabled("G            grab: move onto the surface under the mouse");
     ImGui::TextDisabled("Ctrl+Z / Y   undo / redo");
     ImGui::Separator();
     ImGui::TextDisabled("right mouse  look (free camera)");
     ImGui::TextDisabled("  + WASD QE  move, Shift fast, wheel speed");
+    ImGui::Separator();
+    ImGui::TextDisabled("placing / grabbing:");
+    ImGui::TextDisabled("  click      place (only on a surface), Shift+click: more");
+    ImGui::TextDisabled("  wheel      turn       Alt+wheel  lift off the surface");
+    ImGui::TextDisabled("  Ctrl       grid       N  align to the surface   Esc  cancel");
 }
 
 void DrawMenuBar()

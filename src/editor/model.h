@@ -2,6 +2,7 @@
 // Editor-side view of the loaded scene: a cached snapshot of all objects and
 // the editable state of an object (world transform, visibility).
 #include <string>
+#include <vector>
 
 #include "../engine/geoms.h"
 
@@ -50,6 +51,25 @@ bool IsSpawned(engine::ZGEOM* geom);
 // game deletes items itself when the scene unloads, so these are not
 // destroyed by the editor then (only on request).
 engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error = nullptr);
+
+// The visible models of an object and its descendants, largest first (a
+// working item's template: body, slide, magazine; not its invisible position
+// boxes). Empty when there is none.
+std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root);
+
+// A model made of several parts, cloned and moved together: parts[0] is the
+// main (largest) part, the others keep their place relative to it.
+struct PartClones {
+    std::vector<engine::ZGEOM*> parts;
+    std::vector<Transform> offsets;  // each part in the main part's frame
+
+    bool Spawn(const std::vector<engine::ZGEOM*>& sources, const std::string& name, std::string* error,
+               engine::ZGEOM* parent = nullptr);
+    void Destroy();
+    bool Live() const;
+    engine::ZGEOM* Main() const { return parts.empty() ? nullptr : parts[0]; }
+    void Place(const Transform& mainTransform);  // moves every part
+};
 
 // Transform algebra (world = parent applied to local)
 Transform Compose(const Transform& parent, const Transform& local);

@@ -1,5 +1,7 @@
 #include "highlight.h"
 
+#include <array>
+
 #include <windows.h>
 #include <cmath>
 #include <cstring>
@@ -74,6 +76,7 @@ struct Candidate {
     bool selected;
     bool thumb;
     DWORD color;  // of the highlight wireframe
+    D3DMATRIX world;  // object -> world (thumbnail parts)
 };
 std::vector<Candidate> g_candidates;
 unsigned g_candidatesFrame = ~0u;
@@ -90,7 +93,7 @@ PickCallback g_pickCallback;
 bool g_pickDepthLockable;    // the depth surface can be read back
 bool g_noLockableDepth;      // the device refused a lockable depth surface once
 float g_pickProj[4];         // _11 _22 _33 _43 of the projection the ids were drawn with
-engine::ZGEOM* g_pickIgnore;
+std::vector<engine::ZGEOM*> g_pickIgnore;
 void* g_depthTarget;      // 3x3 colour target of the linear depth pass
 void* g_depthDepth;
 void* g_rampCoarse;       // 256x1 textures: red = texel index / green = texel index
@@ -98,11 +101,13 @@ void* g_rampFine;
 unsigned long g_rampRefs;
 
 // an additional highlighted object (the model being placed)
-engine::ZGEOM* g_extraGeom;
+std::vector<engine::ZGEOM*> g_extraGeoms;
 DWORD g_extraColor;
 
 // thumbnail
-engine::ZGEOM* g_thumbGeom;
+std::vector<engine::ZGEOM*> g_thumbGeoms;
+float g_thumbCenter[3];  // world bounding sphere of the parts (this frame)
+float g_thumbRadius;
 void* g_thumbTexture;   // IDirect3DTexture8*
 void* g_thumbSurface;   // its level 0
 void* g_thumbDepth;
@@ -145,6 +150,22 @@ float Error(const D3DMATRIX& a, const D3DMATRIX& b)
     return e;
 }
 
+bool Contains(const std::vector<engine::ZGEOM*>& v, engine::ZGEOM* g)
+{
+    for (engine::ZGEOM* x : v)
+        if (x == g)
+            return true;
+    return false;
+}
+
+bool AnyLive(const std::vector<engine::ZGEOM*>& v)
+{
+    for (engine::ZGEOM* x : v)
+        if (x && IsLive(x))
+            return true;
+    return false;
+}
+
 bool InSelectedSubtree(engine::ZBaseGeom* node, engine::ZBaseGeom* target)
 {
     for (int i = 0; node && i < 32; ++i, node = node->parent)
@@ -159,8 +180,8 @@ void BuildCandidates()
     g_candidatesFrame = g_frame;
     engine::ZGEOM* sel = Selected();
     bool wantSelection = overlay::IsOpen() && sel && IsLive(sel);
-    bool wantThumb = g_thumbGeom && g_thumbTexture && IsLive(g_thumbGeom);
-    bool wantExtra = overlay::IsOpen() && g_extraGeom && IsLive(g_extraGeom);
+    bool wantThumb = g_thumbTexture && AnyLive(g_thumbGeoms);
+    bool wantExtra = overlay::IsOpen() && AnyLive(g_extraGeoms);
     if (!wantSelection && !g_pickActive && !wantThumb && !wantExtra)
         return;
     float view[16], proj[16];
@@ -168,7 +189,7 @@ void BuildCandidates()
         return;
     D3DMATRIX v;
     memcpy(&v, view, sizeof(v));
-    auto objectToView = [&](engine::ZGEOM* geom, D3DMATRIX& out) {
+    auto objectToView = [&](engine::ZGEOM* geom, D3DMATRIX& out, D3DMATRIX* world = nullptr) {
         Transform t = GetTransform(geom);
         const float* f = t.mat;
         const float* u = t.mat + 3;
@@ -176,21 +197,51 @@ void BuildCandidates()
         D3DMATRIX w = {{{r[0], r[1], r[2], 0}, {u[0], u[1], u[2], 0}, {f[0], f[1], f[2], 0},
                         {t.pos[0], t.pos[1], t.pos[2], 1}}};
         Multiply(w, v, out);
+        if (world)
+            *world = w;
     };
     if (wantThumb) {
-        Candidate c{};
-        objectToView(g_thumbGeom, c.m);
-        c.geom = g_thumbGeom;
-        c.thumb = true;
-        g_candidates.push_back(c);
+        // bounding sphere of all parts (world space)
+        float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+        std::vector<std::pair<std::array<float, 3>, float>> spheres;
+        for (engine::ZGEOM* g : g_thumbGeoms) {
+            if (!g || !IsLive(g))
+                continue;
+            Candidate c{};
+            objectToView(g, c.m, &c.world);
+            c.geom = g;
+            c.thumb = true;
+            g_candidates.push_back(c);
+            const engine::ZBaseGeom* n = g->node;
+            float r = n->boundRadius > 0.5f && n->boundRadius < 1e5f ? n->boundRadius : 25.0f;
+            std::array<float, 3> center;
+            for (int k = 0; k < 3; ++k) {
+                center[k] = c.world.m[3][k] + c.world.m[0][k] * n->boundCenter[0] + c.world.m[1][k] * n->boundCenter[1] +
+                            c.world.m[2][k] * n->boundCenter[2];
+                lo[k] = std::fmin(lo[k], center[k] - r);
+                hi[k] = std::fmax(hi[k], center[k] + r);
+            }
+            spheres.push_back({center, r});
+        }
+        g_thumbRadius = 1.0f;
+        for (int k = 0; k < 3; ++k)
+            g_thumbCenter[k] = (lo[k] + hi[k]) * 0.5f;
+        for (auto& [c, r] : spheres) {
+            float dx = c[0] - g_thumbCenter[0], dy = c[1] - g_thumbCenter[1], dz = c[2] - g_thumbCenter[2];
+            g_thumbRadius = std::fmax(g_thumbRadius, std::sqrt(dx * dx + dy * dy + dz * dz) + r);
+        }
     }
     if (wantExtra) {
-        Candidate c{};
-        objectToView(g_extraGeom, c.m);
-        c.geom = g_extraGeom;
-        c.selected = true;
-        c.color = g_extraColor;
-        g_candidates.push_back(c);
+        for (engine::ZGEOM* g : g_extraGeoms) {
+            if (!g || !IsLive(g))
+                continue;
+            Candidate c{};
+            objectToView(g, c.m);
+            c.geom = g;
+            c.selected = true;
+            c.color = g_extraColor;
+            g_candidates.push_back(c);
+        }
     }
     const auto& snap = SceneModel(2000);
     for (const auto& g : snap.geoms) {
@@ -198,7 +249,7 @@ void BuildCandidates()
         bool drawn = g_drawn.count(g.node) && g_frame - g_drawn[g.node] <= 2;
         if (!selected && !(g_pickActive && drawn))
             continue;
-        if (!IsLive(g.geom) || g.geom == g_thumbGeom || (wantExtra && g.geom == g_extraGeom))
+        if (!IsLive(g.geom) || Contains(g_thumbGeoms, g.geom) || (wantExtra && Contains(g_extraGeoms, g.geom)))
             continue;
         Candidate c{};
         objectToView(g.geom, c.m);
@@ -251,7 +302,7 @@ void HighlightDraw(void* dev, DWORD color, Draw draw)
 template <typename Draw>
 void IdDraw(void* dev, engine::ZGEOM* geom, Draw draw)
 {
-    if (geom == g_pickIgnore)
+    if (Contains(g_pickIgnore, geom))
         return;
     DWORD id = 0;
     for (; id < g_pickIds.size() && g_pickIds[id] != geom; ++id) {
@@ -341,15 +392,14 @@ void IdDraw(void* dev, engine::ZGEOM* geom, Draw draw)
         Call<ULONG>(oldDepth, kSurf_Release);
 }
 
-// Draws the current geometry (the thumbnail object) into the thumbnail
-// texture: its own turntable transform and projection, no fog.
+// Draws the current geometry (a part of the thumbnail model) into the
+// thumbnail texture: its own turntable transform and projection, no fog.
 template <typename Draw>
 void ThumbDraw(void* dev, Draw draw)
 {
-    engine::ZBaseGeom* node = g_thumbGeom->node;
-    float r = node->boundRadius > 1.0f && node->boundRadius < 1e5f ? node->boundRadius : 50.0f;
-    const float* bc = node->boundCenter;
-    // object -> thumbnail view: centre, turn around up, tilt towards the camera, push away
+    float r = g_thumbRadius > 1.0f && g_thumbRadius < 1e5f ? g_thumbRadius : 50.0f;
+    const float* bc = g_thumbCenter;
+    // world -> thumbnail view: centre, turn around up, tilt towards the camera, push away
     float ca = std::cos(g_thumbAngle), sa = std::sin(g_thumbAngle);
     const float tilt = 0.35f;
     float ct = std::cos(tilt), st = std::sin(tilt);
@@ -359,8 +409,9 @@ void ThumbDraw(void* dev, Draw draw)
     const float tanHalf = 0.36397f;  // 40 degree field of view
     float d = r / tanHalf * 1.05f;
     D3DMATRIX push = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, d, 1}}};
-    D3DMATRIX a, b, world;
-    Multiply(center, turn, a);
+    D3DMATRIX a, b, c, world;
+    Multiply(g_current->world, center, c);
+    Multiply(c, turn, a);
     Multiply(a, tiltM, b);
     Multiply(b, push, world);
     float zn = d - r * 1.5f, zf = d + r * 1.5f;
@@ -413,7 +464,7 @@ void ThumbDraw(void* dev, Draw draw)
         Call<ULONG>(oldDepth, kSurf_Release);
 }
 
-bool IsThumbDraw() { return g_current && g_current->thumb && g_thumbSurface && g_thumbGeom && IsLive(g_thumbGeom); }
+bool IsThumbDraw() { return g_current && g_current->thumb && g_thumbSurface && IsLive(g_current->geom); }
 
 template <typename Draw>
 void AfterDraw(void* dev, Draw draw)
@@ -554,7 +605,7 @@ ULONG DeviceRefCount(void* dev)
 // Creates the thumbnail texture when needed and clears it for the next frame.
 void PrepareThumbnail()
 {
-    if (!g_thumbGeom || !g_device)
+    if (g_thumbGeoms.empty() || !g_device)
         return;
     if (!g_thumbTexture) {
         ULONG before = DeviceRefCount(g_device);
@@ -566,7 +617,7 @@ void PrepareThumbnail()
         if (!ok) {
             Log("thumbnail: cannot create the render target");
             ReleaseThumbnail();
-            g_thumbGeom = nullptr;
+            g_thumbGeoms.clear();
             return;
         }
         g_thumbRefs = DeviceRefCount(g_device) - before;
@@ -772,19 +823,33 @@ void RequestPick(float x, float y, PickCallback cb)
     g_pickCallback = cb;
 }
 
-void SetPickIgnore(engine::ZGEOM* geom) { g_pickIgnore = geom; }
-
-void SetHighlightExtra(engine::ZGEOM* geom, unsigned long color)
+void SetPickIgnore(const std::vector<engine::ZGEOM*>& geoms) { g_pickIgnore = geoms; }
+void SetPickIgnore(engine::ZGEOM* geom)
 {
-    g_extraGeom = geom;
-    g_extraColor = color;
+    g_pickIgnore.clear();
+    if (geom)
+        g_pickIgnore.push_back(geom);
 }
 
+void SetHighlightExtra(const std::vector<engine::ZGEOM*>& geoms, unsigned long color)
+{
+    g_extraGeoms = geoms;
+    g_extraColor = color;
+}
+void SetHighlightExtra(engine::ZGEOM* geom, unsigned long color)
+{
+    SetHighlightExtra(geom ? std::vector<engine::ZGEOM*>{geom} : std::vector<engine::ZGEOM*>{}, color);
+}
+
+void SetThumbnailGeoms(const std::vector<engine::ZGEOM*>& geoms)
+{
+    if (geoms != g_thumbGeoms)
+        g_thumbDrawn = false;
+    g_thumbGeoms = geoms;
+}
 void SetThumbnailGeom(engine::ZGEOM* geom)
 {
-    if (geom != g_thumbGeom)
-        g_thumbDrawn = false;
-    g_thumbGeom = geom;
+    SetThumbnailGeoms(geom ? std::vector<engine::ZGEOM*>{geom} : std::vector<engine::ZGEOM*>{});
 }
 
 void* ThumbnailTexture() { return g_thumbDrawn ? g_thumbTexture : nullptr; }

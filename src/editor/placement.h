@@ -1,16 +1,24 @@
 #pragma once
 // Placing a model into the level: a preview copy follows the surface under
 // the mouse; left click places it as a new level object (Shift+click: place
-// more), mouse wheel turns it, Esc cancels.
+// more), mouse wheel turns it, Alt+wheel lifts it off the surface, Esc
+// cancels. Grab (G) moves an existing object the same way.
 #include <string>
+
+namespace h2::engine {
+struct ZGEOM;
+}
 
 namespace h2::editor {
 
 // `sourcePath`: a scene object that uses the model. With `templatePath` (an
 // item template whose model that is), a working item is placed.
 void BeginPlacement(const std::string& sourcePath, const std::string& label, const std::string& templatePath = "");
+// Moves `geom` onto the surface under the mouse until a click (Esc puts it back).
+void BeginGrab(engine::ZGEOM* geom);
 void CancelPlacement();
-bool Placing();
+bool Placing();     // placing a model or grabbing an object
+bool Grabbing();
 std::string PlacementSource();  // path of the model being placed ("" when not placing)
 
 // Called every frame by the viewport while placing (moves the preview,

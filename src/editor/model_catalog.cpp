@@ -1,7 +1,15 @@
 #include "model_catalog.h"
 
+#include <windows.h>
+
 #include <cctype>
+#include <fstream>
+#include <map>
 #include <vector>
+
+#include "json.hpp"
+
+#include "../log.h"
 
 namespace h2::editor {
 
@@ -18,14 +26,20 @@ struct Rule {
 const std::vector<Rule>& Rules()
 {
     static const std::vector<Rule> rules = {
+        {Category::Effects,
+         {"caustics", "shadow", "shaodw", "shodow", "pshadow", "shad", "cloud", "glow", "glows", "lighteffect", "lensflare",
+          "sunbeam"}},
         {Category::Helpers,
          {"gate", "insidebound", "bound", "coli", "camcoli", "pos", "pathfinder", "blocksight", "blocked", "seamfixer",
           "seemfixer", "flowtracer", "lod", "meaningless", "omni", "spot", "fspot", "icon", "text", "reticle",
           "crosshair", "compass", "scrolling", "bitmaps", "greenline", "button", "letters", "raster", "zoombox",
           "overlay", "hilight", "lens", "cursor", "levdef", "repos", "zinstance", "restrictedarea", "emitter",
-          "particelemitter", "exhaustemitter", "stripcylinder", "pshadow", "shadow", "shad", "dummy", "helper",
-          "marker", "trigger", "waypoint", "node", "plane", "core", "inner", "done", "blendcylinder", "riverspline",
-          "entranceportal", "glow", "glows", "lighteffect", "lensflare", "sunbeam", "mesh"}},
+          "particelemitter", "exhaustemitter", "stripcylinder", "dummy", "helper", "marker", "trigger", "waypoint",
+          "node", "plane", "core", "inner", "outer", "done", "blendcylinder", "riverspline", "spline", "splinepath",
+          "entranceportal", "mesh", "help", "helppoint", "point", "safepoint", "warp", "wpt", "wp", "patrol",
+          "distract", "protect", "hidepoint", "arrow", "map", "frame", "border", "title", "font", "headline",
+          "subtitles", "outline", "focus", "backlight", "selection", "selectionbar", "confirmation", "rating",
+          "sizeexpand", "val", "piss", "walkto", "wander", "kill", "movetocreation", "intermediatestorageposition"}},
         {Category::Effects,
          {"particle", "partice", "smoke", "spark", "flash", "flame", "fire", "rain", "snow", "cloud", "blood",
           "bullet", "cartrigde", "cartridge", "waterrings", "breath", "fragment", "splinter", "woodsplinter",
@@ -33,7 +47,10 @@ const std::vector<Rule>& Rules()
           "steam", "dust", "puddle"}},
         {Category::Vehicles,
          {"car", "truck", "train", "wagon", "wheel", "backwheel", "chassis", "heli", "helicopter", "boat", "crane",
-          "bike", "tractor", "jeep", "van", "bus", "tank", "trackmotor", "exhaustflap"}},
+          "bike", "tractor", "jeep", "van", "bus", "tank", "trackmotor", "exhaustflap", "karros", "karroseri",
+          "forskaerme", "bagskaerme", "skaerm", "seats", "seat", "vdoor", "bumper", "windshield", "steering",
+          "exhaust", "ferrari", "limo", "limousine", "mercedes", "motorbike", "rotor", "blades", "cabine", "motor",
+          "throttle"}},
         {Category::Lighting,
          {"lamp", "chandelier", "candle", "lantern", "bulb", "bulp", "lamppost", "lampstring", "light", "landinglight",
           "torch", "neon"}},
@@ -41,13 +58,14 @@ const std::vector<Rule>& Rules()
          {"tree", "bush", "grass", "outsidegrass", "plant", "planthall", "flower", "leaf", "leafs", "waterleaves",
           "lotus", "rock", "stone", "cliff", "hills", "soil", "log", "bamboo", "bamboopole", "pebbles", "water",
           "river", "sky", "skydome", "skyline", "cityscape", "background", "sun", "hedge", "palm", "mountain",
-          "terrain", "dirt", "grounddirt", "mud", "sand", "ice"}},
+          "terrain", "dirt", "grounddirt", "mud", "sand", "ice", "ocean", "sea", "lake"}},
         {Category::Furniture,
          {"chair", "table", "tabletop", "desk", "bed", "couch", "sofa", "shelf", "cabinet", "kitchencabinet", "closet",
           "locker", "lockerdoor", "bench", "trainbench", "carpet", "floormat", "rug", "mirror", "painting", "poster",
           "curtain", "blinds", "toilet", "shower", "zink", "sink", "tap", "stove", "kitchen", "kitchenbase",
           "refrigerator", "fridge", "counter", "wardrobe", "drawer", "chest", "dresser", "armchair", "stool",
-          "goldframe", "bath", "piano", "fireplace", "clock"}},
+          "goldframe", "bath", "piano", "fireplace", "clock", "oven", "shelve", "shelves", "bookcase", "blanket", "futon", "pillow", "coat", "washingmachine",
+          "divider", "forhang", "workoutmat"}},
         {Category::Items,
          {"ammo", "gun", "pistol", "rifle", "shotgun", "sniper", "knife", "sword", "katana", "bomb", "smokebomb",
           "grenade", "key", "binocs", "goggles", "syringe", "suitcase", "briefcase", "weapon", "magazine", "wire",
@@ -60,13 +78,14 @@ const std::vector<Rule>& Rules()
           "dumpster", "ashtray", "laundry", "towel", "dishrag", "cord", "powercord", "pipe", "pipeline", "sign",
           "exitsign", "monitor", "screen", "switchbox", "antenna", "bell", "churchbell", "watermelon", "mangoes",
           "potatochips", "suger", "contents", "tie", "manhole", "trash", "bin", "can", "jar", "statue", "bust",
-          "leninbust", "flag", "map", "globe", "tv", "computer", "keyboard", "lamp", "plank", "tube", "cylinder",
-          "chest", "pin", "joystick", "scanner", "handlebar", "holder"}},
+          "leninbust", "flag", "globe", "tv", "computer", "keyboard", "lamp", "plank", "tube", "cylinder",
+          "chest", "pin", "joystick", "scanner", "handlebar", "holder", "bucket", "cardboxes", "fish", "fruit",
+          "fruitpile", "cherries", "grapes", "grain", "onion", "cloth", "clothstack", "buddha", "speaker", "logo"}},
         {Category::Architecture,
          {"wall", "mwall", "wallpanel", "floor", "flooredge", "ceiling", "roof", "roofedge", "tinroof", "stairs",
           "stair", "stairframe", "step", "steps", "stepplate", "steppingstone", "column", "pillar", "arch", "arcade",
           "balcony", "balchony", "window", "windows", "windowframe", "windowround", "windowblind", "windowkarm",
-          "smallwindownew", "win", "glass", "door", "dooor", "doar", "dor", "vdoor", "portdooor", "dframe", "ddframe",
+          "smallwindownew", "win", "glass", "door", "dooor", "doar", "dor", "portdooor", "dframe", "ddframe",
           "wframe", "fence", "fencemidsection", "railing", "handrail", "handrailend", "beam", "outerbeam", "rafter",
           "wallrafter", "frieze", "friezecorner", "friezecolum", "facade", "facadesouth", "facadenorth", "foundation",
           "building", "buildingbase", "house", "housewall", "housestep", "tower", "chimney", "porch", "veranda",
@@ -80,7 +99,9 @@ const std::vector<Rule>& Rules()
           "seperatorwall", "separatorwall", "woodenwall", "wallwooda", "wallwoodb", "wallhole", "wallcityouter",
           "guardhousewall", "houseguardroof", "complexceiling", "floordecor", "helopad", "helopadrim", "backyard",
           "porch", "bridge", "platform", "pier", "dock", "wood", "brick", "concrete", "metal", "slisk", "trainfloor",
-          "wagonsection", "wagonend", "poles", "pole", "arch", "gateway", "wallcorner", "seam", "block"}},
+          "wagonsection", "wagonend", "poles", "pole", "arch", "gateway", "wallcorner", "seam", "block", "ramp",
+          "vent", "lobby", "corridor", "hall", "room", "markise",
+          "rail", "loft"}},
     };
     return rules;
 }
@@ -127,7 +148,86 @@ bool Matches(const std::vector<std::string>& words, const std::string& joined, c
     return false;
 }
 
+// the user's corrections: model name or family -> category
+std::map<std::string, Category> g_overrides;
+bool g_overridesLoaded;
+
+std::string OverridesFile() { return GameDir() + "Mods\\model_categories.json"; }
+
+void LoadOverrides()
+{
+    g_overridesLoaded = true;
+    std::ifstream f(OverridesFile(), std::ios::binary);
+    if (!f)
+        return;
+    nlohmann::json j = nlohmann::json::parse(f, nullptr, false);
+    if (!j.is_object())
+        return;
+    for (auto& [key, value] : j.items()) {
+        if (!value.is_string())
+            continue;
+        for (int c = 0; c < int(Category::Count); ++c)
+            if (value.get<std::string>() == CategoryKey(Category(c)))
+                g_overrides[key] = Category(c);
+    }
+}
+
+void SaveOverrides()
+{
+    nlohmann::json j = nlohmann::json::object();
+    for (auto& [key, c] : g_overrides)
+        j[key] = CategoryKey(c);
+    CreateDirectoryA((GameDir() + "Mods").c_str(), nullptr);
+    std::ofstream f(OverridesFile(), std::ios::binary | std::ios::trunc);
+    if (f)
+        f << j.dump(2);
+    else
+        Log("cannot write %s", OverridesFile().c_str());
+}
+
 } // namespace
+
+const char* CategoryKey(Category c)
+{
+    switch (c) {
+    case Category::Pickup: return "Pickup";
+    case Category::Architecture: return "Architecture";
+    case Category::Furniture: return "Furniture";
+    case Category::Lighting: return "Lighting";
+    case Category::Nature: return "Nature";
+    case Category::Vehicles: return "Vehicles";
+    case Category::Items: return "Items";
+    case Category::Props: return "Props";
+    case Category::Effects: return "Effects";
+    case Category::Other: return "Other";
+    case Category::Interface: return "Interface";
+    case Category::Helpers: return "Helpers";
+    default: return "?";
+    }
+}
+
+bool CategoryOverride(const std::string& key, Category* out)
+{
+    if (!g_overridesLoaded)
+        LoadOverrides();
+    auto it = g_overrides.find(key);
+    if (it == g_overrides.end())
+        return false;
+    if (out)
+        *out = it->second;
+    return true;
+}
+
+void SetCategoryOverride(const std::string& key, Category c)
+{
+    if (!g_overridesLoaded)
+        LoadOverrides();
+    if (c == Category::Count)
+        g_overrides.erase(key);
+    else
+        g_overrides[key] = c;
+    SaveOverrides();
+}
 
 const char* CategoryName(Category c)
 {
@@ -142,6 +242,7 @@ const char* CategoryName(Category c)
     case Category::Props: return "Props";
     case Category::Effects: return "Effects & debris";
     case Category::Other: return "Other";
+    case Category::Interface: return "Interface & off-level";
     case Category::Helpers: return "Helpers (invisible)";
     default: return "?";
     }

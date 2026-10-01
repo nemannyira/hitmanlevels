@@ -36,7 +36,11 @@ struct ModelEntry {
     int uses = 0;
     Category category = Category::Other;
     std::string family;
-    std::string templatePath;  // working item: its template (sourcePath = the template's model)
+    std::string templatePath;  // working item: its template (sourcePath = its largest visible part)
+    Category autoCategory = Category::Other;  // before the user's correction
+
+    // what the thumbnail and the preview are made of
+    const std::string& Key() const { return templatePath.empty() ? sourcePath : templatePath; }
 };
 
 // sound/sight helper boxes and light volumes: not models to place
@@ -51,11 +55,11 @@ std::string g_message;
 
 // Thumbnail of the hovered model: a clone of it stands in front of the camera
 // (so the engine draws it) and its draws are rendered into a turning picture.
-std::string g_hoverPath;       // model hovered this frame
+std::string g_hoverPath;       // model hovered this frame (ModelEntry::Key)
 std::string g_hoverCandidate;  // hovered since g_hoverSince
 double g_hoverSince, g_lastHover;
 std::string g_thumbPath;       // model the clone is made of
-engine::ZGEOM* g_thumb;
+PartClones g_thumb;
 engine::ZGEOM* g_viewRoom;     // room of what is in the middle of the screen
 double g_viewRoomTime = -1e9;
 bool g_viewRoomPending;
@@ -79,59 +83,16 @@ std::string BaseName(const std::string& name)
     return s.empty() ? name : s;
 }
 
-void Build()
+void ApplyOverride(ModelEntry& e)
 {
-    const engine::SceneSnapshot& snap = SceneModel(0);
-    std::map<uint32_t, ModelEntry> byMesh;
-    for (const engine::GeomInfo& g : snap.geoms) {
-        if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom))
-            continue;
-        uint32_t mesh = engine::MeshOf(g.geom);
-        if (!mesh || (g.node->flags & kHelperFlags))
-            continue;
-        ModelEntry& e = byMesh[mesh];
-        if (e.uses++ == 0) {
-            e.mesh = mesh;
-            e.name = BaseName(g.name);
-            e.className = g.className;
-            e.sourcePath = g.path;
-            e.radius = g.node->boundRadius;
-            e.category = Categorize(g.name, g.className);
-            e.family = FamilyOf(e.name);
-        }
-    }
-    g_models.clear();
-    for (auto& [mesh, e] : byMesh)
-        g_models.push_back(e);
-    // item templates: placed as working items; preview/box from their first model
-    for (int i = 0; i < int(snap.geoms.size()); ++i) {
-        const engine::GeomInfo& g = snap.geoms[i];
-        if (!IsLive(g.geom) || IsSpawned(g.geom) || !engine::IsA(g.geom, "ZItemTemplate"))
-            continue;
-        std::vector<int> queue(g.children.begin(), g.children.end());
-        int model = -1;
-        for (size_t q = 0; q < queue.size() && model < 0 && q < 256; ++q) {
-            const engine::GeomInfo& c = snap.geoms[queue[q]];
-            if (IsLive(c.geom) && engine::MeshOf(c.geom))
-                model = queue[q];
-            else
-                queue.insert(queue.end(), c.children.begin(), c.children.end());
-        }
-        if (model < 0)
-            continue;
-        const engine::GeomInfo& m = snap.geoms[model];
-        ModelEntry e;
-        e.mesh = engine::MeshOf(m.geom);
-        e.name = g.name;
-        e.className = g.className;
-        e.sourcePath = m.path;
-        e.templatePath = g.path;
-        e.radius = m.node->boundRadius;
-        e.uses = 1;
-        e.category = Category::Pickup;
-        e.family = FamilyOf(e.name);
-        g_models.push_back(e);
-    }
+    e.category = e.autoCategory;
+    Category c;
+    if (CategoryOverride(e.name, &c) || CategoryOverride("family:" + e.family, &c))
+        e.category = c;
+}
+
+void Sort()
+{
     std::sort(g_models.begin(), g_models.end(), [](const ModelEntry& a, const ModelEntry& b) {
         if (a.category != b.category)
             return a.category < b.category;
@@ -141,31 +102,93 @@ void Build()
         std::string la = Lower(a.name), lb = Lower(b.name);
         return la != lb ? la < lb : a.mesh < b.mesh;
     });
+}
+
+void Build()
+{
+    const engine::SceneSnapshot& snap = SceneModel(0);
+    g_models.clear();
+    // item templates: placed as working items, shown with all their visible parts
+    std::map<uint32_t, bool> templateMeshes;
+    for (const engine::GeomInfo& g : snap.geoms) {
+        if (!IsLive(g.geom) || IsSpawned(g.geom) || !engine::IsA(g.geom, "ZItemTemplate"))
+            continue;
+        std::vector<engine::ZGEOM*> parts = VisibleParts(g.geom);
+        if (parts.empty())
+            continue;
+        for (engine::ZGEOM* part : parts)
+            templateMeshes[engine::MeshOf(part)] = true;
+        ModelEntry e;
+        e.mesh = engine::MeshOf(parts[0]);
+        e.name = g.name;
+        e.className = g.className;
+        e.sourcePath = PathOf(parts[0]);
+        e.templatePath = g.path;
+        e.radius = parts[0]->node->boundRadius;
+        e.uses = 1;
+        e.autoCategory = Category::Pickup;
+        e.family = FamilyOf(e.name);
+        ApplyOverride(e);
+        g_models.push_back(e);
+    }
+    std::map<uint32_t, ModelEntry> byMesh;
+    for (const engine::GeomInfo& g : snap.geoms) {
+        if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom))
+            continue;
+        uint32_t mesh = engine::MeshOf(g.geom);
+        if (!mesh || (g.node->flags & kHelperFlags) || templateMeshes.count(mesh))
+            continue;  // models of item templates: placed as working items (above)
+        ModelEntry& e = byMesh[mesh];
+        if (e.uses++ == 0) {
+            e.mesh = mesh;
+            e.name = BaseName(g.name);
+            e.className = g.className;
+            e.sourcePath = g.path;
+            e.radius = g.node->boundRadius;
+            // menus, HUD and the map screen are not in any room of the level
+            e.autoCategory = RoomOf(g.geom) ? Categorize(g.name, g.className) : Category::Interface;
+            e.family = FamilyOf(e.name);
+            ApplyOverride(e);
+        }
+    }
+    for (auto& [mesh, e] : byMesh)
+        g_models.push_back(e);
+    Sort();
     g_builtFor = CurrentScene();
 }
 
 void DestroyThumb()
 {
-    SetThumbnailGeom(nullptr);
-    if (g_thumb && IsSpawned(g_thumb))
-        DestroySpawned(g_thumb);
-    g_thumb = nullptr;
+    SetThumbnailGeoms({});
+    g_thumb.Destroy();
     g_thumbPath.clear();
 }
 
 void PlaceThumb()
 {
     game::ZCAMERA* cam = game::MainCamera();
-    if (!cam || !g_thumb || !IsLive(g_thumb))
+    if (!cam || !g_thumb.Live())
         return;
     float m[9], c[3];
     game::GetWorldTransform(cam, m, c);
-    Transform t = GetTransform(g_thumb);
+    Transform t = GetTransform(g_thumb.Main());
     for (int i = 0; i < 3; ++i)
         t.pos[i] = c[i] + m[i] * 300.0f;
-    Transform cur = GetTransform(g_thumb);
+    Transform cur = GetTransform(g_thumb.Main());
     if (std::fabs(cur.pos[0] - t.pos[0]) + std::fabs(cur.pos[1] - t.pos[1]) + std::fabs(cur.pos[2] - t.pos[2]) > 1.0f)
-        SetTransform(g_thumb, t);
+        g_thumb.Place(t);
+}
+
+// What a model of the list is made of: an item template's visible parts, or
+// the scene object using the model.
+std::vector<engine::ZGEOM*> ThumbSources(const std::string& key)
+{
+    engine::ZGEOM* g = Resolve(key);
+    if (!g)
+        return {};
+    if (engine::IsA(g, "ZItemTemplate"))
+        return VisibleParts(g);
+    return {g};
 }
 
 // Every frame the overlay is open (also when the Models tab is not shown).
@@ -194,23 +217,21 @@ void ThumbTick()
             g_viewRoomPending = false;  // the request was taken over
         if (now - g_hoverSince >= kHoverDelay && g_thumbPath != hovered && !Placing()) {
             DestroyThumb();
-            if (engine::ZGEOM* source = Resolve(hovered)) {
-                std::string err;
-                engine::ZGEOM* room = g_viewRoom && IsLive(g_viewRoom) ? g_viewRoom : nullptr;
-                g_thumb = SpawnClone(source, "EditorThumb", &err, room);
-                g_thumbPath = hovered;
-                if (g_thumb) {
-                    PlaceThumb();
-                    SetThumbnailGeom(g_thumb);
-                }
+            std::vector<engine::ZGEOM*> sources = ThumbSources(hovered);
+            g_thumbPath = hovered;
+            std::string err;
+            engine::ZGEOM* room = g_viewRoom && IsLive(g_viewRoom) ? g_viewRoom : nullptr;
+            if (!sources.empty() && g_thumb.Spawn(sources, "EditorThumb", &err, room)) {
+                PlaceThumb();
+                SetThumbnailGeoms(g_thumb.parts);
             }
         }
-    } else if (g_thumb && now - g_lastHover > kHoverLinger) {
+    } else if (!g_thumb.parts.empty() && now - g_lastHover > kHoverLinger) {
         DestroyThumb();
         ReleaseThumbnail();
     }
-    if (g_thumb) {
-        if (!IsLive(g_thumb))
+    if (!g_thumb.parts.empty()) {
+        if (!g_thumb.Live())
             DestroyThumb();
         else
             PlaceThumb();
@@ -223,7 +244,7 @@ void DrawTooltip(const ModelEntry& e)
     ImGui::TextUnformatted(e.name.c_str());
     ImGui::TextDisabled("%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f, e.uses);
     float size = 220.0f * ImGui::GetIO().FontGlobalScale * (ImGui::GetFontSize() / 16.0f);
-    void* tex = g_thumbPath == e.sourcePath ? ThumbnailTexture() : nullptr;
+    void* tex = g_thumbPath == e.Key() ? ThumbnailTexture() : nullptr;
     if (tex)
         ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size, size));
     else
@@ -243,6 +264,35 @@ void FindInScene(const ModelEntry& e)
     }
 }
 
+bool g_resort;  // a category was changed: sort again after drawing
+
+// Submenu putting the model (key = its name) or its family ("family:<name>")
+// into another category; remembered in Mods\model_categories.json.
+void CategoryMenu(const char* label, const std::string& key, const ModelEntry& e)
+{
+    if (!ImGui::BeginMenu(label))
+        return;
+    Category current;
+    bool overridden = CategoryOverride(key, &current);
+    for (int c = 0; c < int(Category::Count); ++c) {
+        Category cat = Category(c);
+        if (cat == Category::Pickup && e.templatePath.empty())
+            continue;  // only item templates work as pickups
+        if (ImGui::MenuItem(CategoryName(cat), nullptr, overridden ? current == cat : e.category == cat)) {
+            SetCategoryOverride(key, cat == e.autoCategory ? Category::Count : cat);
+            g_resort = true;
+        }
+    }
+    if (overridden) {
+        ImGui::Separator();
+        if (ImGui::MenuItem("Automatic")) {
+            SetCategoryOverride(key, Category::Count);
+            g_resort = true;
+        }
+    }
+    ImGui::EndMenu();
+}
+
 void DrawRow(const ModelEntry& e, int index)
 {
     ImGui::PushID(index);
@@ -257,7 +307,7 @@ void DrawRow(const ModelEntry& e, int index)
             BeginPlacement(e.sourcePath, e.name, e.templatePath);
     }
     if (ImGui::IsItemHovered() && !Placing()) {
-        g_hoverPath = e.sourcePath;
+        g_hoverPath = e.Key();
         DrawTooltip(e);
     }
     if (ImGui::BeginPopupContextItem("row")) {
@@ -265,6 +315,9 @@ void DrawRow(const ModelEntry& e, int index)
             BeginPlacement(e.sourcePath, e.name, e.templatePath);
         if (ImGui::MenuItem("Find in the scene"))
             FindInScene(e);
+        CategoryMenu("Move to category", e.name, e);
+        if (!e.family.empty() && e.family != e.name)
+            CategoryMenu(("Move every " + e.family + " to").c_str(), "family:" + e.family, e);
         ImGui::TextDisabled("%s, used %d times", e.className.c_str(), e.uses);
         ImGui::EndPopup();
     }
@@ -315,7 +368,7 @@ void DrawPanel()
             int shown = 0;
             while (catEnd < g_models.size() && g_models[catEnd].category == cat)
                 shown += matches(g_models[catEnd++]);
-            bool skip = shown == 0 || (cat == Category::Helpers && !g_showHelpers);
+            bool skip = shown == 0 || ((cat == Category::Helpers || cat == Category::Interface) && !g_showHelpers);
             if (!skip) {
                 if (!filter.empty())
                     ImGui::SetNextItemOpen(true, ImGuiCond_Always);
@@ -355,6 +408,12 @@ void DrawPanel()
     ImGui::EndChild();
     if (!g_message.empty())
         ImGui::TextDisabled("%s", g_message.c_str());
+    if (g_resort) {
+        g_resort = false;
+        for (ModelEntry& e : g_models)
+            ApplyOverride(e);
+        Sort();
+    }
 }
 
 } // namespace
@@ -367,10 +426,11 @@ void InstallModelsPanel()
     OnScenePushed([](const std::string&) {
         g_models.clear();
         g_builtFor.clear();
-        g_thumb = nullptr;  // destroyed with the editor's objects when the scene was left
+        g_thumb.parts.clear();  // destroyed with the editor's objects when the scene was left
+        g_thumb.offsets.clear();
         g_thumbPath.clear();
         g_viewRoom = nullptr;
-        SetThumbnailGeom(nullptr);
+        SetThumbnailGeoms({});
     });
 }
 

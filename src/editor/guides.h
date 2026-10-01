@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 // Visual aids drawn over the game view (ImGui background list), after the
 // overlays of 3D editors such as Blender: the object's bounding box, a grid
 // in the plane it stands on that fades out with distance, its footprint on
@@ -15,6 +16,9 @@ struct Box {
     float c[8][3];
 };
 bool ObjectBox(engine::ZGEOM* geom, const Transform& t, Box& box);
+// Box around several parts given in the frame `t` (offsets[i]: part i in that frame).
+bool PartsBox(const std::vector<engine::ZGEOM*>& parts, const std::vector<Transform>& offsets, const Transform& t,
+              Box& box);
 // Centre of the box face that looks most along -normal (its "bottom").
 void BoxBottom(const Box& box, const float normal[3], float out[3]);
 

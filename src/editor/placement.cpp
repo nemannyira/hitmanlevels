@@ -86,9 +86,12 @@ void OnPick(engine::ZGEOM* hit, const float* point, const float* normal)
             float dx = point[0] - o[0], dy = point[1] - o[1], dz = point[2] - o[2];
             g_distance = std::sqrt(dx * dx + dy * dy + dz * dz);
         }
-        g_haveNormal = normal != nullptr;
-        if (normal)
+        // keep the previous normal while the new one is within ~3 degrees (no jitter)
+        bool same = g_haveNormal && normal &&
+                    normal[0] * g_normal[0] + normal[1] * g_normal[1] + normal[2] * g_normal[2] > 0.9986f;
+        if (normal && !same)
             memcpy(g_normal, normal, sizeof(g_normal));
+        g_haveNormal = normal != nullptr;
     } else {
         g_haveHit = false;
         g_haveNormal = false;

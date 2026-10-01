@@ -40,8 +40,11 @@ void SetHighlightExtra(engine::ZGEOM* geom, unsigned long color);
 void SetThumbnailGeom(engine::ZGEOM* geom);
 // IDirect3DTexture8* of the thumbnail (null until something was drawn in it).
 void* ThumbnailTexture();
-// Frees the texture; references it holds on `device` (for the Release hook).
+// Frees the thumbnail texture.
 void ReleaseThumbnail();
-unsigned long ThumbnailDeviceRefs(void* device);
+// References the highlight's resources (thumbnail, depth ramps) hold on
+// `device`, and freeing them all (for the device Release hook).
+unsigned long HighlightDeviceRefs(void* device);
+void ReleaseHighlightResources();
 
 } // namespace h2::editor

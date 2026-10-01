@@ -48,6 +48,15 @@ constexpr DWORD kThumbBackground = 0xFF141416;
 // centre and two neighbours the surface normal.
 constexpr int kPickSize = 3;
 constexpr float kPickSpacing = 6.0f;
+// Linear depth of the samples: a second pass writes the camera space z into
+// the colour, coarse byte in red and fine byte in green, through generated
+// texture coordinates (camera space position) and two ramp textures.
+// 16 bits over kDepthRange: about 0.5 cm everywhere, where the game's 16 bit
+// z-buffer has centimetres to decimetres at a distance.
+constexpr float kDepthRange = 30000.0f;  // cm
+constexpr DWORD D3DTSS_TCI_CAMERASPACEPOSITION = 0x20000, D3DTTFF_COUNT2 = 2, D3DTS_TEXTURE0 = 16,
+                D3DTS_TEXTURE1 = 17, D3DTOP_ADD = 7, D3DTA_CURRENT = 1, D3DTADDRESS_WRAP = 1, D3DTEXF_POINT = 1;
+constexpr int kTex_LockRect = 16, kTex_UnlockRect = 17;
 
 void* g_device;
 unsigned g_frame;
@@ -82,6 +91,11 @@ bool g_pickDepthLockable;    // the depth surface can be read back
 bool g_noLockableDepth;      // the device refused a lockable depth surface once
 float g_pickProj[4];         // _11 _22 _33 _43 of the projection the ids were drawn with
 engine::ZGEOM* g_pickIgnore;
+void* g_depthTarget;      // 3x3 colour target of the linear depth pass
+void* g_depthDepth;
+void* g_rampCoarse;       // 256x1 textures: red = texel index / green = texel index
+void* g_rampFine;
+unsigned long g_rampRefs;
 
 // an additional highlighted object (the model being placed)
 engine::ZGEOM* g_extraGeom;
@@ -285,6 +299,35 @@ void IdDraw(void* dev, engine::ZGEOM* geom, Draw draw)
     Call<HRESULT>(dev, Dev_SetPixelShader, DWORD(0));
     draw();
 
+    if (g_depthTarget && g_rampCoarse && g_rampFine) {
+        Call<HRESULT>(dev, kDev_SetRenderTarget, g_depthTarget, g_depthDepth);
+        D3DMATRIX coarse = {{{0, 0, 0, 0}, {0, 0, 0, 0}, {1.0f / kDepthRange, 0, 0, 0}, {0, 0, 0, 0}}};
+        D3DMATRIX fine = {{{0, 0, 0, 0}, {0, 0, 0, 0}, {256.0f / kDepthRange, 0, 0, 0}, {0, 0, 0, 0}}};
+        oSetTransform(dev, D3DTS_TEXTURE0, &coarse);
+        oSetTransform(dev, D3DTS_TEXTURE1, &fine);
+        Call<HRESULT>(dev, Dev_SetTexture, DWORD(0), g_rampCoarse);
+        Call<HRESULT>(dev, Dev_SetTexture, DWORD(1), g_rampFine);
+        for (DWORD stage = 0; stage < 2; ++stage) {
+            auto tss = [&](DWORD state, DWORD value) {
+                Call<HRESULT>(dev, Dev_SetTextureStageState, stage, state, value);
+            };
+            tss(D3DTSS_COLOROP, stage == 0 ? DWORD(D3DTOP_SELECTARG1) : D3DTOP_ADD);
+            tss(D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            tss(D3DTSS_COLORARG2, D3DTA_CURRENT);
+            tss(D3DTSS_ALPHAOP, DWORD(D3DTOP_SELECTARG1));
+            tss(D3DTSS_ALPHAARG1, stage == 0 ? DWORD(D3DTA_TEXTURE) : D3DTA_CURRENT);
+            tss(D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_CAMERASPACEPOSITION | stage);
+            tss(D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT2);
+            tss(D3DTSS_ADDRESSU, stage == 0 ? DWORD(D3DTADDRESS_CLAMP) : D3DTADDRESS_WRAP);
+            tss(D3DTSS_ADDRESSV, DWORD(D3DTADDRESS_CLAMP));
+            tss(D3DTSS_MAGFILTER, D3DTEXF_POINT);
+            tss(D3DTSS_MINFILTER, D3DTEXF_POINT);
+            tss(D3DTSS_MIPFILTER, DWORD(D3DTEXF_NONE));
+        }
+        Call<HRESULT>(dev, Dev_SetTextureStageState, DWORD(2), DWORD(D3DTSS_COLOROP), DWORD(D3DTOP_DISABLE));
+        draw();
+    }
+
     Call<HRESULT>(dev, kDev_SetRenderTarget, oldTarget, oldDepth);
     Call<HRESULT>(dev, Dev_SetViewport, &oldVp);
     oSetTransform(dev, D3DTS_PROJECTION, &proj);
@@ -429,17 +472,60 @@ void ReleasePickSurfaces()
         Call<ULONG>(g_pickTarget, kSurf_Release);
     if (g_pickDepth)
         Call<ULONG>(g_pickDepth, kSurf_Release);
-    g_pickTarget = g_pickDepth = nullptr;
+    if (g_depthTarget)
+        Call<ULONG>(g_depthTarget, kSurf_Release);
+    if (g_depthDepth)
+        Call<ULONG>(g_depthDepth, kSurf_Release);
+    g_pickTarget = g_pickDepth = g_depthTarget = g_depthDepth = nullptr;
 }
 
-// World position of a picked sample from its depth (post-projection z);
-// (dx, dy): its offset from the cursor in screen pixels.
-bool DepthToWorld(float zndc, float dx, float dy, float out[3])
+ULONG DeviceRefCount(void* dev);
+
+// The two ramp textures of the depth pass (kept while the device lives).
+bool CreateRamps()
 {
-    if (!(zndc > 0.0f && zndc < 0.99999f) || g_pickProj[0] == 0.0f || g_pickProj[1] == 0.0f)
+    if (g_rampCoarse && g_rampFine)
+        return true;
+    ULONG before = DeviceRefCount(g_device);
+    void* ramps[2] = {};
+    for (int r = 0; r < 2; ++r) {
+        if (Call<HRESULT>(g_device, Dev_CreateTexture, UINT(256), UINT(1), UINT(1), DWORD(0), DWORD(D3DFMT_A8R8G8B8),
+                          DWORD(D3DPOOL_MANAGED), &ramps[r]) < 0)
+            break;
+        D3DLOCKED_RECT lr;
+        if (Call<HRESULT>(ramps[r], kTex_LockRect, UINT(0), &lr, static_cast<const RECT*>(nullptr), DWORD(0)) < 0)
+            break;
+        DWORD* texels = static_cast<DWORD*>(lr.pBits);
+        for (DWORD i = 0; i < 256; ++i)
+            texels[i] = 0xFF000000 | (r == 0 ? i << 16 : i << 8);
+        Call<HRESULT>(ramps[r], kTex_UnlockRect, UINT(0));
+    }
+    if (!ramps[0] || !ramps[1]) {
+        for (void* t : ramps)
+            if (t)
+                Call<ULONG>(t, kTex_Release);
+        Log("pick: no depth ramp textures, falling back to the z-buffer");
         return false;
-    float viewZ = g_pickProj[3] / (zndc - g_pickProj[2]);
-    if (!(viewZ > 0.0f && viewZ < 1e6f))
+    }
+    g_rampCoarse = ramps[0];
+    g_rampFine = ramps[1];
+    g_rampRefs = DeviceRefCount(g_device) - before;
+    return true;
+}
+
+// View depth of a z-buffer value (post-projection z), 0 when none.
+float ZbufferToView(float zndc)
+{
+    if (!(zndc > 0.0f && zndc < 0.99999f))
+        return 0.0f;
+    return g_pickProj[3] / (zndc - g_pickProj[2]);
+}
+
+// World position of a picked sample from its view depth; (dx, dy): its
+// offset from the cursor in screen pixels.
+bool DepthToWorld(float viewZ, float dx, float dy, float out[3])
+{
+    if (!(viewZ > 0.0f && viewZ < 1e6f) || g_pickProj[0] == 0.0f || g_pickProj[1] == 0.0f)
         return false;
     float view[16], proj[16];
     if (!CameraMatrices(view, proj))
@@ -521,13 +607,33 @@ void FinishPick()
     }
     float point[3], normal[3];
     bool havePoint = false, haveNormal = false;
-    if (hit && g_pickDepthLockable &&
+    float viewZ[kPickSize][kPickSize] = {};
+    bool haveDepth = false;
+    if (hit && g_depthTarget &&
+        Call<HRESULT>(g_depthTarget, kSurf_LockRect, &lr, static_cast<const RECT*>(nullptr), DWORD(0x10)) >= 0) {
+        // linear depth pass: red = coarse, green = fine, blue 0 (cleared to white)
+        haveDepth = true;
+        for (int y = 0; y < kPickSize; ++y)
+            for (int x = 0; x < kPickSize; ++x) {
+                DWORD v = reinterpret_cast<const DWORD*>(static_cast<const char*>(lr.pBits) + y * lr.Pitch)[x];
+                viewZ[y][x] = (v & 0xFF) ? 0.0f
+                                         : ((((v >> 16) & 0xFF) * 256 + ((v >> 8) & 0xFF)) + 0.5f) / 65536.0f *
+                                               kDepthRange;
+            }
+        Call<HRESULT>(g_depthTarget, kSurf_UnlockRect);
+        haveDepth = viewZ[c][c] > 0.0f;
+    }
+    if (hit && !haveDepth && g_pickDepthLockable &&
         Call<HRESULT>(g_pickDepth, kSurf_LockRect, &lr, static_cast<const RECT*>(nullptr), DWORD(0x10)) >= 0) {
-        auto depth = [&](int x, int y) {
-            return reinterpret_cast<const uint16_t*>(static_cast<const char*>(lr.pBits) + y * lr.Pitch)[x] / 65535.0f;
-        };
-        float zc = depth(c, c), zr = depth(c + 1, c), zu = depth(c, c - 1), zl = depth(c - 1, c), zd = depth(c, c + 1);
+        for (int y = 0; y < kPickSize; ++y)
+            for (int x = 0; x < kPickSize; ++x)
+                viewZ[y][x] = ZbufferToView(
+                    reinterpret_cast<const uint16_t*>(static_cast<const char*>(lr.pBits) + y * lr.Pitch)[x] / 65535.0f);
         Call<HRESULT>(g_pickDepth, kSurf_UnlockRect);
+        haveDepth = true;
+    }
+    if (haveDepth) {
+        float zc = viewZ[c][c], zr = viewZ[c][c + 1], zu = viewZ[c - 1][c], zl = viewZ[c][c - 1], zd = viewZ[c + 1][c];
         havePoint = DepthToWorld(zc, 0, 0, point);
         // normal from the neighbours on the same object (right or left, up or down)
         float a[3], b[3];
@@ -551,6 +657,13 @@ void FinishPick()
             if (len > 1e-6f) {
                 for (float& n : normal)
                     n /= len;
+                // floors, walls and ceilings are mostly axis aligned: snap what is within ~5 degrees
+                for (int k = 0; k < 3; ++k)
+                    if (std::fabs(normal[k]) > 0.996f) {
+                        float s = normal[k] > 0 ? 1.0f : -1.0f;
+                        normal[0] = normal[1] = normal[2] = 0.0f;
+                        normal[k] = s;
+                    }
                 haveNormal = true;
             }
         }
@@ -582,8 +695,17 @@ void StartPick()
         ok = Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(kPickSize), UINT(kPickSize), D3DFMT_D16,
                            DWORD(0),
                            &g_pickDepth) >= 0;
+    if (ok && CreateRamps() &&
+        (Call<HRESULT>(g_device, kDev_CreateRenderTarget, UINT(kPickSize), UINT(kPickSize), D3DFMT_X8R8G8B8, DWORD(0),
+                       BOOL(TRUE), &g_depthTarget) < 0 ||
+         Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(kPickSize), UINT(kPickSize), D3DFMT_D16, DWORD(0),
+                       &g_depthDepth) < 0)) {
+        if (g_depthTarget)
+            Call<ULONG>(g_depthTarget, kSurf_Release);
+        g_depthTarget = nullptr;  // fall back to the z-buffer
+    }
     if (!ok) {
-        Log("pick: cannot create the 1x1 target");
+        Log("pick: cannot create the pick target");
         ReleasePickSurfaces();
         if (g_pickCallback)
             g_pickCallback(nullptr, nullptr, nullptr);
@@ -596,6 +718,11 @@ void StartPick()
     Call<HRESULT>(g_device, kDev_SetRenderTarget, g_pickTarget, g_pickDepth);
     Call<HRESULT>(g_device, kDev_Clear, DWORD(0), static_cast<const void*>(nullptr),
                   DWORD(D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER), DWORD(0), 1.0f, DWORD(0));
+    if (g_depthTarget && g_depthDepth) {
+        Call<HRESULT>(g_device, kDev_SetRenderTarget, g_depthTarget, g_depthDepth);
+        Call<HRESULT>(g_device, kDev_Clear, DWORD(0), static_cast<const void*>(nullptr),
+                      DWORD(D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER), DWORD(0xFFFFFFFF), 1.0f, DWORD(0));
+    }
     Call<HRESULT>(g_device, kDev_SetRenderTarget, oldTarget, oldDepth);
     if (oldTarget)
         Call<ULONG>(oldTarget, kSurf_Release);
@@ -675,7 +802,23 @@ void ReleaseThumbnail()
     g_thumbRefs = 0;
 }
 
-unsigned long ThumbnailDeviceRefs(void* device) { return device == g_device && g_thumbTexture ? g_thumbRefs : 0; }
+unsigned long HighlightDeviceRefs(void* device)
+{
+    if (device != g_device)
+        return 0;
+    return (g_thumbTexture ? g_thumbRefs : 0) + (g_rampCoarse ? g_rampRefs : 0);
+}
+
+void ReleaseHighlightResources()
+{
+    ReleaseThumbnail();
+    if (g_rampCoarse)
+        Call<ULONG>(g_rampCoarse, kTex_Release);
+    if (g_rampFine)
+        Call<ULONG>(g_rampFine, kTex_Release);
+    g_rampCoarse = g_rampFine = nullptr;
+    g_rampRefs = 0;
+}
 
 void InstallHighlight() { OnModuleLoad("RenderD3D.dll", OnRendererLoaded); }
 

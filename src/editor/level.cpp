@@ -14,6 +14,7 @@
 #include "../scene.h"
 #include "../script/events.h"
 #include "../script/lua_vm.h"
+#include "../script/objects_api.h"
 #include "history.h"
 #include "scene_panel.h"
 
@@ -149,6 +150,7 @@ std::string UniqueId(const std::string& base)
 void RunLevelScripts()
 {
     script::ClearHandlers("level");
+    script::DestroyScriptObjects();
     for (const std::string& s : g_level.scripts) {
         std::string path = ModsDir() + g_level.folder + "\\" + s;
         script::SetHandlerOwner("level");
@@ -163,6 +165,7 @@ void OnScene(const std::string& scene)
     g_applyPending = g_autoApply && !g_level.baseScene.empty() && scene == g_level.baseScene;
     g_applyWaitFrames = 2;  // let the scene finish creating its objects
     g_live.clear();         // the editor destroyed them when the previous scene was left
+    script::ForgetScriptObjects();
     for (auto& [path, e] : g_level.objects)
         e.hasOriginal = false;  // originals belong to the previous load
 }

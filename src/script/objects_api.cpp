@@ -9,10 +9,20 @@
 //   x, y, z = crate:pos();  crate:setpos(x, y + 100, z)
 //   yaw, pitch, roll = crate:rot();  crate:setrot(90, 0, 0)
 //   crate:hide(); crate:show(); crate:hidden()
+//
+// Objects created by scripts (visual copies of an object's model, like the
+// editor's; runtime only, not saved in the level, destroyed when the level
+// scripts run again or the scene is left):
+//   local c = crate:spawn()                       -- next to the original
+//   local c = crate:spawn(x, y, z [, yaw])        -- at a position (turned by yaw degrees)
+//   local c = h2.spawn("Crate_01", x, y, z [, yaw])  -- source by name/path or object
+//   c:destroy();  c:spawned()  -- true for script objects
 #include "objects_api.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include "lauxlib.h"
@@ -20,6 +30,7 @@ extern "C" {
 }
 
 #include "../editor/model.h"
+#include "../engine/spawn.h"
 #include "lua_vm.h"
 
 namespace h2::script {
@@ -27,6 +38,9 @@ namespace h2::script {
 namespace {
 
 constexpr const char* kMeta = "h2.object";
+
+std::vector<engine::ZGEOM*> g_scriptObjects;  // created by scripts, alive
+int g_spawnCounter;
 
 void PushObject(lua_State* L, const std::string& path)
 {
@@ -54,9 +68,9 @@ engine::ZGEOM* Geom(lua_State* L)
     return g;
 }
 
-int Find(lua_State* L)
+// Object by full path, or name with optional "#k".
+int FindIndex(const std::string& key)
 {
-    std::string key = luaL_checkstring(L, 1);
     const auto& snap = editor::SceneModel();
     int i = snap.FindPath(key);
     if (i < 0) {
@@ -70,12 +84,63 @@ int Find(lua_State* L)
         if (k < int(found.size()))
             i = found[k];
     }
+    return i;
+}
+
+int Find(lua_State* L)
+{
+    int i = FindIndex(luaL_checkstring(L, 1));
     if (i < 0) {
         lua_pushnil(L);
         return 1;
     }
-    PushObject(L, snap.geoms[i].path);
+    PushObject(L, editor::SceneModel().geoms[i].path);
     return 1;
+}
+
+// Creates the copy of `source`; position arguments (x, y, z [, yaw]) from `arg`.
+int SpawnFrom(lua_State* L, engine::ZGEOM* source, int arg)
+{
+    if (!engine::MeshOf(source) || editor::InActor(source))
+        return luaL_error(L, "only objects with their own model can be copied (not characters or groups)");
+    std::string base = engine::SafeString(source->name);
+    std::string name = "Lua_" + (base.empty() ? std::string("Object") : base) + "_" + std::to_string(++g_spawnCounter);
+    std::string err;
+    engine::ZGEOM* g = editor::SpawnClone(source, name, &err);
+    if (!g)
+        return luaL_error(L, "spawn failed: %s", err.c_str());
+    g_scriptObjects.push_back(g);
+    editor::Transform t = editor::GetTransform(source);
+    if (lua_gettop(L) >= arg + 2) {
+        for (int i = 0; i < 3; ++i)
+            t.pos[i] = float(luaL_checknumber(L, arg + i));
+        if (!lua_isnoneornil(L, arg + 3))
+            editor::EulerToMatrix(float(luaL_checknumber(L, arg + 3)), 0.0f, 0.0f, t.mat);
+    } else {
+        float c[3], r = 100.0f;
+        if (!editor::GetBounds(source, c, r))
+            r = 100.0f;
+        t.pos[0] += r < 50.0f ? 50.0f : (r > 500.0f ? 500.0f : r);
+    }
+    editor::SetTransform(g, t);
+    PushObject(L, editor::PathOf(g));
+    return 1;
+}
+
+int Spawn(lua_State* L)
+{
+    engine::ZGEOM* source = nullptr;
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "_path");
+        source = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+    } else {
+        int i = FindIndex(luaL_checkstring(L, 1));
+        source = i >= 0 ? editor::SceneModel().geoms[i].geom : nullptr;
+    }
+    if (!source || !editor::IsLive(source))
+        return luaL_error(L, "spawn: source object not found");
+    return SpawnFrom(L, source, 2);
 }
 
 int FindAll(lua_State* L)
@@ -196,6 +261,26 @@ int Hidden(lua_State* L)
     return 1;
 }
 
+int ObjSpawn(lua_State* L) { return SpawnFrom(L, Geom(L), 2); }
+
+int Destroy(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    auto it = std::find(g_scriptObjects.begin(), g_scriptObjects.end(), g);
+    if (it == g_scriptObjects.end())
+        return luaL_error(L, "only objects created by scripts can be destroyed (hide() the others)");
+    g_scriptObjects.erase(it);
+    editor::DestroySpawned(g);
+    return 0;
+}
+
+int Spawned(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(PathArg(L));
+    lua_pushboolean(L, g && std::find(g_scriptObjects.begin(), g_scriptObjects.end(), g) != g_scriptObjects.end());
+    return 1;
+}
+
 int ToString(lua_State* L)
 {
     lua_pushfstring(L, "object(%s)", PathArg(L).c_str());
@@ -220,6 +305,7 @@ void RegisterObjectsApi()
         {"name", Name},   {"class", Class},   {"path", Path}, {"isa", IsA},   {"valid", Valid},
         {"pos", Pos},     {"setpos", SetPos}, {"rot", Rot},   {"setrot", SetRot},
         {"hide", Hide},   {"show", Show},     {"hidden", Hidden},
+        {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);
@@ -233,6 +319,17 @@ void RegisterObjectsApi()
     Register("find", Find);
     Register("findall", FindAll);
     Register("objects", Objects);
+    Register("spawn", Spawn);
 }
+
+void DestroyScriptObjects()
+{
+    for (engine::ZGEOM* g : g_scriptObjects)
+        if (editor::IsSpawned(g))
+            editor::DestroySpawned(g);
+    g_scriptObjects.clear();
+}
+
+void ForgetScriptObjects() { g_scriptObjects.clear(); }
 
 } // namespace h2::script

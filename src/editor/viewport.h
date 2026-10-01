@@ -15,6 +15,9 @@ void InstallViewport();
 void DuplicateSelection();
 void DeleteSelection();
 
+// Move snapping step in cm when snapping is on (toolbar "Snap"), else 0.
+float SnapMoveStep();
+
 // Current camera view/projection in the gizmo's convention (row vectors,
 // left-handed); false when there is no world camera.
 bool CameraMatrices(float view[16], float proj[16]);

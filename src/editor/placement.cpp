@@ -14,6 +14,7 @@
 #include "level.h"
 #include "model.h"
 #include "scene_panel.h"
+#include "guides.h"
 #include "viewport.h"
 
 namespace h2::editor {
@@ -30,7 +31,10 @@ engine::ZGEOM* g_previewRoom;  // room the preview was created in
 engine::ZGEOM* g_hitRoom;      // room of the surface under the mouse
 Transform g_base;      // source orientation (as authored)
 float g_yaw;           // extra turn around the world up axis, degrees
-float g_point[3];      // where the preview stands
+float g_point[3];      // the surface point under the mouse
+float g_normal[3] = {0, 1, 0};  // surface normal there
+bool g_haveNormal;
+bool g_alignToSurface;  // N: the model's up follows the surface normal
 float g_distance = 800.0f;  // along the mouse ray when nothing is under it
 bool g_pickPending;
 int g_pickFrame;           // ImGui frame of the pending pick request
@@ -66,7 +70,7 @@ void PointOnRay(float sx, float sy)
         g_point[i] = o[i] + d[i] * g_distance;
 }
 
-void OnPick(engine::ZGEOM* hit, const float* point)
+void OnPick(engine::ZGEOM* hit, const float* point, const float* normal)
 {
     g_pickPending = false;
     if (!g_preview)
@@ -82,12 +86,54 @@ void OnPick(engine::ZGEOM* hit, const float* point)
             float dx = point[0] - o[0], dy = point[1] - o[1], dz = point[2] - o[2];
             g_distance = std::sqrt(dx * dx + dy * dy + dz * dz);
         }
+        g_haveNormal = normal != nullptr;
+        if (normal)
+            memcpy(g_normal, normal, sizeof(g_normal));
     } else {
         g_haveHit = false;
+        g_haveNormal = false;
         PointOnRay(g_mouseX, g_mouseY);
     }
 }
 
+const float* SurfaceNormal()
+{
+    static const float up[3] = {0, 1, 0};
+    return g_haveHit && g_haveNormal ? g_normal : up;
+}
+
+float PreviewSize()
+{
+    const engine::ZBaseGeom* n = g_preview->node;
+    float s = 2.0f * std::fmax(n->boundHalf[0], std::fmax(n->boundHalf[1], n->boundHalf[2]));
+    return s > 1.0f && s < 1e5f ? s : 2.0f * n->boundRadius;
+}
+
+float GridStepFor(float size)
+{
+    float snap = SnapMoveStep();
+    return snap > 0 ? snap : GridStep(size);
+}
+
+// The surface point, on the grid with Ctrl held (in the plane of the surface).
+void TargetPoint(float out[3])
+{
+    memcpy(out, g_point, sizeof(g_point));
+    if (!ImGui::GetIO().KeyCtrl || !g_haveHit)
+        return;
+    float u[3], v[3];
+    PlaneAxes(SurfaceNormal(), u, v);
+    float step = GridStepFor(PreviewSize());
+    float du = out[0] * u[0] + out[1] * u[1] + out[2] * u[2];
+    float dv = out[0] * v[0] + out[1] * v[1] + out[2] * v[2];
+    float su = std::round(du / step) * step - du, sv = std::round(dv / step) * step - dv;
+    for (int k = 0; k < 3; ++k)
+        out[k] += u[k] * su + v[k] * sv;
+}
+
+// Like Blender's surface placement: the model turned by the wheel (and with
+// N, stood up along the surface normal), its box face against the surface
+// resting on the point under the mouse.
 Transform CurrentTransform()
 {
     Transform t = g_base;
@@ -98,7 +144,33 @@ Transform CurrentTransform()
         v[0] = x * c + z * s;
         v[2] = -x * s + z * c;
     }
-    memcpy(t.pos, g_point, sizeof(t.pos));
+    const float* n = SurfaceNormal();
+    if (g_alignToSurface && g_haveNormal && g_haveHit) {
+        // rotate world up onto the normal (Rodrigues), applied to every axis
+        float axis[3] = {n[2], 0.0f, -n[0]};  // up x n
+        float sinA = std::sqrt(axis[0] * axis[0] + axis[2] * axis[2]), cosA = n[1];
+        if (sinA > 1e-4f) {
+            for (float& a : axis)
+                a /= sinA;
+            for (int row = 0; row < 3; ++row) {
+                float* v = t.mat + row * 3;
+                float kv[3] = {axis[1] * v[2] - axis[2] * v[1], axis[2] * v[0] - axis[0] * v[2],
+                               axis[0] * v[1] - axis[1] * v[0]};
+                float kd = axis[0] * v[0] + axis[1] * v[1] + axis[2] * v[2];
+                for (int i = 0; i < 3; ++i)
+                    v[i] = v[i] * cosA + kv[i] * sinA + axis[i] * kd * (1.0f - cosA);
+            }
+        }
+    }
+    t.pos[0] = t.pos[1] = t.pos[2] = 0;
+    Box box;
+    float face[3] = {0, 0, 0};
+    if (g_preview && ObjectBox(g_preview, t, box))
+        BoxBottom(box, n, face);
+    float target[3];
+    TargetPoint(target);
+    for (int i = 0; i < 3; ++i)
+        t.pos[i] = target[i] - face[i];
     return t;
 }
 
@@ -128,78 +200,47 @@ void Commit(bool keepPlacing)
     }
 }
 
-void WorldLine(ImDrawList* dl, const float a[3], const float b[3], ImU32 col, float thickness)
-{
-    float ax, ay, bx, by;
-    if (WorldToScreen(a, ax, ay) && WorldToScreen(b, bx, by))
-        dl->AddLine(ImVec2(ax, ay), ImVec2(bx, by), col, thickness);
-}
-
-// On the surface under the mouse: a grid, the footprint (bounding circle) of
-// the model and a cross at the exact spot; amber when nothing is under the
-// mouse (the model floats along the ray).
-void DrawGuide()
+// Grid in the plane of the surface, the model's box and its footprint on the
+// surface, the snap target; amber when nothing is under the mouse.
+void DrawGuide(const Transform& t)
 {
     if (!g_preview)
         return;
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    float r = g_preview->node->boundRadius;
-    r = r < 20.0f ? 20.0f : (r > 2000.0f ? 2000.0f : r);
-    const float* p = g_point;
-    ImU32 strong = g_haveHit ? IM_COL32(64, 224, 255, 235) : IM_COL32(255, 180, 60, 220);
-    ImU32 faint = g_haveHit ? IM_COL32(64, 224, 255, 60) : IM_COL32(255, 180, 60, 50);
-    ImU32 fill = g_haveHit ? IM_COL32(64, 224, 255, 40) : IM_COL32(255, 180, 60, 30);
-
-    // grid aligned to the world axes
-    const float steps[] = {10, 25, 50, 100, 200, 500, 1000};
-    float step = steps[6];
-    for (float s : steps)
-        if (s >= r / 3.0f) {
-            step = s;
-            break;
-        }
-    float half = std::ceil(r * 1.6f / step) * step;
-    float x0 = std::floor((p[0] - half) / step) * step, z0 = std::floor((p[2] - half) / step) * step;
-    int n = int(2.0f * half / step) + 1;
-    for (int i = 0; i <= n; ++i) {
-        float a[3] = {x0 + i * step, p[1], z0}, b[3] = {x0 + i * step, p[1], z0 + n * step};
-        WorldLine(dl, a, b, faint, 1.0f);
-        float c[3] = {x0, p[1], z0 + i * step}, d[3] = {x0 + n * step, p[1], z0 + i * step};
-        WorldLine(dl, c, d, faint, 1.0f);
+    bool hit = g_haveHit;
+    ImU32 main = hit ? IM_COL32(64, 224, 255, 255) : IM_COL32(255, 180, 60, 255);
+    const float* n = SurfaceNormal();
+    float u[3], v[3];
+    PlaneAxes(n, u, v);
+    float size = PreviewSize();
+    float step = GridStepFor(size);
+    float radius = std::fmax(size * 2.0f, step * 6.0f);
+    radius = std::fmin(radius, step * 50.0f);
+    float target[3];
+    TargetPoint(target);
+    bool floor = std::fabs(n[1]) > 0.7f;
+    DrawGrid(target, u, v, step, radius, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 150), floor);
+    Box box;
+    if (ObjectBox(g_preview, t, box)) {
+        DrawFootprint(box, target, n, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 45), main);
+        DrawBox(box, (main & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 200), 1.5f);
     }
-    // footprint
-    const int kSeg = 48;
-    ImVec2 pts[kSeg];
-    bool all = true;
-    for (int i = 0; i < kSeg; ++i) {
-        float a = 6.2831853f * i / kSeg;
-        float w[3] = {p[0] + std::cos(a) * r, p[1], p[2] + std::sin(a) * r};
-        all &= WorldToScreen(w, pts[i].x, pts[i].y);
-    }
-    if (all) {
-        dl->AddConvexPolyFilled(pts, kSeg, fill);
-        dl->AddPolyline(pts, kSeg, strong, ImDrawFlags_Closed, 2.0f);
-    }
-    // cross and a short post at the spot
-    float c = r * 0.25f;
-    float xa[3] = {p[0] - c, p[1], p[2]}, xb[3] = {p[0] + c, p[1], p[2]};
-    float za[3] = {p[0], p[1], p[2] - c}, zb[3] = {p[0], p[1], p[2] + c};
-    float top[3] = {p[0], p[1] + r * 0.6f, p[2]};
-    WorldLine(dl, xa, xb, strong, 2.0f);
-    WorldLine(dl, za, zb, strong, 2.0f);
-    WorldLine(dl, p, top, strong, 1.5f);
-    float sx, sy;
-    if (WorldToScreen(p, sx, sy))
-        dl->AddCircleFilled(ImVec2(sx, sy), 4.0f, strong);
+    float tip[3];
+    for (int k = 0; k < 3; ++k)
+        tip[k] = target[k] + n[k] * std::fmin(size * 0.5f, step * 2.0f);
+    DrawLine3D(target, tip, main, 2.0f);  // surface normal
+    DrawSnapTarget(target, IM_COL32(255, 255, 255, 255));
 }
 
 void DrawHint()
 {
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetForegroundDrawList();
-    char text[256];
-    snprintf(text, sizeof(text), "%s\nclick: place   Shift+click: place more\nwheel: turn (%.0f deg)   Esc: cancel%s",
-             g_label.c_str(), g_yaw, g_haveHit ? "" : "\n(no surface under the mouse)");
+    char text[384];
+    snprintf(text, sizeof(text),
+             "%s\nclick: place   Shift+click: place more   Esc: cancel\n"
+             "wheel: turn (%.0f deg)   Ctrl: snap to grid   N: align to surface (%s)%s",
+             g_label.c_str(), g_yaw, g_alignToSurface ? "on" : "off",
+             g_haveHit ? "" : "\n(no surface under the mouse)");
     ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
     ImVec2 size = ImGui::CalcTextSize(text);
     dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170), 4);
@@ -228,6 +269,7 @@ void BeginPlacement(const std::string& sourcePath, const std::string& label)
     g_base = GetTransform(source);
     g_yaw = 0;
     g_haveHit = false;
+    g_haveNormal = false;
     g_pickPending = false;
     ImGuiIO& io = ImGui::GetIO();
     PointOnRay(io.MousePos.x, io.MousePos.y);
@@ -286,9 +328,11 @@ void UpdatePlacement()
             g_previewRoom = g_hitRoom;  // keep the old one, do not retry every frame
         }
     }
+    if (overWorld && ImGui::IsKeyPressed(ImGuiKey_N, false))
+        g_alignToSurface = !g_alignToSurface;
     SetHighlightExtra(g_preview, 0xFF40E0FF);
-    DrawGuide();
     Transform t = CurrentTransform();
+    DrawGuide(t);
     Transform cur = GetTransform(g_preview);
     if (memcmp(&t, &cur, sizeof(t)) != 0)
         SetTransform(g_preview, t);

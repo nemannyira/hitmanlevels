@@ -43,6 +43,11 @@ constexpr int kTex_Release = 2, kTex_GetSurfaceLevel = 15;
 constexpr DWORD D3DUSAGE_RENDERTARGET = 1, D3DPOOL_DEFAULT = 0, D3DRS_AMBIENT = 139;
 constexpr UINT kThumbSize = 256;
 constexpr DWORD kThumbBackground = 0xFF141416;
+// The pick target is 3x3 pixels, each seeing the screen kPickSpacing pixels
+// apart around the cursor: the centre gives the object, the depths of the
+// centre and two neighbours the surface normal.
+constexpr int kPickSize = 3;
+constexpr float kPickSpacing = 6.0f;
 
 void* g_device;
 unsigned g_frame;
@@ -253,13 +258,15 @@ void IdDraw(void* dev, engine::ZGEOM* geom, Draw draw)
     Call<HRESULT>(dev, Dev_GetViewport, &oldVp);
 
     Call<HRESULT>(dev, kDev_SetRenderTarget, g_pickTarget, g_pickDepth);
-    D3DVIEWPORT8 vp = {0, 0, 1, 1, 0.0f, 1.0f};
+    D3DVIEWPORT8 vp = {0, 0, kPickSize, kPickSize, 0.0f, 1.0f};
     Call<HRESULT>(dev, Dev_SetViewport, &vp);
-    // zoom the projection onto the pixel under the cursor (NDC of its centre)
+    // zoom the projection onto the cursor: the target spans kPickSize *
+    // kPickSpacing screen pixels centred on it
     float w = float(RenderWidth()), h = float(RenderHeight());
     float nx = (g_pickX + 0.5f) / w * 2.0f - 1.0f;
     float ny = 1.0f - (g_pickY + 0.5f) / h * 2.0f;
-    D3DMATRIX pixel = {{{w * 0.5f, 0, 0, 0}, {0, h * 0.5f, 0, 0}, {0, 0, 1, 0}, {-nx * w * 0.5f, -ny * h * 0.5f, 0, 1}}};
+    float kx = w / (kPickSize * kPickSpacing), ky = h / (kPickSize * kPickSpacing);
+    D3DMATRIX pixel = {{{kx, 0, 0, 0}, {0, ky, 0, 0}, {0, 0, 1, 0}, {-nx * kx, -ny * ky, 0, 1}}};
     D3DMATRIX zoomed;
     Multiply(proj, pixel, zoomed);
     g_pickProj[0] = proj.m[0][0];
@@ -425,8 +432,9 @@ void ReleasePickSurfaces()
     g_pickTarget = g_pickDepth = nullptr;
 }
 
-// World position of the picked pixel from its depth (post-projection z).
-bool DepthToWorld(float zndc, float out[3])
+// World position of a picked sample from its depth (post-projection z);
+// (dx, dy): its offset from the cursor in screen pixels.
+bool DepthToWorld(float zndc, float dx, float dy, float out[3])
 {
     if (!(zndc > 0.0f && zndc < 0.99999f) || g_pickProj[0] == 0.0f || g_pickProj[1] == 0.0f)
         return false;
@@ -443,8 +451,8 @@ bool DepthToWorld(float zndc, float out[3])
     for (int i = 0; i < 3; ++i)
         cam[i] = -(view[12] * right[i] + view[13] * up[i] + view[14] * fwd[i]);
     float w = float(RenderWidth()), h = float(RenderHeight());
-    float nx = (g_pickX + 0.5f) / w * 2.0f - 1.0f;
-    float ny = 1.0f - (g_pickY + 0.5f) / h * 2.0f;
+    float nx = (g_pickX + dx + 0.5f) / w * 2.0f - 1.0f;
+    float ny = 1.0f - (g_pickY + dy + 0.5f) / h * 2.0f;
     float vx = nx * viewZ / g_pickProj[0], vy = ny * viewZ / g_pickProj[1];
     for (int i = 0; i < 3; ++i)
         out[i] = cam[i] + right[i] * vx + up[i] * vy + fwd[i] * viewZ;
@@ -498,25 +506,59 @@ void PrepareThumbnail()
 void FinishPick()
 {
     engine::ZGEOM* hit = nullptr;
+    const int c = kPickSize / 2;  // centre sample
+    DWORD ids[kPickSize][kPickSize] = {};
     D3DLOCKED_RECT lr;
     if (Call<HRESULT>(g_pickTarget, kSurf_LockRect, &lr, static_cast<const RECT*>(nullptr), DWORD(0x10)) >= 0) {
-        DWORD id = *static_cast<DWORD*>(lr.pBits) & 0xFFFFFF;
+        for (int y = 0; y < kPickSize; ++y)
+            for (int x = 0; x < kPickSize; ++x)
+                ids[y][x] = reinterpret_cast<const DWORD*>(static_cast<const char*>(lr.pBits) + y * lr.Pitch)[x] &
+                            0xFFFFFF;
         Call<HRESULT>(g_pickTarget, kSurf_UnlockRect);
+        DWORD id = ids[c][c];
         if (id > 0 && id <= g_pickIds.size())
             hit = g_pickIds[id - 1];
     }
-    float point[3];
-    bool havePoint = false;
+    float point[3], normal[3];
+    bool havePoint = false, haveNormal = false;
     if (hit && g_pickDepthLockable &&
         Call<HRESULT>(g_pickDepth, kSurf_LockRect, &lr, static_cast<const RECT*>(nullptr), DWORD(0x10)) >= 0) {
-        float z = *static_cast<const uint16_t*>(lr.pBits) / 65535.0f;
+        auto depth = [&](int x, int y) {
+            return reinterpret_cast<const uint16_t*>(static_cast<const char*>(lr.pBits) + y * lr.Pitch)[x] / 65535.0f;
+        };
+        float zc = depth(c, c), zr = depth(c + 1, c), zu = depth(c, c - 1), zl = depth(c - 1, c), zd = depth(c, c + 1);
         Call<HRESULT>(g_pickDepth, kSurf_UnlockRect);
-        havePoint = DepthToWorld(z, point);
+        havePoint = DepthToWorld(zc, 0, 0, point);
+        // normal from the neighbours on the same object (right or left, up or down)
+        float a[3], b[3];
+        bool horiz = ids[c][c + 1] == ids[c][c] ? DepthToWorld(zr, kPickSpacing, 0, a)
+                                                  : ids[c][c - 1] == ids[c][c] && DepthToWorld(zl, -kPickSpacing, 0, a);
+        float sx = ids[c][c + 1] == ids[c][c] ? 1.0f : -1.0f;
+        bool vert = ids[c - 1][c] == ids[c][c] ? DepthToWorld(zu, 0, -kPickSpacing, b)
+                                                 : ids[c + 1][c] == ids[c][c] && DepthToWorld(zd, 0, kPickSpacing, b);
+        float sy = ids[c - 1][c] == ids[c][c] ? 1.0f : -1.0f;
+        if (havePoint && horiz && vert) {
+            float u[3], v[3];
+            for (int i = 0; i < 3; ++i) {
+                u[i] = (a[i] - point[i]) * sx;  // towards screen right
+                v[i] = (b[i] - point[i]) * sy;  // towards screen up
+            }
+            // left-handed: right x up points away from the viewer; the normal faces it
+            normal[0] = -(u[1] * v[2] - u[2] * v[1]);
+            normal[1] = -(u[2] * v[0] - u[0] * v[2]);
+            normal[2] = -(u[0] * v[1] - u[1] * v[0]);
+            float len = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+            if (len > 1e-6f) {
+                for (float& n : normal)
+                    n /= len;
+                haveNormal = true;
+            }
+        }
     }
     ReleasePickSurfaces();
     g_pickActive = false;
     if (g_pickCallback)
-        g_pickCallback(hit, havePoint ? point : nullptr);
+        g_pickCallback(hit, havePoint ? point : nullptr, haveNormal ? normal : nullptr);
 }
 
 // Start of a pick frame: 1x1 lockable target + depth, cleared.
@@ -525,10 +567,11 @@ void StartPick()
     g_pickRequested = false;
     g_pickIds.clear();
     g_pickDepthLockable = false;
-    bool ok = Call<HRESULT>(g_device, kDev_CreateRenderTarget, UINT(1), UINT(1), D3DFMT_X8R8G8B8, DWORD(0),
+    bool ok = Call<HRESULT>(g_device, kDev_CreateRenderTarget, UINT(kPickSize), UINT(kPickSize), D3DFMT_X8R8G8B8,
+                            DWORD(0),
                             BOOL(TRUE), &g_pickTarget) >= 0;
     if (ok && !g_noLockableDepth) {
-        g_pickDepthLockable = Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(1), UINT(1),
+        g_pickDepthLockable = Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(kPickSize), UINT(kPickSize),
                                             D3DFMT_D16_LOCKABLE, DWORD(0), &g_pickDepth) >= 0;
         if (!g_pickDepthLockable) {
             g_noLockableDepth = true;
@@ -536,13 +579,14 @@ void StartPick()
         }
     }
     if (ok && !g_pickDepthLockable)
-        ok = Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(1), UINT(1), D3DFMT_D16, DWORD(0),
+        ok = Call<HRESULT>(g_device, kDev_CreateDepthStencilSurface, UINT(kPickSize), UINT(kPickSize), D3DFMT_D16,
+                           DWORD(0),
                            &g_pickDepth) >= 0;
     if (!ok) {
         Log("pick: cannot create the 1x1 target");
         ReleasePickSurfaces();
         if (g_pickCallback)
-            g_pickCallback(nullptr, nullptr);
+            g_pickCallback(nullptr, nullptr, nullptr);
         return;
     }
     void* oldTarget = nullptr;

@@ -153,7 +153,7 @@ void ThumbTick()
         // keep track of the room in view: the clone must be in a room the engine draws
         if (!g_viewRoomPending && now - g_viewRoomTime > 1.0) {
             g_viewRoomPending = true;
-            RequestPick(RenderWidth() * 0.5f, RenderHeight() * 0.5f, [](engine::ZGEOM* hit, const float*) {
+            RequestPick(RenderWidth() * 0.5f, RenderHeight() * 0.5f, [](engine::ZGEOM* hit, const float*, const float*) {
                 g_viewRoomPending = false;
                 g_viewRoomTime = ImGui::GetTime();
                 if (engine::ZGEOM* room = hit ? RoomOf(hit) : nullptr)

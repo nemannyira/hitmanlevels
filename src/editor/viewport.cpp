@@ -12,6 +12,7 @@
 #include "../game.h"
 #include "../overlay/overlay.h"
 #include "freecam.h"
+#include "guides.h"
 #include "highlight.h"
 #include "history.h"
 #include "level.h"
@@ -71,6 +72,77 @@ Transform FromGizmo(const float m[16])
 }
 
 bool FreeCamLooking() { return ImGui::IsMouseDown(ImGuiMouseButton_Right); }
+
+// Visual aids while moving an object (after Blender's transform overlays): a
+// grid on the level the object stood on when the drag began, its box and its
+// footprint on that level with drop lines, and the line of the axis it moves
+// along. A faint grid only while the mouse is over the gizmo.
+Transform g_dragStart;
+float g_dragFloor;  // height of the box bottom when the drag began
+bool g_dragging;
+
+float BoxFloor(const Box& b)
+{
+    float y = b.c[0][1];
+    for (auto& c : b.c)
+        y = std::fmin(y, c[1]);
+    return y;
+}
+
+void DrawMoveGuide(engine::ZGEOM* sel, bool using_, bool over)
+{
+    Transform t = GetTransform(sel);
+    Box box;
+    if (!ObjectBox(sel, t, box))
+        return;
+    if (using_ && !g_dragging) {
+        g_dragging = true;
+        g_dragStart = t;
+        g_dragFloor = BoxFloor(box);
+    }
+    if (!using_)
+        g_dragging = false;
+    if (!using_ && !over)
+        return;
+    float floor = g_dragging ? g_dragFloor : BoxFloor(box);
+    const engine::ZBaseGeom* n = sel->node;
+    float size = 2.0f * std::fmax(n->boundHalf[0], std::fmax(n->boundHalf[1], n->boundHalf[2]));
+    if (!(size > 1.0f && size < 1e5f))
+        size = 2.0f * n->boundRadius;
+    float step = g_snap ? g_snapMove : GridStep(size);
+    float radius = std::fmin(std::fmax(size * 2.5f, step * 6.0f), step * 50.0f);
+    float center[3] = {0, floor, 0};
+    for (auto& c : box.c)
+        center[0] += c[0] / 8.0f, center[2] += c[2] / 8.0f;
+    static const float up[3] = {0, 1, 0}, x[3] = {1, 0, 0}, z[3] = {0, 0, 1};
+    ImU32 grid = using_ ? IM_COL32(255, 200, 40, 150) : IM_COL32(255, 200, 40, 70);
+    DrawGrid(center, x, z, step, radius, grid, using_);
+    if (!using_)
+        return;
+    DrawFootprint(box, center, up, IM_COL32(255, 200, 40, 40), IM_COL32(255, 200, 40, 230));
+    DrawBox(box, IM_COL32(255, 200, 40, 200), 1.5f);
+    if (g_op == ImGuizmo::TRANSLATE) {
+        // the axis the object moves along (the dominant one), through where it started
+        float d[3] = {t.pos[0] - g_dragStart.pos[0], t.pos[1] - g_dragStart.pos[1], t.pos[2] - g_dragStart.pos[2]};
+        float len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        int k = std::fabs(d[0]) >= std::fabs(d[1]) && std::fabs(d[0]) >= std::fabs(d[2]) ? 0
+                : std::fabs(d[1]) >= std::fabs(d[2])                                      ? 1
+                                                                                         : 2;
+        if (len > 0.5f && std::fabs(d[k]) > 0.97f * len) {
+            float a[3], b[3];
+            for (int i = 0; i < 3; ++i) {
+                a[i] = g_dragStart.pos[i] - (i == k ? 100000.0f : 0.0f);
+                b[i] = g_dragStart.pos[i] + (i == k ? 100000.0f : 0.0f);
+            }
+            DrawLine3D(a, b, k == 0 ? kAxisX : (k == 1 ? kAxisY : kAxisZ), 1.5f);
+        }
+        ImGuiIO& io = ImGui::GetIO();
+        char text[96];
+        snprintf(text, sizeof(text), "dx %.0f  dy %.0f  dz %.0f cm  (%.0f)", d[0], d[1], d[2], len);
+        ImGui::GetForegroundDrawList()->AddText(ImVec2(io.MousePos.x + 18, io.MousePos.y + 14),
+                                                IM_COL32(255, 220, 120, 255), text);
+    }
+}
 
 // Ray through the mouse against the objects' bounding spheres: the nearest
 // entry wins, big spheres (rooms, groups) only when nothing smaller is hit.
@@ -166,7 +238,7 @@ void Pick()
         PickSphere(g_clickX, g_clickY);
         return;
     }
-    RequestPick(g_clickX, g_clickY, [](engine::ZGEOM* hit, const float*) {
+    RequestPick(g_clickX, g_clickY, [](engine::ZGEOM* hit, const float*, const float*) {
         if (hit)
             Select(hit);
         else
@@ -305,6 +377,8 @@ void DrawViewport()
         }
         using_ = ImGuizmo::IsUsing();
     }
+    if (sel && IsLive(sel) && haveCamera && !actor)
+        DrawMoveGuide(sel, using_, !using_ && ImGuizmo::IsOver());
     if (g_wasUsing && !using_ && sel)
         EndContinuous(sel, g_op == ImGuizmo::ROTATE ? "rotate" : "move");
     g_wasUsing = using_;
@@ -319,6 +393,8 @@ void DrawViewport()
 }
 
 } // namespace
+
+float SnapMoveStep() { return g_snap ? g_snapMove : 0.0f; }
 
 void DuplicateSelection()
 {

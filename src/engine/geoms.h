@@ -5,7 +5,8 @@
 //   +0x00 vtable                    +0x00 float mat[9]   rows forward, up, right (parent space)
 //   +0x04 char* name                +0x24 float pos[3]   (parent space, cm, +Y up)
 //   +0x08 ZBaseGeom* node   ---->   +0x3C uint32 flags
-//   +0x0C ZClassInfo* class         +0x30 float boundCenter[3], +0x4C float boundRadius
+//   +0x0C ZClassInfo* class         +0x30 float boundCenter[3], +0x40 float boundHalf[3]
+//                                   (box in node space), +0x4C float boundRadius
 //                                   +0x50 ZBaseGeom* parent
 //                                   +0x54 ZGEOM* geom
 //                                   +0x5C uint16 first child  (1-based index, static nodes)
@@ -46,8 +47,8 @@ struct ZBaseGeom {
     float pos[3];              // 0x24
     float boundCenter[3];      // 0x30  bounding sphere centre (node space)
     uint32_t flags;            // 0x3C
-    uint8_t _40[0x4C - 0x40];
-    float boundRadius;         // 0x4C
+    float boundHalf[3];        // 0x40  bounding box half extents (node space, around boundCenter)
+    float boundRadius;         // 0x4C  |boundHalf| (+ epsilon)
     ZBaseGeom* parent;         // 0x50
     ZGEOM* geom;               // 0x54
     uint8_t _58[0x5C - 0x58];

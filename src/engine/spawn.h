@@ -24,7 +24,14 @@ namespace h2::engine {
 // null (and the reason) on failure.
 ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error = nullptr, ZGEOM* parent = nullptr);
 
-// Destroys an object created by CloneGeom.
+// A working item (weapon, ammo, container...) made from an item template
+// (ZItemTemplate, under "ItemTemplates" in the scenes) the way the game does
+// it: template vfunc 0x2A8 CreateItem(parent group) with the root group as
+// parent (as ZEngineDataBase code does), which creates the ZItem* object,
+// links it to the template and initializes it.
+ZGEOM* CreateItem(ZGEOM* itemTemplate, std::string* error = nullptr);
+
+// Destroys an object created by CloneGeom (or CreateItem).
 bool DestroyGeom(ZGEOM* geom);
 
 // Mesh reference of a node (0 when it has none).

@@ -132,6 +132,7 @@ bool Matches(const std::vector<std::string>& words, const std::string& joined, c
 const char* CategoryName(Category c)
 {
     switch (c) {
+    case Category::Pickup: return "Pickup items (working)";
     case Category::Architecture: return "Architecture";
     case Category::Furniture: return "Furniture";
     case Category::Lighting: return "Lighting";

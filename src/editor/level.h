@@ -32,7 +32,8 @@ struct ObjectEdit {
 };
 
 struct SpawnedObject {
-    std::string id;           // also the object's name in the scene
+    std::string id;           // also the object's name in the scene (copies)
+    bool item = false;        // a working item made from the item template at sourcePath
     std::string sourceScene;  // clones currently come from the base scene itself
     std::string sourcePath;
     std::string parentPath;   // room it is placed in ("" = the source's parent)
@@ -63,6 +64,9 @@ void NewLevel(const std::string& name, const std::string& baseScene);
 // it to the level (undoable).
 engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error = nullptr, const Transform* at = nullptr,
                                engine::ZGEOM* parent = nullptr);
+// Places a working item made from an item template, its world transform `at`
+// (undoable).
+engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::string* error = nullptr);
 // Deletes an object the level created (undoable); false for scene objects.
 bool DeleteObject(engine::ZGEOM* geom);
 const SpawnedObject* FindSpawned(engine::ZGEOM* geom);

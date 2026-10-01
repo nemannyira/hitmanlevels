@@ -99,7 +99,7 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
         return nullptr;
     }
     engine::ZGEOM* parent = s.parentPath.empty() ? nullptr : Resolve(s.parentPath);
-    engine::ZGEOM* g = SpawnClone(source, s.id, error, parent);
+    engine::ZGEOM* g = s.item ? SpawnItem(source, error) : SpawnClone(source, s.id, error, parent);
     if (!g)
         return nullptr;
     g_live[s.id] = g;
@@ -352,6 +352,8 @@ bool SaveLevel(std::string* error)
         o["id"] = s.id;
         o["source_scene"] = s.sourceScene;
         o["source_path"] = s.sourcePath;
+        if (s.item)
+            o["kind"] = "item";
         if (!s.parentPath.empty())
             o["parent"] = s.parentPath;
         o["hidden"] = s.hidden;
@@ -412,6 +414,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         s.id = o.value("id", "");
         s.sourceScene = o.value("source_scene", "");
         s.sourcePath = o.value("source_path", "");
+        s.item = o.value("kind", "") == "item";
         s.parentPath = o.value("parent", "");
         L.spawned.push_back(s);
     }
@@ -451,6 +454,18 @@ void NewLevel(const std::string& name, const std::string& baseScene)
 engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const Transform* at,
                                engine::ZGEOM* parent)
 {
+    if (const SpawnedObject* from = EntryOf(source); from && from->item) {  // another item
+        Transform t = at ? *at : GetTransform(source);
+        if (!at)
+            t.pos[0] += 60.0f;
+        engine::ZGEOM* tmpl = Resolve(from->sourcePath);
+        if (!tmpl) {
+            if (error)
+                *error = "item template not found";
+            return nullptr;
+        }
+        return PlaceItem(tmpl, t, error);
+    }
     auto fail = [&](const std::string& why) -> engine::ZGEOM* {
         if (error)
             *error = why;
@@ -504,6 +519,38 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
     g_level.dirty = true;
     std::string id = s.id;
     PushAction(at ? "place" : "duplicate", [id] { return RemoveSpawned(id); }, [s] { return AddSpawned(s); });
+    return g;
+}
+
+engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::string* error)
+{
+    auto fail = [&](const std::string& why) -> engine::ZGEOM* {
+        if (error)
+            *error = why;
+        return nullptr;
+    };
+    if (!IsLive(itemTemplate) || !engine::IsA(itemTemplate, "ZItemTemplate"))
+        return fail("not an item template");
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return fail("the level is for scene " + g_level.baseScene);
+    SpawnedObject s;
+    s.item = true;
+    s.sourcePath = PathOf(itemTemplate);
+    if (s.sourcePath.empty())
+        return fail("the template has no stable path");
+    s.id = UniqueId(engine::SafeString(itemTemplate->name) + "_item");
+    s.sourceScene = CurrentScene();
+    s.transform = at;
+    std::string err;
+    engine::ZGEOM* g = Materialize(s, &err);
+    if (!g)
+        return fail(err.empty() ? "the game did not create the item" : err);
+    g_level.spawned.push_back(s);
+    g_level.dirty = true;
+    std::string id = s.id;
+    PushAction("place item", [id] { return RemoveSpawned(id); }, [s] { return AddSpawned(s); });
     return g;
 }
 

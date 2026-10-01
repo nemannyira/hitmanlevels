@@ -99,6 +99,18 @@ bool DoClone(CloneArgs& a)
     }
 }
 
+constexpr int kTemplate_CreateItem = 0x2A8 / 4;  // ZGEOM* (ZGROUP* parent)
+constexpr uintptr_t kEngine_RootGroup = 0xAD8;
+
+ZGEOM* DoCreateItem(ZGEOM* tmpl, void* root)
+{
+    __try {
+        return VFunc<ZGEOM*(__thiscall*)(ZGEOM*, void*)>(tmpl, kTemplate_CreateItem)(tmpl, root);
+    } __except (Filter(GetExceptionInformation())) {
+        return nullptr;
+    }
+}
+
 bool DoDestroy(ZGEOM* geom)
 {
     __try {
@@ -165,6 +177,31 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGE
         SafeString(source->name).c_str(), name.c_str(), static_cast<void*>(n), static_cast<void*>(n->geom), a.mesh,
         n->flags, n->boundRadius, src->boundRadius);
     return n->geom;
+}
+
+ZGEOM* CreateItem(ZGEOM* itemTemplate, std::string* error)
+{
+    auto sys = reinterpret_cast<char*>(game::SysInterface());
+    char* engine = sys ? *reinterpret_cast<char**>(sys + 0x98) : nullptr;
+    void* root = engine ? *reinterpret_cast<void**>(engine + kEngine_RootGroup) : nullptr;
+    if (!root || !itemTemplate || !IsReadable(itemTemplate, sizeof(ZGEOM)) || !IsA(itemTemplate, "ZItemTemplate")) {
+        if (error)
+            *error = "not an item template (or no scene)";
+        return nullptr;
+    }
+    g_faultCode = 0;
+    ZGEOM* item = DoCreateItem(itemTemplate, root);
+    if (!item || !IsReadable(item, sizeof(ZGEOM))) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "CreateItem failed (exception %08lX at %p)", g_faultCode, g_faultAddress);
+        if (error)
+            *error = buf;
+        Log("item from '%s': %s", SafeString(itemTemplate->name).c_str(), buf);
+        return nullptr;
+    }
+    Log("item from '%s': %s %p (%s)", SafeString(itemTemplate->name).c_str(), SafeString(item->name).c_str(),
+        static_cast<void*>(item), ClassName(item).c_str());
+    return item;
 }
 
 bool DestroyGeom(ZGEOM* geom)

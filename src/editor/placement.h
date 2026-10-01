@@ -6,8 +6,9 @@
 
 namespace h2::editor {
 
-// `sourcePath`: a scene object that uses the model.
-void BeginPlacement(const std::string& sourcePath, const std::string& label);
+// `sourcePath`: a scene object that uses the model. With `templatePath` (an
+// item template whose model that is), a working item is placed.
+void BeginPlacement(const std::string& sourcePath, const std::string& label, const std::string& templatePath = "");
 void CancelPlacement();
 bool Placing();
 std::string PlacementSource();  // path of the model being placed ("" when not placing)

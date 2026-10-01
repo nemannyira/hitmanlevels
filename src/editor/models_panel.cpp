@@ -36,6 +36,7 @@ struct ModelEntry {
     int uses = 0;
     Category category = Category::Other;
     std::string family;
+    std::string templatePath;  // working item: its template (sourcePath = the template's model)
 };
 
 // sound/sight helper boxes and light volumes: not models to place
@@ -102,6 +103,35 @@ void Build()
     g_models.clear();
     for (auto& [mesh, e] : byMesh)
         g_models.push_back(e);
+    // item templates: placed as working items; preview/box from their first model
+    for (int i = 0; i < int(snap.geoms.size()); ++i) {
+        const engine::GeomInfo& g = snap.geoms[i];
+        if (!IsLive(g.geom) || IsSpawned(g.geom) || !engine::IsA(g.geom, "ZItemTemplate"))
+            continue;
+        std::vector<int> queue(g.children.begin(), g.children.end());
+        int model = -1;
+        for (size_t q = 0; q < queue.size() && model < 0 && q < 256; ++q) {
+            const engine::GeomInfo& c = snap.geoms[queue[q]];
+            if (IsLive(c.geom) && engine::MeshOf(c.geom))
+                model = queue[q];
+            else
+                queue.insert(queue.end(), c.children.begin(), c.children.end());
+        }
+        if (model < 0)
+            continue;
+        const engine::GeomInfo& m = snap.geoms[model];
+        ModelEntry e;
+        e.mesh = engine::MeshOf(m.geom);
+        e.name = g.name;
+        e.className = g.className;
+        e.sourcePath = m.path;
+        e.templatePath = g.path;
+        e.radius = m.node->boundRadius;
+        e.uses = 1;
+        e.category = Category::Pickup;
+        e.family = FamilyOf(e.name);
+        g_models.push_back(e);
+    }
     std::sort(g_models.begin(), g_models.end(), [](const ModelEntry& a, const ModelEntry& b) {
         if (a.category != b.category)
             return a.category < b.category;
@@ -224,7 +254,7 @@ void DrawRow(const ModelEntry& e, int index)
         if (current)
             CancelPlacement();
         else
-            BeginPlacement(e.sourcePath, e.name);
+            BeginPlacement(e.sourcePath, e.name, e.templatePath);
     }
     if (ImGui::IsItemHovered() && !Placing()) {
         g_hoverPath = e.sourcePath;
@@ -232,7 +262,7 @@ void DrawRow(const ModelEntry& e, int index)
     }
     if (ImGui::BeginPopupContextItem("row")) {
         if (ImGui::MenuItem("Place"))
-            BeginPlacement(e.sourcePath, e.name);
+            BeginPlacement(e.sourcePath, e.name, e.templatePath);
         if (ImGui::MenuItem("Find in the scene"))
             FindInScene(e);
         ImGui::TextDisabled("%s, used %d times", e.className.c_str(), e.uses);

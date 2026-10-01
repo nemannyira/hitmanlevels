@@ -1,5 +1,6 @@
 #include "model.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <utility>
@@ -17,6 +18,7 @@ namespace {
 
 engine::SceneSnapshot g_snapshot;
 std::vector<std::pair<engine::ZBaseGeom*, engine::ZGEOM*>> g_spawned;
+std::vector<engine::ZGEOM*> g_engineOwned;  // items: the game removes them on unload
 double g_snapshotTime = -1e12;
 bool g_hooked;
 
@@ -131,13 +133,20 @@ void EnsureDynamic(engine::ZGEOM* geom)
 
 void DestroyAllSpawned(const std::string&)
 {
-    int n = 0;
-    for (auto& [node, geom] : g_spawned)
+    int n = 0, items = 0;
+    for (auto& [node, geom] : g_spawned) {
+        if (std::find(g_engineOwned.begin(), g_engineOwned.end(), geom) != g_engineOwned.end()) {
+            ++items;
+            continue;
+        }
         if (IsLive(geom) && geom->node == node)
             n += engine::DestroyGeom(geom);
+    }
     if (!g_spawned.empty())
-        Log("destroyed %d/%d editor objects before leaving the scene", n, int(g_spawned.size()));
+        Log("destroyed %d/%d editor objects before leaving the scene (%d items left to the game)", n,
+            int(g_spawned.size()) - items, items);
     g_spawned.clear();
+    g_engineOwned.clear();
     InvalidateSceneModel();
 }
 
@@ -157,8 +166,61 @@ engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::s
     return geom;
 }
 
+engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error)
+{
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnSceneLeaving(DestroyAllSpawned);
+    }
+    engine::ZGEOM* item = engine::CreateItem(itemTemplate, error);
+    if (item) {
+        g_spawned.push_back({item->node, item});
+        g_engineOwned.push_back(item);
+        InvalidateSceneModel();
+    }
+    return item;
+}
+
+Transform Compose(const Transform& p, const Transform& l)
+{
+    auto apply = [&](const float* v, float* out) {  // local (x right, y up, z forward) -> parent
+        for (int k = 0; k < 3; ++k)
+            out[k] = p.mat[6 + k] * v[0] + p.mat[3 + k] * v[1] + p.mat[k] * v[2];
+    };
+    Transform w;
+    for (int row = 0; row < 3; ++row)
+        apply(l.mat + row * 3, w.mat + row * 3);
+    apply(l.pos, w.pos);
+    for (int k = 0; k < 3; ++k)
+        w.pos[k] += p.pos[k];
+    return w;
+}
+
+Transform Relative(const Transform& p, const Transform& w)
+{
+    auto local = [&](const float* v, float* out) {
+        out[0] = v[0] * p.mat[6] + v[1] * p.mat[7] + v[2] * p.mat[8];
+        out[1] = v[0] * p.mat[3] + v[1] * p.mat[4] + v[2] * p.mat[5];
+        out[2] = v[0] * p.mat[0] + v[1] * p.mat[1] + v[2] * p.mat[2];
+    };
+    Transform l;
+    for (int row = 0; row < 3; ++row)
+        local(w.mat + row * 3, l.mat + row * 3);
+    float d[3] = {w.pos[0] - p.pos[0], w.pos[1] - p.pos[1], w.pos[2] - p.pos[2]};
+    local(d, l.pos);
+    return l;
+}
+
+Transform Inverse(const Transform& t)
+{
+    Transform identity = {{0, 0, 1, 0, 1, 0, 1, 0, 0}, {0, 0, 0}};  // rows forward, up, right
+    return Relative(t, identity);
+}
+
 bool DestroySpawned(engine::ZGEOM* geom)
 {
+    g_engineOwned.erase(std::remove(g_engineOwned.begin(), g_engineOwned.end(), geom), g_engineOwned.end());
     for (auto it = g_spawned.begin(); it != g_spawned.end(); ++it) {
         if (it->second != geom)
             continue;

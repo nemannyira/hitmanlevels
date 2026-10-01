@@ -9,6 +9,7 @@
 namespace h2::editor {
 
 enum class Category {
+    Pickup,   // working items made from the scene's item templates
     Architecture,
     Furniture,
     Lighting,

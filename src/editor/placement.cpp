@@ -25,6 +25,7 @@ constexpr float kRad = 3.14159265f / 180.0f;
 constexpr float kRotateStep = 15.0f;  // degrees per wheel notch
 
 std::string g_sourcePath;
+std::string g_templatePath;  // placing a working item made from this template
 std::string g_label;
 engine::ZGEOM* g_preview;
 engine::ZGEOM* g_previewRoom;  // room the preview was created in
@@ -193,11 +194,24 @@ void Commit(bool keepPlacing)
     if (!keepPlacing)
         DestroyPreview();
     std::string err;
-    engine::ZGEOM* placed = source ? DuplicateObject(source, &err, &t, g_hitRoom) : nullptr;
+    engine::ZGEOM* placed = nullptr;
+    if (!g_templatePath.empty()) {
+        // the item's own transform: the model sits in it as in the template
+        engine::ZGEOM* tmpl = Resolve(g_templatePath);
+        if (tmpl && source) {
+            Transform modelInTemplate = Relative(GetTransform(tmpl), GetTransform(source));
+            placed = PlaceItem(tmpl, Compose(t, Inverse(modelInTemplate)), &err);
+        } else {
+            err = "item template not found";
+        }
+    } else if (source) {
+        placed = DuplicateObject(source, &err, &t, g_hitRoom);
+    }
     if (!placed)
         Log("place %s failed: %s", g_label.c_str(), source ? err.c_str() : "source object not found");
     if (!keepPlacing) {
         g_sourcePath.clear();
+        g_templatePath.clear();
         if (placed)
             Select(placed);
     }
@@ -252,7 +266,7 @@ void DrawHint()
 
 } // namespace
 
-void BeginPlacement(const std::string& sourcePath, const std::string& label)
+void BeginPlacement(const std::string& sourcePath, const std::string& label, const std::string& templatePath)
 {
     CancelPlacement();
     engine::ZGEOM* source = Resolve(sourcePath);
@@ -268,7 +282,8 @@ void BeginPlacement(const std::string& sourcePath, const std::string& label)
     g_previewRoom = RoomOf(g_preview);
     g_hitRoom = nullptr;
     g_sourcePath = sourcePath;
-    g_label = label;
+    g_templatePath = templatePath;
+    g_label = templatePath.empty() ? label : label + " (working item)";
     g_base = GetTransform(source);
     g_yaw = 0;
     g_haveHit = false;

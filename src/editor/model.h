@@ -46,6 +46,15 @@ engine::ZGEOM* RoomOf(engine::ZGEOM* geom);
 bool InActor(engine::ZGEOM* geom);
 bool DestroySpawned(engine::ZGEOM* geom);
 bool IsSpawned(engine::ZGEOM* geom);
+// A working item made from an item template (see engine::CreateItem). The
+// game deletes items itself when the scene unloads, so these are not
+// destroyed by the editor then (only on request).
+engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error = nullptr);
+
+// Transform algebra (world = parent applied to local)
+Transform Compose(const Transform& parent, const Transform& local);
+Transform Relative(const Transform& parent, const Transform& world);  // local of `world` in `parent`
+Transform Inverse(const Transform& t);
 
 // Stable path of a live object ("" when unknown) and the reverse lookup.
 std::string PathOf(engine::ZGEOM* geom);

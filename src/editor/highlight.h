@@ -29,6 +29,9 @@ using PickCallback = void (*)(engine::ZGEOM* hit, const float* point);
 void RequestPick(float x, float y, PickCallback cb);
 // An object the picking looks through (e.g. the model being placed).
 void SetPickIgnore(engine::ZGEOM* geom);
+// A second object drawn with a highlight wireframe (ARGB colour), e.g. the
+// model being placed; null clears it.
+void SetHighlightExtra(engine::ZGEOM* geom, unsigned long color);
 
 // Model thumbnail: the draw calls of `geom` go into a small texture (the
 // model turning in front of its own camera) instead of the screen. The

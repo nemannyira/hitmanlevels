@@ -48,6 +48,7 @@ add_library(h2fix SHARED
     src/editor/history.cpp
     src/editor/level.cpp
     src/editor/model.cpp
+    src/editor/model_catalog.cpp
     src/editor/models_panel.cpp
     src/editor/placement.cpp
     src/editor/scene_panel.cpp

@@ -59,6 +59,7 @@ struct Candidate {
     engine::ZGEOM* geom;
     bool selected;
     bool thumb;
+    DWORD color;  // of the highlight wireframe
 };
 std::vector<Candidate> g_candidates;
 unsigned g_candidatesFrame = ~0u;
@@ -76,6 +77,10 @@ bool g_pickDepthLockable;    // the depth surface can be read back
 bool g_noLockableDepth;      // the device refused a lockable depth surface once
 float g_pickProj[4];         // _11 _22 _33 _43 of the projection the ids were drawn with
 engine::ZGEOM* g_pickIgnore;
+
+// an additional highlighted object (the model being placed)
+engine::ZGEOM* g_extraGeom;
+DWORD g_extraColor;
 
 // thumbnail
 engine::ZGEOM* g_thumbGeom;
@@ -136,7 +141,8 @@ void BuildCandidates()
     engine::ZGEOM* sel = Selected();
     bool wantSelection = overlay::IsOpen() && sel && IsLive(sel);
     bool wantThumb = g_thumbGeom && g_thumbTexture && IsLive(g_thumbGeom);
-    if (!wantSelection && !g_pickActive && !wantThumb)
+    bool wantExtra = overlay::IsOpen() && g_extraGeom && IsLive(g_extraGeom);
+    if (!wantSelection && !g_pickActive && !wantThumb && !wantExtra)
         return;
     float view[16], proj[16];
     if (!CameraMatrices(view, proj))
@@ -159,18 +165,27 @@ void BuildCandidates()
         c.thumb = true;
         g_candidates.push_back(c);
     }
+    if (wantExtra) {
+        Candidate c{};
+        objectToView(g_extraGeom, c.m);
+        c.geom = g_extraGeom;
+        c.selected = true;
+        c.color = g_extraColor;
+        g_candidates.push_back(c);
+    }
     const auto& snap = SceneModel(2000);
     for (const auto& g : snap.geoms) {
         bool selected = wantSelection && InSelectedSubtree(g.node, sel->node);
         bool drawn = g_drawn.count(g.node) && g_frame - g_drawn[g.node] <= 2;
         if (!selected && !(g_pickActive && drawn))
             continue;
-        if (!IsLive(g.geom) || g.geom == g_thumbGeom)
+        if (!IsLive(g.geom) || g.geom == g_thumbGeom || (wantExtra && g.geom == g_extraGeom))
             continue;
         Candidate c{};
         objectToView(g.geom, c.m);
         c.geom = g.geom;
         c.selected = selected;
+        c.color = kColor;
         g_candidates.push_back(c);
     }
 }
@@ -194,14 +209,14 @@ HRESULT WINAPI hkSetTransform(void* dev, DWORD state, const D3DMATRIX* m)
 }
 
 template <typename Draw>
-void HighlightDraw(void* dev, Draw draw)
+void HighlightDraw(void* dev, DWORD color, Draw draw)
 {
     DWORD block = 0;
     if (Call<HRESULT>(dev, Dev_CreateStateBlock, DWORD(D3DSBT_ALL), &block) < 0)
         return;
     for (const Override& o : kHighlightStates)
         Call<HRESULT>(dev, Dev_SetRenderState, o.state, o.value);
-    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_TEXTUREFACTOR), kColor);
+    Call<HRESULT>(dev, Dev_SetRenderState, DWORD(D3DRS_TEXTUREFACTOR), color);
     Call<HRESULT>(dev, Dev_SetTextureStageState, DWORD(0), DWORD(D3DTSS_COLOROP), DWORD(D3DTOP_SELECTARG1));
     Call<HRESULT>(dev, Dev_SetTextureStageState, DWORD(0), DWORD(D3DTSS_COLORARG1), DWORD(D3DTA_TFACTOR));
     Call<HRESULT>(dev, Dev_SetTextureStageState, DWORD(0), DWORD(D3DTSS_ALPHAOP), DWORD(D3DTOP_SELECTARG1));
@@ -358,7 +373,7 @@ void AfterDraw(void* dev, Draw draw)
     if (g_pickActive && g_pickTarget)
         IdDraw(dev, g_current->geom, draw);
     if (g_current->selected)
-        HighlightDraw(dev, draw);
+        HighlightDraw(dev, g_current->color, draw);
 }
 
 using DrawIndexedPrimitive_t = HRESULT(WINAPI*)(void* dev, DWORD type, UINT minIndex, UINT numVerts, UINT start,
@@ -587,6 +602,12 @@ void RequestPick(float x, float y, PickCallback cb)
 }
 
 void SetPickIgnore(engine::ZGEOM* geom) { g_pickIgnore = geom; }
+
+void SetHighlightExtra(engine::ZGEOM* geom, unsigned long color)
+{
+    g_extraGeom = geom;
+    g_extraColor = color;
+}
 
 void SetThumbnailGeom(engine::ZGEOM* geom)
 {

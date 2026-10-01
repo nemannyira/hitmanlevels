@@ -105,6 +105,7 @@ Transform CurrentTransform()
 void DestroyPreview()
 {
     SetPickIgnore(nullptr);
+    SetHighlightExtra(nullptr, 0);
     if (g_preview && IsSpawned(g_preview))
         DestroySpawned(g_preview);
     g_preview = nullptr;
@@ -125,6 +126,71 @@ void Commit(bool keepPlacing)
         if (placed)
             Select(placed);
     }
+}
+
+void WorldLine(ImDrawList* dl, const float a[3], const float b[3], ImU32 col, float thickness)
+{
+    float ax, ay, bx, by;
+    if (WorldToScreen(a, ax, ay) && WorldToScreen(b, bx, by))
+        dl->AddLine(ImVec2(ax, ay), ImVec2(bx, by), col, thickness);
+}
+
+// On the surface under the mouse: a grid, the footprint (bounding circle) of
+// the model and a cross at the exact spot; amber when nothing is under the
+// mouse (the model floats along the ray).
+void DrawGuide()
+{
+    if (!g_preview)
+        return;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    float r = g_preview->node->boundRadius;
+    r = r < 20.0f ? 20.0f : (r > 2000.0f ? 2000.0f : r);
+    const float* p = g_point;
+    ImU32 strong = g_haveHit ? IM_COL32(64, 224, 255, 235) : IM_COL32(255, 180, 60, 220);
+    ImU32 faint = g_haveHit ? IM_COL32(64, 224, 255, 60) : IM_COL32(255, 180, 60, 50);
+    ImU32 fill = g_haveHit ? IM_COL32(64, 224, 255, 40) : IM_COL32(255, 180, 60, 30);
+
+    // grid aligned to the world axes
+    const float steps[] = {10, 25, 50, 100, 200, 500, 1000};
+    float step = steps[6];
+    for (float s : steps)
+        if (s >= r / 3.0f) {
+            step = s;
+            break;
+        }
+    float half = std::ceil(r * 1.6f / step) * step;
+    float x0 = std::floor((p[0] - half) / step) * step, z0 = std::floor((p[2] - half) / step) * step;
+    int n = int(2.0f * half / step) + 1;
+    for (int i = 0; i <= n; ++i) {
+        float a[3] = {x0 + i * step, p[1], z0}, b[3] = {x0 + i * step, p[1], z0 + n * step};
+        WorldLine(dl, a, b, faint, 1.0f);
+        float c[3] = {x0, p[1], z0 + i * step}, d[3] = {x0 + n * step, p[1], z0 + i * step};
+        WorldLine(dl, c, d, faint, 1.0f);
+    }
+    // footprint
+    const int kSeg = 48;
+    ImVec2 pts[kSeg];
+    bool all = true;
+    for (int i = 0; i < kSeg; ++i) {
+        float a = 6.2831853f * i / kSeg;
+        float w[3] = {p[0] + std::cos(a) * r, p[1], p[2] + std::sin(a) * r};
+        all &= WorldToScreen(w, pts[i].x, pts[i].y);
+    }
+    if (all) {
+        dl->AddConvexPolyFilled(pts, kSeg, fill);
+        dl->AddPolyline(pts, kSeg, strong, ImDrawFlags_Closed, 2.0f);
+    }
+    // cross and a short post at the spot
+    float c = r * 0.25f;
+    float xa[3] = {p[0] - c, p[1], p[2]}, xb[3] = {p[0] + c, p[1], p[2]};
+    float za[3] = {p[0], p[1], p[2] - c}, zb[3] = {p[0], p[1], p[2] + c};
+    float top[3] = {p[0], p[1] + r * 0.6f, p[2]};
+    WorldLine(dl, xa, xb, strong, 2.0f);
+    WorldLine(dl, za, zb, strong, 2.0f);
+    WorldLine(dl, p, top, strong, 1.5f);
+    float sx, sy;
+    if (WorldToScreen(p, sx, sy))
+        dl->AddCircleFilled(ImVec2(sx, sy), 4.0f, strong);
 }
 
 void DrawHint()
@@ -220,6 +286,8 @@ void UpdatePlacement()
             g_previewRoom = g_hitRoom;  // keep the old one, do not retry every frame
         }
     }
+    SetHighlightExtra(g_preview, 0xFF40E0FF);
+    DrawGuide();
     Transform t = CurrentTransform();
     Transform cur = GetTransform(g_preview);
     if (memcmp(&t, &cur, sizeof(t)) != 0)

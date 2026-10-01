@@ -19,6 +19,7 @@
 #include "highlight.h"
 #include "level.h"
 #include "model.h"
+#include "model_catalog.h"
 #include "placement.h"
 #include "scene_panel.h"
 
@@ -33,6 +34,8 @@ struct ModelEntry {
     std::string sourcePath;  // an object of the scene using the mesh
     float radius = 0;
     int uses = 0;
+    Category category = Category::Other;
+    std::string family;
 };
 
 // sound/sight helper boxes and light volumes: not models to place
@@ -40,7 +43,8 @@ constexpr uint32_t kHelperFlags = 0x2000 | 0x10000;
 
 bool g_visible = true;
 char g_filter[128];
-std::vector<ModelEntry> g_models;
+bool g_showHelpers = false;
+std::vector<ModelEntry> g_models;  // sorted by category, family, name
 std::string g_builtFor;  // scene the list was built for
 std::string g_message;
 
@@ -91,12 +95,19 @@ void Build()
             e.className = g.className;
             e.sourcePath = g.path;
             e.radius = g.node->boundRadius;
+            e.category = Categorize(g.name, g.className);
+            e.family = FamilyOf(e.name);
         }
     }
     g_models.clear();
     for (auto& [mesh, e] : byMesh)
         g_models.push_back(e);
     std::sort(g_models.begin(), g_models.end(), [](const ModelEntry& a, const ModelEntry& b) {
+        if (a.category != b.category)
+            return a.category < b.category;
+        std::string fa = Lower(a.family), fb = Lower(b.family);
+        if (fa != fb)
+            return fa < fb;
         std::string la = Lower(a.name), lb = Lower(b.name);
         return la != lb ? la < lb : a.mesh < b.mesh;
     });
@@ -191,6 +202,47 @@ void DrawTooltip(const ModelEntry& e)
     ImGui::EndTooltip();
 }
 
+void FindInScene(const ModelEntry& e)
+{
+    if (engine::ZGEOM* g = Resolve(e.sourcePath)) {
+        Select(g);
+        Transform t = GetTransform(g);
+        float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 150.0f, t.pos[2] - t.mat[2] * 300.0f};
+        SetFreeCamEnabled(true);
+        SetFreeCamPosition(cam);
+    }
+}
+
+void DrawRow(const ModelEntry& e, int index)
+{
+    ImGui::PushID(index);
+    bool current = PlacementSource() == e.sourcePath;
+    char size[32];
+    snprintf(size, sizeof(size), "%.1f m", e.radius * 2.0f / 100.0f);  // bounding sphere diameter
+    float sizeW = ImGui::CalcTextSize(size).x;
+    if (ImGui::Selectable(e.name.c_str(), current, ImGuiSelectableFlags_AllowOverlap)) {
+        if (current)
+            CancelPlacement();
+        else
+            BeginPlacement(e.sourcePath, e.name);
+    }
+    if (ImGui::IsItemHovered() && !Placing()) {
+        g_hoverPath = e.sourcePath;
+        DrawTooltip(e);
+    }
+    if (ImGui::BeginPopupContextItem("row")) {
+        if (ImGui::MenuItem("Place"))
+            BeginPlacement(e.sourcePath, e.name);
+        if (ImGui::MenuItem("Find in the scene"))
+            FindInScene(e);
+        ImGui::TextDisabled("%s, used %d times", e.className.c_str(), e.uses);
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - sizeW);
+    ImGui::TextDisabled("%s", size);
+    ImGui::PopID();
+}
+
 void DrawPanel()
 {
     if (CurrentScene().empty()) {
@@ -203,73 +255,74 @@ void DrawPanel()
         Build();
     ImGui::SameLine();
     ImGui::TextDisabled("%d models in %s", int(g_models.size()), g_builtFor.c_str());
+    ImGui::SameLine();
+    ImGui::Checkbox("helpers", &g_showHelpers);
     ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##filter", "filter by name or class", g_filter, sizeof(g_filter));
+    ImGui::InputTextWithHint("##filter", "filter by name, class or category", g_filter, sizeof(g_filter));
     if (Placing()) {
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "placing: move the mouse over the world, click");
         ImGui::SameLine();
         if (ImGui::SmallButton("Cancel (Esc)"))
             CancelPlacement();
     } else {
-        ImGui::TextDisabled("click a model, then click in the world to place it");
+        ImGui::TextDisabled("click a model, then click in the world; right click: more");
     }
 
     std::string filter = Lower(g_filter);
-    std::vector<int> shown;
-    for (int i = 0; i < int(g_models.size()); ++i)
-        if (filter.empty() || Lower(g_models[i].name).find(filter) != std::string::npos ||
-            Lower(g_models[i].className).find(filter) != std::string::npos)
-            shown.push_back(i);
+    auto matches = [&](const ModelEntry& e) {
+        return filter.empty() || Lower(e.name).find(filter) != std::string::npos ||
+               Lower(e.className).find(filter) != std::string::npos ||
+               Lower(CategoryName(e.category)).find(filter) != std::string::npos;
+    };
 
-    if (ImGui::BeginTable("models", 4,
-                          ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
-                              ImGuiTableFlags_Resizable,
-                          ImVec2(0, -ImGui::GetTextLineHeightWithSpacing() * 1.5f))) {
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("model", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("uses", ImGuiTableColumnFlags_WidthFixed, 36);
-        ImGui::TableSetupColumn("size", ImGuiTableColumnFlags_WidthFixed, 56);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 40);
-        ImGui::TableHeadersRow();
-        ImGuiListClipper clipper;
-        clipper.Begin(int(shown.size()));
-        while (clipper.Step()) {
-            for (int k = clipper.DisplayStart; k < clipper.DisplayEnd; ++k) {
-                const ModelEntry& e = g_models[shown[k]];
-                ImGui::PushID(shown[k]);
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                bool current = PlacementSource() == e.sourcePath;
-                if (ImGui::Selectable(e.name.c_str(), current, ImGuiSelectableFlags_SpanAllColumns |
-                                                                   ImGuiSelectableFlags_AllowOverlap)) {
-                    if (current)
-                        CancelPlacement();
-                    else
-                        BeginPlacement(e.sourcePath, e.name);
-                }
-                if (ImGui::IsItemHovered() && !Placing()) {
-                    g_hoverPath = e.sourcePath;
-                    DrawTooltip(e);
-                }
-                ImGui::TableNextColumn();
-                ImGui::Text("%d", e.uses);
-                ImGui::TableNextColumn();
-                ImGui::Text("%.1f m", e.radius * 2.0f / 100.0f);  // bounding sphere diameter
-                ImGui::TableNextColumn();
-                if (ImGui::SmallButton("Find")) {
-                    if (engine::ZGEOM* g = Resolve(e.sourcePath)) {
-                        Select(g);
-                        Transform t = GetTransform(g);
-                        float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 150.0f, t.pos[2] - t.mat[2] * 300.0f};
-                        SetFreeCamEnabled(true);
-                        SetFreeCamPosition(cam);
+    float footer = g_message.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing();
+    if (ImGui::BeginChild("list", ImVec2(0, -footer), ImGuiChildFlags_Borders)) {
+        // categories -> families (only when a family has several models) -> models
+        size_t i = 0;
+        while (i < g_models.size()) {
+            Category cat = g_models[i].category;
+            size_t catEnd = i;
+            int shown = 0;
+            while (catEnd < g_models.size() && g_models[catEnd].category == cat)
+                shown += matches(g_models[catEnd++]);
+            bool skip = shown == 0 || (cat == Category::Helpers && !g_showHelpers);
+            if (!skip) {
+                if (!filter.empty())
+                    ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+                char header[96];
+                snprintf(header, sizeof(header), "%s  (%d)###cat%d", CategoryName(cat), shown, int(cat));
+                if (ImGui::CollapsingHeader(header)) {
+                    size_t f = i;
+                    while (f < catEnd) {
+                        size_t famEnd = f;
+                        int famShown = 0;
+                        while (famEnd < catEnd && g_models[famEnd].family == g_models[f].family)
+                            famShown += matches(g_models[famEnd++]);
+                        if (famShown == 1) {
+                            for (size_t k = f; k < famEnd; ++k)
+                                if (matches(g_models[k]))
+                                    DrawRow(g_models[k], int(k));
+                        } else if (famShown > 1) {
+                            if (!filter.empty())
+                                ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+                            char label[160];
+                            snprintf(label, sizeof(label), "%s  (%d)###fam%d", g_models[f].family.c_str(), famShown,
+                                     int(f));
+                            if (ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                                for (size_t k = f; k < famEnd; ++k)
+                                    if (matches(g_models[k]))
+                                        DrawRow(g_models[k], int(k));
+                                ImGui::TreePop();
+                            }
+                        }
+                        f = famEnd;
                     }
                 }
-                ImGui::PopID();
             }
+            i = catEnd;
         }
-        ImGui::EndTable();
     }
+    ImGui::EndChild();
     if (!g_message.empty())
         ImGui::TextDisabled("%s", g_message.c_str());
 }

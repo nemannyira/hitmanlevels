@@ -109,6 +109,16 @@ void EnsureDynamic(engine::ZGEOM* geom)
     engine::ZBaseGeom* node = geom->node;
     if ((node->flags & game::kNodeDynamic) || engine::IsA(geom, "ZActor"))
         return;  // characters have their own movement; converting them breaks their rendering
+    // parts of a moving group (vehicle, item) move with it: only the group is tracked
+    for (engine::ZBaseGeom* p = node->parent; p && engine::IsReadable(p, sizeof(*p)); p = p->parent) {
+        if (p->flags & game::kNodeDynamic) {
+            static int logged;
+            if (logged++ < 10)
+                Log("'%s' is part of the moving group '%s': not made dynamic", engine::SafeString(geom->name).c_str(),
+                    p->geom ? engine::SafeString(p->geom->name).c_str() : "?");
+            return;
+        }
+    }
     static bool hooked;
     if (!hooked) {
         hooked = true;
@@ -223,13 +233,35 @@ void SetTransform(engine::ZGEOM* geom, const Transform& t)
     local(d, l.pos);
     game::SetLocalTransform(geom, l.mat, l.pos);
 
-    static int mismatches;
-    Transform back = GetTransform(geom);
-    float err = 0;
-    for (int i = 0; i < 9; ++i)
-        err += std::fabs(back.mat[i] - t.mat[i]);
-    if (err > 0.01f && mismatches++ < 10)
-        Log("SetTransform: engine kept a different rotation (error %.3f)", err);
+    // The local transform is computed from the parent's world transform; under
+    // some groups (vehicles, item templates) the object ends up elsewhere (it
+    // "disappears"). Then the world setter is tried, and what happened logged.
+    auto error = [&](float& rot, float& pos) {
+        Transform back = GetTransform(geom);
+        rot = pos = 0;
+        for (int i = 0; i < 9; ++i)
+            rot += std::fabs(back.mat[i] - t.mat[i]);
+        for (int i = 0; i < 3; ++i)
+            pos += std::fabs(back.pos[i] - t.pos[i]);
+    };
+    float rot, pos;
+    error(rot, pos);
+    if (pos > 1.0f || rot > 0.01f) {
+        static int logged;
+        bool log = logged++ < 20;
+        if (log) {
+            Transform pw = GetTransform(parentGeom);
+            Log("SetTransform '%s' (%s, flags %08X) under '%s' (%s, flags %08X): local setter off by %.1f cm, "
+                "rotation %.3f; parent at %.0f %.0f %.0f",
+                engine::SafeString(geom->name).c_str(), engine::ClassName(geom).c_str(), geom->node->flags,
+                engine::SafeString(parentGeom->name).c_str(), engine::ClassName(parentGeom).c_str(),
+                parent->flags, pos, rot, pw.pos[0], pw.pos[1], pw.pos[2]);
+        }
+        game::SetWorldTransform(geom, t.mat, t.pos);
+        error(rot, pos);
+        if (log)
+            Log("  world setter: off by %.1f cm, rotation %.3f", pos, rot);
+    }
 }
 
 bool GetBounds(engine::ZGEOM* geom, float center[3], float& radius)

@@ -457,10 +457,12 @@ std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root)
     std::vector<engine::ZGEOM*> parts;
     if (!root || !IsLive(root))
         return parts;
-    const engine::SceneSnapshot& snap = SceneModel(0);
-    int start = snap.Find(root);
+    int start = SceneModel().Find(root);
+    if (start < 0)
+        start = SceneModel(0).Find(root);  // made since the last snapshot
     if (start < 0)
         return parts;
+    const engine::SceneSnapshot& snap = SceneModel();  // not refreshed while walking
     std::vector<int> queue{start};
     for (size_t q = 0; q < queue.size() && q < 512; ++q) {
         const engine::GeomInfo& g = snap.geoms[queue[q]];

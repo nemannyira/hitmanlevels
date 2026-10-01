@@ -109,9 +109,18 @@ void Build()
     const engine::SceneSnapshot& snap = SceneModel(0);
     g_models.clear();
     // item templates: placed as working items, shown with all their visible parts
+    // (collected first: VisibleParts / PathOf may refresh the snapshot)
+    struct Template {
+        engine::ZGEOM* geom;
+        std::string name, className, path;
+    };
+    std::vector<Template> templates;
+    for (const engine::GeomInfo& g : snap.geoms)
+        if (IsLive(g.geom) && !IsSpawned(g.geom) && engine::IsA(g.geom, "ZItemTemplate"))
+            templates.push_back({g.geom, g.name, g.className, g.path});
     std::map<uint32_t, bool> templateMeshes;
-    for (const engine::GeomInfo& g : snap.geoms) {
-        if (!IsLive(g.geom) || IsSpawned(g.geom) || !engine::IsA(g.geom, "ZItemTemplate"))
+    for (const Template& g : templates) {
+        if (!IsLive(g.geom))
             continue;
         std::vector<engine::ZGEOM*> parts = VisibleParts(g.geom);
         if (parts.empty())
@@ -132,7 +141,7 @@ void Build()
         g_models.push_back(e);
     }
     std::map<uint32_t, ModelEntry> byMesh;
-    for (const engine::GeomInfo& g : snap.geoms) {
+    for (const engine::GeomInfo& g : SceneModel().geoms) {  // nothing below refreshes it
         if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom))
             continue;
         uint32_t mesh = engine::MeshOf(g.geom);

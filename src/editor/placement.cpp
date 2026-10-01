@@ -365,8 +365,10 @@ void DrawHint()
 std::vector<engine::ZGEOM*> Subtree(engine::ZGEOM* root)
 {
     std::vector<engine::ZGEOM*> out;
-    const engine::SceneSnapshot& snap = SceneModel(0);
-    int start = snap.Find(root);
+    int start = SceneModel().Find(root);
+    if (start < 0)
+        start = SceneModel(0).Find(root);
+    const engine::SceneSnapshot& snap = SceneModel();
     if (start < 0)
         return {root};
     std::vector<int> queue{start};

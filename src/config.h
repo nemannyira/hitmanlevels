@@ -21,6 +21,7 @@ struct Config {
     double screenshotEvery = 0;  // seconds between automatic screenshots (0 = off)
     bool luaMemory = false;   // expose h2.mem (raw memory access) to Lua
     bool logRender = false;   // log cameras, projections, viewports and draw stats
+    bool devCommands = false; // run Mods\_cmd.lua when it appears, h2.dev_* (automated testing)
 };
 
 extern Config g_config;

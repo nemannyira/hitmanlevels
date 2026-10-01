@@ -40,6 +40,8 @@ add_library(h2fix SHARED
     src/log.cpp
     src/config.cpp
     src/d3dhook.cpp
+    src/crashlog.cpp
+    src/devcmd.cpp
     src/diag.cpp
     src/scene.cpp
     src/game.cpp

@@ -127,6 +127,36 @@ int SpawnFrom(lua_State* L, engine::ZGEOM* source, int arg)
     return 1;
 }
 
+// h2.item(template, x, y, z [, yaw]): a working item (weapon, ammo, key...)
+// made from an item template of the scene, e.g. h2.item("RifleSniperR93", x, y, z)
+int Item(lua_State* L)
+{
+    engine::ZGEOM* tmpl = nullptr;
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "_path");
+        tmpl = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+    } else {
+        int i = FindIndex(luaL_checkstring(L, 1));
+        tmpl = i >= 0 ? editor::SceneModel().geoms[i].geom : nullptr;
+    }
+    if (!tmpl || !editor::IsLive(tmpl) || !engine::IsA(tmpl, "ZItemTemplate"))
+        return luaL_error(L, "item: no such item template (see h2.objects(\"ZItemTemplate\"))");
+    std::string err;
+    engine::ZGEOM* item = editor::SpawnItem(tmpl, &err);
+    if (!item)
+        return luaL_error(L, "item failed: %s", err.c_str());
+    g_scriptObjects.push_back(item);
+    editor::Transform t = editor::GetTransform(item);
+    for (int i = 0; i < 3; ++i)
+        t.pos[i] = float(luaL_checknumber(L, 2 + i));
+    if (!lua_isnoneornil(L, 5))
+        editor::EulerToMatrix(float(luaL_checknumber(L, 5)), 0.0f, 0.0f, t.mat);
+    editor::SetTransform(item, t);
+    PushObject(L, editor::PathOf(item));
+    return 1;
+}
+
 int Spawn(lua_State* L)
 {
     engine::ZGEOM* source = nullptr;
@@ -320,6 +350,7 @@ void RegisterObjectsApi()
     Register("findall", FindAll);
     Register("objects", Objects);
     Register("spawn", Spawn);
+    Register("item", Item);
 }
 
 void DestroyScriptObjects()

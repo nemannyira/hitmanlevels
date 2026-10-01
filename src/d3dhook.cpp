@@ -6,6 +6,8 @@
 
 #include "d3d8types.h"
 #include "config.h"
+#include "devcmd.h"
+#include "fov.h"
 #include "display.h"
 #include "editor/highlight.h"
 #include "screenshot.h"
@@ -152,6 +154,7 @@ HRESULT WINAPI hkPresent(void* dev, const RECT* src, const RECT* dst, HWND wnd, 
 {
     overlay::OnPresent(dev);
     PeriodicScreenshot(dev);
+    DevOnPresent(dev);
     editor::HighlightBeginFrame();
     if (!g_config.logRender)
         return oPresent(dev, src, dst, wnd, dirty);
@@ -175,6 +178,8 @@ using SetViewport_t = HRESULT(WINAPI*)(void* dev, const D3DVIEWPORT8* vp);
 SetViewport_t oSetViewport;
 HRESULT WINAPI hkSetViewport(void* dev, const D3DVIEWPORT8* vp)
 {
+    if (TracingCameras())
+        Log("trace viewport %lu,%lu %lux%lu", vp->X, vp->Y, vp->Width, vp->Height);
     static D3DVIEWPORT8 seen[256];
     static int n;
     bool known = false;

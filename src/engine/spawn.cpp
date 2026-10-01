@@ -163,7 +163,11 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGE
     memcpy(a.pos, src->pos, sizeof(a.pos));
     Log("clone '%s' from '%s': mesh %08X, flags %08X of %08X", name.c_str(), SafeString(source->name).c_str(),
         a.mesh, a.flags, src->flags);
-    bool ok = DoClone(a);
+    bool ok;
+    {
+        game::RefAllocUnlock unlock;
+        ok = DoClone(a);
+    }
     if (!ok) {
         if (a.result && a.result->geom && a.step > 1)
             DoDestroy(a.result->geom);
@@ -190,7 +194,11 @@ ZGEOM* CreateItem(ZGEOM* itemTemplate, std::string* error)
         return nullptr;
     }
     g_faultCode = 0;
-    ZGEOM* item = DoCreateItem(itemTemplate, root);
+    ZGEOM* item;
+    {
+        game::RefAllocUnlock unlock;
+        item = DoCreateItem(itemTemplate, root);
+    }
     if (!item || !IsReadable(item, sizeof(ZGEOM))) {
         char buf[128];
         snprintf(buf, sizeof(buf), "CreateItem failed (exception %08lX at %p)", g_faultCode, g_faultAddress);

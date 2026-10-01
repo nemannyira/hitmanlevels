@@ -50,9 +50,39 @@ void ResetMainCamera();
 constexpr uintptr_t g_pSysInterface = 0x6A6C5C;
 inline ZSysInterface* SysInterface() { return *reinterpret_cast<ZSysInterface**>(g_pSysInterface); }
 
+// ZSysInterface+0x7B4 is set by two of its virtuals (0x412830 / 0x412840)
+// while the game logic runs; then reference tables made while loading
+// (AllocRefTab 0x5B2A30, "+0x18 locked") assert on new entries. Objects the
+// editor creates at runtime need them, so the flag is lifted for that call.
+class RefAllocUnlock {
+public:
+    RefAllocUnlock()
+    {
+        auto sys = reinterpret_cast<unsigned char*>(SysInterface());
+        flag_ = sys ? sys + 0x7B4 : nullptr;
+        saved_ = flag_ ? *flag_ : 0;
+        if (flag_)
+            *flag_ = 0;
+    }
+    ~RefAllocUnlock()
+    {
+        if (flag_)
+            *flag_ = saved_;
+    }
+    RefAllocUnlock(const RefAllocUnlock&) = delete;
+    RefAllocUnlock& operator=(const RefAllocUnlock&) = delete;
+
+private:
+    unsigned char* flag_;
+    unsigned char saved_;
+};
+
 // ZEngineDataBase
 constexpr uintptr_t ZEngineDataBase_MainLoop = 0x422920;           // ?MainLoop@ZEngineDataBase@@QAEX_N@Z
 constexpr uintptr_t ZEngineDataBase_PushScene = 0x41B460;          // ?PushScene@ZEngineDataBase@@QAEPAUNewScene@@PBD@Z
+constexpr uintptr_t ZEngineDataBase_PopScene = 0x41B4F0;           // ?PopScene@ZEngineDataBase@@QAEXXZ
+constexpr uintptr_t ZEngineDataBase_PopAllScenes = 0x41B570;       // ?PopAllScenes@ZEngineDataBase@@QAEXXZ
+constexpr uintptr_t ZEngineDataBase_GetSceneDepth = 0x41B870;      // ?GetSceneDepth@ZEngineDataBase@@QBEHXZ
 constexpr uintptr_t ZEngineDataBase_ControlSceneChange = 0x421D50; // ?ControlSceneChange@ZEngineDataBase@@QAEXXZ
 constexpr uintptr_t ZEngineDataBase_FrameUpdate = 0x4228E0;        // ?FrameUpdate@ZEngineDataBase@@QAEXXZ
 

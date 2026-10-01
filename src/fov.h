@@ -12,4 +12,9 @@ void InstallFovFix();
 // Multiplier the world camera's tan(fov / 2) currently gets (Hor+ and FovScale).
 float HorizontalTanScale();
 
+// Debug: log every camera rendered during the next `frames` frames.
+void TraceCameras(int frames);
+void TraceFrameDone();  // called once per presented frame
+bool TracingCameras();
+
 } // namespace h2

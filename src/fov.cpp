@@ -37,19 +37,6 @@ float TanScale()
     return scale;
 }
 
-// MSVC RTTI class name of a polymorphic object ("?" if unavailable)
-const char* RttiName(const void* obj)
-{
-    __try {
-        auto vtbl = *reinterpret_cast<const uintptr_t* const*>(obj);
-        auto col = reinterpret_cast<const uint32_t*>(vtbl[-1]);        // CompleteObjectLocator
-        auto td = reinterpret_cast<const char*>(col[3]);                // TypeDescriptor
-        return td + 8;                                                  // decorated name
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "?";
-    }
-}
-
 // --- debug: per camera, log its fields and the projection it produces once ---
 game::ZCAMERA* g_current;
 bool g_currentNew;
@@ -92,15 +79,50 @@ void __fastcall hkSetProjection(void* self, void* edx, float l, float r, float b
     oSetProjection(self, edx, l, r, b, t, n, f, flag);
 }
 
+int g_traceFrames;  // dev: log every camera rendered in the next N frames
+
+void TraceCamera(game::ZCAMERA* cam, int arg, bool widened)
+{
+    auto f = reinterpret_cast<const float*>(cam);
+    auto u = reinterpret_cast<const uint32_t*>(cam);
+    Log("trace cam %p vtbl=%p fov=%.2f near=%g far=%g win=%gx%g flags=%08X arg=%d widened=%d | 28:%g 2C:%g 30:%g 34:%g "
+        "38:%g 3C:%g 40:%g 48:%g 5C:%g 68:%g 6C:%g",
+        cam, *reinterpret_cast<void**>(cam), cam->fov * 57.29578f, cam->nearPlane, cam->farPlane, cam->windowWidth, cam->windowHeight,
+        u[0x44 / 4], arg, widened, f[0x28 / 4], f[0x2C / 4], f[0x30 / 4], f[0x34 / 4], f[0x38 / 4], f[0x3C / 4],
+        f[0x40 / 4], f[0x48 / 4], f[0x5C / 4], f[0x68 / 4], f[0x6C / 4]);
+}
+
+// Scope and binocular views: the world camera renders zoomed into a part of
+// the screen (flag 0x100000, a sub-viewport the game sizes for its own mask)
+// and a mask camera (ZHM2SniperCamera / ZHM2BinocularCamera, and
+// ZHM2NightvisionCamera over the normal view for the goggles) then draws the
+// scope / binocular frame as a 3D model over the whole screen. Both keep the
+// game's own field of view: widened, the frame no longer reaches the screen
+// edges and the sides show the last frame.
+constexpr uint32_t kZoomedView = 0x100000;
+constexpr uintptr_t kVtbl_ZHM2BinocularCamera = 0x651BF0;
+constexpr uintptr_t kVtbl_ZHM2SniperCamera = 0x652870;
+constexpr uintptr_t kVtbl_ZHM2NightvisionCamera = 0x6522A0;
+
+bool KeepFov(game::ZCAMERA* cam)
+{
+    if (cam->flags & (game::ZCAMERA::kOverlay | kZoomedView))
+        return true;
+    uintptr_t vtbl = *reinterpret_cast<uintptr_t*>(cam);
+    return vtbl == kVtbl_ZHM2BinocularCamera || vtbl == kVtbl_ZHM2SniperCamera || vtbl == kVtbl_ZHM2NightvisionCamera;
+}
+
 void __fastcall hkRenderCamera(void* self, void* edx, game::ZCAMERA* cam, int arg)
 {
     if (!cam)
         return oRenderCamera(self, edx, cam, arg);
+    if (g_traceFrames > 0)
+        TraceCamera(cam, arg, !KeepFov(cam));
     LogCamera(cam, arg);
     game::NoteRenderedCamera(cam);
     // Overlay cameras (menus, HUD, screen effects) draw on top without
     // clearing; their content is laid out in pixels, so keep their FOV.
-    if ((cam->flags & game::ZCAMERA::kOverlay) || (!g_config.horPlus && g_config.fovScale == 1.0))
+    if (KeepFov(cam) || (!g_config.horPlus && g_config.fovScale == 1.0))
         return oRenderCamera(self, edx, cam, arg);
     float original = cam->fov;
     float widened = 2.0f * std::atan(std::tan(original * 0.5f) * TanScale());
@@ -121,6 +143,14 @@ void OnRendererLoaded(HMODULE mod)
 }
 
 } // namespace
+
+void TraceCameras(int frames) { g_traceFrames = frames; }
+bool TracingCameras() { return g_traceFrames > 0; }
+void TraceFrameDone()
+{
+    if (g_traceFrames > 0 && --g_traceFrames == 0)
+        Log("trace cam: done");
+}
 
 float HorizontalTanScale()
 {

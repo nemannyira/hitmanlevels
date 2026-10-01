@@ -278,7 +278,12 @@ ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)
     Log("npc: spawning '%s' from record %d (%s, mesh %08X, flags %08X, data %zu bytes, script %zu bytes)",
         s.name.c_str(), s.record, r.name.c_str(), r.mesh, r.flags, a.data ? size_t(*reinterpret_cast<uint32_t*>(a.data) & 0xFFFFFF) : 0,
         s.script.size());
-    if (!DoSpawn(a)) {
+    bool ok;
+    {
+        game::RefAllocUnlock unlock;
+        ok = DoSpawn(a);
+    }
+    if (!ok) {
         char buf[160];
         snprintf(buf, sizeof(buf), "engine call failed (step %d, exception %08lX at %p)", a.step, g_faultCode,
                  g_faultAddress);

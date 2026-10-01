@@ -8,6 +8,8 @@
 #include <MinHook.h>
 
 #include "config.h"
+#include "crashlog.h"
+#include "devcmd.h"
 #include "d3dhook.h"
 #include "diag.h"
 #include "display.h"
@@ -37,6 +39,7 @@
 namespace {
 
 HMODULE g_realDinput8;
+HMODULE g_self;
 
 template <typename Fn>
 Fn Real(const char* name)
@@ -69,6 +72,7 @@ void Init()
         return;
     }
     h2::Log("H2Fix loaded into %s", h2::GameDir().c_str());
+    h2::InstallCrashLog(g_self);
     if (MH_Initialize() != MH_OK) {
         h2::Log("MinHook init failed");
         return;
@@ -81,6 +85,7 @@ void Init()
     h2::script::RegisterApi();
     h2::script::RegisterEvents();
     h2::script::RegisterObjectsApi();
+    h2::InstallDevCommands();
     if (h2::g_config.luaMemory)
         h2::script::RegisterMemApi();
     h2::OnScenePushed([](const std::string& scene) { h2::script::FireScene(scene); });
@@ -144,6 +149,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(inst);
+        g_self = inst;
         Init();
     }
     return TRUE;

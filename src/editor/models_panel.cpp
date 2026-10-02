@@ -262,7 +262,7 @@ void DrawTooltip(const ModelEntry& e)
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(e.name.c_str());
     if (!e.level.empty())
-        ImGui::TextDisabled("from %s (no collision yet), %.1f m", e.level.c_str(), e.radius * 2.0f / 100.0f);
+        ImGui::TextDisabled("from %s, %.1f m", e.level.c_str(), e.radius * 2.0f / 100.0f);
     else
         ImGui::TextDisabled("%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f, e.uses);
     float size = 220.0f * ImGui::GetIO().FontGlobalScale * (ImGui::GetFontSize() / 16.0f);

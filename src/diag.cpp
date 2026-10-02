@@ -16,6 +16,8 @@ namespace h2 {
 namespace {
 
 DWORD g_mainThread;
+ReadFilter g_readFilter;
+OpenWatch g_openWatch;
 
 struct Counters {
     std::atomic<long> frames{0};
@@ -38,8 +40,15 @@ bool OnMain() { return GetCurrentThreadId() == g_mainThread; }
 decltype(&ReadFile) oReadFile;
 BOOL WINAPI hkReadFile(HANDLE h, LPVOID buf, DWORD n, LPDWORD read, LPOVERLAPPED ov)
 {
+    if (g_config.logFiles && n >= 16384 && !ov) {  // large reads (streams): where in the file
+        LONG high = 0;
+        DWORD pos = SetFilePointer(h, 0, &high, FILE_CURRENT);
+        Log("read %p @%08lX %lu bytes", h, pos, n);
+    }
     double t = NowMs();
-    BOOL r = oReadFile(h, buf, n, read, ov);
+    BOOL r = FALSE;
+    if (ov || !g_readFilter || !g_readFilter(h, buf, n, read, &r))
+        r = oReadFile(h, buf, n, read, ov);
     long long us = UsSince(t);
     g_c.reads++;
     g_c.readBytes += read ? *read : 0;
@@ -58,6 +67,8 @@ HANDLE WINAPI hkCreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY_A
     double t = NowMs();
     HANDLE h = oCreateFileA(name, access, share, sa, disp, flags, tmpl);
     g_c.opens++;
+    if (g_openWatch && h != INVALID_HANDLE_VALUE && name)
+        g_openWatch(name, h);
     if (g_config.logFiles)
         Log("open %s -> %p (%.2f ms)", name, h, NowMs() - t);
     return h;
@@ -193,11 +204,23 @@ DWORD WINAPI StatsThread(void*)
 
 } // namespace
 
-void InstallDiagnostics()
+void InstallFileHooks()
 {
     g_mainThread = GetCurrentThreadId();
     HookApi("kernel32.dll", "ReadFile", hkReadFile, &oReadFile);
     HookApi("kernel32.dll", "CreateFileA", hkCreateFileA, &oCreateFileA);
+}
+
+void SetReadFilter(ReadFilter filter) { g_readFilter = filter; }
+void SetOpenWatch(OpenWatch watch) { g_openWatch = watch; }
+
+BOOL RawReadFile(HANDLE h, void* buf, DWORD n, DWORD* read)
+{
+    return (oReadFile ? oReadFile : ReadFile)(h, buf, n, read, nullptr);
+}
+
+void InstallDiagnostics()
+{
     HookApi("kernel32.dll", "Sleep", hkSleep, &oSleep);
     HookApi("kernel32.dll", "WaitForSingleObject", hkWaitForSingleObject, &oWaitForSingleObject);
     OnFrameEnd(CountFrame);

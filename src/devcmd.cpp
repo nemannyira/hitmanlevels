@@ -17,6 +17,7 @@ extern "C" {
 #include "editor/history.h"
 #include "editor/level.h"
 #include "imgui.h"
+#include "hook.h"
 #include "fov.h"
 #include "game.h"
 #include "log.h"
@@ -275,10 +276,60 @@ int Editor(lua_State* L)
 
 } // namespace
 
+// ---- sound without focus (automated testing: the game keeps playing in the background) ----
+
+struct DsBufferDesc {
+    DWORD dwSize;
+    DWORD dwFlags;
+};
+using CreateSoundBuffer_t = HRESULT(__stdcall*)(void* ds, DsBufferDesc* desc, void** buffer, void* outer);
+CreateSoundBuffer_t oCreateSoundBuffer;
+HRESULT __stdcall hkCreateSoundBuffer(void* ds, DsBufferDesc* desc, void** buffer, void* outer)
+{
+    constexpr DWORD kPrimary = 0x1, kGlobalFocus = 0x8000;
+    if (desc && !(desc->dwFlags & kPrimary))
+        desc->dwFlags |= kGlobalFocus;
+    return oCreateSoundBuffer(ds, desc, buffer, outer);
+}
+
+void HookSoundObject(void* ds)
+{
+    if (!ds || oCreateSoundBuffer)
+        return;
+    void* fn = (*reinterpret_cast<void***>(ds))[3];  // IDirectSound::CreateSoundBuffer
+    Hook("IDirectSound::CreateSoundBuffer", fn, hkCreateSoundBuffer, &oCreateSoundBuffer);
+}
+
+using DirectSoundCreate_t = HRESULT(WINAPI*)(const GUID*, void**, void*);
+DirectSoundCreate_t oDirectSoundCreate, oDirectSoundCreate8;
+HRESULT WINAPI hkDirectSoundCreate(const GUID* g, void** ds, void* outer)
+{
+    HRESULT hr = oDirectSoundCreate(g, ds, outer);
+    if (SUCCEEDED(hr) && ds)
+        HookSoundObject(*ds);
+    return hr;
+}
+HRESULT WINAPI hkDirectSoundCreate8(const GUID* g, void** ds, void* outer)
+{
+    HRESULT hr = oDirectSoundCreate8(g, ds, outer);
+    if (SUCCEEDED(hr) && ds)
+        HookSoundObject(*ds);
+    return hr;
+}
+
+void InstallBackgroundSound()
+{
+    if (!LoadLibraryA("dsound.dll"))
+        return;
+    HookApi("dsound.dll", "DirectSoundCreate", hkDirectSoundCreate, &oDirectSoundCreate);
+    HookApi("dsound.dll", "DirectSoundCreate8", hkDirectSoundCreate8, &oDirectSoundCreate8);
+}
+
 void InstallDevCommands()
 {
     if (!g_config.devCommands)
         return;
+    InstallBackgroundSound();
     script::Register("dev_loadscene", LoadScene);
     script::Register("dev_key", Key);
     script::Register("dev_mouse", Mouse);

@@ -19,6 +19,7 @@
 #include "../script/objects_api.h"
 #include "history.h"
 #include "mission.h"
+#include "music.h"
 #include "scene_panel.h"
 
 using json = nlohmann::json;
@@ -602,6 +603,8 @@ bool SaveLevel(std::string* error)
             j["mission"] = {{"objectives", objs}, {"end_when_done", m.endWhenDone}, {"exit", m.exitPath},
                             {"exit_radius", m.exitRadius}};
     }
+    if (!g_level.music.empty())
+        j["music"] = g_level.music;
     j["lists"] = json::array();
     for (auto& [path, points] : g_level.lists)
         j["lists"].push_back({{"path", path}, {"points", points}});
@@ -707,6 +710,10 @@ bool LoadLevel(const std::string& folder, std::string* error)
         L.mission.exitPath = m.value("exit", "");
         L.mission.exitRadius = m.value("exit_radius", 300.0f);
     }
+    if (j.contains("music") && j["music"].is_object())
+        for (auto& [path, track] : j["music"].items())
+            if (track.is_string())
+                L.music[path] = track.get<std::string>();
     for (const json& o : j.value("lists", json::array()))
         if (o.contains("path"))
             L.lists[o["path"].get<std::string>()] = o.value("points", std::vector<std::string>{});
@@ -1085,12 +1092,14 @@ int ApplyLevel()
     for (auto& [record, e] : g_level.npcEdits)
         n += ApplyNpcEdit(e);
     ApplyMission();
+    ApplyMusic();
     return n;
 }
 
 void RevertLevel()
 {
     RevertMission();
+    RevertMusic();
     for (auto& [path, points] : g_level.lists)  // the scene file's elements (before the points go)
         if (engine::ZGEOM* list = Resolve(path); list && IsLive(list))
             engine::SetListRefs(list, engine::AuthoredListRefs(list));

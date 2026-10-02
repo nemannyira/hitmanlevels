@@ -25,6 +25,7 @@
 //     "objectives": [ { "slot": 1, "text": "Kill the lawyer", "goal": "kill",
 //                       "target": "ROOT/.../MafiaLawyer/Ground", "replaces_original": true } ],
 //     "end_when_done": true, "exit": "ROOT/.../Point+3", "exit_radius": 300 },
+//   "music": { "ROOT/.../MusicControl/InsideAndOutside/Location_01": "RussiaSlow" },
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
 //
@@ -100,6 +101,7 @@ struct LevelDocument {
     std::map<int, NpcEditEntry> npcEdits;  // by actor record
     std::map<std::string, std::vector<std::string>> lists;  // changed lists: path -> element paths
     MissionDoc mission;
+    std::map<std::string, std::string> music;  // music object path -> track name ("RussiaSlow")
     std::vector<std::string> scripts;
     bool dirty = false;
 };

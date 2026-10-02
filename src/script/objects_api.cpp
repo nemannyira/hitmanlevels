@@ -28,6 +28,10 @@
 //   h2.player()                            -- Hitman
 //   h2.objective(slot [, text [, done]])   -- a laptop objective line; returns the level's own text
 //   h2.mission("complete" | "fail")
+//
+// Music:
+//   h2.music() -> { {object=, zone=, mood="Location"|"PreAction"|"Action", track=, level=}, ... }, { "RussiaSlow", ... }
+//   h2.music(object, "RussiaSlow")         -- another track ("" = the level's own; runtime)
 #include "objects_api.h"
 
 #include <algorithm>
@@ -43,6 +47,7 @@ extern "C" {
 
 #include "../editor/mission.h"
 #include "../editor/model.h"
+#include "../editor/music.h"
 #include "../editor/npcs.h"
 #include "../editor/scene_panel.h"
 #include "../engine/lists.h"
@@ -312,6 +317,42 @@ int Objective(lua_State* L)
         editor::SetObjectiveDone(slot, lua_toboolean(L, 3) != 0);
     lua_pushstring(L, own.c_str());
     return 1;
+}
+
+// h2.music() -> slots, tracks | h2.music(object, track)
+int Music(lua_State* L)
+{
+    if (lua_gettop(L) >= 2) {
+        lua_getfield(L, 1, "_path");
+        const char* path = lua_tostring(L, -1);
+        std::string err;
+        if (!path || !editor::SetMusicTrack(path, luaL_checkstring(L, 2), &err))
+            return luaL_error(L, "music: %s", path ? err.c_str() : "object expected");
+        return 0;
+    }
+    lua_newtable(L);
+    int n = 0;
+    for (const editor::MusicSlot& s : editor::MusicSlots()) {
+        lua_newtable(L);
+        PushObject(L, s.path);
+        lua_setfield(L, -2, "object");
+        lua_pushstring(L, s.zone.c_str());
+        lua_setfield(L, -2, "zone");
+        lua_pushstring(L, s.mood.c_str());
+        lua_setfield(L, -2, "mood");
+        lua_pushstring(L, editor::TrackName(s.current).c_str());
+        lua_setfield(L, -2, "track");
+        lua_pushstring(L, editor::TrackName(s.original).c_str());
+        lua_setfield(L, -2, "level");
+        lua_rawseti(L, -2, ++n);
+    }
+    lua_newtable(L);
+    n = 0;
+    for (const editor::MusicTrack& t : editor::MusicTracks()) {
+        lua_pushstring(L, t.name.c_str());
+        lua_rawseti(L, -2, ++n);
+    }
+    return 2;
 }
 
 // h2.mission("complete" | "fail")
@@ -769,6 +810,7 @@ void RegisterObjectsApi()
     Register("player", Player);
     Register("objective", Objective);
     Register("mission", Mission);
+    Register("music", Music);
 }
 
 void DestroyScriptObjects()

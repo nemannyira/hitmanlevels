@@ -17,6 +17,7 @@
 #include "editor/highlight.h"
 #include "editor/level.h"
 #include "editor/mission.h"
+#include "editor/music.h"
 #include "editor/models_panel.h"
 #include "editor/npc_panel.h"
 #include "editor/npcs.h"
@@ -79,6 +80,7 @@ void Init()
         h2::Log("MinHook init failed");
         return;
     }
+    h2::InstallFileHooks();
     if (h2::g_config.diagnostics)
         h2::InstallDiagnostics();
     h2::InstallFrameLimiter(h2::g_config.fpsLimit);
@@ -109,6 +111,7 @@ void Init()
     h2::editor::InstallNpcPanel();
     h2::editor::InstallLevelPanel();
     h2::editor::InstallMission();
+    h2::editor::InstallMusic();
     h2::editor::InstallPlacement();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {

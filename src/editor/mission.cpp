@@ -20,6 +20,7 @@
 #include "freecam.h"
 #include "level.h"
 #include "model.h"
+#include "music.h"
 #include "npcs.h"
 #include "scene_panel.h"
 
@@ -740,6 +741,8 @@ void DrawPanel()
                 CurrentLevel().dirty = true;
         }
     }
+    ImGui::SeparatorText("Music");
+    DrawMusicSection();
     ImGui::SeparatorText("Test");
     if (ImGui::SmallButton("Complete mission now"))
         g_status = CompleteMission() ? "mission completed" : "the level control was not found";

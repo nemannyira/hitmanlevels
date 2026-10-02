@@ -107,8 +107,21 @@ struct HelperArgs {
     uint32_t flags;
     float mat[9];
     float pos[3];
+    uint32_t mesh;   // 0: none
+    uint8_t* data;   // typed data block read by the object (null: none)
+    bool noInit;     // initialised later (InitObject), e.g. after its children were made
     ZBaseGeom* result;
     int step;
+};
+
+constexpr uintptr_t kDblkVtable = 0x65D81C;
+constexpr int kGeom_ReadData = 0x1B8 / 4;   // (DBLK*)
+constexpr int kGeom_ReadData2 = 0x130 / 4;  // (DBLK*)
+struct Dblk {
+    uintptr_t vtable;
+    uint32_t size;  // block size - 4
+    uint8_t* cur;
+    uint8_t* start;
 };
 
 bool DoHelper(HelperArgs& a)
@@ -122,6 +135,8 @@ bool DoHelper(HelperArgs& a)
         a.result = node;
         ZGEOM* geom = node->geom;
         a.step = 2;
+        if (a.mesh)
+            reinterpret_cast<void(__thiscall*)(ZBaseGeom*, uint32_t)>(kNode_SetMesh)(node, a.mesh);
         reinterpret_cast<void(__thiscall*)(ZBaseGeom*, const float*, const float*)>(kNode_SetTransform)(node, a.mat,
                                                                                                      a.pos);
         uint32_t f = node->flags | (a.flags & 0xFFFFF & ~0x40000u);
@@ -129,11 +144,36 @@ bool DoHelper(HelperArgs& a)
         a.step = 3;
         if (a.parent)
             VFunc<void(__thiscall*)(ZGEOM*, ZBaseGeom*, int, int)>(a.parent, kGeom_AddChild)(a.parent, node, 0, 0);
+        if (a.data) {
+            a.step = 6;
+            Dblk d;
+            d.vtable = kDblkVtable;
+            d.size = (*reinterpret_cast<uint32_t*>(a.data) & 0xFFFFFF) - 4;
+            d.cur = d.start = a.data + 4;
+            VFunc<void(__thiscall*)(ZGEOM*, Dblk*)>(geom, kGeom_ReadData)(geom, &d);
+            VFunc<void(__thiscall*)(ZGEOM*, Dblk*)>(geom, kGeom_ReadData2)(geom, &d);
+        }
         a.step = 4;
-        VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_Init)(geom);
-        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, uint32_t, uint32_t)>(kNode_SetFlags)(node, kFlagInitialized, 0);
-        VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_PostInit)(geom);
+        if (!a.noInit) {
+            VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_Init)(geom);
+            reinterpret_cast<void(__thiscall*)(ZBaseGeom*, uint32_t, uint32_t)>(kNode_SetFlags)(node, kFlagInitialized,
+                                                                                               0);
+            VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_PostInit)(geom);
+        }
         a.step = 5;
+        return true;
+    } __except (Filter(GetExceptionInformation())) {
+        return false;
+    }
+}
+
+bool DoInit(ZGEOM* geom)
+{
+    __try {
+        VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_Init)(geom);
+        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, uint32_t, uint32_t)>(kNode_SetFlags)(geom->node,
+                                                                                           kFlagInitialized, 0);
+        VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_PostInit)(geom);
         return true;
     } __except (Filter(GetExceptionInformation())) {
         return false;
@@ -227,6 +267,24 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGE
 ZGEOM* CreateHelper(const std::string& name, ZGEOM* parent, uint32_t flags, const float mat[9], const float pos[3],
                     std::string* error, const char* className)
 {
+    return CreateObject(name, parent, className ? className : "ZSTDOBJ", 0, flags, mat, pos, {}, error);
+}
+
+bool InitObject(ZGEOM* geom)
+{
+    if (!geom || !IsReadable(geom, sizeof(ZGEOM)) || !IsReadable(geom->node, sizeof(ZBaseGeom)))
+        return false;
+    game::RefAllocUnlock unlock;
+    if (DoInit(geom))
+        return true;
+    Log("init '%s': exception %08lX at %p", SafeString(geom->name).c_str(), g_faultCode, g_faultAddress);
+    return false;
+}
+
+ZGEOM* CreateObject(const std::string& name, ZGEOM* parent, const char* className, uint32_t mesh, uint32_t flags,
+                    const float mat[9], const float pos[3], const std::vector<uint8_t>& data, std::string* error,
+                    bool init)
+{
     void* table = GeomTable();
     if (!table) {
         if (error)
@@ -236,7 +294,20 @@ ZGEOM* CreateHelper(const std::string& name, ZGEOM* parent, uint32_t flags, cons
     HelperArgs a{};
     a.table = table;
     a.name = name.c_str();
-    a.className = className ? className : "ZSTDOBJ";
+    a.className = className;
+    a.mesh = mesh;
+    a.noInit = !init;
+    // the engine's memory: objects may keep pointers into their data
+    if (!data.empty()) {
+        a.data = static_cast<uint8_t*>(reinterpret_cast<void*(__cdecl*)(size_t)>(0x530490)(data.size() + 1));
+        if (!a.data) {
+            if (error)
+                *error = "out of memory";
+            return nullptr;
+        }
+        memcpy(a.data, data.data(), data.size());
+        a.data[data.size()] = 0xFF;
+    }
     a.parent = parent && IsReadable(parent, sizeof(ZGEOM)) ? parent : nullptr;
     a.flags = flags;
     memcpy(a.mat, mat, sizeof(a.mat));

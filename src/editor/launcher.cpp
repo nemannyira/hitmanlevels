@@ -1,7 +1,9 @@
 #include "launcher.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cfloat>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -12,13 +14,16 @@
 
 #include "../display.h"
 #include "../engine/scene_data.h"
+#include "../engine/spawn.h"
 #include "../game.h"
+#include "../hook.h"
 #include "../input/dinput.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
 #include "level.h"
+#include "mission.h"
 #include "model.h"
 
 namespace h2::editor {
@@ -44,10 +49,22 @@ const Map kMaps[] = {
 };
 constexpr float kRow = 24.0f;            // the main menu's line height (GUI units)
 constexpr float kTextSize = 20.5f;       // its letters' size (GUI units)
-const char* const kEntry = "Level editor";
+const char* const kEntry = "Level Editor";
+
+// The entry is a button of the game's own (CHM2Button with its text, a
+// ZCHAROBJ "Normal"), made from the Options button's records with an id the
+// menu does not know: its handler (0x54BF40, thiscall (int id): 1 Start,
+// 2 Options, 3 Quit, 4 Load, 5 Credits) is hooked for it.
+constexpr uintptr_t kMainMenu_OnButton = 0x54BF40;
+constexpr int kEntryId = 7;
+constexpr uint32_t kClassText = 0x20002D;
+constexpr size_t kButton_Up = 0x80, kButton_Down = 0x84;  // the neighbours' refs (arrow keys)
+const char* const kEntryKey = "H2Editor/Menu/LevelEditor";
+const char* const kTemplateKey = "AllLevels/Interface/Options";
 
 // main menu entry
-bool g_layoutDone;
+engine::ZGEOM* g_button;  // the game's button made for it (null: drawn by the overlay)
+bool g_buttonTried;
 bool g_hovered;
 
 // launcher
@@ -95,21 +112,108 @@ bool GuiToScreen(float x, float y, ImVec2& out, float& scale)
     return true;
 }
 
-// the buttons under Load move a line down: the entry takes their place
-void Layout()
+// The entry is the line under Load, the buttons under it move a line down.
+// Kept relative to Load: the menu adds the screen's margins when it starts.
+void Layout(engine::ZGEOM* load)
 {
-    engine::ZGEOM* load = Find("2Load");
-    if (!load || !IsLive(load))
-        return;
-    for (const char* name : {"3Options", "4Credits", "6Quit"}) {
-        engine::ZGEOM* b = Find(name);
+    Transform lt = GetTransform(load);
+    engine::ZGEOM* lines[] = {g_button, Find("3Options"), Find("4Credits"), Find("6Quit")};
+    for (int i = 0; i < 4; ++i) {
+        engine::ZGEOM* b = lines[i];
         if (!b || !IsLive(b))
             continue;
         Transform t = GetTransform(b);
-        t.pos[1] += kRow;
-        SetTransform(b, t);
+        float y = lt.pos[1] + kRow * float(i + 1);
+        if (fabsf(t.pos[1] - y) > 0.01f) {
+            t.pos[1] = y;
+            SetTransform(b, t);
+        }
     }
-    g_layoutDone = true;
+}
+
+uint32_t* Field(engine::ZGEOM* geom, size_t offset)
+{
+    auto p = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(geom) + offset);
+    return engine::IsReadable(p, 4) ? p : nullptr;
+}
+
+// The Options button made again under Load: its data block with our id and
+// neighbours (Load above, Options below), its text with our LOC key.
+engine::ZGEOM* MakeButton(engine::ZGEOM* load, engine::ZGEOM* options)
+{
+    auto fail = [](const char* why) -> engine::ZGEOM* {
+        Log("launcher: menu button not made (%s), the overlay draws the entry", why);
+        return nullptr;
+    };
+    if (!options || !IsLive(options))
+        return fail("no Options button");
+    const auto& records = engine::SceneRecords();
+    int index = engine::RecordOf(options);
+    const engine::SceneRecord* button = nullptr;
+    const engine::SceneRecord* text = nullptr;
+    for (const engine::SceneRecord& r : records)
+        if (r.index == index)
+            button = &r;
+    for (const engine::SceneRecord& r : records)
+        if (button && r.parent == button->index && r.classId == kClassText)
+            text = &r;
+    if (!button || !text || !button->data || !text->data)
+        return fail("no records of the Options button");
+
+    uint32_t refLoad = engine::RefOf(load), refOptions = engine::RefOf(options);
+    std::vector<uint8_t> data = engine::RemappedBlock(button->data);
+    std::vector<size_t> refs = engine::BlockRefOffsets(data);
+    // ... LONG id, REF left, REF right, REF up, REF down
+    if (refs.size() < 4 || refs[0] < 10)
+        return fail("unknown button data");
+    size_t id = refs[0] - 5;
+    auto u32 = [&](size_t at) {
+        uint32_t v;
+        memcpy(&v, &data[at], 4);
+        return v;
+    };
+    if ((data[id - 1] & 0x3F) != 3 || u32(id) != 2 || u32(refs[2]) != refLoad)
+        return fail("unexpected button data");
+    uint32_t v = kEntryId;
+    memcpy(&data[id], &v, 4);
+    memcpy(&data[refs[3]], &refOptions, 4);
+
+    std::vector<uint8_t> label = engine::RemappedBlock(text->data);
+    std::string from(kTemplateKey, strlen(kTemplateKey) + 1), to(kEntryKey, strlen(kEntryKey) + 1);
+    auto at = std::search(label.begin(), label.end(), from.begin(), from.end());
+    if (at == label.end())
+        return fail("unknown text data");
+    at = label.erase(at, at + from.size());
+    label.insert(at, to.begin(), to.end());
+    uint32_t header;
+    memcpy(&header, label.data(), 4);
+    header = (header & 0xFF000000) | uint32_t(label.size());
+    memcpy(label.data(), &header, 4);
+
+    engine::ZBaseGeom* parent = options->node->parent;
+    if (!parent || !engine::IsReadable(parent, sizeof(*parent)) || !IsLive(parent->geom))
+        return fail("no button group");
+    float pos[3] = {load->node->pos[0], load->node->pos[1] + kRow, load->node->pos[2]};
+    std::string err;
+    engine::ZGEOM* made = engine::CreateObject("5LevelEditor", parent->geom, "CHM2Button", button->mesh,
+                                               button->flags, button->mat, pos, data, &err, false);
+    if (!made)
+        return fail(err.c_str());
+    if (!engine::CreateObject(text->name, made, "ZCHAROBJ", text->mesh, text->flags, text->mat, text->pos, label,
+                              &err))
+        Log("launcher: menu button text not made (%s)", err.c_str());
+    if (!engine::InitObject(made))
+        return fail("init failed");
+    // the neighbours lead to it
+    uint32_t ref = engine::RefOf(made);
+    uint32_t* down = Field(load, kButton_Down);
+    uint32_t* up = Field(options, kButton_Up);
+    if (ref && down && *down == refOptions)
+        *down = ref;
+    if (ref && up && *up == refLoad)
+        *up = ref;
+    Log("launcher: menu button made (%p, ref %08X)", static_cast<void*>(made), ref);
+    return made;
 }
 
 void LoadSavedList()
@@ -165,7 +269,7 @@ void DrawLauncher()
             if (ImGui::BeginTabItem("New level")) {
                 ImGui::TextWrapped("A level of your own on one of the game's maps. The editor opens on the map: "
                                    "place characters, objects and items, give them routes, set the objectives and "
-                                   "the music, then save (File > Save level).");
+                                   "the music, then save (Save in the toolbar, or Ctrl+S).");
                 ImGui::Spacing();
                 ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
                 if (ImGui::BeginCombo("map", kMaps[g_map].name)) {
@@ -246,23 +350,39 @@ void OpenLauncher()
     overlay::SetOpen(true);
 }
 
-// the entry, drawn over the main menu while the editor is closed
+using OnButton_t = uint32_t(__fastcall*)(void* self, void* edx, int id);
+OnButton_t oOnButton;
+
+uint32_t __fastcall hkOnButton(void* self, void* edx, int id)
+{
+    if (id == kEntryId) {
+        if (!g_launcherOpen)
+            OpenLauncher();
+        return 0;
+    }
+    return oOnButton(self, edx, id);
+}
+
+// The entry under Load: the game's own button, or drawn over the main menu
+// when that could not be made.
 void DrawEntry()
 {
-    if (!InMainMenu() || !engine::SceneDataValid()) {
-        TakeGameClicks();
+    int clicks = TakeGameClicks();  // taken every frame: only fresh ones count
+    if (!InMainMenu() || !engine::SceneDataValid())
         return;
-    }
-    if (!g_layoutDone)
-        Layout();
-    if (!g_layoutDone || overlay::IsOpen()) {
-        TakeGameClicks();
-        return;
-    }
     engine::ZGEOM* load = Find("2Load");
     if (!load || !IsLive(load))
         return;
-    Transform lt = GetTransform(load);  // the menu positions its buttons when it starts
+    if (!g_buttonTried) {
+        g_buttonTried = true;
+        g_button = MakeButton(load, Find("3Options"));
+    }
+    if (g_button && !IsLive(g_button))
+        g_button = nullptr;
+    Layout(load);
+    if (g_button || overlay::IsOpen())
+        return;
+    Transform lt = GetTransform(load);
     ImVec2 at;
     float scale;
     if (!GuiToScreen(lt.pos[0], lt.pos[1] + kRow, at, scale))
@@ -285,7 +405,6 @@ void DrawEntry()
     }
     ImU32 color = g_hovered ? IM_COL32(10, 10, 10, 255) : IM_COL32(108, 127, 142, 255);
     ImGui::GetBackgroundDrawList()->AddText(font, size, at, color, kEntry);
-    int clicks = TakeGameClicks();
     if (clicks > 0)
         Log("launcher: click (%s)", g_hovered ? "on the entry" : "elsewhere");
     if (clicks > 0 && g_hovered)
@@ -310,10 +429,13 @@ void AfterStart()
 
 void InstallLauncher()
 {
+    SetLocText(kEntryKey, kEntry);
+    Hook("MainMenu::OnButton", kMainMenu_OnButton, &hkOnButton, &oOnButton);
     overlay::AddAlwaysDraw(DrawEntry);
     OnFrameEnd(AfterStart);
     OnScenePushed([](const std::string&) {
-        g_layoutDone = false;
+        g_button = nullptr;
+        g_buttonTried = false;
         g_hovered = false;
         if (g_launcherOpen) {
             g_launcherOpen = false;

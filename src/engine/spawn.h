@@ -13,6 +13,7 @@
 //   ZGEOM vfunc 0x148/0x14C  Init / PostInit (as ZEngineDataBase::InitializeGeoms)
 //   ZGEOM vfunc 0x1FC      deleting destructor: unlinks and frees the node
 #include <string>
+#include <vector>
 
 #include "geoms.h"
 
@@ -35,6 +36,14 @@ ZGEOM* CreateItem(ZGEOM* itemTemplate, std::string* error = nullptr);
 // a waypoint marker) under `parent` (may be null) with the given node flags.
 ZGEOM* CreateHelper(const std::string& name, ZGEOM* parent, uint32_t flags, const float mat[9], const float pos[3],
                     std::string* error = nullptr, const char* className = "ZSTDOBJ");
+// Any object of a class, made as the scene loader makes it: mesh, local
+// transform, node flags, under `parent`, its typed data block read (e.g. a
+// record's, changed), initialised (unless `init` is false: InitObject once
+// its children are made, as the loader does).
+ZGEOM* CreateObject(const std::string& name, ZGEOM* parent, const char* className, uint32_t mesh, uint32_t flags,
+                    const float mat[9], const float pos[3], const std::vector<uint8_t>& data,
+                    std::string* error = nullptr, bool init = true);
+bool InitObject(ZGEOM* geom);
 
 // Destroys an object created by CloneGeom (or CreateItem).
 bool DestroyGeom(ZGEOM* geom);

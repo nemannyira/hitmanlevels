@@ -77,3 +77,16 @@ Addresses are hitman2.exe (Steam build).
   (1067 x 600 at 16:9), renderer vfunc 0xB0 / 0xB4 report the same.
 * The game's cursor: MouseWindow +0x11C / +0x120 (GUI units).
 * Scene switch as the menus do: PopAllScenes 0x41B570, PushScene 0x41B460.
+* Buttons: CHM2Button (class 0x10042B, base ZBUTTON) with a ZCHAROBJ child
+  `Normal` (mesh 0x11426) holding the LOC key of its text. Button data
+  (ReadData 0x532A00 -> 0x4BCFE0 -> 0x4BD530): window values, two LONGs
+  (+0x6C bits), LONG **id** (+0x68), four refs left / right / **up** (+0x80) /
+  **down** (+0x84) for the arrow keys, then sound refs and two LONGs (300, 12).
+  PostInit 0x4BD850 looks at the text children, so a button made at runtime
+  is initialised after its text.
+* The menu's handler of a pressed button: 0x54BF40 (thiscall, int id):
+  1 Start, 2 Options, 3 Quit (confirm), 4 Load, 5 Credits; other ids do nothing.
+* The editor's entry: the Options records made again under Load with id 7,
+  neighbours Load / Options (theirs patched to it), text key
+  `H2Editor/Menu/LevelEditor` (answered by the LOC hook); 0x54BF40 is hooked
+  for id 7. Mouse focus, highlight and Enter work as for the game's buttons.

@@ -14,6 +14,8 @@
 namespace h2::editor {
 
 void InstallMission();
+// A text the editor answers in the game's LOC tree (UTF-8), e.g. its main menu entry.
+void SetLocText(const std::string& key, const std::string& text);
 // Picking a target / place in the world for an objective: the viewport hands the mouse over.
 bool MissionPicking();
 void UpdateMissionPick();

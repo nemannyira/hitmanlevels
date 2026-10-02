@@ -60,6 +60,7 @@ std::string g_folder;                      // its LOC folder ("C1-1")
 const uint8_t* g_locRoot;                  // LOC tree the folder's texts were found in
 std::map<std::string, std::string> g_texts;  // lower-case LOC path -> node: 0x01, Latin-1 text, NUL
 std::map<std::string, std::string> g_scriptTexts;  // ... set by scripts (h2.objective)
+std::map<std::string, std::string> g_fixedTexts;   // ... of the editor itself (main menu entry)
 std::string g_lineKeys[kSlots + 1];         // the level's LOC key of each line (as it set them)
 bool g_ours;                               // the editor itself checks a line
 bool g_restoring;                          // lines go back to the level's texts
@@ -312,6 +313,8 @@ std::string Node(const std::string& text) { return std::string("\x01", 1) + ToGa
 void BuildTexts()
 {
     g_texts = g_scriptTexts;
+    for (auto& [k, v] : g_fixedTexts)
+        g_texts[k] = v;
     g_texts[Lower(kEmptyKey)] = Node("");
     if (!ForThisScene())
         return;
@@ -937,6 +940,12 @@ void DrawPanel()
 
 } // namespace
 
+void SetLocText(const std::string& key, const std::string& text)
+{
+    g_fixedTexts[Lower(key)] = Node(text);
+    g_texts[Lower(key)] = Node(text);
+}
+
 bool SetObjectiveText(int slot, const std::string& text)
 {
     if (slot < 1 || slot > kSlots)
@@ -985,6 +994,8 @@ void RevertMission()
     for (const MissionObjective& o : Doc().objectives)
         slots.push_back(o.slot);
     g_texts = g_scriptTexts;
+    for (auto& [k, v] : g_fixedTexts)
+        g_texts[k] = v;
     g_texts[Lower(kEmptyKey)] = Node("");
     memset(g_done, 0, sizeof(g_done));
     g_ended = false;

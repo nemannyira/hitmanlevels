@@ -452,6 +452,14 @@ void OnScene(const std::string& scene)
 void OnFrame()
 {
     KeepCleared();
+    // the class names of other levels' records are needed while a scene
+    // loads (its models of other levels): learnt from the first scene
+    static bool classesKnown;
+    if (!classesKnown && engine::SceneDataValid())
+        if (engine::ZGEOM* root = Resolve("ROOT")) {
+            engine::ClassChainOfId(0, root);
+            classesKnown = true;
+        }
     if (!g_applyPending || --g_applyWaitFrames > 0)
         return;
     g_applyPending = false;

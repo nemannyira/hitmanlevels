@@ -436,7 +436,10 @@ void DrawOtherLevels()
                     const engine::LevelModel& m = *rows[k].m;
                     ImGui::PushID(int(m.mesh));
                     bool on = IsImported(level, m.mesh);
-                    if (ImGui::Checkbox(ShownName(m.name).c_str(), &on)) {
+                    std::string label = ShownName(m.name);
+                    if (!m.pieces.empty())
+                        label += "  (" + std::to_string(m.pieces.size()) + " parts)";
+                    if (ImGui::Checkbox(label.c_str(), &on)) {
                         int uses = on ? 0 : ImportUses(level, m.mesh);
                         if (uses)
                             g_otherMessage = m.name + " is used by " + std::to_string(uses) +
@@ -444,9 +447,14 @@ void DrawOtherLevels()
                         else
                             SetImported(level, m.mesh, m.name, on);
                     }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s\nin %s, used %d times there, %d materials", m.name.c_str(),
-                                          m.group.c_str(), m.uses, m.parts);
+                    if (ImGui::IsItemHovered()) {
+                        if (m.pieces.empty())
+                            ImGui::SetTooltip("%s\nin %s, used %d times there, %d materials", m.name.c_str(),
+                                              m.group.c_str(), m.uses, m.parts);
+                        else
+                            ImGui::SetTooltip("%s: %zu models together (e.g. a vehicle and its wheels)\nin %s",
+                                              m.name.c_str(), m.pieces.size(), m.group.c_str());
+                    }
                     char size[32];
                     snprintf(size, sizeof(size), "%.1f m", m.radius * 2.0f / 100.0f);
                     ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(size).x);

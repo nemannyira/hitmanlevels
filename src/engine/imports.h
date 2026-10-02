@@ -32,9 +32,19 @@ void SetModelImports(const std::vector<ModelImport>& list);
 // The mesh reference of an imported model in the loaded scene (0: not there).
 uint32_t ImportedMesh(const std::string& level, uint32_t mesh);
 
-// A model of another level, from its scene file.
-struct LevelModel {
+struct LevelModelPart {
     uint32_t mesh = 0;
+    bool visible = true;  // drawn (record flag 1); else only its collision is used
+    float mat[9] = {};  // in the group (as in the scene file)
+    float pos[3] = {};
+};
+
+// A model of another level, from its scene file: an object's model, or a
+// group of objects (a truck and its wheels) made one model when loaded, in
+// the frame of pieces[0]: its invisible collision body (Chassis_coli) when
+// it has one (whose collision the model gets), else its largest part.
+struct LevelModel {
+    uint32_t mesh = 0;       // its mesh reference; a group: 0x80000000 | its record
     std::string name;        // of the first object using it
     std::string group;       // that object's group (where it is in the level)
     uint32_t classId = 0;
@@ -43,8 +53,10 @@ struct LevelModel {
     float radius = 0;        // bounding sphere
     int uses = 0;
     int parts = 0;           // materials
-    bool collision = false;  // it has collision data (record +0x30)
+    bool collision = false;  // it has collision data (record +0x30; a group: its largest part's)
+    std::vector<LevelModelPart> pieces;  // a group's models (pieces[0]: the largest)
 };
+constexpr uint32_t kGroupModel = 0x80000000;
 // The models of a level (cached; empty when it cannot be read). Only plain
 // objects with a model of their own (no characters, no helpers).
 const std::vector<LevelModel>& LevelModels(const std::string& level);

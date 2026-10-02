@@ -25,6 +25,7 @@ constexpr uintptr_t kGetTextureData = 0x41C300;
 constexpr uintptr_t kGetTreesSize = 0x41BD80;    // OCT: bound trees and collision data
 constexpr uintptr_t kGetTreesData = 0x41BE10;
 constexpr uintptr_t kGetSceneName = 0x41B880;    // ZEngineDataBase::(void) -> const char*
+constexpr uint32_t kGuard = 0;
 constexpr uint32_t kRecord = 0x84;               // a PRM record (one material of a model)
 constexpr int kTexIds = 2048;
 
@@ -130,13 +131,21 @@ bool Wanted(void* engine)
     return !g_load.empty();
 }
 
-// one model: its records and data copied into the blob, offsets moved
-bool Copy(const ModelImport& m)
+struct Chain {
+    size_t pos = 0;                // where its span went in the blob
+    std::vector<size_t> records;   // its records in the blob
+    uint32_t mesh = 0;             // the first record's offset here
+};
+
+// A model's records and data copied into the blob, offsets moved. `main`:
+// its collision is used and its records answer for the level's triangle lists.
+bool CopyChain(const std::string& level, uint32_t first, bool main, Chain& out)
 {
-    Source* s = LoadSource(m.level);
+    Source* s = LoadSource(level);
     if (!s)
         return false;
     const std::vector<uint8_t>& prm = s->prm;
+    ModelImport m{level, first};
     std::vector<uint32_t> records;
     for (uint32_t r = m.mesh; r && records.size() < 64; r = U32(prm, r + 8)) {
         if (r + kRecord > prm.size() || std::find(records.begin(), records.end(), r) != records.end())
@@ -166,9 +175,13 @@ bool Copy(const ModelImport& m)
     memcpy(&g_blob[pos], &prm[lo], hi - lo);
     uint32_t delta = g_base + uint32_t(pos) - lo;
     int outside = 0;
+    out.pos = pos;
+    out.records.clear();
     for (uint32_t r : records) {
         size_t q = pos + (r - lo);
-        g_recordMap[{m.level, r}] = g_base + uint32_t(q);
+        out.records.push_back(q);
+        if (main)
+            g_recordMap[{m.level, r}] = g_base + uint32_t(q);
         for (size_t f : {0x08, 0x18, 0x1C, 0x2C, 0x44}) {
             uint32_t v = U32(g_blob, q + f);
             if (!v)
@@ -182,22 +195,175 @@ bool Copy(const ModelImport& m)
         }
         uint32_t coll = U32(g_blob, q + 0x30);
         Put(g_blob, q + 0x30, 0);  // set when the OCT is read (GetTreesData)
-        if (coll && coll < s->oct.size())
+        if (coll && coll < s->oct.size() && main)
             g_collisions.push_back({q + 0x30, m.level, coll});
         // +0x34: what the record's triangles stop, tested against a query's
         // mask (0x20: characters walking). Models often leave walking to
         // invisible boxes of their level: a placed copy is solid like a wall
         // (0xFB) itself.
-        if (U32(prm, records[0] + 0x30))
+        if (U32(prm, records[0] + 0x30) && main)
             Put(g_blob, q + 0x34, U32(g_blob, q + 0x34) | 0x68);
         uint32_t tex = U32(g_blob, q + 0x04) & 0x7FF;
         if (s->HasTexture(tex))
             g_texUses.push_back({q + 0x04, 0x7FF, m.level, tex});
     }
-    uint32_t mesh = g_base + uint32_t(pos) + (m.mesh - lo);
-    g_pending[{m.level, m.mesh}] = mesh;
-    Log("imports: %s %08X -> %08X (%zu records, %u bytes%s)", m.level.c_str(), m.mesh, mesh, records.size(), hi - lo,
-        outside ? ", some references outside dropped" : "");
+    out.mesh = g_base + uint32_t(pos) + (m.mesh - lo);
+    Log("imports: %s %08X -> %08X (%zu records, %u bytes%s)", m.level.c_str(), m.mesh, out.mesh, records.size(),
+        hi - lo, outside ? ", some references outside dropped" : "");
+    return true;
+}
+
+// the editor's convention: a local vector (x, y, z) is x * row2 + y * row1 + z * row0
+void ToParent(const float mat[9], const float pos[3], const float v[3], float out[3], bool point)
+{
+    for (int k = 0; k < 3; ++k)
+        out[k] = mat[6 + k] * v[0] + mat[3 + k] * v[1] + mat[k] * v[2] + (point ? pos[k] : 0.0f);
+}
+void FromParent(const float mat[9], const float pos[3], const float v[3], float out[3], bool point)
+{
+    float d[3];
+    for (int k = 0; k < 3; ++k)
+        d[k] = v[k] - (point ? pos[k] : 0.0f);
+    out[0] = d[0] * mat[6] + d[1] * mat[7] + d[2] * mat[8];
+    out[1] = d[0] * mat[3] + d[1] * mat[4] + d[2] * mat[5];
+    out[2] = d[0] * mat[0] + d[1] * mat[1] + d[2] * mat[2];
+}
+
+constexpr size_t kVertex = 36;  // position, normal, colour, uv
+
+// a group: its parts copied, the others' vertices moved into the main
+// part's frame, their records chained after the main part's, bounds of all
+bool CopyGroup(const ModelImport& m)
+{
+    const LevelModel* model = nullptr;
+    for (const LevelModel& lm : LevelModels(m.level))
+        if (lm.mesh == m.mesh)
+            model = &lm;
+    if (!model || model->pieces.empty()) {
+        Log("imports: %s %08X: no such group", m.level.c_str(), m.mesh);
+        return false;
+    }
+    const LevelModelPart& main = model->pieces[0];
+    std::vector<Chain> chains(model->pieces.size());
+    if (!CopyChain(m.level, main.mesh, true, chains[0]))
+        return false;
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    std::set<uint32_t> moved;
+    auto bounds = [&](const Chain& c, const LevelModelPart* part) {
+        for (size_t q : c.records) {
+            uint32_t verts = U32(g_blob, q + 0x1C), count = U32(g_blob, q + 0x14) >> 16;
+            if (verts < g_base)
+                continue;
+            size_t at = verts - g_base;
+            if (at + count * kVertex > g_blob.size())
+                continue;
+            for (uint32_t i = 0; i < count; ++i) {
+                float* v = reinterpret_cast<float*>(&g_blob[at + i * kVertex]);
+                // records may share (overlapping) vertex data: each vertex once
+                if (part && moved.insert(uint32_t(at + i * kVertex)).second) {
+                    float g[3], n[3];
+                    ToParent(part->mat, part->pos, v, g, true);
+                    FromParent(main.mat, main.pos, g, v, true);
+                    ToParent(part->mat, part->pos, v + 3, n, false);
+                    FromParent(main.mat, main.pos, n, v + 3, false);
+                }
+                for (int k = 0; k < 3; ++k) {
+                    lo[k] = std::min(lo[k], v[k]);
+                    hi[k] = std::max(hi[k], v[k]);
+                }
+            }
+        }
+    };
+    if (main.visible)
+        bounds(chains[0], nullptr);
+    for (size_t i = 1; i < model->pieces.size(); ++i) {
+        if (!CopyChain(m.level, model->pieces[i].mesh, false, chains[i]))
+            continue;
+        bounds(chains[i], &model->pieces[i]);  // moves an invisible part's vertices too (unused)
+    }
+    // One new model of the drawn parts, laid out as the level files do it (the
+    // renderer keeps a model's vertices together: parts far apart in the
+    // buffer draw wrong): each record's vertices and indices, the bounds
+    // block, the records (the first one last); the first record gets
+    // pieces[0]'s collision.
+    std::vector<size_t> drawn;  // records (blob offsets) in drawing order
+    for (size_t i = 0; i < chains.size(); ++i)
+        if (model->pieces[i].visible)
+            drawn.insert(drawn.end(), chains[i].records.begin(), chains[i].records.end());
+    if (drawn.empty())
+        return false;
+    size_t region = (g_blob.size() + 15) & ~size_t(15);
+    std::vector<uint8_t> out;
+    std::vector<uint32_t> verts(drawn.size()), indices(drawn.size());
+    for (size_t k = 0; k < drawn.size(); ++k) {
+        size_t q = drawn[k];
+        uint32_t v = U32(g_blob, q + 0x1C), count = U32(g_blob, q + 0x14) >> 16;
+        uint32_t ix = U32(g_blob, q + 0x44), words = U32(g_blob, q + 0x48);
+        verts[k] = indices[k] = 0;
+        if (v >= g_base && v - g_base + size_t(count) * kVertex <= g_blob.size()) {
+            verts[k] = g_base + uint32_t(region + out.size());
+            out.insert(out.end(), g_blob.begin() + (v - g_base), g_blob.begin() + (v - g_base) + count * kVertex);
+        }
+        if (ix >= g_base && ix - g_base + size_t(words) * 2 <= g_blob.size()) {
+            indices[k] = g_base + uint32_t(region + out.size());
+            out.insert(out.end(), g_blob.begin() + (ix - g_base), g_blob.begin() + (ix - g_base) + words * 2);
+        }
+        while (out.size() & 3)
+            out.push_back(0);
+    }
+    uint32_t box = 0, oldBox = U32(g_blob, drawn[0] + 0x18);
+    if (oldBox >= g_base && oldBox - g_base + 0x3C <= g_blob.size()) {
+        box = g_base + uint32_t(region + out.size());
+        out.insert(out.end(), g_blob.begin() + (oldBox - g_base), g_blob.begin() + (oldBox - g_base) + 0x3C);
+        memcpy(&out[box - g_base - region + 0x24], hi, 12);
+        memcpy(&out[box - g_base - region + 0x30], lo, 12);
+    }
+    while (out.size() & 3)
+        out.push_back(0);
+    std::vector<uint32_t> at(drawn.size());  // the new records, the first one last
+    for (size_t k = drawn.size(); k-- > 0;) {
+        at[k] = g_base + uint32_t(region + out.size());
+        out.insert(out.end(), g_blob.begin() + drawn[k], g_blob.begin() + drawn[k] + kRecord);
+    }
+    std::vector<TexUse> newUses;
+    for (size_t k = 0; k < drawn.size(); ++k) {
+        size_t q = at[k] - g_base - region;
+        auto put = [&](size_t f, uint32_t v) { memcpy(&out[q + f], &v, 4); };
+        put(0x08, k + 1 < drawn.size() ? at[k + 1] : 0);
+        put(0x18, k == 0 ? box : 0);
+        put(0x1C, verts[k]);
+        put(0x2C, 0);
+        put(0x30, 0);
+        put(0x44, indices[k]);
+        // +0x04 above 16 bits: the record's number in its model (the renderer
+        // keeps a model's parts by it): numbered again through the parts
+        uint32_t tex;
+        memcpy(&tex, &out[q + 0x04], 4);
+        put(0x04, (tex & 0xFFFF) | uint32_t(k) << 16);
+        for (const TexUse& t : g_texUses)
+            if (t.at == drawn[k] + 0x04)
+                newUses.push_back({at[k] - g_base + 0x04, t.mask, t.level, t.id});
+    }
+    g_texUses.insert(g_texUses.end(), newUses.begin(), newUses.end());
+    size_t from = chains[0].records[0] + 0x30;
+    for (CollisionUse& c : g_collisions)
+        if (c.at == from)
+            c.at = at[0] - g_base + 0x30;
+    g_blob.resize(region);
+    g_blob.insert(g_blob.end(), out.begin(), out.end());
+    g_pending[{m.level, m.mesh}] = at[0];
+    Log("imports: %s group %s: %zu parts", m.level.c_str(), model->name.c_str(), model->pieces.size());
+    return true;
+}
+
+bool Copy(const ModelImport& m)
+{
+    if (m.mesh & kGroupModel)
+        return CopyGroup(m);
+    Chain c;
+    if (!CopyChain(m.level, m.mesh, true, c))
+        return false;
+    g_pending[{m.level, m.mesh}] = c.mesh;
     return true;
 }
 
@@ -222,7 +388,7 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
     if (g_blob.empty())
         return real;
     g_active = true;
-    return g_base + ((uint32_t(g_blob.size()) + 15) & ~15u);
+    return g_base + ((uint32_t(g_blob.size()) + 15) & ~15u) + kGuard;
 }
 
 // OCT: room trees, then collision entries {u32 size, object, ..., +0x20 data}
@@ -454,7 +620,10 @@ void __fastcall hkTexData(void* self, void* edx, void* buf, uint32_t size)
             names[reinterpret_cast<const char*>(b + o + 0x24)] = id;
     }
     uint32_t cursor = g_texReal;
-    uint32_t free = kTexIds - 1;
+    // free ids among the level's own (16..1998 in every level; the ones above
+    // are the engine's at runtime: a texture there draws as an effect)
+    constexpr uint32_t kFirstId = 16, kLastId = 1998;
+    uint32_t free = kFirstId;
     int added = 0, shared = 0;
     for (const TexUse& u : g_texUses) {
         auto key = std::make_pair(u.level, u.id);
@@ -468,10 +637,10 @@ void __fastcall hkTexData(void* self, void* edx, void* buf, uint32_t size)
             ++shared;
             continue;
         }
-        while (free > 0 && *slot(free))
-            --free;
+        while (free <= kLastId && *slot(free))
+            ++free;
         uint32_t n = s.TextureSize(u.id);
-        if (!free || cursor + n > size) {
+        if (free > kLastId || cursor + n > size) {
             Log("imports: no room for texture %s", name.c_str());
             g_texMap[key] = 0;
             continue;
@@ -483,7 +652,7 @@ void __fastcall hkTexData(void* self, void* edx, void* buf, uint32_t size)
         g_texMap[key] = free;
         cursor += n;
         ++added;
-        --free;
+        ++free;
     }
     Log("imports: textures: %d added, %d shared with this level", added, shared);
 }
@@ -506,7 +675,7 @@ void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
     g_primBuf = b;
     g_treesPending = !g_collisions.empty();
     // header[1]: where the engine adds prims while the level runs (header[2] is the record table)
-    uint32_t used = g_base + ((uint32_t(g_blob.size()) + 15) & ~15u);
+    uint32_t used = g_base + ((uint32_t(g_blob.size()) + 15) & ~15u) + kGuard;
     memcpy(b + 4, &used, 4);
     g_meshes = g_pending;
     g_active = false;
@@ -565,6 +734,7 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
         return it->second;
     };
     std::map<uint32_t, size_t> byMesh;
+    std::map<int, std::vector<size_t>> groupParts;  // group record -> its models' records
     for (const SceneRecord& r : records) {
         if (!r.mesh || (r.flags & (0x2000 | 0x10000)) || !src->records.count(r.mesh) || U32(src->prm, r.mesh) != 0)
             continue;
@@ -577,6 +747,13 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
         }
         const std::string& own = chain(r.classId);
         if (!inRoom || excluded || own.find("ZActor") != std::string::npos || own.find("ZItem") != std::string::npos)
+            continue;
+        bool visible = (r.flags & 1) != 0;  // drawn (invisible: collision bodies, emitters)
+        bool collides = U32(src->prm, r.mesh + 0x30) != 0;
+        if (r.parent >= 0 && chain(records[r.parent].classId).find("ZROOM") == std::string::npos &&
+            (visible || collides))
+            groupParts[r.parent].push_back(size_t(r.index));
+        if (!visible)
             continue;
         auto [it, added] = byMesh.emplace(r.mesh, cat.models.size());
         if (!added) {
@@ -610,7 +787,82 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
         }
         cat.models.push_back(std::move(m));
     }
-    Log("imports: %s: %zu models", level.c_str(), cat.models.size());
+    // groups of 2..24 models (a vehicle and its wheels): one model of them all
+    size_t singles = cat.models.size();
+    std::set<std::vector<uint32_t>> seenGroups;
+    auto radiusOf = [&](uint32_t mesh) {
+        uint32_t bounds = U32(src->prm, mesh + 0x18);
+        if (!bounds || bounds + 0x3C > src->prm.size())
+            return 0.0f;
+        float b[6];
+        memcpy(b, &src->prm[bounds + 0x24], sizeof(b));
+        float dx = b[0] - b[3], dy = b[1] - b[4], dz = b[2] - b[5];
+        float d2 = dx * dx + dy * dy + dz * dz;
+        return d2 > 0 && d2 < 1e12f ? 0.5f * sqrtf(d2) : 0.0f;
+    };
+    for (auto& [g, parts] : groupParts) {
+        int drawn = 0;
+        for (size_t k : parts)
+            drawn += (records[k].flags & 1) != 0;
+        if (drawn < 2 || parts.size() > 24)
+            continue;
+        // the frame: an invisible body with collision, else the largest drawn part
+        size_t mainPart = SIZE_MAX;
+        float best = -1;
+        for (size_t k = 0; k < parts.size(); ++k) {
+            const SceneRecord& r = records[parts[k]];
+            if (!(r.flags & 1) && radiusOf(r.mesh) > best) {
+                best = radiusOf(r.mesh);
+                mainPart = k;
+            }
+        }
+        if (mainPart == SIZE_MAX)
+            for (size_t k = 0; k < parts.size(); ++k)
+                if ((records[parts[k]].flags & 1) && radiusOf(records[parts[k]].mesh) > best) {
+                    best = radiusOf(records[parts[k]].mesh);
+                    mainPart = k;
+                }
+        std::swap(parts[0], parts[mainPart]);
+        std::vector<uint32_t> meshes;
+        for (size_t k : parts)
+            meshes.push_back(records[k].mesh);
+        if (!seenGroups.insert(meshes).second)
+            continue;  // the same group again (another instance)
+        LevelModel m;
+        m.mesh = kGroupModel | uint32_t(g);
+        m.name = records[g].name;
+        m.group = records[g].parent >= 0 ? records[records[g].parent].name : "";
+        const SceneRecord& main = records[parts[0]];
+        const SceneRecord* drawnMain = &main;
+        for (size_t k : parts)
+            if (!(drawnMain->flags & 1) && (records[k].flags & 1))
+                drawnMain = &records[k];
+        m.classId = drawnMain->classId;
+        m.flags = drawnMain->flags;
+        m.collision = U32(src->prm, main.mesh + 0x30) != 0;
+        memcpy(m.mat, main.mat, sizeof(m.mat));
+        for (int p = main.parent; p >= 0 && size_t(p) < records.size(); p = records[p].parent) {
+            float world[9];
+            Compose(records[p].mat, m.mat, world);
+            memcpy(m.mat, world, sizeof(world));
+        }
+        m.uses = 1;
+        float reach = 0;
+        for (size_t k : parts) {
+            const SceneRecord& r = records[k];
+            LevelModelPart part;
+            part.mesh = r.mesh;
+            part.visible = (r.flags & 1) != 0;
+            memcpy(part.mat, r.mat, sizeof(part.mat));
+            memcpy(part.pos, r.pos, sizeof(part.pos));
+            m.pieces.push_back(part);
+            float d[3] = {r.pos[0] - main.pos[0], r.pos[1] - main.pos[1], r.pos[2] - main.pos[2]};
+            reach = std::max(reach, sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) + radiusOf(r.mesh));
+        }
+        m.radius = reach;
+        cat.models.push_back(std::move(m));
+    }
+    Log("imports: %s: %zu models, %zu groups", level.c_str(), singles, cat.models.size() - singles);
 }
 
 } // namespace

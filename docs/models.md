@@ -48,8 +48,8 @@ chain of **0x84-byte records** linked by +0x08, one per material:
 | +0x18 | offset: 0x3C bytes before the first record (markers, bounding box max / min at +0x24) |
 | +0x1C | offset: **vertices**, 36 bytes each (position, normal, colour, uv) |
 | +0x2C | offset (sometimes) |
-| +0x30 | **collision**: offset in the level's OCT data |
-| +0x34 | a second texture id (low 16 bits; LOD / glow textures) |
+| +0x30 | **collision**: OCT offset of the collision object + 1 (low bit: still an offset) |
+| +0x34 | **collision mask**: what the triangles stop (queries test their mask: 0x20 characters walking; walls 0xFB) |
 | +0x38 | 0xFF / 0x07 / 0xF8 |
 | +0x40 | colour |
 | +0x44 | offset: **indices** (after the vertices) |
@@ -72,6 +72,36 @@ per level and collide (C1-1 and C2-1 share 20 of ~550): an imported texture
 gets a free id (about 600 of 2048 are used), or this level's texture of the
 same name is used.
 
+## Collision (OCT)
+
+* `LoadBoundTrees` reads the OCT into engine +0xAE8; `CreateBoundTrees`
+  gives each room its tree (room vfunc 0x310), then walks the **collision
+  entries** `{u32 size, object, ..., +0x20 data}` with the collision
+  manager's vfunc 0x50 (renderer +0x1C, vtable 0x100435B8) until a u32 -1;
+  the rest is the **triangle pool** (8-byte items), vfunc 0x44 keeps it
+  (+0x9E start, +0xA2 count).
+* vfunc 0x50 only initialises the entry in place: object = entry + 4,
+  vtable 0x100436F4, +0x14 = data pointer, +0x10 = [entry+0x30] (scale),
+  +4..+0xC = [entry+0x24..] (origin, mesh space).
+* A record's +0x30 = entry + 5; the engine takes `octBase + (v & ~1)`.
+* The entry's octree: nodes at data + 0x14 (6 bytes: `u16 items << 3 |
+  0x8000 last | octant`, `u16 first child`, `u16 first item`), items at
+  `data + [data]` (16 bytes: `u32 pool offset`, six u16 quantised bounds).
+  Traversal 0x10036000 (line), 0x10035D30 (box).
+* Pool item: `{u16 count, u16 first index | 0x8000, u32 PRM record}`: the
+  triangles are the record's own vertices (+0x1C) and indices (+0x44).
+  Collectors (0x10021CE0 line, 0x100217A0 box) first test the query's mask
+  against the record's +0x34.
+* Node flag 0x8000 at runtime registers the object with the collision world
+  (SetFlags 0x5BAC80 -> engine +0x5D1F vfunc 0x24, handle at node +0x6C).
+
+Imported collision: the source level's whole OCT is added after this
+level's; the used entries are initialised (vfunc 0x50), their items' pool
+offsets moved to the copied pool (relative to this level's pool, found by
+walking entries to the -1), the copied pool items moved to the copied PRM
+records; records get mask | 0x68 (solid like a wall) and the model objects
+node flags 0x8008. Checked: Hitman stops at C2-1's truck in C1-1.
+
 ## Importing (what the editor does)
 
 While a scene loads (GetPrimsSize / Data, GetTextureSize / Data hooked):
@@ -90,8 +120,6 @@ saved, the game restarted, loaded again.
 
 ## Not yet
 
-* **Collision**: record +0x30 points into the OCT's collision data (packed
-  trees, format unknown); copies have none.
 * Objects made of several models (a truck's wheels are models of their own).
 * Records of other types (+0x00 != 0), skinned meshes, characters (bodies,
   bones, ANM animations).

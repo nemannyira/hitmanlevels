@@ -7,6 +7,7 @@
 #include <map>
 #include <set>
 
+#include "../game.h"
 #include "../hook.h"
 #include "../log.h"
 #include "geoms.h"
@@ -21,14 +22,16 @@ constexpr uintptr_t kGetPrimsSize = 0x41BFF0;    // ZEngineDataBase::(void) -> s
 constexpr uintptr_t kGetPrimsData = 0x41C080;    // ZEngineDataBase::(void* buf, uint size)
 constexpr uintptr_t kGetTextureSize = 0x41C270;
 constexpr uintptr_t kGetTextureData = 0x41C300;
+constexpr uintptr_t kGetTreesSize = 0x41BD80;    // OCT: bound trees and collision data
+constexpr uintptr_t kGetTreesData = 0x41BE10;
 constexpr uintptr_t kGetSceneName = 0x41B880;    // ZEngineDataBase::(void) -> const char*
 constexpr uint32_t kRecord = 0x84;               // a PRM record (one material of a model)
 constexpr int kTexIds = 2048;
 
 using SizeFn = uint32_t(__fastcall*)(void* self, void* edx);
 using DataFn = void(__fastcall*)(void* self, void* edx, void* buf, uint32_t size);
-SizeFn oPrimsSize, oTexSize;
-DataFn oPrimsData, oTexData;
+SizeFn oPrimsSize, oTexSize, oTreesSize;
+DataFn oPrimsData, oTexData, oTreesData;
 
 uint32_t U32(const std::vector<uint8_t>& b, size_t at)
 {
@@ -41,7 +44,7 @@ void Put(std::vector<uint8_t>& b, size_t at, uint32_t v) { memcpy(&b[at], &v, 4)
 
 struct Source {
     bool loaded = false;
-    std::vector<uint8_t> prm, tex;
+    std::vector<uint8_t> prm, tex, oct;
     std::set<uint32_t> records;  // offsets of the PRM's records (its table)
     uint32_t texTable = 0;
     bool HasTexture(uint32_t id) const { return id && id < kTexIds && U32(tex, texTable + id * 4) != 0; }
@@ -67,7 +70,8 @@ Source* LoadSource(const std::string& level)
     std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
     std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
     std::string err;
-    if (!ReadZipEntry(zip, base + "PRM", s.prm, &err) || !ReadZipEntry(zip, base + "TEX", s.tex, &err)) {
+    if (!ReadZipEntry(zip, base + "PRM", s.prm, &err) || !ReadZipEntry(zip, base + "TEX", s.tex, &err) ||
+        !ReadZipEntry(zip, base + "OCT", s.oct, &err)) {
         Log("imports: %s: %s", level.c_str(), err.c_str());
         s.prm.clear();
         return nullptr;
@@ -91,6 +95,19 @@ struct TexUse {  // a texture id field of a copied record
     std::string level;
     uint32_t id;
 };
+// Collision: a copied record's +0x30 points into its level's OCT, whose
+// references are relative to themselves: the whole OCT of that level is
+// added after this level's, and the field moved by where it went.
+struct CollisionUse {
+    size_t at;  // in the blob
+    std::string level;
+    uint32_t offset;  // in that level's OCT
+};
+std::vector<CollisionUse> g_collisions;
+std::map<std::pair<std::string, uint32_t>, uint32_t> g_recordMap;  // (level, record) -> its copy here
+uint8_t* g_primBuf;
+bool g_treesPending;
+uint32_t g_treesReal;
 bool g_active;
 uint32_t g_primReal, g_texReal, g_base;
 std::vector<uint8_t> g_blob;
@@ -151,6 +168,7 @@ bool Copy(const ModelImport& m)
     int outside = 0;
     for (uint32_t r : records) {
         size_t q = pos + (r - lo);
+        g_recordMap[{m.level, r}] = g_base + uint32_t(q);
         for (size_t f : {0x08, 0x18, 0x1C, 0x2C, 0x44}) {
             uint32_t v = U32(g_blob, q + f);
             if (!v)
@@ -162,13 +180,19 @@ bool Copy(const ModelImport& m)
                 ++outside;
             }
         }
-        Put(g_blob, q + 0x30, 0);  // collision data elsewhere in the file: not copied yet
+        uint32_t coll = U32(g_blob, q + 0x30);
+        Put(g_blob, q + 0x30, 0);  // set when the OCT is read (GetTreesData)
+        if (coll && coll < s->oct.size())
+            g_collisions.push_back({q + 0x30, m.level, coll});
+        // +0x34: what the record's triangles stop, tested against a query's
+        // mask (0x20: characters walking). Models often leave walking to
+        // invisible boxes of their level: a placed copy is solid like a wall
+        // (0xFB) itself.
+        if (U32(prm, records[0] + 0x30))
+            Put(g_blob, q + 0x34, U32(g_blob, q + 0x34) | 0x68);
         uint32_t tex = U32(g_blob, q + 0x04) & 0x7FF;
         if (s->HasTexture(tex))
             g_texUses.push_back({q + 0x04, 0x7FF, m.level, tex});
-        uint32_t tex2 = U32(g_blob, q + 0x34) & 0xFFFF;
-        if (s->HasTexture(tex2))
-            g_texUses.push_back({q + 0x34, 0xFFFF, m.level, tex2});
     }
     uint32_t mesh = g_base + uint32_t(pos) + (m.mesh - lo);
     g_pending[{m.level, m.mesh}] = mesh;
@@ -186,6 +210,8 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
     g_primReal = real;
     g_base = (real + 15) & ~15u;
     g_blob.clear();
+    g_collisions.clear();
+    g_recordMap.clear();
     g_texUses.clear();
     g_texMap.clear();
     g_pending.clear();
@@ -197,6 +223,203 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
         return real;
     g_active = true;
     return g_base + ((uint32_t(g_blob.size()) + 15) & ~15u);
+}
+
+// OCT: room trees, then collision entries {u32 size, object, ..., +0x20 data}
+// up to a u32 -1, then the level's triangle pool (8-byte items): the
+// collision manager keeps its start (vfunc 0x44). An entry's octree (data
+// + 0x14: 6-byte nodes {u16 items << 3 | flags (0x8000 last child, 7
+// octant), u16 first child, u16 first item}) has 16-byte items (data +
+// [data]) whose first u32 is an offset in the pool.
+uint32_t PoolStart(const uint8_t* oct, uint32_t size, uint32_t entry)
+{
+    for (int i = 0; i < 400000 && entry + 4 <= size; ++i) {
+        uint32_t s;
+        memcpy(&s, oct + entry, 4);
+        if (s == 0xFFFFFFFF)
+            return entry + 4;
+        if (s < 4 || entry + s > size)
+            return 0;
+        entry += s;
+    }
+    return 0;
+}
+
+// The pool offsets of an entry's items moved by `delta`; the offsets they had.
+std::vector<uint32_t> ShiftLeaves(uint8_t* buf, uint32_t size, uint32_t entry, uint32_t delta)
+{
+    auto u16 = [&](uint32_t at) {
+        uint16_t v = 0;
+        if (at + 2 <= size)
+            memcpy(&v, buf + at, 2);
+        return v;
+    };
+    std::vector<uint32_t> had;
+    uint32_t data = entry + 0x20, rel = 0;
+    if (data + 0x1A > size)
+        return had;
+    memcpy(&rel, buf + data, 4);
+    uint32_t items = data + rel, nodes = data + 0x14;
+    std::set<uint32_t> leaves;
+    std::vector<uint32_t> stack{nodes};
+    std::set<uint32_t> seen;
+    while (!stack.empty() && seen.size() < 100000) {
+        uint32_t n = stack.back();
+        stack.pop_back();
+        if (!seen.insert(n).second || n + 6 > size)
+            continue;
+        uint16_t a = u16(n), child = u16(n + 2), first = u16(n + 4);
+        for (uint32_t k = 0; k < uint32_t((a & 0x7FF8) >> 3); ++k)
+            leaves.insert(first + k);
+        if (child)
+            for (uint32_t c = nodes + child * 6u; c + 6 <= size; c += 6) {
+                stack.push_back(c);
+                if (u16(c) & 0x8000)
+                    break;
+            }
+    }
+    for (uint32_t i : leaves) {
+        uint32_t at = items + i * 16, v;
+        if (at + 4 > size)
+            continue;
+        memcpy(&v, buf + at, 4);
+        had.push_back(v);
+        v += delta;
+        memcpy(buf + at, &v, 4);
+    }
+    return had;
+}
+
+// A pool item {u16 count, u16 first index (| 0x8000 flag), u32 PRM record}:
+// the triangles of a record's index list. Moved to the record's copy, or
+// made empty (count 2 from 0: the test's loop ends at once).
+bool MoveItem(uint8_t* item, const std::string& level)
+{
+    uint32_t head, record;
+    memcpy(&head, item, 4);
+    memcpy(&record, item + 4, 4);
+    auto it = g_recordMap.find({level, record});
+    if (it != g_recordMap.end()) {
+        memcpy(item + 4, &it->second, 4);
+        return true;
+    }
+    head = (head & 0x80000000) | 2;
+    memcpy(item, &head, 4);
+    if (!g_recordMap.empty())
+        memcpy(item + 4, &g_recordMap.begin()->second, 4);
+    return false;
+}
+
+bool InitCollisionEntry(void* manager, uint8_t* entry)
+{
+    __try {
+        using Fn = uint8_t*(__thiscall*)(void*, uint8_t*);
+        (*reinterpret_cast<Fn**>(manager))[0x50 / 4](manager, entry);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+uint32_t __fastcall hkTreesSize(void* self, void* edx)
+{
+    uint32_t real = oTreesSize(self, edx);
+    if (!g_treesPending || int(real) <= 0)
+        return real;
+    g_treesReal = real;
+    uint32_t extra = 0;
+    std::set<std::string> levels;
+    for (const CollisionUse& c : g_collisions)
+        if (levels.insert(c.level).second)
+            extra += uint32_t(g_sources[c.level].oct.size()) + 16;
+    return real + extra;
+}
+
+void __fastcall hkTreesData(void* self, void* edx, void* buf, uint32_t size)
+{
+    if (!g_treesPending) {
+        oTreesData(self, edx, buf, size);
+        return;
+    }
+    g_treesPending = false;
+    oTreesData(self, edx, buf, g_treesReal);
+    // the size stays the whole buffer: collision objects outside it are not used
+    auto b = static_cast<uint8_t*>(buf);
+    std::map<std::string, uint32_t> at;
+    uint32_t cursor = (g_treesReal + 15) & ~15u;
+    for (const CollisionUse& c : g_collisions) {
+        if (at.count(c.level))
+            continue;
+        const std::vector<uint8_t>& oct = g_sources[c.level].oct;
+        if (cursor + oct.size() > size)
+            break;
+        memcpy(b + cursor, oct.data(), oct.size());
+        at[c.level] = cursor;
+        cursor = (cursor + uint32_t(oct.size()) + 15) & ~15u;
+    }
+    // A record's +0x30 is its collision object + 1 (the object is an entry's
+    // body: {u32 size, object (vtable written when loading), ...}); the
+    // collision manager's vfunc 0x50 (entry) does that for this level's
+    // entries in CreateBoundTrees, for the copies it is done here.
+    void* manager = nullptr;
+    if (auto sys = reinterpret_cast<char*>(game::SysInterface()))
+        if (auto renderer = *reinterpret_cast<char**>(sys + 0x18A0))
+            manager = *reinterpret_cast<void**>(renderer + 0x1C);
+    // this level's pool: found from an entry of one of its own records
+    uint32_t pool = 0;
+    if (g_primBuf) {
+        uint32_t table, count;
+        memcpy(&table, g_primBuf + 8, 4);
+        memcpy(&count, g_primBuf + 12, 4);
+        for (uint32_t i = 0; i < count && !pool; ++i) {
+            uint32_t r, v;
+            memcpy(&r, g_primBuf + table + i * 4, 4);
+            memcpy(&v, g_primBuf + r + 0x30, 4);
+            if (v >= 5 && v < g_treesReal)
+                pool = PoolStart(b, g_treesReal, v - 5);
+        }
+    }
+    std::map<std::string, uint32_t> delta;    // level -> pool offsets moved by
+    std::map<std::string, uint32_t> srcPools;  // level -> its pool in this buffer
+    std::set<uint32_t> movedItems;
+    int set = 0, ready = 0, leaves = 0, foreign = 0;
+    std::set<uint32_t> entries;
+    for (const CollisionUse& c : g_collisions) {
+        auto it = at.find(c.level);
+        if (it == at.end() || !g_primBuf || !pool)
+            continue;
+        uint32_t v = it->second + c.offset;
+        if (!delta.count(c.level)) {
+            const std::vector<uint8_t>& oct = g_sources[c.level].oct;
+            uint32_t srcPool = PoolStart(oct.data(), uint32_t(oct.size()), c.offset - 5);
+            if (!srcPool) {
+                Log("imports: %s: collision data not understood", c.level.c_str());
+                delta[c.level] = 0;
+            } else {
+                delta[c.level] = it->second + srcPool - pool;
+                srcPools[c.level] = it->second + srcPool;
+            }
+        }
+        if (!delta[c.level] && it->second)
+            continue;  // no collision rather than a wrong one
+        memcpy(g_primBuf + g_base + c.at, &v, 4);
+        ++set;
+        if (entries.insert(v - 5).second) {
+            for (uint32_t off : ShiftLeaves(b, size, v - 5, delta[c.level])) {
+                ++leaves;
+                uint32_t item = srcPools[c.level] + off;
+                if (item + 8 <= size && movedItems.insert(item).second && !MoveItem(b + item, c.level))
+                    ++foreign;
+            }
+            if (manager && InitCollisionEntry(manager, b + v - 5))
+                ++ready;
+        }
+    }
+    if (!manager)
+        Log("imports: no collision manager, the copies have no collision objects");
+    Log("imports: collision of %d records, %d objects, %d leaves, %zu triangle lists (%d of other models left out); "
+        "%zu levels' OCT added after %u bytes, pool at %X",
+        set, ready, leaves, movedItems.size(), foreign, at.size(), g_treesReal, pool);
 }
 
 uint32_t __fastcall hkTexSize(void* self, void* edx)
@@ -280,6 +503,8 @@ void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
     }
     auto b = static_cast<uint8_t*>(buf);
     memcpy(b + g_base, g_blob.data(), g_blob.size());
+    g_primBuf = b;
+    g_treesPending = !g_collisions.empty();
     // header[1]: where the engine adds prims while the level runs (header[2] is the record table)
     uint32_t used = g_base + ((uint32_t(g_blob.size()) + 15) & ~15u);
     memcpy(b + 4, &used, 4);
@@ -371,6 +596,7 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
             memcpy(m.mat, world, sizeof(world));
         }
         m.uses = 1;
+        m.collision = U32(src->prm, r.mesh + 0x30) != 0;
         for (uint32_t q = r.mesh; q && m.parts < 64 && q + kRecord <= src->prm.size(); q = U32(src->prm, q + 8))
             ++m.parts;
         uint32_t bounds = U32(src->prm, r.mesh + 0x18);
@@ -438,6 +664,8 @@ void InstallImports()
     Hook("GetPrimsData", kGetPrimsData, &hkPrimsData, &oPrimsData);
     Hook("GetTextureSize", kGetTextureSize, &hkTexSize, &oTexSize);
     Hook("GetTextureData", kGetTextureData, &hkTexData, &oTexData);
+    Hook("GetTreesSize", kGetTreesSize, &hkTreesSize, &oTreesSize);
+    Hook("GetTreesData", kGetTreesData, &hkTreesData, &oTreesData);
 }
 
 } // namespace h2::engine

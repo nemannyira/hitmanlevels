@@ -1355,8 +1355,11 @@ void BuildImportLibrary()
                 info = &lm;
         const float zero[3] = {0, 0, 0};
         std::string err;
-        engine::ZGEOM* g = engine::CreateObject(name, group, "ZSTDOBJ", mesh, info ? info->flags : 0x200F3,
-                                                info ? info->mat : identity, zero, {}, &err);
+        // node flags 0x8000 (set at runtime: registered with the collision world,
+        // see SetFlags 0x5BAC80) and 8, as the map's own colliding objects have
+        uint32_t flags = (info ? info->flags : 0x200F3) | (info && info->collision ? 0x8008 : 0);
+        engine::ZGEOM* g = engine::CreateObject(name, group, "ZSTDOBJ", mesh, flags, info ? info->mat : identity, zero,
+                                                {}, &err);
         if (!g) {
             Log("level: imported model %s: %s", name.c_str(), err.c_str());
             continue;

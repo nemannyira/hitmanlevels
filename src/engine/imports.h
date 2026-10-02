@@ -43,6 +43,7 @@ struct LevelModel {
     float radius = 0;        // bounding sphere
     int uses = 0;
     int parts = 0;           // materials
+    bool collision = false;  // it has collision data (record +0x30)
 };
 // The models of a level (cached; empty when it cannot be read). Only plain
 // objects with a model of their own (no characters, no helpers).

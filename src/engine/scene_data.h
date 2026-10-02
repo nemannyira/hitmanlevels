@@ -68,6 +68,8 @@ bool ParseScript(uint32_t offset, ScriptInfo& out);
 // Script block for a new object: references must already be runtime refs.
 std::vector<uint8_t> BuildScriptBlock(const ScriptInfo& script);
 // Runtime ref <-> object, file reference (0x80000000|record) -> runtime ref.
+// The loaded scene's references can be used (false while scenes switch).
+bool SceneDataValid();
 uint32_t RefOf(ZGEOM* geom);
 ZGEOM* GeomOfRef(uint32_t ref);
 uint32_t RemapRef(uint32_t fileRef);

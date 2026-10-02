@@ -7,6 +7,8 @@
 #include "imgui.h"
 #include "json.hpp"
 
+#include "../engine/lists.h"
+#include "../engine/scene_data.h"
 #include "../engine/spawn.h"
 #include "../log.h"
 #include "../mainloop.h"
@@ -27,6 +29,9 @@ namespace {
 LevelDocument g_level;
 std::map<std::string, engine::ZGEOM*> g_live;  // spawned id -> its object in the loaded scene
 std::map<std::string, engine::ZGEOM*> g_liveNpcs;  // npc id -> its character in the loaded scene
+// points taken out of the level: kept in the scene (scripts may still refer to
+// them), used again when they come back (undo)
+std::map<std::string, engine::ZGEOM*> g_retiredPoints;
 bool g_panelVisible = true;
 bool g_autoApply = true;
 bool g_applyPending;
@@ -92,6 +97,31 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
 {
     if (engine::ZGEOM* g = LiveSpawned(s.id))
         return g;
+    if (s.point) {
+        engine::ZGEOM* g = nullptr;
+        auto it = g_retiredPoints.find(s.id);
+        if (it != g_retiredPoints.end() && IsLive(it->second)) {
+            g = it->second;
+            AdoptEngineOwned(g);
+            g_retiredPoints.erase(it);
+        } else {
+            engine::ZGEOM* parent = s.parentPath.empty() ? nullptr : Resolve(s.parentPath);
+            if (!parent) {
+                if (error)
+                    *error = "room not found: " + s.parentPath;
+                Log("level: point '%s': room '%s' not found", s.id.c_str(), s.parentPath.c_str());
+                return nullptr;
+            }
+            g = SpawnPoint(s.id, parent, s.transform, error);
+            if (!g)
+                return nullptr;
+        }
+        g_live[s.id] = g;
+        ObjectState st;
+        st.transform = s.transform;
+        SetState(g, st);
+        return g;
+    }
     engine::ZGEOM* source = Resolve(s.sourcePath);
     if (!source) {
         if (error)
@@ -215,10 +245,28 @@ bool ApplyNpcEdit(const NpcEditEntry& e)
     return SetNpcBehaviour(actor, &s);
 }
 
+void RetirePoint(const std::string& id, engine::ZGEOM* g)
+{
+    ForgetEngineOwned(g);  // no longer listed as an editor object (the game removes it on unload)
+    g_retiredPoints[id] = g;
+}
+
+bool IsPointEntry(const std::string& id)
+{
+    for (const auto& s : g_level.spawned)
+        if (s.id == id)
+            return s.point;
+    return false;
+}
+
 bool RemoveSpawned(const std::string& id)
 {
-    if (engine::ZGEOM* g = LiveSpawned(id))
-        DestroySpawned(g);
+    if (engine::ZGEOM* g = LiveSpawned(id)) {
+        if (IsPointEntry(id))
+            RetirePoint(id, g);
+        else
+            DestroySpawned(g);
+    }
     g_live.erase(id);
     for (auto it = g_level.spawned.begin(); it != g_level.spawned.end(); ++it) {
         if (it->id == id) {
@@ -252,6 +300,49 @@ std::string UniqueId(const std::string& base)
     }
 }
 
+// ---- lists ----
+
+std::vector<std::string> PathsOfRefs(const std::vector<uint32_t>& refs)
+{
+    std::vector<std::string> out;
+    for (uint32_t r : refs) {
+        engine::ZGEOM* g = engine::GeomOfRef(r);
+        std::string p = g && IsLive(g) ? PathOf(g) : std::string();
+        if (!p.empty())
+            out.push_back(p);
+    }
+    return out;
+}
+
+bool ApplyListEdit(const std::string& path, const std::vector<std::string>& points, std::string* error = nullptr)
+{
+    engine::ZGEOM* list = Resolve(path);
+    if (!list || !IsLive(list)) {
+        if (error)
+            *error = "list not found: " + path;
+        return false;
+    }
+    std::vector<uint32_t> refs;
+    for (const std::string& p : points) {
+        engine::ZGEOM* g = Resolve(p);
+        if (g && IsLive(g))
+            refs.push_back(engine::RefOf(g));
+        else
+            Log("level: list %s: point %s not found", path.c_str(), p.c_str());
+    }
+    return engine::SetListRefs(list, refs, error);
+}
+
+// the level's entry for a list: none when it is as the scene file has it
+void RecordList(const std::string& path, engine::ZGEOM* list, const std::vector<std::string>& points)
+{
+    if (points == PathsOfRefs(engine::AuthoredListRefs(list)))
+        g_level.lists.erase(path);
+    else
+        g_level.lists[path] = points;
+    g_level.dirty = true;
+}
+
 void RunLevelScripts()
 {
     script::ClearHandlers("level");
@@ -271,6 +362,7 @@ void OnScene(const std::string& scene)
     g_applyWaitFrames = 2;  // let the scene finish creating its objects
     g_live.clear();         // the editor destroyed them when the previous scene was left
     g_liveNpcs.clear();
+    g_retiredPoints.clear();
     script::ForgetScriptObjects();
     for (auto& [path, e] : g_level.objects)
         e.hasOriginal = false;  // originals belong to the previous load
@@ -298,8 +390,8 @@ void DrawPanel()
     else
         ImGui::TextDisabled("Mods\\%s", L.folder.c_str());
     ImGui::TextDisabled("scene %s", L.baseScene.empty() ? "-" : L.baseScene.c_str());
-    ImGui::Text("%d edits, %d new objects, %d characters, %d scripts", int(L.objects.size()), int(L.spawned.size()),
-                int(L.npcs.size()), int(L.scripts.size()));
+    ImGui::Text("%d edits, %d new objects, %d characters, %d routes, %d scripts", int(L.objects.size()),
+                int(L.spawned.size()), int(L.npcs.size()), int(L.lists.size()), int(L.scripts.size()));
     ImGui::BeginDisabled(L.folder.empty());
     if (ImGui::Button("Save")) {
         std::string err;
@@ -465,6 +557,8 @@ bool SaveLevel(std::string* error)
         o["source_path"] = s.sourcePath;
         if (s.item)
             o["kind"] = "item";
+        else if (s.point)
+            o["kind"] = "point";
         if (!s.parentPath.empty())
             o["parent"] = s.parentPath;
         o["hidden"] = s.hidden;
@@ -489,6 +583,9 @@ bool SaveLevel(std::string* error)
     for (auto& [record, e] : g_level.npcEdits)
         j["npc_edits"].push_back({{"record", record}, {"path", e.path}, {"behaviour", e.behaviour},
                                   {"params", ParamsJson(e.params)}});
+    j["lists"] = json::array();
+    for (auto& [path, points] : g_level.lists)
+        j["lists"].push_back({{"path", path}, {"points", points}});
     j["scripts"] = g_level.scripts;
 
     std::string dir = ModsDir() + g_level.folder;
@@ -545,6 +642,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         s.sourceScene = o.value("source_scene", "");
         s.sourcePath = o.value("source_path", "");
         s.item = o.value("kind", "") == "item";
+        s.point = o.value("kind", "") == "point";
         s.parentPath = o.value("parent", "");
         L.spawned.push_back(s);
     }
@@ -571,6 +669,9 @@ bool LoadLevel(const std::string& folder, std::string* error)
         if (e.record >= 0)
             L.npcEdits[e.record] = e;
     }
+    for (const json& o : j.value("lists", json::array()))
+        if (o.contains("path"))
+            L.lists[o["path"].get<std::string>()] = o.value("points", std::vector<std::string>{});
     L.scripts = j.value("scripts", std::vector<std::string>{});
     g_level = std::move(L);
     ClearHistory();
@@ -836,6 +937,82 @@ engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* 
     return actor;
 }
 
+engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string* error)
+{
+    auto fail = [&](const std::string& why) -> engine::ZGEOM* {
+        if (error)
+            *error = why;
+        return nullptr;
+    };
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return fail("the level is for scene " + g_level.baseScene);
+    if (!room || !IsLive(room))
+        return fail("no room there");
+    SpawnedObject s;
+    s.point = true;
+    s.parentPath = PathOf(room);
+    if (s.parentPath.empty())
+        return fail("the room has no stable path");
+    s.id = UniqueId("Point");
+    s.sourceScene = CurrentScene();
+    s.transform = at;
+    std::string err;
+    engine::ZGEOM* g = Materialize(s, &err);
+    if (!g)
+        return fail(err.empty() ? "the engine refused to create it" : err);
+    g_level.spawned.push_back(s);
+    g_level.dirty = true;
+    std::string id = s.id;
+    PushAction("new point", [id] { return RemoveSpawned(id); }, [s] { return AddSpawned(s); });
+    return g;
+}
+
+bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& points, std::string* error)
+{
+    auto fail = [&](const std::string& why) {
+        if (error)
+            *error = why;
+        return false;
+    };
+    if (!engine::IsEditableList(list))
+        return fail("not a list of points");
+    std::string path = PathOf(list);
+    if (path.empty())
+        return fail("the list has no stable path");
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return fail("the level is for scene " + g_level.baseScene);
+    std::vector<std::string> before = PathsOfRefs(engine::ListRefs(list)), after;
+    for (engine::ZGEOM* g : points) {
+        std::string p = g && IsLive(g) ? PathOf(g) : std::string();
+        if (p.empty())
+            return fail("a point has no stable path");
+        after.push_back(p);
+    }
+    if (!ApplyListEdit(path, after, error))
+        return false;
+    RecordList(path, list, after);
+    PushAction("route",
+               [path, before] {
+                   engine::ZGEOM* l = Resolve(path);
+                   if (!l || !ApplyListEdit(path, before))
+                       return false;
+                   RecordList(path, l, before);
+                   return true;
+               },
+               [path, after] {
+                   engine::ZGEOM* l = Resolve(path);
+                   if (!l || !ApplyListEdit(path, after))
+                       return false;
+                   RecordList(path, l, after);
+                   return true;
+               });
+    return true;
+}
+
 int ApplyLevel()
 {
     int n = 0;
@@ -853,6 +1030,13 @@ int ApplyLevel()
         SetState(geom, e.state);
         ++n;
     }
+    for (auto& [path, points] : g_level.lists) {
+        std::string err;
+        if (ApplyListEdit(path, points, &err))
+            ++n;
+        else
+            Log("level: list %s: %s", path.c_str(), err.c_str());
+    }
     for (const LevelNpc& npc : g_level.npcs) {
         std::string err;
         if (MaterializeNpc(npc, &err))
@@ -867,9 +1051,15 @@ int ApplyLevel()
 
 void RevertLevel()
 {
-    for (auto& [id, g] : g_live)
-        if (IsSpawned(g))
+    for (auto& [path, points] : g_level.lists)  // the scene file's elements (before the points go)
+        if (engine::ZGEOM* list = Resolve(path); list && IsLive(list))
+            engine::SetListRefs(list, engine::AuthoredListRefs(list));
+    for (auto& [id, g] : g_live) {
+        if (IsPointEntry(id) && IsLive(g))
+            RetirePoint(id, g);
+        else if (IsSpawned(g))
             DestroySpawned(g);
+    }
     g_live.clear();
     for (auto& [id, g] : g_liveNpcs)
         if (IsLive(g))

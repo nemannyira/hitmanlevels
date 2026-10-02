@@ -62,6 +62,7 @@ add_library(h2fix SHARED
     src/engine/geoms.cpp
     src/engine/spawn.cpp
     src/engine/npc.cpp
+    src/engine/lists.cpp
     src/engine/scene_data.cpp
     src/screenshot.cpp
     src/input/dinput.cpp
@@ -86,3 +87,4 @@ target_include_directories(h2fix PRIVATE third_party/json)
 target_compile_definitions(h2fix PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 target_compile_options(h2fix PRIVATE /W4 /permissive-)
 set_target_properties(h2fix PROPERTIES OUTPUT_NAME dinput8)
+target_link_options(h2fix PRIVATE /MAP:${CMAKE_BINARY_DIR}/dinput8.map)

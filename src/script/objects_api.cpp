@@ -17,6 +17,11 @@
 //   local c = crate:spawn(x, y, z [, yaw])        -- at a position (turned by yaw degrees)
 //   local c = h2.spawn("Crate_01", x, y, z [, yaw])  -- source by name/path or object
 //   c:destroy();  c:spawned()  -- true for script objects
+//
+// Routes (lists of points: patrol routes, safe points...; runtime changes):
+//   for i, p in ipairs(route:points()) do ... end
+//   route:setpoints({ h2.find("WP1"), h2.point(x, y, z), ... })
+//   local p = h2.point(x, y, z [, room])   -- an invisible point (default room: ROOT)
 #include "objects_api.h"
 
 #include <algorithm>
@@ -33,6 +38,7 @@ extern "C" {
 #include "../editor/model.h"
 #include "../editor/npcs.h"
 #include "../editor/scene_panel.h"
+#include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
 #include "lua_vm.h"
@@ -273,6 +279,32 @@ int Npcs(lua_State* L)
     return 1;
 }
 
+// h2.point(x, y, z [, room]) -> object: an invisible point characters can be sent to
+int Point(lua_State* L)
+{
+    editor::Transform t = {{0, 0, 1, 0, 1, 0, 1, 0, 0}, {0, 0, 0}};
+    for (int i = 0; i < 3; ++i)
+        t.pos[i] = float(luaL_checknumber(L, i + 1));
+    engine::ZGEOM* room = nullptr;
+    if (lua_istable(L, 4)) {
+        lua_getfield(L, 4, "_path");
+        const char* path = lua_tostring(L, -1);
+        room = path ? editor::Resolve(path) : nullptr;
+        lua_pop(L, 1);
+    } else {
+        room = editor::Resolve("ROOT");
+    }
+    if (!room || !editor::IsLive(room))
+        return luaL_error(L, "point: no room");
+    std::string err;
+    engine::ZGEOM* g =
+        editor::SpawnPoint("ScriptPoint_" + std::to_string(++g_spawnCounter), room, t, &err);
+    if (!g)
+        return luaL_error(L, "point: %s", err.c_str());
+    PushObject(L, editor::PathOf(g));
+    return 1;
+}
+
 // h2.behaviours() -> { "BaseGuard", ... } behaviours (script classes) of the scene
 int Behaviours(lua_State* L)
 {
@@ -444,6 +476,49 @@ int Parent(lua_State* L)
 }
 
 // obj:select(): selects the object in the editor
+// list:points() -> { object, ... } its elements in order
+int Points(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    if (!engine::IsEditableList(g))
+        return luaL_error(L, "points: %s is not a list of points", engine::SafeString(g->name).c_str());
+    lua_newtable(L);
+    int n = 0;
+    for (uint32_t r : engine::ListRefs(g)) {
+        engine::ZGEOM* p = engine::GeomOfRef(r);
+        if (!p || !editor::IsLive(p))
+            continue;
+        PushObject(L, editor::PathOf(p));
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+// list:setpoints({ object, ... })
+int SetPoints(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    std::vector<uint32_t> refs;
+    for (lua_Integer i = 1;; ++i) {
+        if (lua_rawgeti(L, 2, i) == LUA_TNIL) {
+            lua_pop(L, 1);
+            break;
+        }
+        lua_getfield(L, -1, "_path");
+        const char* path = lua_tostring(L, -1);
+        engine::ZGEOM* p = path ? editor::Resolve(path) : nullptr;
+        if (!p || !editor::IsLive(p))
+            return luaL_error(L, "setpoints: element %d is not an object of the scene", int(i));
+        refs.push_back(engine::RefOf(p));
+        lua_pop(L, 2);
+    }
+    std::string err;
+    if (!engine::SetListRefs(g, refs, &err))
+        return luaL_error(L, "setpoints: %s", err.c_str());
+    return 0;
+}
+
 int SelectObj(lua_State* L)
 {
     editor::Select(Geom(L));
@@ -608,6 +683,7 @@ void RegisterObjectsApi()
         {"hide", Hide},   {"show", Show},     {"hidden", Hidden},
         {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State},
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
+        {"points", Points}, {"setpoints", SetPoints},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);
@@ -626,6 +702,7 @@ void RegisterObjectsApi()
     Register("npcs", Npcs);
     Register("behaviours", Behaviours);
     Register("npc", Npc);
+    Register("point", Point);
 }
 
 void DestroyScriptObjects()

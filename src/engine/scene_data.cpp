@@ -7,6 +7,7 @@
 #include "../game.h"
 #include "../hook.h"
 #include "../log.h"
+#include "../scene.h"
 
 namespace h2::engine {
 
@@ -28,6 +29,9 @@ std::unordered_map<uint32_t, int> g_recordOfRef;
 uint32_t g_unpackedSize;        // from the packed header GetGeomsData read
 bool g_inCreateGeoms;
 bool g_refsCaptured;
+// references can be resolved: from the end of CreateGeoms until the scene is
+// left (while switching, the engine's reference tables go away)
+bool g_valid;
 
 void* Engine()
 {
@@ -136,6 +140,7 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
     g_refsCaptured = false;
     oCreateGeoms(self, edx, reftab, dynamics, gms, buf, reftab2);
     g_inCreateGeoms = false;
+    g_valid = true;
     ParseRecords();
     Log("scene data: %zu records, GMS %zu bytes, BUF %zu bytes, %zu refs, %zu messages", g_records.size(),
         g_gms.size(), g_buf.size(), g_refs.size(), g_msgs.size());
@@ -237,24 +242,49 @@ void InstallSceneData()
     Hook("ZEngineDataBase::GetGeomsData", kGetGeomsData, hkGetGeomsData, &oGetGeomsData);
     Hook("ZEngineDataBase::CreateGeoms", kCreateGeoms, hkCreateGeoms, &oCreateGeoms);
     Hook("ZEngineDataBase::RemapCreatedDataBlock", kRemapCreatedDataBlock, hkRemap, &oRemap);
+    OnSceneLeaving([](const std::string&) { g_valid = false; });
 }
 
 const std::vector<SceneRecord>& SceneRecords() { return g_records; }
 
+namespace {
+
+uint32_t SafePtrToRef(void* engine, ZGEOM* geom)
+{
+    __try {
+        return reinterpret_cast<uint32_t(__thiscall*)(void*, ZGEOM*)>(kGeomPtrToRef)(engine, geom);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+ZGEOM* SafeRefToPtr(void* engine, uint32_t ref)
+{
+    __try {
+        return reinterpret_cast<ZGEOM*(__thiscall*)(void*, uint32_t)>(kGeomRefToPtr)(engine, ref);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+} // namespace
+
+bool SceneDataValid() { return g_valid; }
+
 uint32_t RefOf(ZGEOM* geom)
 {
     void* engine = Engine();
-    if (!engine || !geom)
+    if (!g_valid || !engine || !geom)
         return 0;
-    return reinterpret_cast<uint32_t(__thiscall*)(void*, ZGEOM*)>(kGeomPtrToRef)(engine, geom);
+    return SafePtrToRef(engine, geom);
 }
 
 ZGEOM* GeomOfRef(uint32_t ref)
 {
     void* engine = Engine();
-    if (!engine || !ref)
+    if (!g_valid || !engine || !ref)
         return nullptr;
-    return reinterpret_cast<ZGEOM*(__thiscall*)(void*, uint32_t)>(kGeomRefToPtr)(engine, ref);
+    return SafeRefToPtr(engine, ref);
 }
 
 ZGEOM* RecordGeom(int index)

@@ -11,13 +11,16 @@
 //       "pos": [x, y, z], "matrix": [9 floats], "hidden": false } ],
 //   "spawned": [                                // new objects: visual clones of a scene object
 //     { "id": "Crate_01+1", "source_scene": "C1-1\C1-1__MAIN",
-//       "source_path": "ROOT/.../Crate_01", "pos": [...], "matrix": [...], "hidden": false } ],
+//       "source_path": "ROOT/.../Crate_01", "pos": [...], "matrix": [...], "hidden": false },
+//     { "id": "Point+1", "kind": "point", "parent": "ROOT/.../Room", "pos": [...], ... } ],  // route point
 //   "npcs": [                                   // characters the level places
 //     { "id": "NPC_Maid_1", "record": 3803, "model": "Maid", "pos": [...], "matrix": [...],
 //       "behaviour": "scripts\C1\C1_1\Maid.sdl",
 //       "params": [ { "name": "GuardPoint", "type": "ZGEOMREF", "value": "ROOT/.../Lobby" }, ... ] } ],
 //   "npc_edits": [                              // behaviour settings of the scene's characters
 //     { "record": 2350, "path": "ROOT/.../Ground", "behaviour": "...", "params": [...] } ],
+//   "lists": [                                  // changed lists (routes): their points in order
+//     { "path": "ROOT/.../WPList", "points": ["ROOT/.../WP1Wait", "ROOT/.../Point+1", ...] } ],
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
 //
@@ -41,6 +44,7 @@ struct ObjectEdit {
 struct SpawnedObject {
     std::string id;           // also the object's name in the scene (copies)
     bool item = false;        // a working item made from the item template at sourcePath
+    bool point = false;       // an invisible point (characters walk to points), no source
     std::string sourceScene;  // clones currently come from the base scene itself
     std::string sourcePath;
     std::string parentPath;   // room it is placed in ("" = the source's parent)
@@ -73,6 +77,7 @@ struct LevelDocument {
     std::vector<SpawnedObject> spawned;
     std::vector<LevelNpc> npcs;
     std::map<int, NpcEditEntry> npcEdits;  // by actor record
+    std::map<std::string, std::vector<std::string>> lists;  // changed lists: path -> element paths
     std::vector<std::string> scripts;
     bool dirty = false;
 };
@@ -104,6 +109,12 @@ bool RemoveNpc(engine::ZGEOM* actor, std::string* error = nullptr);
 engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour,
                                 std::string* error = nullptr);
 const LevelNpc* FindLevelNpc(engine::ZGEOM* actor);
+
+// ---- route points and lists (undoable, kept in the level) ----
+// A new point (an invisible helper characters can be sent to) at `at`, in `room`.
+engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string* error = nullptr);
+// New elements of a list (a route: the points in walking order).
+bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& points, std::string* error = nullptr);
 
 // Applies the level's spawned objects and object edits to the loaded scene; returns how many applied.
 int ApplyLevel();

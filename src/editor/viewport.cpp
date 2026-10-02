@@ -235,6 +235,10 @@ void Pick()
     ImGuiIO& io = ImGui::GetIO();
     g_clickX = io.MousePos.x;
     g_clickY = io.MousePos.y;
+    if (engine::ZGEOM* point = RoutePointAt(g_clickX, g_clickY)) {  // a marker of a shown route
+        Select(point);
+        return;
+    }
     if (g_npcMode) {
         PickSphere(g_clickX, g_clickY);
         return;

@@ -223,7 +223,12 @@ void DrawInspector()
         ImGui::SameLine();
         if (ImGui::Button("Delete (Del)"))
             DeleteSelection();
-        ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());
+        if (spawned->point)
+            ImGui::TextDisabled("point made by the level (invisible in the game)");
+        else if (spawned->item)
+            ImGui::TextDisabled("item placed by the level (%s)", spawned->sourcePath.c_str());
+        else
+            ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());
     }
 }
 

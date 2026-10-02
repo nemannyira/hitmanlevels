@@ -14,11 +14,14 @@ extern "C" {
 }
 
 #include "config.h"
+#include "editor/history.h"
+#include "editor/level.h"
 #include "imgui.h"
 #include "fov.h"
 #include "game.h"
 #include "log.h"
 #include "overlay/overlay.h"
+#include "scene.h"
 #include "screenshot.h"
 #include "script/lua_vm.h"
 
@@ -222,6 +225,41 @@ int Shot(lua_State* L)
 }
 
 // h2.dev_panel(name): shows an editor panel (left tab / right section)
+// h2.dev_level(op [, arg]): "new" name | "save" | "load" folder | "apply" | "revert" | "undo" | "redo" | "info"
+int Level(lua_State* L)
+{
+    std::string op = luaL_checkstring(L, 1);
+    std::string arg = luaL_optstring(L, 2, "");
+    std::string err;
+    editor::LevelDocument& d = editor::CurrentLevel();
+    if (op == "new") {
+        editor::NewLevel(arg.empty() ? "Test" : arg, CurrentScene());
+    } else if (op == "save") {
+        if (!editor::SaveLevel(&err))
+            return luaL_error(L, "save: %s", err.c_str());
+    } else if (op == "load") {
+        if (!editor::LoadLevel(arg, &err))
+            return luaL_error(L, "load: %s", err.c_str());
+    } else if (op == "apply") {
+        lua_pushinteger(L, editor::ApplyLevel());
+        return 1;
+    } else if (op == "revert") {
+        editor::RevertLevel();
+    } else if (op == "undo") {
+        editor::Undo();
+    } else if (op == "redo") {
+        editor::Redo();
+    } else if (op != "info") {
+        return luaL_error(L, "unknown op %s", op.c_str());
+    }
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s folder=%s scene=%s objects=%d spawned=%d npcs=%d npc_edits=%d lists=%d%s",
+             d.name.c_str(), d.folder.c_str(), d.baseScene.c_str(), int(d.objects.size()), int(d.spawned.size()),
+             int(d.npcs.size()), int(d.npcEdits.size()), int(d.lists.size()), d.dirty ? " (unsaved)" : "");
+    lua_pushstring(L, buf);
+    return 1;
+}
+
 int Panel(lua_State* L)
 {
     overlay::ShowPanel(luaL_checkstring(L, 1));
@@ -251,6 +289,7 @@ void InstallDevCommands()
     script::Register("dev_shot", Shot);
     script::Register("dev_editor", Editor);
     script::Register("dev_panel", Panel);
+    script::Register("dev_level", Level);
     script::Register("dev_click", Click);
     script::Register("dev_hover", Hover);
     script::Register("dev_type", Type);

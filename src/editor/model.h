@@ -53,6 +53,10 @@ bool IsSpawned(engine::ZGEOM* geom);
 // game deletes items itself when the scene unloads, so these are not
 // destroyed by the editor then (only on request).
 engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error = nullptr);
+// An invisible point (meshless helper) under `parent`, e.g. a route point.
+// Left to the game on unload like characters (scripts may still refer to it).
+engine::ZGEOM* SpawnPoint(const std::string& name, engine::ZGEOM* parent, const Transform& t,
+                          std::string* error = nullptr);
 // An object the editor made by other means that the game removes itself on
 // unload (NPCs): listed as spawned, not destroyed by the editor.
 void AdoptEngineOwned(engine::ZGEOM* geom);

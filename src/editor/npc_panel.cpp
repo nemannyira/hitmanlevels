@@ -10,6 +10,7 @@
 
 #include "imgui.h"
 
+#include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
 #include "../game.h"
@@ -75,6 +76,21 @@ struct RouteCache {
     double time = -1e9;
 };
 std::map<engine::ZGEOM*, RouteCache> g_routeCache;
+
+// route editing
+struct Marker {
+    ImVec2 screen;
+    engine::ZGEOM* point;
+};
+std::vector<Marker> g_markers;    // route points drawn this frame (a click selects them)
+engine::ZGEOM* g_addList;         // "add points" mode: clicks add points to this list
+std::string g_newPointParam;      // "new point" mode: the setting that gets the point
+std::string g_newPointTable;
+struct UsersCache {
+    int count = 0;
+    double time = -1e9;
+};
+std::map<engine::ZGEOM*, UsersCache> g_listUsers;
 
 // placing
 bool g_placing;
@@ -256,16 +272,26 @@ void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool labe
         const Route& r = routes[i];
         ImU32 c = RouteColor(i);
         std::vector<Transform> pts;
-        for (engine::ZGEOM* g : r.points)
-            if (IsLive(g))
+        std::vector<engine::ZGEOM*> geoms;
+        for (engine::ZGEOM* g : r.points) {
+            if (IsLive(g)) {
                 pts.push_back(GetTransform(g));
+                geoms.push_back(g);
+            }
+        }
         if (pts.empty())
             continue;
         DrawLine3D(from, pts[0].pos, Faded(c, 0.45f), 1.5f);
+        engine::ZGEOM* sel = Selected();
         for (size_t k = 0; k < pts.size(); ++k) {
             if (r.list && k + 1 < pts.size())
                 DrawArrow3D(pts[k].pos, pts[k + 1].pos, c, 2.0f);
+            if (geoms[k] == sel)
+                DrawPoint3D(pts[k].pos, 8.0f, IM_COL32(255, 255, 255, 255));
             DrawPoint3D(pts[k].pos, r.list ? 4.0f : 5.0f, c);
+            ImVec2 s;
+            if (WorldToScreen(pts[k].pos, s))
+                g_markers.push_back({s, geoms[k]});
             if (labels && r.list) {
                 char n[80];
                 if (k == 0)
@@ -293,7 +319,8 @@ std::vector<engine::ZGEOM*> AllCharacters()
 
 void DrawAllRoutes()
 {
-    if (g_routes == kRoutesOff || engine::SceneRecords().empty() || CurrentScene().empty())
+    g_markers.clear();
+    if (g_routes == kRoutesOff || engine::SceneRecords().empty() || !engine::SceneDataValid() || CurrentScene().empty())
         return;
     auto drawActor = [](engine::ZGEOM* actor) {
         if (!actor || !IsLive(actor) || IsRemovedNpc(actor))
@@ -423,6 +450,16 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
                     p.bits = engine::RefOf(sel);
                     changed = true;
                 }
+                if (ImGui::MenuItem("New point (click in the world)...")) {
+                    g_newPointParam = p.name;
+                    g_newPointTable = table;
+                    g_pickPending = false;
+                    g_pickParam.clear();
+                    g_addList = nullptr;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Makes an invisible point where you click and uses it here\n"
+                                      "(move it later: click its marker, then drag it)");
                 if (ImGui::MenuItem("None", nullptr, false, p.bits != 0)) {
                     p.bits = 0;
                     changed = true;
@@ -481,6 +518,162 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
         }
     }
     return changed;
+}
+
+// ---- routes: lists of points ----
+
+std::vector<engine::ZGEOM*> ListPointsLive(engine::ZGEOM* list)
+{
+    std::vector<engine::ZGEOM*> out;
+    for (uint32_t r : engine::ListRefs(list))
+        if (engine::ZGEOM* g = engine::GeomOfRef(r); g && IsLive(g))
+            out.push_back(g);
+    return out;
+}
+
+// characters whose behaviour uses the list (refreshed once a second)
+int ListUsers(engine::ZGEOM* list)
+{
+    UsersCache& c = g_listUsers[list];
+    double now = NowMs();
+    if (now - c.time < 1000.0)
+        return c.count;
+    c.time = now;
+    c.count = 0;
+    uint32_t ref = engine::RefOf(list);
+    for (engine::ZGEOM* a : AllCharacters()) {
+        engine::ScriptInfo s;
+        if (IsRemovedNpc(a) || !CurrentBehaviour(a, s))
+            continue;
+        for (const engine::ScriptParam& p : s.params)
+            if (p.type == engine::ParamType::Ref && p.bits == ref) {
+                ++c.count;
+                break;
+            }
+    }
+    return c.count;
+}
+
+void SetPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& pts, const char* what)
+{
+    std::string err;
+    if (SetListPoints(list, pts, &err)) {
+        g_message = std::string(what) + " (Ctrl+Z undoes)";
+        g_routeCache.clear();
+    } else {
+        g_message = std::string("route not changed: ") + err;
+    }
+}
+
+void DrawRouteList(const std::string& param, engine::ZGEOM* list, ImU32 color)
+{
+    ImGui::PushID(param.c_str());
+    std::vector<engine::ZGEOM*> pts = ListPointsLive(list);
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(color), "%s", param.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s, %d points", engine::SafeString(list->name).c_str(), int(pts.size()));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", PathOf(list).c_str());
+    int users = ListUsers(list);
+    if (users > 1)
+        ImGui::TextDisabled("used by %d characters: a change applies to all of them", users);
+    engine::ZGEOM* sel = Selected();
+    int selIndex = -1;
+    for (size_t k = 0; k < pts.size(); ++k)
+        if (pts[k] == sel)
+            selIndex = int(k);
+    float rowH = ImGui::GetTextLineHeightWithSpacing();
+    float h = rowH * float(std::min<size_t>(std::max<size_t>(pts.size(), 1), 8)) + ImGui::GetStyle().FramePadding.y * 2;
+    int moveFrom = -1, moveTo = -1, remove = -1;
+    if (ImGui::BeginChild("points", ImVec2(0, h), ImGuiChildFlags_Borders)) {
+        if (pts.empty())
+            ImGui::TextDisabled("no points: add some");
+        float buttons = ImGui::CalcTextSize("^ v x").x + ImGui::GetStyle().FramePadding.x * 6 +
+                        ImGui::GetStyle().ItemSpacing.x * 2;
+        for (size_t k = 0; k < pts.size(); ++k) {
+            ImGui::PushID(int(k));
+            char label[160];
+            snprintf(label, sizeof(label), "%d. %s", int(k + 1), engine::SafeString(pts[k]->name).c_str());
+            if (ImGui::Selectable(label, int(k) == selIndex, ImGuiSelectableFlags_AllowOverlap,
+                                  ImVec2(ImGui::GetContentRegionAvail().x - buttons, 0)))
+                Select(pts[k]);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s\nclick: select it (then drag it, or G to put it on a surface)",
+                                  PathOf(pts[k]).c_str());
+            ImGui::SameLine();
+            ImGui::BeginDisabled(k == 0);
+            if (ImGui::SmallButton("^"))
+                moveFrom = int(k), moveTo = int(k) - 1;
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(k + 1 == pts.size());
+            if (ImGui::SmallButton("v"))
+                moveFrom = int(k), moveTo = int(k) + 1;
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("x"))
+                remove = int(k);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("take it out of the route (the point stays)");
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+    if (moveFrom >= 0) {
+        std::swap(pts[moveFrom], pts[moveTo]);
+        SetPoints(list, pts, "point moved in the route");
+    } else if (remove >= 0) {
+        pts.erase(pts.begin() + remove);
+        SetPoints(list, pts, "point taken out of the route");
+    }
+    if (g_addList == list) {
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "click in the world to add points");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Done (Esc)"))
+            g_addList = nullptr;
+    } else {
+        if (ImGui::Button("Add points..."))  {
+            g_addList = list;
+            g_pickPending = false;
+            g_pickParam.clear();
+            g_newPointParam.clear();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Every click in the world adds a point after the selected one\n"
+                              "(at the end when none of them is selected)");
+        ImGui::SameLine();
+        bool canAdd = sel && IsLive(sel) && selIndex < 0 && !engine::IsA(sel, "ZActor") &&
+                      !engine::IsEditableList(sel) && !PathOf(sel).empty();
+        ImGui::BeginDisabled(!canAdd);
+        if (ImGui::Button("Add the selected object")) {
+            pts.push_back(sel);
+            SetPoints(list, pts, "object added to the route");
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::PopID();
+}
+
+void DrawRouteLists(const engine::ScriptInfo& s, engine::ZGEOM* actor)
+{
+    const std::vector<Route>& routes = RoutesOfActor(actor);
+    bool any = false;
+    for (const engine::ScriptParam& p : s.params) {
+        if (p.type != engine::ParamType::Ref || !p.bits)
+            continue;
+        engine::ZGEOM* list = engine::GeomOfRef(p.bits);
+        if (!list || !IsLive(list) || !engine::IsEditableList(list))
+            continue;
+        if (!any) {
+            ImGui::SeparatorText("Routes");
+            any = true;
+        }
+        ImU32 color = IM_COL32(200, 200, 200, 255);
+        for (size_t i = 0; i < routes.size(); ++i)
+            if (routes[i].name == p.name)
+                color = RouteColor(i);
+        DrawRouteList(p.name, list, color);
+    }
 }
 
 // ---- the edited character ----
@@ -603,6 +796,7 @@ void DrawTarget()
         ImGui::TextDisabled("Settings (live; a change applies when you leave the field):");
         if (DrawParams(g_targetEdit, true, "target"))
             ApplyTarget();
+        DrawRouteLists(g_targetEdit, actor);
     }
 }
 
@@ -745,7 +939,7 @@ void DrawPanel()
         ImGui::TextDisabled("no scene loaded");
         return;
     }
-    if (engine::SceneRecords().empty()) {
+    if (engine::SceneRecords().empty() || !engine::SceneDataValid()) {
         ImGui::TextWrapped("The scene's data was not captured: load the level again (it is read while loading).");
         return;
     }
@@ -789,15 +983,100 @@ void OnParamPick(engine::ZGEOM* hit, const float*, const float*)
         ApplyTarget();
 }
 
+Transform PointAt(const float p[3])
+{
+    Transform t = {{0, 0, 1, 0, 1, 0, 1, 0, 0}, {p[0], p[1], p[2]}};
+    return t;
+}
+
+// "add points" mode: a new point after the selected one of the list
+void OnAddPoint(engine::ZGEOM* hit, const float* point, const float*)
+{
+    g_pickPending = false;
+    engine::ZGEOM* list = g_addList;
+    if (!list || !IsLive(list))
+        return;
+    if (!point) {
+        g_message = "no surface there";
+        return;
+    }
+    std::vector<engine::ZGEOM*> pts = ListPointsLive(list);
+    // with the list's other points (their group), else in the room clicked
+    engine::ZGEOM* parent = nullptr;
+    if (!pts.empty() && pts[0]->node && pts[0]->node->parent && pts[0]->node->parent->geom)
+        parent = pts[0]->node->parent->geom;
+    if (!parent || PathOf(parent).empty())
+        parent = hit ? RoomOf(hit) : nullptr;
+    if (!parent)
+        parent = Resolve("ROOT");
+    std::string err;
+    engine::ZGEOM* np = PlacePoint(PointAt(point), parent, &err);
+    if (!np) {
+        g_message = "no point made: " + err;
+        return;
+    }
+    auto it = std::find(pts.begin(), pts.end(), Selected());
+    pts.insert(it == pts.end() ? pts.end() : it + 1, np);
+    SetPoints(list, pts, "point added");
+    Select(np);  // the next one comes after it
+}
+
+// "new point" mode: a new point for a setting
+void OnNewPoint(engine::ZGEOM* hit, const float* point, const float*)
+{
+    g_pickPending = false;
+    std::string param = g_newPointParam, table = g_newPointTable;
+    g_newPointParam.clear();
+    if (param.empty())
+        return;
+    if (!point) {
+        g_message = "no surface there";
+        return;
+    }
+    engine::ZGEOM* room = hit ? RoomOf(hit) : nullptr;
+    if (!room)
+        room = Resolve("ROOT");
+    std::string err;
+    engine::ZGEOM* np = PlacePoint(PointAt(point), room, &err);
+    if (!np) {
+        g_message = "no point made: " + err;
+        return;
+    }
+    engine::ScriptInfo& s = table == "new" ? g_new : g_targetEdit;
+    for (engine::ScriptParam& p : s.params)
+        if (p.name == param && p.type == engine::ParamType::Ref)
+            p.bits = engine::RefOf(np);
+    g_message = param + " = new point " + engine::SafeString(np->name);
+    if (table == "target" && g_target)
+        ApplyTarget();
+}
+
 } // namespace
 
-bool NpcPlacing() { return g_placing || !g_pickParam.empty(); }
+bool NpcPlacing() { return g_placing || !g_pickParam.empty() || g_addList || !g_newPointParam.empty(); }
 
 void CancelNpcPlacement()
 {
     g_placing = false;
     g_placePickPending = false;
     g_pickParam.clear();
+    g_addList = nullptr;
+    g_newPointParam.clear();
+}
+
+engine::ZGEOM* RoutePointAt(float x, float y)
+{
+    engine::ZGEOM* best = nullptr;
+    float bestD = 10.0f * 10.0f;
+    for (const Marker& m : g_markers) {
+        float dx = m.screen.x - x, dy = m.screen.y - y;
+        float d = dx * dx + dy * dy;
+        if (d < bestD && IsLive(m.point)) {
+            bestD = d;
+            best = m.point;
+        }
+    }
+    return best;
 }
 
 void UpdateNpcPlacement()
@@ -808,6 +1087,29 @@ void UpdateNpcPlacement()
         return;
     }
     bool overWorld = !io.WantCaptureMouse && !ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    if (g_addList || !g_newPointParam.empty()) {  // new points where the user clicks
+        if (g_addList && !IsLive(g_addList)) {
+            g_addList = nullptr;
+            return;
+        }
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        std::string text = g_addList ? "click: add a point to " + engine::SafeString(g_addList->name) +
+                                           " (after the selected point)   Esc: done"
+                                     : "click: new point for " + g_newPointParam + "   Esc: cancel";
+        ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
+        ImVec2 size = ImGui::CalcTextSize(text.c_str());
+        dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170),
+                          4);
+        dl->AddText(p, IM_COL32(255, 220, 120, 255), text.c_str());
+        if (g_pickPending && ImGui::GetFrameCount() - g_pickFrame > 10)
+            g_pickPending = false;
+        if (overWorld && !g_pickPending && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            g_pickPending = true;
+            g_pickFrame = ImGui::GetFrameCount();
+            RequestPick(io.MousePos.x, io.MousePos.y, g_addList ? OnAddPoint : OnNewPoint);
+        }
+        return;
+    }
     if (!g_pickParam.empty()) {  // pick an object for a setting
         ImDrawList* dl = ImGui::GetForegroundDrawList();
         std::string text = "click the object to use as " + g_pickParam + "   Esc: cancel";

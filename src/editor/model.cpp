@@ -217,6 +217,15 @@ engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error)
     return item;
 }
 
+engine::ZGEOM* SpawnPoint(const std::string& name, engine::ZGEOM* parent, const Transform& t, std::string* error)
+{
+    // flags of the characters' aim helpers: not drawn, not collided
+    engine::ZGEOM* g = engine::CreateHelper(name, parent, 0x200400, t.mat, t.pos, error);
+    if (g)
+        AdoptEngineOwned(g);
+    return g;
+}
+
 Transform Compose(const Transform& p, const Transform& l)
 {
     auto apply = [&](const float* v, float* out) {  // local (x right, y up, z forward) -> parent

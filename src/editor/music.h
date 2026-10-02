@@ -9,7 +9,8 @@
 // (Streams/Music/*.wav), all played from streams.wav; the scene's .WHD gives
 // each one's data in that file. The editor plays another track for a mood by
 // serving the game's reads of the original track's data from the chosen
-// track's (same format), so the change is heard at once.
+// track's Ogg pages, rewritten as the continuation of the playing stream (all
+// tracks share the same Vorbis headers), so the change is heard at once.
 #include <cstdint>
 #include <string>
 #include <vector>

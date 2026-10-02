@@ -376,16 +376,27 @@ void DevInjectMouse(long* dx, long* dy, unsigned char* buttons, long* wheel)
     }
 }
 
+// the injected mouse position stays a while (the backend adds the OS cursor every frame)
+float g_holdX, g_holdY;
+double g_holdUntil;
+
 void DevUiStep()
 {
     if (!g_config.devCommands || !ImGui::GetCurrentContext())
         return;
     std::lock_guard<std::mutex> lock(g_mutex);
+    ImGuiIO& io = ImGui::GetIO();
+    if (NowMs() < g_holdUntil)
+        io.AddMousePosEvent(g_holdX, g_holdY);
     if (g_ui.empty())
         return;
     UiStep s = g_ui.front();
     g_ui.erase(g_ui.begin());
-    ImGuiIO& io = ImGui::GetIO();
+    if (s.kind <= 2) {
+        g_holdX = s.x;
+        g_holdY = s.y;
+        g_holdUntil = NowMs() + 2000.0;
+    }
     switch (s.kind) {
     case 0: io.AddMousePosEvent(s.x, s.y); break;
     // the backend adds the OS cursor every frame while the game is in front: clicks bring their position

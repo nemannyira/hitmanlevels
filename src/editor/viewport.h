@@ -1,5 +1,9 @@
 #pragma once
 
+namespace h2::engine {
+struct ZGEOM;
+}
+
 namespace h2::editor {
 
 // In-world editing while the overlay is open: transform gizmo on the
@@ -14,6 +18,9 @@ void InstallViewport();
 // the selected object when the level created it.
 void DuplicateSelection();
 void DeleteSelection();
+
+// The character (by its bounding sphere) under a screen position, or null.
+engine::ZGEOM* CharacterAt(float x, float y);
 
 // Move snapping step in cm when snapping is on (toolbar "Snap"), else 0.
 float SnapMoveStep();

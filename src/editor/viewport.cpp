@@ -17,6 +17,7 @@
 #include "history.h"
 #include "level.h"
 #include "model.h"
+#include "mission.h"
 #include "npc_panel.h"
 #include "placement.h"
 #include "scene_panel.h"
@@ -149,12 +150,12 @@ void DrawMoveGuide(engine::ZGEOM* sel, bool using_, bool over)
 // entry wins, big spheres (rooms, groups) only when nothing smaller is hit.
 float g_clickX, g_clickY;
 
-void PickSphere(float mx, float my)
+engine::ZGEOM* SphereHit(float mx, float my, bool characters)
 {
     ImGuiIO& io = ImGui::GetIO();
     game::ZCAMERA* cam = game::MainCamera();
     if (!cam)
-        return;
+        return nullptr;
     float cm[9], origin[3];
     game::GetWorldTransform(cam, cm, origin);
     float tanH = CameraTanHalfFov(cam);
@@ -175,7 +176,7 @@ void PickSphere(float mx, float my)
         if (g.depth == 0 || !IsLive(g.geom) || IsHidden(g.geom))
             continue;
         float c[3], r;
-        if (g_npcMode) {
+        if (characters) {
             if (!IsActor(g.geom))
                 continue;
             ActorSphere(g.geom, c, r);
@@ -203,8 +204,10 @@ void PickSphere(float mx, float my)
             best = g.geom;
         }
     }
-    Select(best);
+    return best;
 }
+
+void PickSphere(float mx, float my) { Select(SphereHit(mx, my, g_npcMode)); }
 
 void DrawActorBox(engine::ZGEOM* g)
 {
@@ -254,8 +257,10 @@ void Pick()
 void Shortcuts()
 {
     ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing() || NpcPlacing())  // these have their own keys
-        return;
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))  // also while typing
+        SaveShortcut();
+    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing() || NpcPlacing() || MissionPicking())
+        return;  // these have their own keys
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z))
         Undo();
     else if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y))
@@ -335,6 +340,10 @@ void DrawToolbar()
     if (ImGui::Button("Redo"))
         Redo();
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+    DrawSaveControl();
     if (!g_message.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("  %s", g_message.c_str());
@@ -381,6 +390,10 @@ void DrawViewport()
         UpdateNpcPlacement();
         return;
     }
+    if (MissionPicking()) {
+        UpdateMissionPick();
+        return;
+    }
 
     engine::ZGEOM* sel = Selected();
     float view[16], proj[16];
@@ -416,6 +429,8 @@ void DrawViewport()
 }
 
 } // namespace
+
+engine::ZGEOM* CharacterAt(float x, float y) { return SphereHit(x, y, true); }
 
 float SnapMoveStep() { return g_snap ? g_snapMove : 0.0f; }
 

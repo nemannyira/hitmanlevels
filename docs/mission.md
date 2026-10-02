@@ -58,10 +58,16 @@ Addresses are hitman2.exe (Steam build).
   `name\0 {1, name offset, ?, float}`.
 * Every level's .SND / .WHD lists all music streams (Streams\Music\*.wav, 22
   tracks), played from streams.wav. WHD entry: `name\0 {6, name offset,
-  0x80001000, 44100, 16, ?, ?, 2 channels, data offset, length, 4, 1}`; all
-  music has the same format.
-* The editor plays another track by serving the reads of the original track's
-  data range in streams.wav from the chosen one's (ReadFile filter).
+  0x80001000, 44100, 16, ?, Ogg length, 2 channels, data offset, PCM size, 4,
+  1}`. The tracks are Ogg Vorbis with **byte-identical headers** (id, comment,
+  code books).
+* The game decodes with its own libogg / libvorbis loop (stream open around
+  0x5EBE40: three header packets once, then only pages of that serial), so a
+  mid-stream jump into another stream is silence. The editor serves the chosen
+  track's audio pages rewritten as the continuation of the playing stream
+  (its serial, continuing page numbers, growing granules, no EOS, new CRC);
+  when the game starts the track from its beginning, the chosen one's headers
+  come first.
 
 ## Main menu
 

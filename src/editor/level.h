@@ -115,6 +115,13 @@ LevelDocument& CurrentLevel();
 void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectState& after);
 
 bool SaveLevel(std::string* error = nullptr);
+// The edits so far become a level of that name (its own folder in Mods) and are saved.
+bool SaveLevelAs(const std::string& name, std::string* error = nullptr);
+// Toolbar: the level's name, unsaved mark and Save / Save as; Ctrl+S.
+void DrawSaveControl();
+// The same as a row of a panel (full width button).
+void DrawSaveRow();
+void SaveShortcut();
 bool LoadLevel(const std::string& folder, std::string* error = nullptr);
 void NewLevel(const std::string& name, const std::string& baseScene);
 // Creates a copy of the object next to it (or at `at`, world space) and adds

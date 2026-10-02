@@ -56,6 +56,11 @@ engine::ZGEOM* LastReplacedNpc();
 // cannot be destroyed while the scene runs).
 bool DeleteNpc(engine::ZGEOM* actor, std::string* error = nullptr);
 bool IsRemovedNpc(engine::ZGEOM* actor);
+
+// Placing: a character of the record standing at `t` (no behaviour, not part
+// of the level; one per model, used again), and putting it away.
+engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error = nullptr);
+void HidePreviewNpc();
 // The behaviour the NPC runs as far as the editor knows (set here, or as
 // authored in the scene); false when it has none.
 bool CurrentBehaviour(engine::ZGEOM* actor, engine::ScriptInfo& out);

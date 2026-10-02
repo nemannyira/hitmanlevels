@@ -114,6 +114,10 @@ char g_newName[64] = "My level";
 std::string g_status;
 
 std::string ModsDir() { return GameDir() + "Mods\\"; }
+bool g_openSaveAs;           // Ctrl+S without a level: the name is asked
+char g_saveAsName[64] = "My level";
+std::string g_saveStatus;
+double g_saveStatusTime;
 
 std::string Sanitize(const std::string& name)
 {
@@ -813,16 +817,130 @@ bool LoadLevel(const std::string& folder, std::string* error)
     return true;
 }
 
+// a folder of its own in Mods (a level of that name may be there already)
+std::string FreeFolder(const std::string& name)
+{
+    std::string folder = Sanitize(name);
+    for (int k = 2; GetFileAttributesA((ModsDir() + folder + "\\level.json").c_str()) != INVALID_FILE_ATTRIBUTES; ++k)
+        folder = Sanitize(name) + "_" + std::to_string(k);
+    return folder;
+}
+
+void WriteMainScript(const std::string& name)
+{
+    std::string dir = ModsDir() + g_level.folder;
+    CreateDirectoryA(ModsDir().c_str(), nullptr);
+    CreateDirectoryA(dir.c_str(), nullptr);
+    std::string script = dir + "\\main.lua";
+    if (GetFileAttributesA(script.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        std::ofstream f(script);
+        f << "-- " << name << ": runs every time the level is applied to its base scene\n"
+          << "print(\"level " << name << " running on \" .. h2.scene())\n";
+    }
+}
+
+bool SaveLevelAs(const std::string& name, std::string* error)
+{
+    if (name.empty()) {
+        if (error)
+            *error = "no name";
+        return false;
+    }
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    g_level.name = name;
+    g_level.folder = FreeFolder(name);
+    if (g_level.scripts.empty())
+        g_level.scripts = {"main.lua"};
+    WriteMainScript(name);
+    return SaveLevel(error);
+}
+
+void SaveShortcut()
+{
+    if (g_level.folder.empty()) {
+        g_openSaveAs = true;
+        return;
+    }
+    std::string err;
+    g_saveStatus = SaveLevel(&err) ? "saved" : "not saved: " + err;
+    g_saveStatusTime = NowMs();
+}
+
+void DrawSaveControl()
+{
+    LevelDocument& L = g_level;
+    bool none = L.folder.empty();
+    if (none)
+        ImGui::TextDisabled(L.dirty ? "changes not in a level yet" : "no level");
+    else
+        ImGui::Text("%s%s", L.name.c_str(), L.dirty ? " *" : "");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Everything you change on the map (objects, characters, routes, objectives, music)\n"
+                          "belongs to the level: saved to Mods\\<level>\\level.json, applied when the map loads.%s",
+                          none ? "" : ("\nthis level: Mods\\" + L.folder).c_str());
+    ImGui::SameLine();
+    if (none) {
+        if (ImGui::SmallButton("Save as level... (Ctrl+S)"))
+            g_openSaveAs = true;
+    } else {
+        ImGui::BeginDisabled(!L.dirty);
+        if (ImGui::SmallButton("Save (Ctrl+S)"))
+            SaveShortcut();
+        ImGui::EndDisabled();
+    }
+    if (!g_saveStatus.empty() && NowMs() - g_saveStatusTime < 3000.0) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", g_saveStatus.c_str());
+    }
+    if (g_openSaveAs) {
+        g_openSaveAs = false;
+        ImGui::OpenPopup("Save as level");
+    }
+    if (ImGui::BeginPopupModal("Save as level", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Name of the level (its folder in Mods):");
+        if (ImGui::IsWindowAppearing())
+            ImGui::SetKeyboardFocusHere();
+        bool enter = ImGui::InputText("##name", g_saveAsName, sizeof(g_saveAsName),
+                                      ImGuiInputTextFlags_EnterReturnsTrue);
+        if (ImGui::Button("Save") || enter) {
+            std::string err;
+            g_saveStatus = SaveLevelAs(g_saveAsName, &err) ? "saved to Mods\\" + g_level.folder : "not saved: " + err;
+            g_saveStatusTime = NowMs();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+}
+
+void DrawSaveRow()
+{
+    LevelDocument& L = g_level;
+    if (L.folder.empty()) {
+        ImGui::TextDisabled(L.dirty ? "These changes are not saved in a level yet." : "No level yet.");
+        if (ImGui::Button("Save as level... (Ctrl+S)", ImVec2(-1, 0)))
+            g_openSaveAs = true;  // the toolbar asks the name
+    } else {
+        ImGui::Text("Level: %s%s", L.name.c_str(), L.dirty ? " *" : "");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!L.dirty);
+        if (ImGui::SmallButton("Save (Ctrl+S)"))
+            SaveShortcut();
+        ImGui::EndDisabled();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Everything changed on this map belongs to the level and is saved with it");
+}
+
 void NewLevel(const std::string& name, const std::string& baseScene)
 {
     RevertLevel();
     g_level = {};
     g_level.name = name;
-    g_level.folder = Sanitize(name);
-    // a level of that name already there: the new one gets its own folder
-    for (int k = 2; GetFileAttributesA((ModsDir() + g_level.folder + "\\level.json").c_str()) != INVALID_FILE_ATTRIBUTES;
-         ++k)
-        g_level.folder = Sanitize(name) + "_" + std::to_string(k);
+    g_level.folder = FreeFolder(name);
     g_level.baseScene = baseScene;
     g_level.scripts = {"main.lua"};
     g_level.dirty = true;

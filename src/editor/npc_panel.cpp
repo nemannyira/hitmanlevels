@@ -178,11 +178,17 @@ bool Positional(engine::ZGEOM* g)
     return !r.script && !(r.classId & 0x8000000);
 }
 
-// Elements of a list object (ZLIST / ZConditionList): its data block holds
-// them as an array of references, in order.
-std::vector<engine::ZGEOM*> ListPoints(int record)
+// Elements of a list object (ZLIST / ZConditionList) as the game has them
+// now (the editor may have changed them); else its data block's array.
+std::vector<engine::ZGEOM*> ListPoints(engine::ZGEOM* list, int record)
 {
     std::vector<engine::ZGEOM*> out;
+    if (engine::IsEditableList(list)) {
+        for (uint32_t r : engine::ListRefs(list))
+            if (engine::ZGEOM* g = engine::GeomOfRef(r); g && Positional(g))
+                out.push_back(g);
+        return out;
+    }
     std::vector<uint8_t> b = engine::RemappedBlock(engine::SceneRecords()[record].data);
     size_t i = 4;
     while (i < b.size() && b[i] != 0xFF) {
@@ -228,7 +234,7 @@ std::vector<Route> RoutesOf(const engine::ScriptInfo& s)
             continue;
         int rec = engine::RecordOf(g);
         if (IsList(rec)) {
-            std::vector<engine::ZGEOM*> pts = ListPoints(rec);
+            std::vector<engine::ZGEOM*> pts = ListPoints(g, rec);
             if (!pts.empty())
                 routes.push_back({p.name, true, pts});
         } else if (Positional(g)) {
@@ -813,13 +819,9 @@ void OnPlacePick(engine::ZGEOM* hit, const float* point, const float*)
             g_hitRoom = room;
 }
 
-void Place()
+// where the character goes: on the surface point, facing the camera
+Transform PlacingTransform()
 {
-    if (g_type < 0 || !g_haveHit)
-        return;
-    NpcSpec spec;
-    spec.record = g_types[g_type].record;
-    // facing the camera
     game::ZCAMERA* cam = game::MainCamera();
     float f[3] = {0, 0, 1};
     if (cam) {
@@ -836,9 +838,20 @@ void Place()
             f[2] = 1;
         }
     }
+    Transform t;
     float m[9] = {f[0], 0, f[2], 0, 1, 0, f[2], 0, -f[0]};  // rows forward, up, right
-    memcpy(spec.transform.mat, m, sizeof(m));
-    memcpy(spec.transform.pos, g_point, sizeof(g_point));
+    memcpy(t.mat, m, sizeof(m));
+    memcpy(t.pos, g_point, sizeof(g_point));
+    return t;
+}
+
+void Place()
+{
+    if (g_type < 0 || !g_haveHit)
+        return;
+    NpcSpec spec;
+    spec.record = g_types[g_type].record;
+    spec.transform = PlacingTransform();
     spec.hasBehaviour = !g_newBehaviour.empty();
     if (spec.hasBehaviour)
         spec.behaviour = g_new;
@@ -1057,6 +1070,10 @@ bool NpcPlacing() { return g_placing || !g_pickParam.empty() || g_addList || !g_
 
 void CancelNpcPlacement()
 {
+    if (g_placing) {
+        HidePreviewNpc();
+        SetPickIgnore(nullptr);
+    }
     g_placing = false;
     g_placePickPending = false;
     g_pickParam.clear();
@@ -1146,8 +1163,14 @@ void UpdateNpcPlacement()
             DrawRoutes(from, RoutesOf(g_new), true);
         }
         DrawSnapTarget(g_point, IM_COL32(64, 224, 255, 255));
-        float top[3] = {g_point[0], g_point[1] + 180.0f, g_point[2]};
-        DrawLine3D(g_point, top, IM_COL32(64, 224, 255, 200), 2.0f);  // about a person's height
+        // the character itself where it will stand
+        std::string err;
+        if (engine::ZGEOM* preview = ShowPreviewNpc(g_types[g_type].record, PlacingTransform(), &err)) {
+            SetPickIgnore(preview);
+        } else {
+            float top[3] = {g_point[0], g_point[1] + 180.0f, g_point[2]};
+            DrawLine3D(g_point, top, IM_COL32(64, 224, 255, 200), 2.0f);  // about a person's height
+        }
     }
     char text[256];
     snprintf(text, sizeof(text), "%s (%s)\nclick: place   Shift+click: place more   Esc: cancel%s",
@@ -1159,9 +1182,12 @@ void UpdateNpcPlacement()
     dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170), 4);
     dl->AddText(p, IM_COL32(255, 220, 120, 255), text);
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && g_haveHit) {
+        HidePreviewNpc();
         Place();
-        if (!io.KeyShift)
+        if (!io.KeyShift) {
             g_placing = false;
+            SetPickIgnore(nullptr);
+        }
     }
 }
 
@@ -1174,6 +1200,11 @@ void InstallNpcPanel()
                            if (!g_placing)
                                DrawAllRoutes();
                        }});
+    // placing ended some other way (also with the editor closed): the preview goes
+    overlay::AddAlwaysDraw([] {
+        if (!g_placing || !overlay::IsOpen())
+            HidePreviewNpc();
+    });
     OnScenePushed([](const std::string&) {
         g_builtFor.clear();
         g_types.clear();

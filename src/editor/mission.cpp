@@ -1,6 +1,7 @@
 #include "mission.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -24,6 +25,8 @@
 #include "music.h"
 #include "npcs.h"
 #include "scene_panel.h"
+#include "viewport.h"
+#include "highlight.h"
 
 namespace h2::editor {
 
@@ -502,29 +505,19 @@ void OnScene(const std::string&)
 
 // ---- panel ----
 
-const char* GoalName(MissionObjective::Goal g)
-{
-    switch (g) {
-    case MissionObjective::Kill: return "kill a character";
-    case MissionObjective::Reach: return "reach a place";
-    default: return "the level's own";
-    }
-}
-
 std::string Label(const std::string& path)
 {
     if (path.empty())
-        return "(none)";
+        return "";
     engine::ZGEOM* g = Resolve(path);
     if (!g || !IsLive(g))
         return "(missing) " + path.substr(path.rfind('/') + 1);
-    std::string name = engine::SafeString(g->name);
     if (engine::ZGEOM* a = ActorOf(g)) {
         int rec = NpcRecordOf(a);
         if (rec >= 0)
             return NpcModel(rec) + (IsPlacedNpc(a) ? " (placed)" : "");
     }
-    return name;
+    return engine::SafeString(g->name);
 }
 
 std::vector<engine::ZGEOM*> Characters()
@@ -547,43 +540,154 @@ void Changed()
     ShowLines();
 }
 
-// a place: the selected object or a new point where Hitman stands
-bool PlaceChooser(std::string& path, const char* id)
+MissionObjective* ObjectiveAt(int slot)
+{
+    for (MissionObjective& o : Doc().objectives)
+        if (o.slot == slot)
+            return &o;
+    return nullptr;
+}
+
+// a line of the level becomes editable: an entry of the document
+MissionObjective& Editable(int slot)
+{
+    if (MissionObjective* o = ObjectiveAt(slot))
+        return *o;
+    MissionObjective o;
+    o.slot = slot;
+    Doc().objectives.push_back(o);
+    return Doc().objectives.back();
+}
+
+// the line's text as the laptop shows it
+std::string LineText(int slot)
+{
+    MissionObjective* o = ObjectiveAt(slot);
+    if (o && !o->text.empty())
+        return o->text;
+    return OwnText(slot);
+}
+
+std::string Summary(const MissionObjective* o)
+{
+    if (!o || o->goal == MissionObjective::Level)
+        return "the level decides";
+    std::string what = Label(o->target);
+    if (o->goal == MissionObjective::Kill)
+        return what.empty() ? "kill: choose who" : what + " dies";
+    return what.empty() ? "reach: choose where" : "Hitman reaches " + what;
+}
+
+bool LineDone(int slot)
+{
+    MissionObjective* o = ObjectiveAt(slot);
+    return o && o->goal != MissionObjective::Level ? g_done[slot] : LineChecked(slot);
+}
+
+// text that follows the goal while the user has not written their own
+bool AutoText(const std::string& text)
+{
+    return text.empty() || text.rfind("Kill ", 0) == 0 || text.rfind("Reach ", 0) == 0 || text == "New objective";
+}
+
+void SetTarget(MissionObjective& o, const std::string& path)
+{
+    o.target = path;
+    if (AutoText(o.text) && !path.empty())  // the laptop's text follows the new target
+        o.text = (o.goal == MissionObjective::Kill ? "Kill " : "Reach ") + Label(path);
+    Changed();
+}
+
+// ---- picking in the world ----
+
+enum class PickKind { None, Character, Place };
+PickKind g_pick = PickKind::None;
+int g_pickSlot;          // the objective's line; 0 = the mission's exit
+bool g_pickPending;
+int g_pickFrame;
+int g_selSlot = 1;       // the objective being edited
+
+void StartPick(PickKind kind, int slot)
+{
+    g_pick = kind;
+    g_pickSlot = slot;
+    g_pickPending = false;
+}
+
+void OnPlacePick(engine::ZGEOM* hit, const float* point, const float*)
+{
+    g_pickPending = false;
+    if (g_pick != PickKind::Place)
+        return;
+    if (!point) {
+        g_status = "no surface there: click the ground";
+        return;
+    }
+    engine::ZGEOM* room = hit ? RoomOf(hit) : nullptr;
+    if (!room)
+        room = Resolve("ROOT");
+    Transform t = {{0, 0, 1, 0, 1, 0, 1, 0, 0}, {point[0], point[1], point[2]}};
+    std::string err;
+    engine::ZGEOM* p = PlacePoint(t, room, &err);
+    g_pick = PickKind::None;
+    if (!p) {
+        g_status = "no point made: " + err;
+        return;
+    }
+    std::string path = PathOf(p);
+    if (g_pickSlot == 0) {
+        Doc().exitPath = path;
+        Changed();
+    } else {
+        SetTarget(Editable(g_pickSlot), path);
+    }
+    g_status = "place set (an invisible point: move it later from the Scene tab)";
+}
+
+void DrawHint(const char* text)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
+    ImVec2 size = ImGui::CalcTextSize(text);
+    dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170), 4);
+    dl->AddText(p, IM_COL32(255, 220, 120, 255), text);
+}
+
+// ---- the editor of one line ----
+
+bool PlaceButtons(int slot, const std::string& current)
 {
     bool changed = false;
-    ImGui::PushID(id);
-    ImGui::TextUnformatted(Label(path).c_str());
-    if (!path.empty() && ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", path.c_str());
-    engine::ZGEOM* sel = Selected();
-    ImGui::BeginDisabled(!sel || !IsLive(sel) || PathOf(sel).empty());
-    if (ImGui::SmallButton("use selected")) {
-        path = PathOf(sel);
-        changed = true;
-    }
-    ImGui::EndDisabled();
+    bool picking = g_pick == PickKind::Place && g_pickSlot == slot;
+    if (ImGui::SmallButton(picking ? "click the ground... (Esc)" : "Pick in the world"))
+        picking ? (void)(g_pick = PickKind::None) : StartPick(PickKind::Place, slot);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Click the ground where Hitman has to get: an invisible point is made there");
     ImGui::SameLine();
-    if (ImGui::SmallButton("point at Hitman")) {
+    if (ImGui::SmallButton("Where Hitman stands")) {
         engine::ZGEOM* hitman = engine::Player();
         engine::ZGEOM* room = hitman ? RoomOf(hitman) : nullptr;
         if (!room)
             room = Resolve("ROOT");
         std::string err;
-        Transform t = hitman ? GetTransform(hitman) : Transform{};
-        engine::ZGEOM* p = hitman ? PlacePoint(t, room, &err) : nullptr;
+        engine::ZGEOM* p = hitman ? PlacePoint(GetTransform(hitman), room, &err) : nullptr;
         if (p) {
-            path = PathOf(p);
+            if (slot == 0) {
+                Doc().exitPath = PathOf(p);
+                Changed();
+            } else {
+                SetTarget(Editable(slot), PathOf(p));
+            }
             changed = true;
         } else {
             g_status = "no point made: " + (hitman ? err : std::string("Hitman not found"));
         }
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Makes an invisible point where Hitman stands now (walk there first)");
-    if (!path.empty()) {
+    if (!current.empty()) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("fly to")) {
-            if (engine::ZGEOM* g = Resolve(path)) {
+        if (ImGui::SmallButton("Fly to")) {
+            if (engine::ZGEOM* g = Resolve(current)) {
                 Transform t = GetTransform(g);
                 float cam[3] = {t.pos[0] - 300.0f, t.pos[1] + 250.0f, t.pos[2] - 300.0f};
                 SetFreeCamEnabled(true);
@@ -592,106 +696,203 @@ bool PlaceChooser(std::string& path, const char* id)
             }
         }
     }
-    ImGui::PopID();
     return changed;
 }
 
-bool TargetChooser(std::string& path)
+void DrawLineEditor(int slot)
 {
-    bool changed = false;
-    std::string label = Label(path);
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::BeginCombo("##target", label.c_str())) {
-        std::vector<engine::ZGEOM*> all = Characters();
-        for (size_t i = 0; i < all.size(); ++i) {
-            std::string p = PathOf(all[i]);
-            int rec = NpcRecordOf(all[i]);
-            char item[200];
-            snprintf(item, sizeof(item), "%s%s##%d", rec >= 0 ? NpcModel(rec).c_str() : "?",
-                     IsPlacedNpc(all[i]) ? " (placed)" : "", int(i));
-            if (ImGui::Selectable(item, p == path)) {
-                path = p;
-                changed = true;
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", p.c_str());
-        }
-        ImGui::EndCombo();
-    }
-    engine::ZGEOM* a = ActorOf(Selected());
-    ImGui::BeginDisabled(!a);
-    if (ImGui::SmallButton("use the selected character")) {
-        path = PathOf(a);
-        changed = true;
-    }
-    ImGui::EndDisabled();
-    if (engine::ZGEOM* t = path.empty() ? nullptr : Resolve(path)) {
+    MissionObjective* o = ObjectiveAt(slot);
+    std::string own = OwnText(slot);
+    ImGui::PushID(slot);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+    ImGui::BeginChild("line", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
+    ImGui::Text("Objective %d", slot);
+    if (!own.empty()) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("select"))
-            Select(t);
-        ImGui::SameLine();
-        ImGui::TextDisabled(engine::IsAlive(t) ? "alive" : "dead");
+        ImGui::TextDisabled("(the level's line)");
+    } else if (LevelLines() > 0 && slot > LevelLines()) {
+        ImGui::TextDisabled("The laptop of this map shows %d lines: this one is not listed there,", LevelLines());
+        ImGui::TextDisabled("but it still counts for the end of the mission.");
     }
-    return changed;
-}
 
-void DrawObjective(MissionObjective& o, int index, int& remove)
-{
-    ImGui::PushID(index);
-    std::string own = OwnText(o.slot);
-    bool done = o.goal == MissionObjective::Level ? LineChecked(o.slot) : g_done[o.slot];
-    ImGui::Separator();
-    ImGui::Text("Objective %d", o.slot);
-    ImGui::SameLine();
-    ImGui::TextColored(done ? ImVec4(0.5f, 1.0f, 0.5f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
-                       done ? "done" : "not done");
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("remove").x - 8);
-    if (ImGui::SmallButton("remove"))
-        remove = index;
-    if (!own.empty())
-        ImGui::TextDisabled("level: %s", own.c_str());
-    else if (o.slot > LevelLines() && LevelLines() > 0)
-        ImGui::TextWrapped("(this level's laptop shows %d lines: this one is not shown there, "
-                           "the editor still checks it)", LevelLines());
+    // text
+    ImGui::TextUnformatted("Text in the laptop");
     char buf[256];
-    snprintf(buf, sizeof(buf), "%s", o.text.c_str());
+    snprintf(buf, sizeof(buf), "%s", o ? o->text.c_str() : "");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputTextWithHint("##text", own.empty() ? "text in the laptop" : "new text (empty: the level's)", buf,
-                                 sizeof(buf)))
-        o.text = buf;
+    if (ImGui::InputTextWithHint("##text", own.empty() ? "e.g. Kill the lawyer" : own.c_str(), buf, sizeof(buf)))
+        Editable(slot).text = buf;
     if (ImGui::IsItemDeactivatedAfterEdit())
         Changed();
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::BeginCombo("##goal", GoalName(o.goal))) {
-        for (int g = 0; g < 3; ++g)
-            if (ImGui::Selectable(GoalName(MissionObjective::Goal(g)), o.goal == g)) {
-                o.goal = MissionObjective::Goal(g);
-                Changed();
+
+    // goal
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Done when");
+    int goal = o ? int(o->goal) : int(MissionObjective::Level);
+    bool goalChanged = false;
+    if (!own.empty() || goal == int(MissionObjective::Level))
+        goalChanged |= ImGui::RadioButton("the level decides (as in the game)", &goal,
+                                          int(MissionObjective::Level));
+    goalChanged |= ImGui::RadioButton("a character dies", &goal, int(MissionObjective::Kill));
+    goalChanged |= ImGui::RadioButton("Hitman reaches a place", &goal, int(MissionObjective::Reach));
+    if (goalChanged) {
+        MissionObjective& e = Editable(slot);
+        if (e.goal != MissionObjective::Goal(goal)) {
+            e.goal = MissionObjective::Goal(goal);
+            e.target.clear();
+            Changed();
+        }
+        o = &e;
+    }
+
+    if (o && o->goal == MissionObjective::Kill) {
+        ImGui::Indent();
+        std::string label = Label(o->target);
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##target", label.empty() ? "choose the character..." : label.c_str())) {
+            std::vector<engine::ZGEOM*> all = Characters();
+            for (size_t i = 0; i < all.size(); ++i) {
+                std::string p = PathOf(all[i]);
+                std::string name = Label(p);
+                char item[200];
+                snprintf(item, sizeof(item), "%s##%d", name.c_str(), int(i));
+                if (ImGui::Selectable(item, p == o->target))
+                    SetTarget(*o, p);
             }
-        ImGui::EndCombo();
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("How it is done:\n- the level's own: the level's scripts check it (as in the game)\n"
-                          "- kill a character: done when that character dies\n"
-                          "- reach a place: done when Hitman gets near it");
-    if (o.goal == MissionObjective::Kill) {
-        if (TargetChooser(o.target))
-            Changed();
-    } else if (o.goal == MissionObjective::Reach) {
-        if (PlaceChooser(o.target, "reach"))
-            Changed();
-        ImGui::SetNextItemWidth(120);
-        if (ImGui::DragFloat("within", &o.radius, 5.0f, 50.0f, 5000.0f, "%.0f cm"))
+            ImGui::EndCombo();
+        }
+        bool picking = g_pick == PickKind::Character && g_pickSlot == slot;
+        if (ImGui::SmallButton(picking ? "click a character... (Esc)" : "Pick in the world"))
+            picking ? (void)(g_pick = PickKind::None) : StartPick(PickKind::Character, slot);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click the character in the world");
+        if (engine::ZGEOM* t = o->target.empty() ? nullptr : Resolve(o->target)) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Select"))
+                Select(t);
+            ImGui::SameLine();
+            ImGui::TextDisabled(engine::IsAlive(t) ? "(alive)" : "(dead)");
+        }
+        ImGui::Unindent();
+    } else if (o && o->goal == MissionObjective::Reach) {
+        ImGui::Indent();
+        std::string label = Label(o->target);
+        ImGui::TextUnformatted(label.empty() ? "no place yet" : label.c_str());
+        PlaceButtons(slot, o->target);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
+        if (ImGui::DragFloat("how near", &o->radius, 5.0f, 50.0f, 5000.0f, "%.0f cm"))
             CurrentLevel().dirty = true;
+        ImGui::Unindent();
     }
-    if (o.goal != MissionObjective::Level && !own.empty()) {
-        if (ImGui::Checkbox("the level's own check no longer counts", &o.replacesOriginal))
+    if (o && o->goal != MissionObjective::Level && !own.empty()) {
+        if (ImGui::Checkbox("the original no longer counts", &o->replacesOriginal))
             Changed();
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("E.g. the original target's death no longer checks this line:\n"
-                              "only the goal above does");
+            ImGui::SetTooltip("E.g. the original target's death no longer checks this line: only the goal above");
     }
+
+    // remove / back to the level's
+    ImGui::Spacing();
+    if (o) {
+        if (ImGui::SmallButton(own.empty() ? "Remove this objective" : "Back to the level's own")) {
+            Doc().objectives.erase(Doc().objectives.begin() + (o - Doc().objectives.data()));
+            CurrentLevel().dirty = true;
+            ShowLines({slot});
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
     ImGui::PopID();
+}
+
+int FreeSlot()
+{
+    for (int slot = 1; slot <= kSlots; ++slot)
+        if (OwnText(slot).empty() && !ObjectiveAt(slot))
+            return slot;
+    return 0;
+}
+
+void DrawObjectives()
+{
+    // every line: the level's and the editor's
+    std::vector<int> slots;
+    for (int slot = 1; slot <= kSlots; ++slot)
+        if (!OwnText(slot).empty() || ObjectiveAt(slot))
+            slots.push_back(slot);
+    if (slots.empty())
+        ImGui::TextDisabled("This map has no objectives (yet).");
+    float line = ImGui::GetTextLineHeight();
+    for (int slot : slots) {
+        ImGui::PushID(slot);
+        std::string text = LineText(slot);
+        bool done = LineDone(slot);
+        ImVec2 at = ImGui::GetCursorScreenPos();
+        if (ImGui::Selectable("##row", g_selSlot == slot, ImGuiSelectableFlags_AllowOverlap,
+                              ImVec2(0, line * 2 + ImGui::GetStyle().ItemSpacing.y)))
+            g_selSlot = slot;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s\nclick: edit it below", text.c_str());
+        // two lines: the text, what completes it (and done)
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        float w = ImGui::GetContentRegionAvail().x;
+        char first[300];
+        snprintf(first, sizeof(first), "%d. %s", slot, text.empty() ? "(no text)" : text.c_str());
+        ImVec4 clip(at.x, at.y, at.x + w - line * 1.5f, at.y + line * 2);
+        dl->AddText(nullptr, 0.0f, at, ImGui::GetColorU32(ImGuiCol_Text), first, nullptr, 0.0f, &clip);
+        std::string second = "   " + Summary(ObjectiveAt(slot));
+        dl->AddText(nullptr, 0.0f, ImVec2(at.x, at.y + line), ImGui::GetColorU32(ImGuiCol_TextDisabled), second.c_str(),
+                    nullptr, 0.0f, &clip);
+        if (done)
+            dl->AddText(ImVec2(at.x + w - line * 1.4f, at.y + line * 0.5f), IM_COL32(120, 255, 120, 255), "ok");
+        ImGui::PopID();
+    }
+    int free = FreeSlot();
+    ImGui::BeginDisabled(!free);
+    if (ImGui::Button("+ New objective")) {
+        MissionObjective o;
+        o.slot = free;
+        o.goal = MissionObjective::Kill;
+        Doc().objectives.push_back(o);
+        g_selSlot = free;
+        Changed();
+        StartPick(PickKind::Character, free);  // straight to choosing the target
+        g_status = "new objective: click its target in the world (or choose below)";
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip(free ? "A new line in the laptop: a character to kill (or a place to reach)"
+                               : "The laptop has 6 lines, all in use");
+    if (std::find(slots.begin(), slots.end(), g_selSlot) == slots.end())
+        g_selSlot = slots.empty() ? 0 : slots.front();
+    if (g_selSlot)
+        DrawLineEditor(g_selSlot);
+}
+
+void DrawEnd()
+{
+    MissionDoc& m = Doc();
+    if (ImGui::Checkbox("Completed when every objective is done", &m.endWhenDone))
+        Changed();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Without this the level's own scripts end the mission (as in the game)");
+    if (!m.endWhenDone)
+        return;
+    ImGui::Indent();
+    std::string label = Label(m.exitPath);
+    ImGui::Text("and Hitman reaches: %s", label.empty() ? "nothing more (ends at once)" : label.c_str());
+    PlaceButtons(0, m.exitPath);
+    if (!m.exitPath.empty()) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("No exit")) {
+            m.exitPath.clear();
+            Changed();
+        }
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
+        if (ImGui::DragFloat("how near##exit", &m.exitRadius, 5.0f, 50.0f, 5000.0f, "%.0f cm"))
+            CurrentLevel().dirty = true;
+    }
+    ImGui::Unindent();
 }
 
 void DrawPanel()
@@ -700,104 +901,38 @@ void DrawPanel()
         ImGui::TextDisabled("no scene loaded");
         return;
     }
-    MissionDoc& m = Doc();
     if (!CurrentLevel().baseScene.empty() && CurrentLevel().baseScene != CurrentScene()) {
         ImGui::TextWrapped("The level being edited is for %s.", CurrentLevel().baseScene.c_str());
         return;
     }
-    ImGui::TextWrapped("The mission's objectives are the lines of the laptop's \"Mission Objectives\". "
-                       "Change their texts, give them a target or a place to reach, or add new ones.");
+    // saving: these settings are part of the level
+    DrawSaveRow();
+    if (!g_status.empty())
+        ImGui::TextWrapped("%s", g_status.c_str());
+
+    ImGui::SeparatorText("Objectives (the laptop's lines)");
     if (!g_briefing)
-        ImGui::TextDisabled("(this scene has no laptop briefing yet)");
-    // the level's own lines first (when not in the document)
-    for (int slot = 1; slot <= kSlots; ++slot) {
-        bool listed = false;
-        for (const MissionObjective& o : m.objectives)
-            listed |= o.slot == slot;
-        std::string own = listed ? "" : OwnText(slot);
-        if (own.empty())
-            continue;
-        ImGui::PushID(slot + 100);
-        if (ImGui::SmallButton("change")) {
-            MissionObjective o;
-            o.slot = slot;
-            m.objectives.push_back(o);
-            Changed();
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Change this objective's text or what completes it");
-        ImGui::SameLine();
-        ImGui::TextWrapped("%d. %s%s", slot, own.c_str(), LineChecked(slot) ? "  (done)" : "");
-        ImGui::PopID();
-    }
-    int remove = -1;
-    for (size_t i = 0; i < m.objectives.size(); ++i)
-        DrawObjective(m.objectives[i], int(i), remove);
-    if (remove >= 0) {
-        int slot = m.objectives[remove].slot;
-        m.objectives.erase(m.objectives.begin() + remove);
-        CurrentLevel().dirty = true;
-        ShowLines({slot});
-    }
-    int free = 0;
-    for (int slot = 1; slot <= kSlots && !free; ++slot) {
-        bool used = !OwnText(slot).empty();
-        for (const MissionObjective& o : m.objectives)
-            used |= o.slot == slot;
-        if (!used)
-            free = slot;
-    }
-    ImGui::Spacing();
-    ImGui::BeginDisabled(!free);
-    if (ImGui::Button("Add an objective")) {
-        MissionObjective o;
-        o.slot = free;
-        o.goal = MissionObjective::Kill;
-        o.text = "New objective";
-        m.objectives.push_back(o);
-        Changed();
-    }
-    ImGui::EndDisabled();
-    if (!free) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("(the laptop has 6 lines)");
-    }
+        ImGui::TextDisabled("(this map has no laptop briefing yet)");
+    DrawObjectives();
 
     ImGui::SeparatorText("End of the mission");
-    if (ImGui::Checkbox("Completed when every objective is done", &m.endWhenDone))
-        Changed();
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Without this the level's own scripts end the mission (as in the game)");
-    if (m.endWhenDone) {
-        ImGui::TextDisabled("and Hitman reaches (none: at once):");
-        if (PlaceChooser(m.exitPath, "exit"))
-            Changed();
-        if (!m.exitPath.empty()) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton("clear")) {
-                m.exitPath.clear();
-                Changed();
-            }
-            ImGui::SetNextItemWidth(120);
-            if (ImGui::DragFloat("within##exit", &m.exitRadius, 5.0f, 50.0f, 5000.0f, "%.0f cm"))
-                CurrentLevel().dirty = true;
-        }
-    }
+    DrawEnd();
+
     ImGui::SeparatorText("Music");
     DrawMusicSection();
-    ImGui::SeparatorText("Test");
-    if (ImGui::SmallButton("Complete mission now"))
-        g_status = CompleteMission() ? "mission completed" : "the level control was not found";
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Fail mission"))
-        g_status = FailMission() ? "mission failed" : "the level control was not found";
-    engine::ZGEOM* a = ActorOf(Selected());
-    ImGui::BeginDisabled(!a || !engine::IsAlive(a));
-    if (ImGui::SmallButton("Kill the selected character"))
-        g_status = engine::KillActor(a) ? "killed" : "not killed";
-    ImGui::EndDisabled();
-    if (!g_status.empty())
-        ImGui::TextDisabled("%s", g_status.c_str());
+
+    if (ImGui::CollapsingHeader("Test")) {
+        if (ImGui::SmallButton("Complete mission now"))
+            g_status = CompleteMission() ? "mission completed" : "the level control was not found";
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Fail mission"))
+            g_status = FailMission() ? "mission failed" : "the level control was not found";
+        engine::ZGEOM* a = ActorOf(Selected());
+        ImGui::BeginDisabled(!a || !engine::IsAlive(a));
+        if (ImGui::SmallButton("Kill the selected character"))
+            g_status = engine::KillActor(a) ? "killed" : "not killed";
+        ImGui::EndDisabled();
+    }
 }
 
 } // namespace
@@ -860,8 +995,52 @@ void RevertMission()
     g_applied = false;
 }
 
+bool MissionPicking() { return g_pick != PickKind::None && engine::SceneDataValid(); }
+
+void UpdateMissionPick()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        g_pick = PickKind::None;
+        return;
+    }
+    bool overWorld = !io.WantCaptureMouse && !ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    if (g_pick == PickKind::Character) {
+        engine::ZGEOM* hover = overWorld ? CharacterAt(io.MousePos.x, io.MousePos.y) : nullptr;
+        if (hover && (hover == engine::Player() || ActorOf(hover) == engine::Player()))
+            hover = nullptr;  // not Hitman himself
+        std::string name = hover ? Label(PathOf(hover)) : "";
+        std::string hint = hover ? "click: " + name + " is the target   Esc: cancel"
+                                 : std::string("click a character: the target   Esc: cancel");
+        DrawHint(hint.c_str());
+        if (hover) {  // a ring over its head
+            Transform t = GetTransform(hover);
+            float head[3] = {t.pos[0], t.pos[1] + 200.0f, t.pos[2]};
+            float sx, sy;
+            if (WorldToScreen(head, sx, sy))
+                ImGui::GetForegroundDrawList()->AddCircle(ImVec2(sx, sy), 12.0f, IM_COL32(255, 220, 120, 255), 0, 3.0f);
+        }
+        if (overWorld && hover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            g_pick = PickKind::None;
+            SetTarget(Editable(g_pickSlot), PathOf(hover));
+            g_status = "target: " + name;
+        }
+    } else if (g_pick == PickKind::Place) {
+        DrawHint(g_pickSlot ? "click the ground: the place Hitman has to reach   Esc: cancel"
+                            : "click the ground: the mission's exit   Esc: cancel");
+        if (g_pickPending && ImGui::GetFrameCount() - g_pickFrame > 10)
+            g_pickPending = false;
+        if (overWorld && !g_pickPending && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            g_pickPending = true;
+            g_pickFrame = ImGui::GetFrameCount();
+            RequestPick(io.MousePos.x, io.MousePos.y, OnPlacePick);
+        }
+    }
+}
+
 void InstallMission()
 {
+    OnScenePushed([](const std::string&) { g_pick = PickKind::None; });
     Hook("LOC find", kLocFind, hkLocFind, &oLocFind);
     Hook("BriefingMenu::SetLocaleFolder", kSetLocaleFolder, hkSetFolder, &oSetFolder);
     Hook("BriefingMenu::SetObjective", kSetObjective, hkSetObjective, &oSetObjective);

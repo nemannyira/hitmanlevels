@@ -37,8 +37,24 @@ engine::ScriptInfo Runtime(engine::ScriptInfo s)
     return s;
 }
 
+std::map<int, engine::ZGEOM*> g_previews;  // record -> its preview character
+engine::ZGEOM* g_shownPreview;
+constexpr float kPreviewAway = -50000.0f;
+
+void PutAway(engine::ZGEOM* actor)
+{
+    if (!actor || !IsLive(actor))
+        return;
+    Transform t = GetTransform(actor);
+    float away[3] = {t.pos[0], kPreviewAway, t.pos[2]};
+    engine::TeleportActor(actor, away);
+    SetHidden(actor, true);
+}
+
 void OnScene(const std::string&)
 {
+    g_previews.clear();
+    g_shownPreview = nullptr;
     g_placed.clear();
     g_removed.clear();
     g_behaviour.clear();
@@ -225,6 +241,48 @@ bool DeleteNpc(engine::ZGEOM* actor, std::string* error)
     SetHidden(actor, true);
     g_removed.push_back(actor);
     return true;
+}
+
+engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error)
+{
+    engine::ZGEOM* actor = nullptr;
+    auto it = g_previews.find(record);
+    if (it != g_previews.end() && IsLive(it->second)) {
+        actor = it->second;
+    } else {
+        engine::ZGEOM* original = engine::RecordGeom(record);
+        engine::NpcSpawn s;
+        s.record = record;
+        s.parent = original ? RoomOf(original) : nullptr;
+        if (!s.parent) {
+            if (error)
+                *error = "no room for the character";
+            return nullptr;
+        }
+        memcpy(s.mat, t.mat, sizeof(s.mat));
+        memcpy(s.pos, t.pos, sizeof(s.pos));
+        s.name = "EditorPreview_" + NpcModel(record);
+        actor = engine::SpawnNpc(s, error);
+        if (!actor)
+            return nullptr;
+        AdoptEngineOwned(actor);
+        g_previews[record] = actor;
+    }
+    if (g_shownPreview && g_shownPreview != actor)
+        PutAway(g_shownPreview);
+    engine::TeleportActor(actor, t.pos, t.mat);
+    if (g_shownPreview != actor)
+        SetHidden(actor, false);
+    g_shownPreview = actor;
+    return actor;
+}
+
+void HidePreviewNpc()
+{
+    if (!g_shownPreview)
+        return;
+    PutAway(g_shownPreview);
+    g_shownPreview = nullptr;
 }
 
 bool IsRemovedNpc(engine::ZGEOM* actor)

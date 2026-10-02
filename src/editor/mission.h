@@ -14,6 +14,9 @@
 namespace h2::editor {
 
 void InstallMission();
+// Picking a target / place in the world for an objective: the viewport hands the mouse over.
+bool MissionPicking();
+void UpdateMissionPick();
 // The level was applied to / taken back from the loaded scene.
 void ApplyMission();
 void RevertMission();

@@ -275,7 +275,7 @@ void DrawLayout()
     if (!g_panelsHidden && AnyVisible(Dock::Left)) {
         ImGui::SetNextWindowPos(ImVec2(0, top));
         ImGui::SetNextWindowSize(ImVec2(W * 0.26f, height), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(200, height), ImVec2(W * 0.45f, height));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 22.0f, height), ImVec2(W * 0.45f, height));  // its tabs fit
         ImGui::Begin("Left panel", nullptr, kDockedFlags);
         leftW = ImGui::GetWindowWidth();
         if (ImGui::BeginTabBar("left")) {

@@ -24,6 +24,6 @@ cp build/Release/dinput8.dll "/c/Program Files (x86)/Steam/steamapps/common/Hitm
 timeout 90 python tools/dev.py --start >/dev/null
 sleep 2
 python tools/dev.py "return h2.dev_loadscene([[$LEVEL]])" >/dev/null
-SHORT="${LEVEL##*\}"
+SHORT=$(basename "$(echo "$LEVEL" | tr '\\' '/')")
 python tools/dev.py --wait-scene "$SHORT" 60
 sleep 6

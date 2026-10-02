@@ -54,6 +54,7 @@ extern "C" {
 #include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
+#include "../engine/imports.h"
 #include "lua_vm.h"
 
 namespace h2::script {
@@ -496,6 +497,62 @@ int Spawn(lua_State* L)
     return SpawnFrom(L, source, 2);
 }
 
+// h2.import_models{ {"C2-1", 0x33DFFE}, ... }: models of other levels in the
+// scenes loaded from now on (see docs/models.md); h2.import_models{} clears.
+int ImportModels(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    std::vector<engine::ModelImport> list;
+    lua_Integer n = luaL_len(L, 1);
+    for (lua_Integer i = 1; i <= n; ++i) {
+        lua_geti(L, 1, i);
+        luaL_checktype(L, -1, LUA_TTABLE);
+        lua_geti(L, -1, 1);
+        lua_geti(L, -2, 2);
+        engine::ModelImport m;
+        m.level = luaL_checkstring(L, -2);
+        m.mesh = uint32_t(luaL_checkinteger(L, -1));
+        list.push_back(m);
+        lua_pop(L, 3);
+    }
+    engine::SetModelImports(list);
+    return 0;
+}
+
+// h2.imported_mesh(level, mesh): its mesh reference in the loaded scene (nil: not imported)
+int ImportedMesh(lua_State* L)
+{
+    uint32_t m = engine::ImportedMesh(luaL_checkstring(L, 1), uint32_t(luaL_checkinteger(L, 2)));
+    if (!m)
+        return 0;
+    lua_pushinteger(L, m);
+    return 1;
+}
+
+// h2.mesh_object(mesh, x, y, z [, parent [, flags]]): a plain object showing a
+// mesh of the loaded scene (default parent: Hitman's room)
+int MeshObject(lua_State* L)
+{
+    uint32_t mesh = uint32_t(luaL_checkinteger(L, 1));
+    float pos[3] = {float(luaL_checknumber(L, 2)), float(luaL_checknumber(L, 3)), float(luaL_checknumber(L, 4))};
+    engine::ZGEOM* parent = lua_isstring(L, 5) ? editor::Resolve(lua_tostring(L, 5)) : nullptr;
+    if (!parent)
+        if (engine::ZGEOM* hitman = engine::Player())
+            parent = editor::RoomOf(hitman);
+    if (!parent)
+        return luaL_error(L, "mesh_object: no parent");
+    uint32_t flags = uint32_t(luaL_optinteger(L, 6, 0x200F3));
+    const float mat[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    std::string name = "Imported_" + std::to_string(++g_spawnCounter), err;
+    engine::ZGEOM* g = engine::CreateObject(name, parent, "ZSTDOBJ", mesh, flags, mat, pos, {}, &err);
+    if (!g)
+        return luaL_error(L, "mesh_object: %s", err.c_str());
+    g_scriptObjects.push_back(g);
+    editor::InvalidateSceneModel();
+    PushObject(L, editor::PathOf(g));
+    return 1;
+}
+
 int FindAll(lua_State* L)
 {
     std::string name = luaL_checkstring(L, 1);
@@ -802,6 +859,9 @@ void RegisterObjectsApi()
     Register("findall", FindAll);
     Register("objects", Objects);
     Register("spawn", Spawn);
+    Register("import_models", ImportModels);
+    Register("imported_mesh", ImportedMesh);
+    Register("mesh_object", MeshObject);
     Register("item", Item);
     Register("npcs", Npcs);
     Register("behaviours", Behaviours);

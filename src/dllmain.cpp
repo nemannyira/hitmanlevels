@@ -25,6 +25,7 @@
 #include "editor/placement.h"
 #include "editor/scene_panel.h"
 #include "editor/viewport.h"
+#include "engine/imports.h"
 #include "fov.h"
 #include "framelimit.h"
 #include "game.h"
@@ -114,6 +115,7 @@ void Init()
     h2::editor::InstallMission();
     h2::editor::InstallMusic();
     h2::editor::InstallLauncher();
+    h2::engine::InstallImports();
     h2::editor::InstallPlacement();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {

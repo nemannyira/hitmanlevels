@@ -20,6 +20,7 @@
 #include "freecam.h"
 #include "guides.h"
 #include "highlight.h"
+#include "history.h"
 #include "level.h"
 #include "model.h"
 #include "npc_docs.h"
@@ -46,6 +47,8 @@ std::vector<std::string> g_behaviourNames;  // script classes of the scene's cha
 int g_type = -1;              // character chosen for placing
 std::string g_newBehaviour;   // behaviour of the next one ("" = none)
 engine::ScriptInfo g_new;     // its settings
+std::vector<StartMove> g_newMoves;  // its settings that move it when it starts
+bool g_startHere = true;            // ... are taken out: it starts where it is put
 std::string g_message;
 std::string g_info;           // "<table>:<parameter>" shown in the info box
 
@@ -113,6 +116,7 @@ void Build()
     g_type = -1;
     g_newBehaviour.clear();
     g_new = {};
+    g_newMoves.clear();
     g_builtFor = CurrentScene();
     g_behaviourNames = BehaviourNames();
     const auto& records = engine::SceneRecords();
@@ -137,12 +141,21 @@ void Build()
     });
 }
 
+// a new behaviour for the next character: as authored, but starting where it is put
+void SetNewBehaviour(const engine::ScriptInfo& s)
+{
+    g_new = s;
+    g_newMoves = StartMoves(g_new);
+    SetRouteWarps(g_new, g_newMoves, !g_startHere);
+}
+
 void ChooseNewBehaviour(const std::string& name)
 {
     g_newBehaviour = name;
-    g_new = {};
+    engine::ScriptInfo s;
     if (!name.empty())
-        BehaviourTemplate(name, g_new);
+        BehaviourTemplate(name, s);
+    SetNewBehaviour(s);
 }
 
 void ChooseType(int t)
@@ -151,10 +164,40 @@ void ChooseType(int t)
     engine::ScriptInfo info;
     if (AuthoredBehaviour(g_types[t].record, info)) {
         g_newBehaviour = engine::ScriptShortName(info.name);
-        g_new = info;  // this character's own settings
+        SetNewBehaviour(info);  // this character's own settings
     } else {
         ChooseNewBehaviour("");
     }
+}
+
+// The start point references of `moves` that `s` still has get a new point at
+// `at` (undoable, one history entry each); how many were made.
+int PointStartsAt(engine::ScriptInfo& s, const std::vector<StartMove>& moves, const Transform& at,
+                  engine::ZGEOM* room)
+{
+    int made = 0;
+    engine::ZGEOM* point = nullptr;
+    for (const StartMove& m : moves) {
+        if (!m.ref)
+            continue;
+        for (engine::ScriptParam& p : s.params) {
+            if (p.name != m.name || p.type != engine::ParamType::Ref || p.bits != m.value)
+                continue;
+            if (!point) {
+                Transform t = at;
+                t.pos[1] += 1.0f;
+                std::string err;
+                point = PlacePoint(t, room, &err);
+                if (!point) {
+                    Log("npc: no start point for %s (%s), it starts at its own", m.name.c_str(), err.c_str());
+                    return made;
+                }
+                ++made;
+            }
+            p.bits = engine::RefOf(point);
+        }
+    }
+    return made;
 }
 
 // ---- routes ----
@@ -705,14 +748,14 @@ void RefreshTarget(bool force)
     g_targetHasBehaviour = CurrentBehaviour(g_target, g_targetEdit);
 }
 
-void ApplyTarget()
+bool ApplyTarget()
 {
     std::string err;
     engine::ZGEOM* now = EditNpcBehaviour(g_target, g_targetHasBehaviour ? &g_targetEdit : nullptr, &err);
     if (!now) {
         g_message = "not changed: " + err;
         RefreshTarget(true);
-        return;
+        return false;
     }
     g_message = "changed (Ctrl+Z undoes)";
     g_routeCache.erase(g_target);
@@ -721,6 +764,7 @@ void ApplyTarget()
         Select(now);
     }
     g_targetRead = NowMs();
+    return true;
 }
 
 std::string BehaviourLabel(const std::string& shortName) { return shortName.empty() ? "none" : shortName; }
@@ -782,17 +826,27 @@ void DrawTarget()
         ImGui::SameLine();
         ImGui::BeginDisabled(g_changeTo.empty());
         if (ImGui::Button("Change")) {
+            int points = 0;
             if (g_changeTo == "-") {
                 g_targetHasBehaviour = false;
             } else {
                 engine::ScriptInfo s;
                 if (BehaviourTemplate(g_changeTo, s)) {
+                    // made again where it stands, not at the behaviour's start
+                    std::vector<StartMove> moves = StartMoves(s);
+                    SetRouteWarps(s, moves, false);
+                    points = PointStartsAt(s, moves, GetTransform(actor), RoomOf(actor));
                     g_targetEdit = s;
                     g_targetHasBehaviour = true;
                 }
             }
             g_changeTo.clear();
-            ApplyTarget();
+            if (ApplyTarget()) {
+                JoinLast(points + 1, "character behaviour");
+            } else {
+                for (int i = 0; i < points; ++i)
+                    Undo();
+            }
         }
         ImGui::EndDisabled();
     } else {
@@ -853,14 +907,22 @@ void Place()
     spec.record = g_types[g_type].record;
     spec.transform = PlacingTransform();
     spec.hasBehaviour = !g_newBehaviour.empty();
-    if (spec.hasBehaviour)
+    int points = 0;
+    if (spec.hasBehaviour) {
         spec.behaviour = g_new;
+        if (g_startHere)
+            points = PointStartsAt(spec.behaviour, g_newMoves, spec.transform,
+                                   g_hitRoom ? g_hitRoom : RoomOf(engine::RecordGeom(spec.record)));
+    }
     std::string err;
     engine::ZGEOM* npc = PlaceNpc(spec, &err);
     if (!npc) {
+        for (int i = 0; i < points; ++i)
+            Undo();
         g_message = "placing failed: " + err;
         return;
     }
+    JoinLast(points + 1, "place character");
     Select(npc);
     SetTarget(npc);
     g_message = std::string("placed ") + engine::SafeString(npc->name) + " (" + BehaviourLabel(g_newBehaviour) +
@@ -903,6 +965,19 @@ void DrawPlace()
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", DescribeBehaviour(g_newBehaviour).c_str());
         ImGui::PopTextWrapPos();
+        if (!g_newMoves.empty()) {
+            if (ImGui::Checkbox("Starts where you put it", &g_startHere))
+                SetRouteWarps(g_new, g_newMoves, !g_startHere);
+            if (ImGui::IsItemHovered()) {
+                std::string names;
+                for (const StartMove& m : g_newMoves)
+                    names += "\n  " + m.name + (m.ref ? " (its start point)" : " (route)");
+                ImGui::SetTooltip("This behaviour moves the character when it starts:%s\n\n"
+                                  "On: it starts where you click, then walks its route.\n"
+                                  "Off: it jumps to its start as in the original level.",
+                                  names.c_str());
+            }
+        }
         DrawParams(g_new, true, "new");
     }
     if (g_placing) {

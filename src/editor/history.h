@@ -15,6 +15,9 @@ void Change(engine::ZGEOM* geom, const ObjectState& before, const ObjectState& a
 // Any other undoable action (creating or deleting objects): `redo` has just
 // been done by the caller.
 void PushAction(const char* what, std::function<bool()> undo, std::function<bool()> redo);
+// The last `count` entries become one (undone in reverse order), e.g. a
+// character and the point it starts at.
+void JoinLast(int count, const char* what);
 
 // Continuous edits (gizmo drags, slider drags): the object is modified live
 // and a single history entry is created when the edit ends.

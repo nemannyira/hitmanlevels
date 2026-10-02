@@ -1,5 +1,6 @@
 #include "history.h"
 
+#include <memory>
 #include <vector>
 
 #include "../log.h"
@@ -78,6 +79,29 @@ void PushAction(const char* what, std::function<bool()> undo, std::function<bool
     e.undo = std::move(undo);
     e.redo = std::move(redo);
     Push(std::move(e));
+}
+
+void JoinLast(int count, const char* what)
+{
+    if (count < 2 || size_t(count) > g_undo.size())
+        return;
+    auto parts = std::make_shared<std::vector<Entry>>(g_undo.end() - count, g_undo.end());
+    g_undo.erase(g_undo.end() - count, g_undo.end());
+    Entry e;
+    e.what = what;
+    e.undo = [parts] {
+        bool ok = true;
+        for (auto it = parts->rbegin(); it != parts->rend(); ++it)
+            ok &= ApplyEntry(*it, false);
+        return ok;
+    };
+    e.redo = [parts] {
+        bool ok = true;
+        for (const Entry& part : *parts)
+            ok &= ApplyEntry(part, true);
+        return ok;
+    };
+    g_undo.push_back(std::move(e));
 }
 
 void BeginContinuous(engine::ZGEOM* geom)

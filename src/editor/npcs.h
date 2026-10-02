@@ -65,6 +65,20 @@ void HidePreviewNpc();
 // authored in the scene); false when it has none.
 bool CurrentBehaviour(engine::ZGEOM* actor, engine::ScriptInfo& out);
 
+// Settings of a behaviour that move the character when its script starts:
+// to a point of its route (LONG WarpToPathPoint / startAtRandomPathPoint, on
+// when not 0) or to its own start point (a reference to one point:
+// StartPos, SpawnPosition, m_rStartPos, ...). Lists of start points are not
+// among them (the script picks one).
+struct StartMove {
+    std::string name;
+    bool ref = false;
+    uint32_t value = 0;  // as the behaviour has it (LONG / runtime ref)
+};
+std::vector<StartMove> StartMoves(const engine::ScriptInfo& s);
+// Sets the LONG ones of `moves` in `s`: 0 (off) or back to their value.
+void SetRouteWarps(engine::ScriptInfo& s, const std::vector<StartMove>& moves, bool on);
+
 // Serialisation of behaviours: references as object paths.
 struct ParamValue {
     std::string name;

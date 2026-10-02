@@ -6,6 +6,7 @@
 #include <cstring>
 #include <map>
 
+#include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../log.h"
 #include "../scene.h"
@@ -349,6 +350,34 @@ bool CurrentBehaviour(engine::ZGEOM* actor, engine::ScriptInfo& out)
     }
     engine::GetScriptVariables(actor, out);  // what the running script has now
     return true;
+}
+
+std::vector<StartMove> StartMoves(const engine::ScriptInfo& s)
+{
+    std::vector<StartMove> out;
+    for (const engine::ScriptParam& p : s.params) {
+        std::string n = Lower(p.name);
+        if (p.type == engine::ParamType::Long) {
+            if (p.bits && (n.find("warp") != std::string::npos || n.find("startatrandom") != std::string::npos))
+                out.push_back({p.name, false, p.bits});
+        } else if (p.type == engine::ParamType::Ref && p.bits) {
+            bool named = n.find("start") != std::string::npos || n.find("spawn") != std::string::npos;
+            bool many = n.find("list") != std::string::npos || n.find("positions") != std::string::npos ||
+                        n.find("sound") != std::string::npos;
+            engine::ZGEOM* g = engine::GeomOfRef(p.bits);
+            if (named && !many && g && IsLive(g) && !engine::IsEditableList(g) && !engine::IsA(g, "ZLIST"))
+                out.push_back({p.name, true, p.bits});
+        }
+    }
+    return out;
+}
+
+void SetRouteWarps(engine::ScriptInfo& s, const std::vector<StartMove>& moves, bool on)
+{
+    for (const StartMove& m : moves)
+        for (engine::ScriptParam& p : s.params)
+            if (!m.ref && p.name == m.name && p.type == engine::ParamType::Long)
+                p.bits = on ? m.value : 0;
 }
 
 std::vector<ParamValue> SaveParams(const engine::ScriptInfo& s)

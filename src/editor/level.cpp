@@ -18,6 +18,7 @@
 #include "../script/lua_vm.h"
 #include "../script/objects_api.h"
 #include "history.h"
+#include "mission.h"
 #include "scene_panel.h"
 
 using json = nlohmann::json;
@@ -583,6 +584,24 @@ bool SaveLevel(std::string* error)
     for (auto& [record, e] : g_level.npcEdits)
         j["npc_edits"].push_back({{"record", record}, {"path", e.path}, {"behaviour", e.behaviour},
                                   {"params", ParamsJson(e.params)}});
+    {
+        const MissionDoc& m = g_level.mission;
+        json objs = json::array();
+        for (const MissionObjective& o : m.objectives) {
+            static const char* goals[] = {"level", "kill", "reach"};
+            json jo = {{"slot", o.slot}, {"text", o.text}, {"goal", goals[o.goal]}};
+            if (o.goal != MissionObjective::Level) {
+                jo["target"] = o.target;
+                jo["replaces_original"] = o.replacesOriginal;
+            }
+            if (o.goal == MissionObjective::Reach)
+                jo["radius"] = o.radius;
+            objs.push_back(jo);
+        }
+        if (!objs.empty() || m.endWhenDone)
+            j["mission"] = {{"objectives", objs}, {"end_when_done", m.endWhenDone}, {"exit", m.exitPath},
+                            {"exit_radius", m.exitRadius}};
+    }
     j["lists"] = json::array();
     for (auto& [path, points] : g_level.lists)
         j["lists"].push_back({{"path", path}, {"points", points}});
@@ -668,6 +687,25 @@ bool LoadLevel(const std::string& folder, std::string* error)
         e.params = ParamsFromJson(o.value("params", json::array()));
         if (e.record >= 0)
             L.npcEdits[e.record] = e;
+    }
+    if (j.contains("mission") && j["mission"].is_object()) {
+        const json& m = j["mission"];
+        for (const json& o : m.value("objectives", json::array())) {
+            MissionObjective mo;
+            mo.slot = o.value("slot", 1);
+            mo.text = o.value("text", "");
+            std::string goal = o.value("goal", "level");
+            mo.goal = goal == "kill" ? MissionObjective::Kill
+                                     : goal == "reach" ? MissionObjective::Reach : MissionObjective::Level;
+            mo.target = o.value("target", "");
+            mo.radius = o.value("radius", 250.0f);
+            mo.replacesOriginal = o.value("replaces_original", true);
+            if (mo.slot >= 1 && mo.slot <= 6)
+                L.mission.objectives.push_back(mo);
+        }
+        L.mission.endWhenDone = m.value("end_when_done", false);
+        L.mission.exitPath = m.value("exit", "");
+        L.mission.exitRadius = m.value("exit_radius", 300.0f);
     }
     for (const json& o : j.value("lists", json::array()))
         if (o.contains("path"))
@@ -1046,11 +1084,13 @@ int ApplyLevel()
     }
     for (auto& [record, e] : g_level.npcEdits)
         n += ApplyNpcEdit(e);
+    ApplyMission();
     return n;
 }
 
 void RevertLevel()
 {
+    RevertMission();
     for (auto& [path, points] : g_level.lists)  // the scene file's elements (before the points go)
         if (engine::ZGEOM* list = Resolve(path); list && IsLive(list))
             engine::SetListRefs(list, engine::AuthoredListRefs(list));

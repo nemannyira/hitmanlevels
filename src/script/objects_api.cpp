@@ -22,6 +22,12 @@
 //   for i, p in ipairs(route:points()) do ... end
 //   route:setpoints({ h2.find("WP1"), h2.point(x, y, z), ... })
 //   local p = h2.point(x, y, z [, room])   -- an invisible point (default room: ROOT)
+//
+// Characters and the mission:
+//   npc:alive(), npc:kill()
+//   h2.player()                            -- Hitman
+//   h2.objective(slot [, text [, done]])   -- a laptop objective line; returns the level's own text
+//   h2.mission("complete" | "fail")
 #include "objects_api.h"
 
 #include <algorithm>
@@ -35,10 +41,12 @@ extern "C" {
 #include "lua.h"
 }
 
+#include "../editor/mission.h"
 #include "../editor/model.h"
 #include "../editor/npcs.h"
 #include "../editor/scene_panel.h"
 #include "../engine/lists.h"
+#include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
 #include "lua_vm.h"
@@ -279,6 +287,44 @@ int Npcs(lua_State* L)
     return 1;
 }
 
+// h2.player() -> Hitman
+int Player(lua_State* L)
+{
+    engine::ZGEOM* g = engine::Player();
+    if (!g) {
+        lua_pushnil(L);
+        return 1;
+    }
+    PushObject(L, editor::PathOf(g));
+    return 1;
+}
+
+// h2.objective(slot [, text [, done]]) -> the level's own text of the line
+int Objective(lua_State* L)
+{
+    int slot = int(luaL_checkinteger(L, 1));
+    if (slot < 1 || slot > 6)
+        return luaL_error(L, "objective: slot 1..6");
+    std::string own = editor::LevelObjectiveText(slot);
+    if (lua_isstring(L, 2))
+        editor::SetObjectiveText(slot, lua_tostring(L, 2));
+    if (lua_isboolean(L, 3))
+        editor::SetObjectiveDone(slot, lua_toboolean(L, 3) != 0);
+    lua_pushstring(L, own.c_str());
+    return 1;
+}
+
+// h2.mission("complete" | "fail")
+int Mission(lua_State* L)
+{
+    std::string op = luaL_checkstring(L, 1);
+    bool ok = op == "complete" ? editor::CompleteMission()
+              : op == "fail"   ? editor::FailMission()
+                               : (luaL_error(L, "mission: complete or fail"), false);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
 // h2.point(x, y, z [, room]) -> object: an invisible point characters can be sent to
 int Point(lua_State* L)
 {
@@ -476,6 +522,23 @@ int Parent(lua_State* L)
 }
 
 // obj:select(): selects the object in the editor
+// npc:alive() -> bool
+int Alive(lua_State* L)
+{
+    lua_pushboolean(L, engine::IsAlive(Geom(L)));
+    return 1;
+}
+
+// npc:kill() -> bool (killed now)
+int Kill(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    if (!engine::IsA(g, "ZActor"))
+        return luaL_error(L, "kill: %s is not a character", engine::SafeString(g->name).c_str());
+    lua_pushboolean(L, engine::KillActor(g));
+    return 1;
+}
+
 // list:points() -> { object, ... } its elements in order
 int Points(lua_State* L)
 {
@@ -683,7 +746,7 @@ void RegisterObjectsApi()
         {"hide", Hide},   {"show", Show},     {"hidden", Hidden},
         {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State},
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
-        {"points", Points}, {"setpoints", SetPoints},
+        {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"kill", Kill},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);
@@ -703,6 +766,9 @@ void RegisterObjectsApi()
     Register("behaviours", Behaviours);
     Register("npc", Npc);
     Register("point", Point);
+    Register("player", Player);
+    Register("objective", Objective);
+    Register("mission", Mission);
 }
 
 void DestroyScriptObjects()

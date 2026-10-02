@@ -64,6 +64,10 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (IsInputMessage(msg))
             return 0;  // the editor owns keyboard and mouse
     }
+    // automated testing: the game pauses when its window loses focus, keep it running
+    if (g_config.devCommands && ((msg == WM_ACTIVATEAPP && !wp) || (msg == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE) ||
+                                 msg == WM_KILLFOCUS))
+        return 0;
     // DirectInput runs non-exclusive (see dinput.cpp): keep the OS cursor off the game
     if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT) {
         SetCursor(nullptr);

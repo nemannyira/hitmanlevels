@@ -16,6 +16,7 @@
 #include "editor/freecam.h"
 #include "editor/highlight.h"
 #include "editor/level.h"
+#include "editor/mission.h"
 #include "editor/models_panel.h"
 #include "editor/npc_panel.h"
 #include "editor/npcs.h"
@@ -107,6 +108,7 @@ void Init()
     h2::editor::InstallNpcs();
     h2::editor::InstallNpcPanel();
     h2::editor::InstallLevelPanel();
+    h2::editor::InstallMission();
     h2::editor::InstallPlacement();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {

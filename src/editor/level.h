@@ -21,6 +21,10 @@
 //     { "record": 2350, "path": "ROOT/.../Ground", "behaviour": "...", "params": [...] } ],
 //   "lists": [                                  // changed lists (routes): their points in order
 //     { "path": "ROOT/.../WPList", "points": ["ROOT/.../WP1Wait", "ROOT/.../Point+1", ...] } ],
+//   "mission": {                                // objectives (the laptop's lines) and the mission's end
+//     "objectives": [ { "slot": 1, "text": "Kill the lawyer", "goal": "kill",
+//                       "target": "ROOT/.../MafiaLawyer/Ground", "replaces_original": true } ],
+//     "end_when_done": true, "exit": "ROOT/.../Point+3", "exit_radius": 300 },
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
 //
@@ -69,6 +73,23 @@ struct NpcEditEntry {        // changed behaviour settings of a character of the
     std::vector<ParamValue> params;
 };
 
+struct MissionObjective {
+    int slot = 1;                  // line of the laptop's objectives (1..6)
+    std::string text;              // shown there ("" = the level's own text)
+    enum Goal { Level, Kill, Reach };
+    Goal goal = Level;             // Level: the level's own scripts decide
+    std::string target;            // Kill: the character, Reach: the place (object paths)
+    float radius = 250.0f;         // Reach: how near Hitman has to get
+    bool replacesOriginal = true;  // the level's own completion of this line no longer counts
+};
+
+struct MissionDoc {
+    std::vector<MissionObjective> objectives;
+    bool endWhenDone = false;      // the mission is completed when every objective is done ...
+    std::string exitPath;          // ... and Hitman reaches this place ("" = at once)
+    float exitRadius = 300.0f;
+};
+
 struct LevelDocument {
     std::string name = "Untitled";
     std::string folder;  // Mods\<folder>
@@ -78,6 +99,7 @@ struct LevelDocument {
     std::vector<LevelNpc> npcs;
     std::map<int, NpcEditEntry> npcEdits;  // by actor record
     std::map<std::string, std::vector<std::string>> lists;  // changed lists: path -> element paths
+    MissionDoc mission;
     std::vector<std::string> scripts;
     bool dirty = false;
 };

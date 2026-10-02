@@ -56,6 +56,7 @@ add_library(h2fix SHARED
     src/editor/npc_docs.cpp
     src/editor/npc_panel.cpp
     src/editor/npcs.cpp
+    src/editor/mission.cpp
     src/editor/placement.cpp
     src/editor/scene_panel.cpp
     src/editor/viewport.cpp
@@ -63,6 +64,7 @@ add_library(h2fix SHARED
     src/engine/spawn.cpp
     src/engine/npc.cpp
     src/engine/lists.cpp
+    src/engine/messages.cpp
     src/engine/scene_data.cpp
     src/screenshot.cpp
     src/input/dinput.cpp

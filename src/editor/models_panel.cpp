@@ -85,6 +85,12 @@ std::string BaseName(const std::string& name)
     return s.empty() ? name : s;
 }
 
+// "Truck_Body#0" -> "Truck_Body", "LampPost01_16" -> "LampPost01"
+std::string ShownName(const std::string& name)
+{
+    return BaseName(name.substr(0, name.find('#')));
+}
+
 void ApplyOverride(ModelEntry& e)
 {
     e.category = e.autoCategory;
@@ -153,7 +159,7 @@ void Build()
         ModelEntry& e = byMesh[mesh];
         if (e.uses++ == 0) {
             e.mesh = mesh;
-            e.name = level.empty() ? BaseName(g.name) : g.name.substr(0, g.name.find('.'));
+            e.name = level.empty() ? BaseName(g.name) : ShownName(g.name.substr(0, g.name.find('.')));
             e.level = level;
             e.className = g.className;
             e.sourcePath = g.path;
@@ -366,16 +372,19 @@ void DrawOtherLevels()
     }
     const std::vector<std::string>& levels = engine::GameLevels();
     std::string here = CurrentLevel().baseScene.empty() ? CurrentScene() : CurrentLevel().baseScene;
-    if (g_otherLevel < 0 || g_otherLevel >= int(levels.size()))
+    auto isHere = [&](int i) { return here.find(levels[i] + "\\") == 0; };
+    if (g_otherLevel < 0 || g_otherLevel >= int(levels.size()) || isHere(g_otherLevel)) {
+        g_otherLevel = -1;
         for (int i = 0; i < int(levels.size()) && g_otherLevel < 0; ++i)
-            if (here.find(levels[i] + "\\") != 0)
+            if (!isHere(i))
                 g_otherLevel = i;
+    }
     ImGui::TextWrapped("Tick the models this level should have. The map is loaded again to get them; then they are "
                        "in the Models list (marked with their level) and are placed like the others.");
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
     if (ImGui::BeginCombo("level", g_otherLevel >= 0 ? levels[g_otherLevel].c_str() : "-")) {
         for (int i = 0; i < int(levels.size()); ++i)
-            if (ImGui::Selectable(levels[i].c_str(), i == g_otherLevel))
+            if (!isHere(i) && ImGui::Selectable(levels[i].c_str(), i == g_otherLevel))
                 g_otherLevel = i;
         ImGui::EndCombo();
     }
@@ -400,7 +409,10 @@ void DrawOtherLevels()
             Lower(m.group).find(filter) == std::string::npos)
             continue;
         std::string chain = engine::ClassChainOfId(m.classId, known);
-        rows.push_back({&m, Categorize(m.name, chain.substr(0, chain.find(' ')))});
+        Category cat = Categorize(m.name, chain.substr(0, chain.find(' ')));
+        if (cat == Category::Helpers || cat == Category::Interface)
+            continue;  // invisible technical objects, menus
+        rows.push_back({&m, cat});
     }
     std::stable_sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
         return a.cat != b.cat ? a.cat < b.cat : Lower(a.m->name) < Lower(b.m->name);
@@ -424,7 +436,7 @@ void DrawOtherLevels()
                     const engine::LevelModel& m = *rows[k].m;
                     ImGui::PushID(int(m.mesh));
                     bool on = IsImported(level, m.mesh);
-                    if (ImGui::Checkbox(m.name.c_str(), &on)) {
+                    if (ImGui::Checkbox(ShownName(m.name).c_str(), &on)) {
                         int uses = on ? 0 : ImportUses(level, m.mesh);
                         if (uses)
                             g_otherMessage = m.name + " is used by " + std::to_string(uses) +

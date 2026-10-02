@@ -1,5 +1,7 @@
 #include "api.h"
 
+#include <cmath>
+
 extern "C" {
 #include "lauxlib.h"
 #include "lua.h"
@@ -74,6 +76,36 @@ int SetCamPos(lua_State* L)
     return 0;
 }
 
+// h2.setcamrot(yaw, pitch): free camera direction in degrees (yaw 0 = +Z, 90 = +X; pitch > 0 up)
+int SetCamRot(lua_State* L)
+{
+    editor::SetFreeCamAngles(float(luaL_checknumber(L, 1)), float(luaL_optnumber(L, 2, 0.0)));
+    return 0;
+}
+
+// h2.camrot() -> yaw, pitch (degrees)
+int CamRot(lua_State* L)
+{
+    float yaw, pitch;
+    editor::FreeCamAngles(yaw, pitch);
+    lua_pushnumber(L, yaw);
+    lua_pushnumber(L, pitch);
+    return 2;
+}
+
+// h2.camlookat(x, y, z): turns the free camera towards a point
+int CamLookAt(lua_State* L)
+{
+    float p[3];
+    editor::FreeCamPosition(p);
+    float d[3] = {float(luaL_checknumber(L, 1)) - p[0], float(luaL_checknumber(L, 2)) - p[1],
+                  float(luaL_checknumber(L, 3)) - p[2]};
+    float yaw = std::atan2(d[0], d[2]) * 57.29578f;
+    float pitch = std::atan2(d[1], std::sqrt(d[0] * d[0] + d[2] * d[2])) * 57.29578f;
+    editor::SetFreeCamAngles(yaw, pitch);
+    return 0;
+}
+
 // h2.log(...) -> writes to H2Fix.log
 int LogFn(lua_State* L)
 {
@@ -93,6 +125,9 @@ void RegisterApi()
     Register("freecam", FreeCam);
     Register("campos", CamPos);
     Register("setcampos", SetCamPos);
+    Register("setcamrot", SetCamRot);
+    Register("camrot", CamRot);
+    Register("camlookat", CamLookAt);
 }
 
 } // namespace h2::script

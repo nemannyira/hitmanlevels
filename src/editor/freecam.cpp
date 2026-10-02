@@ -167,6 +167,20 @@ void SetFreeCamPosition(const float pos[3])
         g_pos[i] = pos[i];
 }
 
+void SetFreeCamAngles(float yawDeg, float pitchDeg)
+{
+    g_yaw = yawDeg * kPi / 180.0f;
+    g_pitch = pitchDeg * kPi / 180.0f;
+    float limit = 1.55f;
+    g_pitch = g_pitch < -limit ? -limit : (g_pitch > limit ? limit : g_pitch);
+}
+
+void FreeCamAngles(float& yawDeg, float& pitchDeg)
+{
+    yawDeg = g_yaw * 180.0f / kPi;
+    pitchDeg = g_pitch * 180.0f / kPi;
+}
+
 bool* CameraPanelVisible() { return &g_panelVisible; }
 
 void DrawCameraPanel()

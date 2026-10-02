@@ -71,7 +71,7 @@ bool ScreenRay(float sx, float sy, float origin[3], float dir[3])
         return false;
     float cm[9];
     game::GetWorldTransform(cam, cm, origin);
-    float tanH = std::tan(cam->fov * 0.5f) * HorizontalTanScale();
+    float tanH = CameraTanHalfFov(cam);
     float tanV = tanH * float(RenderHeight()) / float(RenderWidth());
     float nx = (sx / float(RenderWidth())) * 2.0f - 1.0f;
     float ny = 1.0f - (sy / float(RenderHeight())) * 2.0f;

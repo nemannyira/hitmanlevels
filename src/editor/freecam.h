@@ -15,6 +15,9 @@ bool FreeCamEnabled();
 void SetFreeCamEnabled(bool enabled);
 void FreeCamPosition(float out[3]);
 void SetFreeCamPosition(const float pos[3]);
+// yaw 0 looks along +Z (degrees, +90 = +X), pitch > 0 looks up
+void SetFreeCamAngles(float yawDeg, float pitchDeg);
+void FreeCamAngles(float& yawDeg, float& pitchDeg);
 
 // Camera panel for the overlay.
 bool* CameraPanelVisible();

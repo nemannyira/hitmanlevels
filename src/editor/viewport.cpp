@@ -157,7 +157,7 @@ void PickSphere(float mx, float my)
         return;
     float cm[9], origin[3];
     game::GetWorldTransform(cam, cm, origin);
-    float tanH = std::tan(cam->fov * 0.5f) * HorizontalTanScale();
+    float tanH = CameraTanHalfFov(cam);
     float tanV = tanH * float(RenderHeight()) / float(RenderWidth());
     float nx = (mx / io.DisplaySize.x) * 2.0f - 1.0f;
     float ny = 1.0f - (my / io.DisplaySize.y) * 2.0f;
@@ -457,7 +457,7 @@ bool CameraMatrices(float view[16], float proj[16])
                    -(c[0] * r[0] + c[1] * r[1] + c[2] * r[2]), -(c[0] * u[0] + c[1] * u[1] + c[2] * u[2]),
                    -(c[0] * f[0] + c[1] * f[1] + c[2] * f[2]), 1};
     memcpy(view, v, sizeof(v));
-    float tanH = std::tan(cam->fov * 0.5f) * HorizontalTanScale();
+    float tanH = CameraTanHalfFov(cam);
     float tanV = tanH * float(RenderHeight()) / float(RenderWidth());
     float zn = 5.0f, zf = 100000.0f;
     float p[16] = {1.0f / tanH, 0, 0, 0,

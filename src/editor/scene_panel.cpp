@@ -271,7 +271,7 @@ bool WorldToScreen(const float world[3], float& sx, float& sy)
     float y = v[0] * m[3] + v[1] * m[4] + v[2] * m[5];  // up
     float x = v[0] * m[6] + v[1] * m[7] + v[2] * m[8];  // right
     float w = float(RenderWidth()), h = float(RenderHeight());
-    float tanH = std::tan(cam->fov * 0.5f) * HorizontalTanScale();
+    float tanH = CameraTanHalfFov(cam);
     float tanV = tanH * h / w;
     sx = (x / z / tanH * 0.5f + 0.5f) * w;
     sy = (0.5f - y / z / tanV * 0.5f) * h;

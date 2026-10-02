@@ -29,7 +29,7 @@ bool CurrentCamera(Camera& cam)
         cam.u[i] = m[3 + i];
         cam.r[i] = m[6 + i];
     }
-    cam.tanH = std::tan(c->fov * 0.5f) * HorizontalTanScale();
+    cam.tanH = CameraTanHalfFov(c);
     cam.w = float(RenderWidth());
     cam.h = float(RenderHeight());
     cam.tanV = cam.tanH * cam.h / cam.w;

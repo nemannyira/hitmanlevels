@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
+#include <unordered_map>
 
 #include "config.h"
 #include "display.h"
@@ -112,24 +113,74 @@ bool KeepFov(game::ZCAMERA* cam)
     return vtbl == kVtbl_ZHM2BinocularCamera || vtbl == kVtbl_ZHM2SniperCamera || vtbl == kVtbl_ZHM2NightvisionCamera;
 }
 
+float Widen(float fov)
+{
+    float widened = 2.0f * std::atan(std::tan(fov * 0.5f) * TanScale());
+    return widened < 2.9f ? widened : 2.9f;  // stay well below 180 degrees whatever the configuration
+}
+
+bool Widening() { return (g_config.horPlus || g_config.fovScale != 1.0) && RenderWidth() > 0 && RenderHeight() > 0; }
+
+// World cameras get Hor+ in their fov field itself, not only while the
+// renderer builds the projection: the engine also culls with the camera's
+// field of view outside the render pass (characters: not drawn and not
+// animated outside the 4:3 view; they popped in at the old screen edge in
+// their bind pose, the "T-pose"). Per camera we remember the game's value and
+// the widened one we put there, so a value the game writes (zoom, camera
+// changes) is widened exactly once and ours is never widened again.
+struct CamFov {
+    float game;
+    float applied;
+};
+std::unordered_map<game::ZCAMERA*, CamFov> g_fovs;
+
+bool Eligible(game::ZCAMERA* cam) { return cam && !KeepFov(cam) && !(cam->flags & 1) && Widening(); }
+
+float AppliedFov(game::ZCAMERA* cam, float current)
+{
+    CamFov& f = g_fovs[cam];
+    if (current != f.applied || f.applied == 0.0f) {
+        f.game = current;
+        f.applied = Widen(current);
+    }
+    return f.applied;
+}
+
+// ZCAMERA vfunc 0x258 (0x42F3E0): SetupProjection(fov, near, far, window
+// width, height, aspect) stores the fov, computes the focal length (+0x54) and
+// the frustum planes; it returns early unless the window changed or flag 2
+// (set by SetFov 0x42ED40) is set.
+using SetupProjection_t = void(__fastcall*)(game::ZCAMERA* cam, void* edx, float fov, float nearPlane, float farPlane,
+                                            int width, int height, float aspect);
+SetupProjection_t oSetupProjection;
+void __fastcall hkSetupProjection(game::ZCAMERA* cam, void* edx, float fov, float nearPlane, float farPlane, int width,
+                                  int height, float aspect)
+{
+    if (!Eligible(cam))
+        return oSetupProjection(cam, edx, fov, nearPlane, farPlane, width, height, aspect);
+    float applied = AppliedFov(cam, fov);
+    oSetupProjection(cam, edx, applied, nearPlane, farPlane, width, height, aspect);
+    cam->fov = applied;
+}
+
 void __fastcall hkRenderCamera(void* self, void* edx, game::ZCAMERA* cam, int arg)
 {
     if (!cam)
         return oRenderCamera(self, edx, cam, arg);
     if (g_traceFrames > 0)
-        TraceCamera(cam, arg, !KeepFov(cam));
+        TraceCamera(cam, arg, Eligible(cam));
     LogCamera(cam, arg);
     game::NoteRenderedCamera(cam);
     // Overlay cameras (menus, HUD, screen effects) draw on top without
-    // clearing; their content is laid out in pixels, so keep their FOV.
-    if (KeepFov(cam) || (!g_config.horPlus && g_config.fovScale == 1.0))
-        return oRenderCamera(self, edx, cam, arg);
-    float original = cam->fov;
-    float widened = 2.0f * std::atan(std::tan(original * 0.5f) * TanScale());
-    // stay well below 180 degrees whatever the configuration
-    cam->fov = widened < 2.9f ? widened : 2.9f;
+    // clearing; their content is laid out in pixels, so they keep their FOV.
+    if (Eligible(cam)) {
+        float applied = AppliedFov(cam, cam->fov);  // normally set already by SetupProjection
+        if (cam->fov != applied) {
+            cam->fov = applied;
+            cam->flags |= 2;  // planes and focal length follow
+        }
+    }
     oRenderCamera(self, edx, cam, arg);
-    cam->fov = original;
     g_current = nullptr;
 }
 
@@ -152,13 +203,23 @@ void TraceFrameDone()
         Log("trace cam: done");
 }
 
-float HorizontalTanScale()
+float CameraTanHalfFov(const game::ZCAMERA* cam)
 {
-    return (g_config.horPlus || g_config.fovScale != 1.0) ? TanScale() : 1.0f;
+    auto c = const_cast<game::ZCAMERA*>(cam);
+    float fov = cam->fov;
+    if (Eligible(c)) {
+        auto it = g_fovs.find(c);
+        if (it == g_fovs.end() || it->second.applied != fov)
+            fov = Widen(fov);  // the game wrote it since; widened at the next setup
+    }
+    return std::tan(fov * 0.5f);
 }
+
+void ForgetCameras() { g_fovs.clear(); }
 
 void InstallFovFix()
 {
+    Hook("ZCAMERA::SetupProjection", 0x42F3E0, hkSetupProjection, &oSetupProjection);
     // always hooked: besides the FOV it tracks the main camera for the editor
     OnModuleLoad("RenderD3D.dll", OnRendererLoaded);
 }

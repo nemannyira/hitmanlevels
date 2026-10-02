@@ -138,3 +138,24 @@ record -> geom ref table (RemapCreatedDataBlock hook).
 block, Init + the init list phases, SetFlags 0x800000, PostInit) and logs the
 step it fails at. Not yet: events (+0x14), saving NPCs in the level, removing
 them, the parent ZGROUP of the original.
+
+## Behaviours that move the character when they start
+
+Checked offline over every level's scripts:
+
+* `LONG WarpToPathPoint` (28 patrol scripts, e.g. C2-1 PingPongGuard,
+  PatrolGuard2_1; authored 1, sometimes 0) with `LONG StartPathPos`: the
+  script puts the character on that point of its route (`WayPoints`) when it
+  starts; 0 = it walks there from where it stands.
+* `LONG startAtRandomPathPoint` (Pedestrian2, Pedestrian2_1, IndianPedestrian;
+  afghanPedestrian has 0): a random point of `WayPointList`.
+* Start point references to one positional object (class 0x200002):
+  Mother `StartPos`, Sergei `StartPoint`, Chef `startPos`, K4Sniper / K5Guard
+  `SpawnPosition`, SewerGuards / SubwayPatrolGuards / PatrolBodyGuards
+  `m_rStartPos`, C8-1 sniper `rGardenSpawn`. Lists of start points:
+  RandomPetronaGuest / FoodDeliveryBoy `startPointList`, Mr17
+  `m_rStartPositions`.
+
+A placed copy of such a character would jump to the original's start, so
+the editor turns the LONGs off and points a single start reference at a new
+point where the character is put (`StartMoves` in src/editor/npcs.cpp).

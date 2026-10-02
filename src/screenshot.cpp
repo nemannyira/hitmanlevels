@@ -47,6 +47,26 @@ bool WriteBmp(const std::string& path, int w, int h, const unsigned char* bits, 
 
 } // namespace
 
+bool SaveBackBuffer(void* device, const std::string& path)
+{
+    constexpr int kDev_GetBackBuffer = 16;
+    constexpr int kSurf_GetDesc = 8;
+    void* surf = nullptr;
+    if (Call<HRESULT>(device, kDev_GetBackBuffer, UINT(0), DWORD(0), &surf) < 0 || !surf)
+        return false;
+    DWORD desc[8] = {};  // D3DSURFACE_DESC: Format, Type, Usage, Pool, Size, MultiSampleType, Width, Height
+    bool ok = false;
+    if (Call<HRESULT>(surf, kSurf_GetDesc, desc) >= 0 && (desc[0] == 21 || desc[0] == 22)) {  // A8R8G8B8 / X8R8G8B8
+        D3DLOCKED_RECT lr;
+        if (Call<HRESULT>(surf, kSurf_LockRect, &lr, static_cast<const RECT*>(nullptr), DWORD(0x10)) >= 0) {  // READONLY
+            ok = WriteBmp(path, int(desc[6]), int(desc[7]), static_cast<unsigned char*>(lr.pBits), lr.Pitch);
+            Call<HRESULT>(surf, kSurf_UnlockRect);
+        }
+    }
+    Call<ULONG>(surf, kSurf_Release);
+    return ok;
+}
+
 bool SaveScreenshot(void* device, const std::string& path)
 {
     D3DDISPLAYMODE mode;

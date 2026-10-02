@@ -1,0 +1,370 @@
+#include "npcs.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <cstring>
+#include <map>
+
+#include "../engine/npc.h"
+#include "../log.h"
+#include "../scene.h"
+
+namespace h2::editor {
+
+namespace {
+
+std::vector<engine::ZGEOM*> g_placed;
+std::map<engine::ZGEOM*, engine::ScriptInfo> g_behaviour;  // set by the editor (runtime refs)
+std::map<engine::ZGEOM*, bool> g_noBehaviour;               // stopped by the editor
+std::map<engine::ZGEOM*, int> g_placedRecord;               // record a placed NPC copies
+int g_counter;
+engine::ZGEOM* g_replaced;  // the character SetNpcBehaviour made last
+std::vector<engine::ZGEOM*> g_removed;  // placed characters removed (hidden, far below)
+
+std::string Lower(std::string s)
+{
+    for (char& c : s)
+        c = char(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+engine::ScriptInfo Runtime(engine::ScriptInfo s)
+{
+    for (engine::ScriptParam& p : s.params)
+        if (p.type == engine::ParamType::Ref)
+            p.bits = p.bits ? engine::RemapRef(p.bits) : 0;
+    return s;
+}
+
+void OnScene(const std::string&)
+{
+    g_placed.clear();
+    g_removed.clear();
+    g_behaviour.clear();
+    g_noBehaviour.clear();
+    g_placedRecord.clear();
+}
+
+} // namespace
+
+std::vector<int> NpcRecords() { return engine::ActorRecords(); }
+
+std::string NpcModel(int record)
+{
+    const auto& records = engine::SceneRecords();
+    if (record < 0 || size_t(record) >= records.size())
+        return {};
+    std::string m = engine::ActorModelName(records[record]);
+    return m.empty() ? records[record].name : m;
+}
+
+bool AuthoredBehaviour(int record, engine::ScriptInfo& out)
+{
+    const auto& records = engine::SceneRecords();
+    if (record < 0 || size_t(record) >= records.size() || !records[record].script)
+        return false;
+    engine::ScriptInfo info;
+    if (!engine::ParseScript(records[record].script, info))
+        return false;
+    out = Runtime(info);
+    return true;
+}
+
+std::vector<std::string> BehaviourNames()
+{
+    std::vector<std::string> names;
+    for (const engine::SceneRecord& r : engine::SceneRecords()) {
+        if (!r.script || r.classId != 0x2003E9)
+            continue;
+        engine::ScriptInfo info;
+        if (!engine::ParseScript(r.script, info))
+            continue;
+        std::string n = engine::ScriptShortName(info.name);
+        if (std::find(names.begin(), names.end(), n) == names.end())
+            names.push_back(n);
+    }
+    std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) { return Lower(a) < Lower(b); });
+    return names;
+}
+
+bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out)
+{
+    std::string want = Lower(name);
+    for (const engine::SceneRecord& r : engine::SceneRecords()) {
+        if (!r.script)
+            continue;
+        engine::ScriptInfo info;
+        if (!engine::ParseScript(r.script, info))
+            continue;
+        if (Lower(info.name) == want || Lower(engine::ScriptShortName(info.name)) == want) {
+            out = Runtime(info);
+            return true;
+        }
+    }
+    return false;
+}
+
+int FindNpcRecord(const std::string& what)
+{
+    const auto& records = engine::SceneRecords();
+    if (what.empty())
+        return -1;
+    if (std::all_of(what.begin(), what.end(), [](unsigned char c) { return std::isdigit(c); })) {
+        int r = std::atoi(what.c_str());
+        return r >= 0 && size_t(r) < records.size() && records[r].classId == 0x2003E9 ? r : -1;
+    }
+    if (engine::ZGEOM* g = Resolve(what))
+        if (engine::ZGEOM* a = ActorOf(g))
+            return NpcRecordOf(a);
+    std::string want = Lower(what);
+    for (int r : NpcRecords())
+        if (Lower(NpcModel(r)) == want)
+            return r;
+    for (int r : NpcRecords())
+        if (records[r].parent >= 0 && Lower(records[records[r].parent].name) == want)
+            return r;
+    return -1;
+}
+
+engine::ZGEOM* ActorOf(engine::ZGEOM* g)
+{
+    engine::ZBaseGeom* node = g && IsLive(g) ? g->node : nullptr;
+    for (int depth = 0; node && depth < 64; ++depth) {
+        if (!engine::IsReadable(node, sizeof(*node)))
+            return nullptr;
+        if (node->geom && IsLive(node->geom) && engine::IsA(node->geom, "ZActor"))
+            return node->geom;
+        node = node->parent;
+    }
+    return nullptr;
+}
+
+int NpcRecordOf(engine::ZGEOM* actor)
+{
+    if (!actor)
+        return -1;
+    auto it = g_placedRecord.find(actor);
+    if (it != g_placedRecord.end())
+        return it->second;
+    return engine::RecordOf(actor);
+}
+
+engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
+{
+    auto fail = [&](const std::string& why) -> engine::ZGEOM* {
+        if (error)
+            *error = why;
+        return nullptr;
+    };
+    if (spec.record < 0)
+        return fail("no character chosen");
+    // the room the position is in: the room of the nearest object below it would
+    // be best; the room of the original character is used when nothing better
+    engine::ZGEOM* parent = nullptr;
+    if (engine::ZGEOM* original = engine::RecordGeom(spec.record))
+        parent = RoomOf(original);
+    engine::NpcSpawn s;
+    s.record = spec.record;
+    s.parent = spec.parentRoom ? spec.parentRoom : parent;
+    if (!s.parent)
+        return fail("no room for the character");
+    memcpy(s.mat, spec.transform.mat, sizeof(s.mat));
+    memcpy(s.pos, spec.transform.pos, sizeof(s.pos));
+    if (spec.hasBehaviour)
+        s.script = engine::BuildScriptBlock(spec.behaviour);
+    if (spec.name.empty()) {
+        char name[96];
+        snprintf(name, sizeof(name), "NPC_%s_%d", NpcModel(spec.record).c_str(), ++g_counter);
+        s.name = name;
+    } else {
+        s.name = spec.name;
+    }
+    engine::ZGEOM* npc = engine::SpawnNpc(s, error);
+    if (!npc)
+        return nullptr;
+    AdoptEngineOwned(npc);
+    g_placed.push_back(npc);
+    g_placedRecord[npc] = spec.record;
+    if (spec.hasBehaviour)
+        g_behaviour[npc] = spec.behaviour;
+    else
+        g_noBehaviour[npc] = true;
+    return npc;
+}
+
+bool IsPlacedNpc(engine::ZGEOM* actor)
+{
+    return std::find(g_placed.begin(), g_placed.end(), actor) != g_placed.end();
+}
+
+const std::vector<engine::ZGEOM*>& PlacedNpcs()
+{
+    g_placed.erase(std::remove_if(g_placed.begin(), g_placed.end(), [](engine::ZGEOM* g) { return !IsLive(g); }),
+                   g_placed.end());
+    return g_placed;
+}
+
+bool DeleteNpc(engine::ZGEOM* actor, std::string* error)
+{
+    if (!IsPlacedNpc(actor)) {
+        if (error)
+            *error = "only characters placed by the editor can be removed";
+        return false;
+    }
+    // Actors cannot be destroyed while the scene runs (the engine keeps
+    // pointers to them): it is hidden and put far below the level, where it
+    // stays (and the level no longer creates it next time).
+    g_placed.erase(std::remove(g_placed.begin(), g_placed.end(), actor), g_placed.end());
+    g_behaviour.erase(actor);
+    g_noBehaviour.erase(actor);
+    g_placedRecord.erase(actor);
+    Transform t = GetTransform(actor);
+    float away[3] = {t.pos[0], t.pos[1] - 50000.0f, t.pos[2]};
+    engine::TeleportActor(actor, away);
+    SetHidden(actor, true);
+    g_removed.push_back(actor);
+    return true;
+}
+
+bool IsRemovedNpc(engine::ZGEOM* actor)
+{
+    return std::find(g_removed.begin(), g_removed.end(), actor) != g_removed.end();
+}
+
+bool SetNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, std::string* error)
+{
+    auto fail = [&](const std::string& why) {
+        if (error)
+            *error = why;
+        return false;
+    };
+    if (!actor || !IsLive(actor))
+        return fail("no character");
+    engine::ScriptInfo current;
+    bool has = CurrentBehaviour(actor, current);
+    // Same behaviour: its settings are written into the running script.
+    // Replacing a running script leaves the guard groups and the level
+    // control holding the old one (crash), so another behaviour means a new
+    // character - only for the ones the editor placed.
+    if (behaviour && has && engine::ScriptInstance(actor) &&
+        Lower(engine::ScriptShortName(current.name)) == Lower(engine::ScriptShortName(behaviour->name))) {
+        int n = engine::SetScriptVariables(actor, *behaviour, error);
+        Log("npc %p: %d settings of %s written", static_cast<void*>(actor), n, current.name.c_str());
+        g_behaviour[actor] = *behaviour;
+        return true;
+    }
+    if (!IsPlacedNpc(actor))
+        return fail("the level's own characters keep their kind of behaviour (only its settings can change); "
+                    "place a new character for another behaviour");
+    // a placed character: made again with the new behaviour
+    NpcSpec spec;
+    spec.record = NpcRecordOf(actor);
+    spec.transform = GetTransform(actor);
+    spec.hasBehaviour = behaviour != nullptr;
+    if (behaviour)
+        spec.behaviour = *behaviour;
+    spec.name = engine::SafeString(actor->name);
+    std::string err;
+    if (!DeleteNpc(actor, &err))
+        return fail(err);
+    engine::ZGEOM* again = CreateNpc(spec, &err);
+    if (!again)
+        return fail(err);
+    g_replaced = again;
+    return true;
+}
+
+bool CurrentBehaviour(engine::ZGEOM* actor, engine::ScriptInfo& out)
+{
+    if (!actor)
+        return false;
+    if (g_noBehaviour.count(actor))
+        return false;
+    auto it = g_behaviour.find(actor);
+    if (it != g_behaviour.end()) {
+        out = it->second;
+    } else {
+        int rec = engine::RecordOf(actor);
+        if (rec < 0 || !AuthoredBehaviour(rec, out))
+            return false;
+    }
+    engine::GetScriptVariables(actor, out);  // what the running script has now
+    return true;
+}
+
+std::vector<ParamValue> SaveParams(const engine::ScriptInfo& s)
+{
+    std::vector<ParamValue> out;
+    for (const engine::ScriptParam& p : s.params) {
+        ParamValue v;
+        v.name = p.name;
+        char buf[64];
+        switch (p.type) {
+        case engine::ParamType::Long:
+            v.type = "LONG";
+            v.value = std::to_string(int(p.bits));
+            break;
+        case engine::ParamType::Float: {
+            float f;
+            memcpy(&f, &p.bits, 4);
+            snprintf(buf, sizeof(buf), "%.9g", f);
+            v.type = "FLOAT";
+            v.value = buf;
+            break;
+        }
+        case engine::ParamType::Ref:
+            v.type = "ZGEOMREF";
+            v.value = p.bits ? PathOf(engine::GeomOfRef(p.bits)) : "";
+            break;
+        case engine::ParamType::String:
+            v.type = "STRING";
+            v.value = p.text;
+            break;
+        default:
+            v.type = "RAW";
+            for (uint8_t b : p.raw) {
+                snprintf(buf, sizeof(buf), "%02X", b);
+                v.value += buf;
+            }
+            break;
+        }
+        out.push_back(v);
+    }
+    return out;
+}
+
+void LoadParams(engine::ScriptInfo& s, const std::vector<ParamValue>& values)
+{
+    for (const ParamValue& v : values) {
+        for (engine::ScriptParam& p : s.params) {
+            if (p.name != v.name)
+                continue;
+            if (v.type == "LONG" && p.type == engine::ParamType::Long) {
+                p.bits = uint32_t(std::atoi(v.value.c_str()));
+            } else if (v.type == "FLOAT" && p.type == engine::ParamType::Float) {
+                float f = float(std::atof(v.value.c_str()));
+                memcpy(&p.bits, &f, 4);
+            } else if (v.type == "ZGEOMREF" && p.type == engine::ParamType::Ref) {
+                engine::ZGEOM* g = v.value.empty() ? nullptr : Resolve(v.value);
+                p.bits = g ? engine::RefOf(g) : 0;
+                if (!g && !v.value.empty())
+                    Log("npc parameter %s: object '%s' not found", v.name.c_str(), v.value.c_str());
+            } else if (v.type == "STRING" && p.type == engine::ParamType::String) {
+                p.text = v.value;
+            } else if (v.type == "RAW" && p.type == engine::ParamType::Other) {
+                std::vector<uint8_t> raw;
+                for (size_t i = 0; i + 1 < v.value.size(); i += 2)
+                    raw.push_back(uint8_t(std::strtoul(v.value.substr(i, 2).c_str(), nullptr, 16)));
+                if (!raw.empty())
+                    p.raw = raw;
+            }
+        }
+    }
+}
+
+engine::ZGEOM* LastReplacedNpc() { return g_replaced; }
+
+void InstallNpcs() { OnScenePushed(OnScene); }
+
+} // namespace h2::editor

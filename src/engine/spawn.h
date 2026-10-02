@@ -31,6 +31,11 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error = nu
 // links it to the template and initializes it.
 ZGEOM* CreateItem(ZGEOM* itemTemplate, std::string* error = nullptr);
 
+// A plain object without a model (ZSTDOBJ helper, e.g. an NPC's aim helper or
+// a waypoint marker) under `parent` (may be null) with the given node flags.
+ZGEOM* CreateHelper(const std::string& name, ZGEOM* parent, uint32_t flags, const float mat[9], const float pos[3],
+                    std::string* error = nullptr, const char* className = "ZSTDOBJ");
+
 // Destroys an object created by CloneGeom (or CreateItem).
 bool DestroyGeom(ZGEOM* geom);
 

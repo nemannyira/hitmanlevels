@@ -155,6 +155,12 @@ void BoxFrom(const float c[3], const float h[3], const Transform& t, Box& box)
 
 } // namespace
 
+void ActorBox(const Transform& t, Box& box)
+{
+    const float c[3] = {0.0f, 92.5f, 0.0f}, h[3] = {35.0f, 92.5f, 35.0f};
+    BoxFrom(c, h, t, box);
+}
+
 bool ObjectBox(engine::ZGEOM* geom, const Transform& t, Box& box)
 {
     if (!geom || !IsLive(geom))

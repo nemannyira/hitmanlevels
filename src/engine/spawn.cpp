@@ -99,6 +99,47 @@ bool DoClone(CloneArgs& a)
     }
 }
 
+struct HelperArgs {
+    void* table;
+    const char* name;
+    const char* className;
+    ZGEOM* parent;
+    uint32_t flags;
+    float mat[9];
+    float pos[3];
+    ZBaseGeom* result;
+    int step;
+};
+
+bool DoHelper(HelperArgs& a)
+{
+    __try {
+        a.step = 1;
+        using CreateFn = ZBaseGeom*(__thiscall*)(void*, const char*, const char*, ZBaseGeom*, int);
+        ZBaseGeom* node = VFunc<CreateFn>(a.table, kTable_Create)(a.table, a.name, a.className, nullptr, 0);
+        if (!node || !node->geom)
+            return false;
+        a.result = node;
+        ZGEOM* geom = node->geom;
+        a.step = 2;
+        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, const float*, const float*)>(kNode_SetTransform)(node, a.mat,
+                                                                                                     a.pos);
+        uint32_t f = node->flags | (a.flags & 0xFFFFF & ~0x40000u);
+        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, uint32_t, uint32_t)>(kNode_SetFlags)(node, f, ~f);
+        a.step = 3;
+        if (a.parent)
+            VFunc<void(__thiscall*)(ZGEOM*, ZBaseGeom*, int, int)>(a.parent, kGeom_AddChild)(a.parent, node, 0, 0);
+        a.step = 4;
+        VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_Init)(geom);
+        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, uint32_t, uint32_t)>(kNode_SetFlags)(node, kFlagInitialized, 0);
+        VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_PostInit)(geom);
+        a.step = 5;
+        return true;
+    } __except (Filter(GetExceptionInformation())) {
+        return false;
+    }
+}
+
 constexpr int kTemplate_CreateItem = 0x2A8 / 4;  // ZGEOM* (ZGROUP* parent)
 constexpr uintptr_t kEngine_RootGroup = 0xAD8;
 
@@ -181,6 +222,42 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGE
         SafeString(source->name).c_str(), name.c_str(), static_cast<void*>(n), static_cast<void*>(n->geom), a.mesh,
         n->flags, n->boundRadius, src->boundRadius);
     return n->geom;
+}
+
+ZGEOM* CreateHelper(const std::string& name, ZGEOM* parent, uint32_t flags, const float mat[9], const float pos[3],
+                    std::string* error, const char* className)
+{
+    void* table = GeomTable();
+    if (!table) {
+        if (error)
+            *error = "no scene loaded";
+        return nullptr;
+    }
+    HelperArgs a{};
+    a.table = table;
+    a.name = name.c_str();
+    a.className = className ? className : "ZSTDOBJ";
+    a.parent = parent && IsReadable(parent, sizeof(ZGEOM)) ? parent : nullptr;
+    a.flags = flags;
+    memcpy(a.mat, mat, sizeof(a.mat));
+    memcpy(a.pos, pos, sizeof(a.pos));
+    bool ok;
+    {
+        game::RefAllocUnlock unlock;
+        ok = DoHelper(a);
+    }
+    if (!ok) {
+        if (a.result && a.result->geom && a.step > 1)
+            DoDestroy(a.result->geom);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "engine call failed (step %d, exception %08lX at %p)", a.step, g_faultCode,
+                 g_faultAddress);
+        if (error)
+            *error = buf;
+        Log("helper '%s': %s", name.c_str(), buf);
+        return nullptr;
+    }
+    return a.result->geom;
 }
 
 ZGEOM* CreateItem(ZGEOM* itemTemplate, std::string* error)

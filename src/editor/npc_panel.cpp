@@ -16,10 +16,13 @@
 #include "../log.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
+#include "freecam.h"
 #include "guides.h"
 #include "highlight.h"
+#include "level.h"
 #include "model.h"
 #include "npc_docs.h"
+#include "npcs.h"
 #include "scene_panel.h"
 
 namespace h2::editor {
@@ -35,25 +38,29 @@ struct NpcType {
     int count = 0;
 };
 
-// a behaviour of the scene: script class + the parameters of its first use
-struct Behaviour {
-    std::string shortName;
-    engine::ScriptInfo info;  // references as runtime refs
-    int uses = 0;
-};
-
 bool g_visible = true;
 std::string g_builtFor;
 std::vector<NpcType> g_types;
-std::vector<Behaviour> g_behaviours;
-int g_type = -1;            // chosen character
-int g_behaviour = -1;       // chosen behaviour (-1: none)
-engine::ScriptInfo g_edit;  // behaviour being edited for the next NPC
-std::vector<engine::ZGEOM*> g_spawned;
-std::vector<engine::ScriptInfo> g_spawnedScripts;  // their behaviour (runtime refs), same order
+std::vector<std::string> g_behaviourNames;  // script classes of the scene's characters
+int g_type = -1;              // character chosen for placing
+std::string g_newBehaviour;   // behaviour of the next one ("" = none)
+engine::ScriptInfo g_new;     // its settings
 std::string g_message;
-int g_counter;
-std::string g_info;        // "<table>:<parameter>" shown in the info box
+std::string g_info;           // "<table>:<parameter>" shown in the info box
+
+// the character being edited (stays while other objects are selected, e.g.
+// to point its settings at them)
+engine::ZGEOM* g_target;
+engine::ScriptInfo g_targetEdit;  // its settings (live values)
+bool g_targetHasBehaviour;
+double g_targetRead;              // when the live values were read
+std::string g_changeTo;           // another behaviour for a placed character
+
+// pick mode: the next click in the world sets this parameter
+std::string g_pickParam;
+std::string g_pickTable;          // "target" or "new"
+bool g_pickPending;
+int g_pickFrame;
 
 // expected movement: the points and lists in an NPC's parameters
 enum RoutesMode { kRoutesOff, kRoutesSelected, kRoutesAll };
@@ -63,52 +70,42 @@ struct Route {
     bool list = false;  // a list of points walked in order, or a single place
     std::vector<engine::ZGEOM*> points;
 };
-std::map<int, std::vector<Route>> g_routeCache;  // actor record -> its routes
+struct RouteCache {
+    std::vector<Route> routes;
+    double time = -1e9;
+};
+std::map<engine::ZGEOM*, RouteCache> g_routeCache;
 
 // placing
 bool g_placing;
-bool g_pickPending;
-int g_pickFrame;
+bool g_placePickPending;
+int g_placePickFrame;
 bool g_haveHit;
 float g_point[3];
 engine::ZGEOM* g_hitRoom;
 
-engine::ScriptInfo Runtime(engine::ScriptInfo s)
+std::string Lower(std::string s)
 {
-    for (engine::ScriptParam& p : s.params)
-        if (p.type == engine::ParamType::Ref)
-            p.bits = p.bits ? engine::RemapRef(p.bits) : 0;
+    for (char& c : s)
+        c = char(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
 
 void Build()
 {
     g_types.clear();
-    g_behaviours.clear();
-    g_type = g_behaviour = -1;
-    g_edit = {};
+    g_type = -1;
+    g_newBehaviour.clear();
+    g_new = {};
     g_builtFor = CurrentScene();
+    g_behaviourNames = BehaviourNames();
     const auto& records = engine::SceneRecords();
-    std::map<std::string, int> typeIndex, behaviourIndex;
-    for (const engine::SceneRecord& r : records) {
-        if (!r.script)
-            continue;
-        engine::ScriptInfo info;
-        if (!engine::ParseScript(r.script, info))
-            continue;
-        std::string shortName = engine::ScriptShortName(info.name);
-        auto [it, added] = behaviourIndex.try_emplace(info.name, int(g_behaviours.size()));
-        if (added)
-            g_behaviours.push_back({shortName, Runtime(info), 0});
-        g_behaviours[it->second].uses++;
-    }
-    for (int index : engine::ActorRecords()) {
+    std::map<std::string, int> typeIndex;
+    for (int index : NpcRecords()) {
         const engine::SceneRecord& r = records[index];
         NpcType t;
         t.record = index;
-        t.model = engine::ActorModelName(r);
-        if (t.model.empty())
-            t.model = r.name;
+        t.model = NpcModel(index);
         t.group = r.parent >= 0 ? records[r.parent].name : "";
         engine::ScriptInfo info;
         if (r.script && engine::ParseScript(r.script, info))
@@ -124,42 +121,27 @@ void Build()
     });
 }
 
-void ChooseBehaviour(int b)
+void ChooseNewBehaviour(const std::string& name)
 {
-    g_behaviour = b;
-    g_edit = b >= 0 ? g_behaviours[b].info : engine::ScriptInfo{};
+    g_newBehaviour = name;
+    g_new = {};
+    if (!name.empty())
+        BehaviourTemplate(name, g_new);
 }
 
 void ChooseType(int t)
 {
     g_type = t;
-    const auto& records = engine::SceneRecords();
-    const engine::SceneRecord& r = records[g_types[t].record];
     engine::ScriptInfo info;
-    int b = -1;
-    if (r.script && engine::ParseScript(r.script, info)) {
-        for (size_t i = 0; i < g_behaviours.size(); ++i)
-            if (g_behaviours[i].info.name == info.name)
-                b = int(i);
-        g_behaviour = b;
-        g_edit = Runtime(info);  // this character's own parameters
+    if (AuthoredBehaviour(g_types[t].record, info)) {
+        g_newBehaviour = engine::ScriptShortName(info.name);
+        g_new = info;  // this character's own settings
     } else {
-        ChooseBehaviour(-1);
+        ChooseNewBehaviour("");
     }
 }
 
-engine::ZGEOM* ActorOf(engine::ZGEOM* g)
-{
-    engine::ZBaseGeom* node = g && IsLive(g) ? g->node : nullptr;
-    for (int depth = 0; node && depth < 64; ++depth) {
-        if (!engine::IsReadable(node, sizeof(*node)))
-            return nullptr;
-        if (node->geom && IsLive(node->geom) && engine::IsA(node->geom, "ZActor"))
-            return node->geom;
-        node = node->parent;
-    }
-    return nullptr;
-}
+// ---- routes ----
 
 bool IsList(int record)
 {
@@ -240,21 +222,17 @@ std::vector<Route> RoutesOf(const engine::ScriptInfo& s)
     return routes;
 }
 
-const std::vector<Route>& RoutesOfRecord(int record)
+// routes of a character from its current settings (read twice a second)
+const std::vector<Route>& RoutesOfActor(engine::ZGEOM* actor)
 {
-    auto it = g_routeCache.find(record);
-    if (it != g_routeCache.end())
-        return it->second;
-    std::vector<Route> routes;
-    const engine::SceneRecord& r = engine::SceneRecords()[record];
-    engine::ScriptInfo info;
-    if (r.script && engine::ParseScript(r.script, info)) {
-        for (engine::ScriptParam& p : info.params)
-            if (p.type == engine::ParamType::Ref)
-                p.bits = p.bits ? engine::RemapRef(p.bits) : 0;
-        routes = RoutesOf(info);
+    RouteCache& c = g_routeCache[actor];
+    double now = NowMs();
+    if (now - c.time > 500.0) {
+        c.time = now;
+        engine::ScriptInfo s;
+        c.routes = CurrentBehaviour(actor, s) ? RoutesOf(s) : std::vector<Route>{};
     }
-    return g_routeCache[record] = std::move(routes);
+    return c.routes;
 }
 
 ImU32 RouteColor(size_t i)
@@ -302,33 +280,38 @@ void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool labe
     }
 }
 
+std::vector<engine::ZGEOM*> AllCharacters()
+{
+    std::vector<engine::ZGEOM*> out;
+    for (int rec : NpcRecords())
+        if (engine::ZGEOM* g = engine::RecordGeom(rec); g && IsLive(g))
+            out.push_back(g);
+    for (engine::ZGEOM* g : PlacedNpcs())
+        out.push_back(g);
+    return out;
+}
+
 void DrawAllRoutes()
 {
     if (g_routes == kRoutesOff || engine::SceneRecords().empty() || CurrentScene().empty())
         return;
     auto drawActor = [](engine::ZGEOM* actor) {
-        if (!actor || !IsLive(actor))
+        if (!actor || !IsLive(actor) || IsRemovedNpc(actor))
             return;
         Transform t = GetTransform(actor);
         float from[3] = {t.pos[0], t.pos[1] + 100.0f, t.pos[2]};  // about the waist
-        auto spawned = std::find(g_spawned.begin(), g_spawned.end(), actor);
-        if (spawned != g_spawned.end()) {
-            DrawRoutes(from, RoutesOf(g_spawnedScripts[spawned - g_spawned.begin()]), true);
-            return;
-        }
-        int rec = engine::RecordOf(actor);
-        if (rec >= 0)
-            DrawRoutes(from, RoutesOfRecord(rec), true);
+        DrawRoutes(from, RoutesOfActor(actor), true);
     };
     if (g_routes == kRoutesSelected) {
-        drawActor(ActorOf(Selected()));
+        engine::ZGEOM* a = ActorOf(Selected());
+        drawActor(a ? a : g_target);
         return;
     }
-    for (int rec : engine::ActorRecords())
-        drawActor(engine::RecordGeom(rec));
-    for (engine::ZGEOM* g : g_spawned)
+    for (engine::ZGEOM* g : AllCharacters())
         drawActor(g);
 }
+
+// ---- settings table ----
 
 std::string RefLabel(uint32_t ref)
 {
@@ -354,18 +337,20 @@ void ParamTooltip(const engine::ScriptParam& p)
     ImGui::EndTooltip();
 }
 
-// Parameter table; `editable` false shows the values only. Hovering a name
-// explains it, clicking it keeps the explanation in the info box below.
-void DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
+// Settings table; returns true when the user changed a value (numbers: when
+// the field is left). Hovering a name explains it, clicking it keeps the
+// explanation in the info box below.
+bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
 {
+    bool changed = false;
     if (s.params.empty()) {
-        ImGui::TextDisabled("no parameters");
-        return;
+        ImGui::TextDisabled("no settings");
+        return false;
     }
     if (!ImGui::BeginTable(table, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
-        return;
+        return false;
     ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-    ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+    ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 1.4f);
     engine::ZGEOM* sel = Selected();
     for (size_t i = 0; i < s.params.size(); ++i) {
         engine::ScriptParam& p = s.params[i];
@@ -382,40 +367,78 @@ void DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
         switch (p.type) {
         case engine::ParamType::Long: {
             int v = int(p.bits);
-            if (!editable)
+            if (!editable) {
                 ImGui::Text("%d", v);
-            else if (ImGui::InputInt("##v", &v, 0))
-                p.bits = uint32_t(v);
+            } else {
+                if (ImGui::InputInt("##v", &v, 0))
+                    p.bits = uint32_t(v);
+                changed |= ImGui::IsItemDeactivatedAfterEdit();
+            }
             break;
         }
         case engine::ParamType::Float: {
             float v;
             memcpy(&v, &p.bits, 4);
-            if (!editable)
+            if (!editable) {
                 ImGui::Text("%.2f", v);
-            else if (ImGui::InputFloat("##v", &v, 0, 0, "%.2f"))
-                memcpy(&p.bits, &v, 4);
+            } else {
+                if (ImGui::InputFloat("##v", &v, 0, 0, "%.2f"))
+                    memcpy(&p.bits, &v, 4);
+                changed |= ImGui::IsItemDeactivatedAfterEdit();
+            }
             break;
         }
         case engine::ParamType::Ref: {
             std::string label = RefLabel(p.bits);
+            bool picking = g_pickParam == p.name && g_pickTable == table;
             if (!editable) {
                 ImGui::TextUnformatted(label.c_str());
                 break;
             }
-            ImGui::TextUnformatted(label.c_str());
-            if (p.bits && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", PathOf(engine::GeomOfRef(p.bits)).c_str());
-            ImGui::SameLine();
-            ImGui::BeginDisabled(!sel || !IsLive(sel));
-            if (ImGui::SmallButton("= selected"))
-                p.bits = engine::RefOf(sel);
-            ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                ImGui::SetTooltip("Use the selected object (e.g. a waypoint or guard point)");
-            ImGui::SameLine();
-            if (ImGui::SmallButton("x"))
-                p.bits = 0;
+            // the value opens a menu: pick in the world / use the selection / none / go there
+            if (picking)
+                label = "click an object...";
+            ImGui::PushStyleColor(ImGuiCol_Text, picking ? ImVec4(1.0f, 0.85f, 0.45f, 1.0f)
+                                                         : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+            bool open = ImGui::Selectable((label + " ...##ref").c_str(), false);
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s\nclick: choose another object",
+                                  p.bits ? PathOf(engine::GeomOfRef(p.bits)).c_str() : "(none)");
+            if (open)
+                ImGui::OpenPopup("refmenu");
+            if (ImGui::BeginPopup("refmenu")) {
+                if (ImGui::MenuItem(picking ? "Stop picking" : "Pick in the world...")) {
+                    if (picking) {
+                        g_pickParam.clear();
+                    } else {
+                        g_pickParam = p.name;
+                        g_pickTable = table;
+                        g_pickPending = false;
+                    }
+                }
+                std::string selName = sel && IsLive(sel) ? engine::SafeString(sel->name) : "";
+                if (ImGui::MenuItem(("Use the selected object" + (selName.empty() ? "" : " (" + selName + ")")).c_str(),
+                                    nullptr, false, !selName.empty())) {
+                    p.bits = engine::RefOf(sel);
+                    changed = true;
+                }
+                if (ImGui::MenuItem("None", nullptr, false, p.bits != 0)) {
+                    p.bits = 0;
+                    changed = true;
+                }
+                engine::ZGEOM* target = p.bits ? engine::GeomOfRef(p.bits) : nullptr;
+                if (ImGui::MenuItem("Select it", nullptr, false, target && IsLive(target)))
+                    Select(target);
+                if (ImGui::MenuItem("Fly to it", nullptr, false, target && IsLive(target))) {
+                    Transform t = GetTransform(target);
+                    float cam[3] = {t.pos[0] - 300.0f, t.pos[1] + 200.0f, t.pos[2] - 300.0f};
+                    SetFreeCamEnabled(true);
+                    SetFreeCamPosition(cam);
+                    SetFreeCamAngles(45.0f, -25.0f);
+                }
+                ImGui::EndPopup();
+            }
             break;
         }
         case engine::ParamType::String: {
@@ -427,6 +450,7 @@ void DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
             snprintf(buf, sizeof(buf), "%s", p.text.c_str());
             if (ImGui::InputText("##v", buf, sizeof(buf)))
                 p.text = buf;
+            changed |= ImGui::IsItemDeactivatedAfterEdit();
             break;
         }
         default:
@@ -456,149 +480,137 @@ void DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
             ImGui::PopStyleColor();
         }
     }
+    return changed;
 }
 
-void DrawSelectedNpc()
+// ---- the edited character ----
+
+void SetTarget(engine::ZGEOM* actor)
 {
-    engine::ZGEOM* actor = ActorOf(Selected());
-    if (!actor)
+    if (actor == g_target)
         return;
-    ImGui::SeparatorText("Selected character");
-    int record = engine::RecordOf(actor);
-    bool ours = std::find(g_spawned.begin(), g_spawned.end(), actor) != g_spawned.end();
-    if (record < 0) {
-        ImGui::TextDisabled(ours ? "placed by the editor" : "not from the scene file");
-        return;
-    }
-    const auto& records = engine::SceneRecords();
-    const engine::SceneRecord& r = records[record];
-    ImGui::Text("%s", engine::ActorModelName(r).c_str());
-    ImGui::TextDisabled("record %d, in %s", record, r.parent >= 0 ? records[r.parent].name.c_str() : "-");
-    engine::ScriptInfo info;
-    if (!r.script || !engine::ParseScript(r.script, info)) {
-        ImGui::TextDisabled("no behaviour");
-        return;
-    }
-    ImGui::Text("Behaviour: %s", engine::ScriptShortName(info.name).c_str());
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", info.name.c_str());
-    ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("%s", DescribeBehaviour(engine::ScriptShortName(info.name)).c_str());
-    ImGui::PopTextWrapPos();
-    ImGui::TextDisabled("as authored in the level:");
-    engine::ScriptInfo shown = Runtime(info);
-    DrawParams(shown, false, "authored");
-    std::string model = engine::ActorModelName(r), script = engine::ScriptShortName(info.name);
-    for (size_t t = 0; t < g_types.size(); ++t) {
-        if (g_types[t].model != model || g_types[t].script != script)
-            continue;
-        if (ImGui::SmallButton("Use as the next NPC")) {
-            ChooseType(int(t));
-            g_edit = shown;  // with this character's own parameters
-        }
-        break;
-    }
+    g_target = actor;
+    g_targetRead = -1e9;
+    g_changeTo.clear();
+    g_pickParam.clear();
 }
 
-void DrawPanel()
+void RefreshTarget(bool force)
 {
-    if (CurrentScene().empty()) {
-        ImGui::TextDisabled("no scene loaded");
+    if (!g_target)
+        return;
+    double now = NowMs();
+    if (!force && (now - g_targetRead < 500.0 || ImGui::IsAnyItemActive() || !g_pickParam.empty()))
+        return;
+    g_targetRead = now;
+    g_targetHasBehaviour = CurrentBehaviour(g_target, g_targetEdit);
+}
+
+void ApplyTarget()
+{
+    std::string err;
+    engine::ZGEOM* now = EditNpcBehaviour(g_target, g_targetHasBehaviour ? &g_targetEdit : nullptr, &err);
+    if (!now) {
+        g_message = "not changed: " + err;
+        RefreshTarget(true);
         return;
     }
-    if (engine::SceneRecords().empty()) {
-        ImGui::TextWrapped("The scene's data was not captured: load the level again (it is read while loading).");
+    g_message = "changed (Ctrl+Z undoes)";
+    g_routeCache.erase(g_target);
+    if (now != g_target) {
+        g_target = now;
+        Select(now);
+    }
+    g_targetRead = NowMs();
+}
+
+std::string BehaviourLabel(const std::string& shortName) { return shortName.empty() ? "none" : shortName; }
+
+void DrawTarget()
+{
+    engine::ZGEOM* actor = g_target;
+    if (!actor || !IsLive(actor) || IsRemovedNpc(actor)) {
+        g_target = nullptr;
         return;
     }
-    if (g_builtFor != CurrentScene())
-        Build();
-
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
-    ImGui::Combo("Routes", &g_routes, "off\0selected NPC\0all NPCs\0");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Where the NPCs will go: their routes (numbered, with arrows in walking order)\n"
-                          "and the places in their behaviour (guard point, protect point, ...)");
-
-    ImGui::SeparatorText("Characters");
-    ImGui::TextDisabled("%d kinds, %d behaviours in this level", int(g_types.size()), int(g_behaviours.size()));
-    float listH = ImGui::GetTextLineHeightWithSpacing() * 8;
-    if (ImGui::BeginChild("types", ImVec2(0, listH), ImGuiChildFlags_Borders)) {
-        for (size_t i = 0; i < g_types.size(); ++i) {
-            const NpcType& t = g_types[i];
-            char label[256];
-            snprintf(label, sizeof(label), "%s##t%d", t.model.c_str(), int(i));
-            if (ImGui::Selectable(label, g_type == int(i), ImGuiSelectableFlags_AllowOverlap))
-                ChooseType(int(i));
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s\nbehaviour: %s\n%d in the level (e.g. %s)", t.model.c_str(),
-                                  t.script.empty() ? "none" : t.script.c_str(), t.count, t.group.c_str());
-            ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(t.script.c_str()).x);
-            ImGui::TextDisabled("%s", t.script.c_str());
+    RefreshTarget(false);
+    bool placed = IsPlacedNpc(actor);
+    int record = NpcRecordOf(actor);
+    ImGui::SeparatorText("Character");
+    ImGui::Text("%s", record >= 0 ? NpcModel(record).c_str() : engine::SafeString(actor->name).c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled(placed ? "(placed by the level)" : "(of the scene)");
+    std::string state = engine::ScriptState(actor);
+    if (!state.empty())
+        ImGui::TextDisabled("now: %s", state.c_str());
+    if (ImGui::SmallButton("Select"))
+        Select(actor);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Fly to")) {
+        Transform t = GetTransform(actor);
+        float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 180.0f, t.pos[2] - t.mat[2] * 300.0f};
+        SetFreeCamEnabled(true);
+        SetFreeCamPosition(cam);
+    }
+    if (placed) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Remove")) {
+            std::string err;
+            g_message = RemoveNpc(actor, &err) ? "removed (Ctrl+Z undoes)" : "not removed: " + err;
+            g_target = nullptr;
+            return;
         }
     }
-    ImGui::EndChild();
 
-    if (g_type >= 0) {
-        ImGui::SeparatorText("Behaviour of the next NPC");
-        const char* current = g_behaviour >= 0 ? g_behaviours[g_behaviour].shortName.c_str() : "none";
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::BeginCombo("##behaviour", current)) {
-            if (ImGui::Selectable("none (stands still)", g_behaviour < 0))
-                ChooseBehaviour(-1);
-            for (size_t i = 0; i < g_behaviours.size(); ++i) {
-                char label[200];
-                snprintf(label, sizeof(label), "%s  (%d)", g_behaviours[i].shortName.c_str(), g_behaviours[i].uses);
-                if (ImGui::Selectable(label, g_behaviour == int(i)))
-                    ChooseBehaviour(int(i));
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("%s", g_behaviours[i].info.name.c_str());
-            }
+    std::string current = g_targetHasBehaviour ? engine::ScriptShortName(g_targetEdit.name) : "";
+    ImGui::Text("Behaviour: %s", BehaviourLabel(current).c_str());
+    if (!current.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", DescribeBehaviour(current).c_str());
+        ImGui::PopTextWrapPos();
+    }
+    if (placed) {
+        // another kind of behaviour: the character is made again
+        ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Change").x - ImGui::GetStyle().ItemSpacing.x * 2 - 8);
+        if (ImGui::BeginCombo("##changeto", g_changeTo.empty() ? "another behaviour..." : g_changeTo.c_str())) {
+            if (ImGui::Selectable("none (stands still)", g_changeTo == "-"))
+                g_changeTo = "-";
+            for (const std::string& b : g_behaviourNames)
+                if (ImGui::Selectable(b.c_str(), g_changeTo == b))
+                    g_changeTo = b;
             ImGui::EndCombo();
         }
-        if (g_behaviour >= 0) {
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextDisabled("%s", DescribeBehaviour(g_behaviours[g_behaviour].shortName).c_str());
-            ImGui::PopTextWrapPos();
-            DrawParams(g_edit, true, "next");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(g_changeTo.empty());
+        if (ImGui::Button("Change")) {
+            if (g_changeTo == "-") {
+                g_targetHasBehaviour = false;
+            } else {
+                engine::ScriptInfo s;
+                if (BehaviourTemplate(g_changeTo, s)) {
+                    g_targetEdit = s;
+                    g_targetHasBehaviour = true;
+                }
+            }
+            g_changeTo.clear();
+            ApplyTarget();
         }
-        if (g_placing) {
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "click in the world to place the NPC");
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Cancel (Esc)"))
-                CancelNpcPlacement();
-        } else if (ImGui::Button("Place NPC", ImVec2(-1, 0))) {
-            g_placing = true;
-            g_pickPending = false;
-            g_haveHit = false;
-            g_message.clear();
-        }
+        ImGui::EndDisabled();
     } else {
-        ImGui::TextDisabled("choose a character to place one");
+        ImGui::TextDisabled("(its kind of behaviour stays; its settings can change)");
     }
-
-    DrawSelectedNpc();
-
-    if (!g_spawned.empty()) {
-        ImGui::SeparatorText("Placed NPCs (until the level is reloaded)");
-        for (size_t i = 0; i < g_spawned.size(); ++i) {
-            engine::ZGEOM* g = g_spawned[i];
-            ImGui::PushID(int(i));
-            bool live = IsLive(g);
-            char label[160];
-            snprintf(label, sizeof(label), "%s%s", live ? engine::SafeString(g->name).c_str() : "(gone)",
-                     live && Selected() == g ? "  (selected)" : "");
-            if (ImGui::Selectable(label, live && Selected() == g) && live)
-                Select(g);
-            ImGui::PopID();
-        }
+    if (g_targetHasBehaviour) {
+        ImGui::TextDisabled("Settings (live; a change applies when you leave the field):");
+        if (DrawParams(g_targetEdit, true, "target"))
+            ApplyTarget();
     }
-    if (!g_message.empty())
-        ImGui::TextWrapped("%s", g_message.c_str());
 }
 
-void OnPick(engine::ZGEOM* hit, const float* point, const float*)
+// ---- placing ----
+
+void OnPlacePick(engine::ZGEOM* hit, const float* point, const float*)
 {
-    g_pickPending = false;
+    g_placePickPending = false;
     g_haveHit = point != nullptr;
     if (point)
         memcpy(g_point, point, sizeof(g_point));
@@ -611,13 +623,8 @@ void Place()
 {
     if (g_type < 0 || !g_haveHit)
         return;
-    engine::NpcSpawn s;
-    s.record = g_types[g_type].record;
-    s.parent = g_hitRoom && IsLive(g_hitRoom) ? g_hitRoom : nullptr;
-    if (!s.parent) {
-        g_message = "no room under the mouse";
-        return;
-    }
+    NpcSpec spec;
+    spec.record = g_types[g_type].record;
     // facing the camera
     game::ZCAMERA* cam = game::MainCamera();
     float f[3] = {0, 0, 1};
@@ -636,68 +643,213 @@ void Place()
         }
     }
     float m[9] = {f[0], 0, f[2], 0, 1, 0, f[2], 0, -f[0]};  // rows forward, up, right
-    memcpy(s.mat, m, sizeof(m));
-    memcpy(s.pos, g_point, sizeof(g_point));
-    if (g_behaviour >= 0)
-        s.script = engine::BuildScriptBlock(g_edit);
-    char name[96];
-    snprintf(name, sizeof(name), "NPC_%s_%d", g_types[g_type].model.c_str(), ++g_counter);
-    s.name = name;
+    memcpy(spec.transform.mat, m, sizeof(m));
+    memcpy(spec.transform.pos, g_point, sizeof(g_point));
+    spec.hasBehaviour = !g_newBehaviour.empty();
+    if (spec.hasBehaviour)
+        spec.behaviour = g_new;
     std::string err;
-    engine::ZGEOM* npc = engine::SpawnNpc(s, &err);
+    engine::ZGEOM* npc = PlaceNpc(spec, &err);
     if (!npc) {
         g_message = "placing failed: " + err;
         return;
     }
-    AdoptEngineOwned(npc);
-    g_spawned.push_back(npc);
-    g_spawnedScripts.push_back(g_behaviour >= 0 ? g_edit : engine::ScriptInfo{});
     Select(npc);
-    g_message = std::string("placed ") + name +
-                (g_behaviour >= 0 ? " with behaviour " + g_behaviours[g_behaviour].shortName : " without behaviour");
+    SetTarget(npc);
+    g_message = std::string("placed ") + engine::SafeString(npc->name) + " (" + BehaviourLabel(g_newBehaviour) +
+                "), Ctrl+Z undoes";
+}
+
+void DrawPlace()
+{
+    ImGui::SeparatorText("Place a character");
+    float listH = ImGui::GetTextLineHeightWithSpacing() * 7;
+    if (ImGui::BeginChild("types", ImVec2(0, listH), ImGuiChildFlags_Borders)) {
+        for (size_t i = 0; i < g_types.size(); ++i) {
+            const NpcType& t = g_types[i];
+            char label[256];
+            snprintf(label, sizeof(label), "%s##t%d", t.model.c_str(), int(i));
+            if (ImGui::Selectable(label, g_type == int(i), ImGuiSelectableFlags_AllowOverlap))
+                ChooseType(int(i));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s\nbehaviour: %s\n%d in the level (e.g. %s)", t.model.c_str(),
+                                  t.script.empty() ? "none" : t.script.c_str(), t.count, t.group.c_str());
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(t.script.c_str()).x);
+            ImGui::TextDisabled("%s", t.script.c_str());
+        }
+    }
+    ImGui::EndChild();
+    if (g_type < 0) {
+        ImGui::TextDisabled("choose a character to place one");
+        return;
+    }
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##behaviour", BehaviourLabel(g_newBehaviour).c_str())) {
+        if (ImGui::Selectable("none (stands still)", g_newBehaviour.empty()))
+            ChooseNewBehaviour("");
+        for (const std::string& b : g_behaviourNames)
+            if (ImGui::Selectable(b.c_str(), g_newBehaviour == b))
+                ChooseNewBehaviour(b);
+        ImGui::EndCombo();
+    }
+    if (!g_newBehaviour.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", DescribeBehaviour(g_newBehaviour).c_str());
+        ImGui::PopTextWrapPos();
+        DrawParams(g_new, true, "new");
+    }
+    if (g_placing) {
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "click in the world to place it");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancel (Esc)"))
+            CancelNpcPlacement();
+    } else if (ImGui::Button("Place character", ImVec2(-1, 0))) {
+        g_placing = true;
+        g_placePickPending = false;
+        g_haveHit = false;
+        g_message.clear();
+    }
+}
+
+void DrawList()
+{
+    std::vector<engine::ZGEOM*> all = AllCharacters();
+    char header[64];
+    snprintf(header, sizeof(header), "Characters (%d)###chars", int(all.size()));
+    if (!ImGui::CollapsingHeader(header))
+        return;
+    for (size_t i = 0; i < all.size(); ++i) {
+        engine::ZGEOM* g = all[i];
+        ImGui::PushID(int(i));
+        int rec = NpcRecordOf(g);
+        engine::ScriptInfo s;
+        std::string b = CurrentBehaviour(g, s) ? engine::ScriptShortName(s.name) : "-";
+        char label[192];
+        snprintf(label, sizeof(label), "%s%s", rec >= 0 ? NpcModel(rec).c_str() : "?", IsPlacedNpc(g) ? " *" : "");
+        if (ImGui::Selectable(label, g == g_target, ImGuiSelectableFlags_AllowOverlap)) {
+            Select(g);
+            SetTarget(g);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s\nnow: %s%s", PathOf(g).c_str(), engine::ScriptState(g).c_str(),
+                              IsPlacedNpc(g) ? "\n* placed by the level" : "");
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(b.c_str()).x);
+        ImGui::TextDisabled("%s", b.c_str());
+        ImGui::PopID();
+    }
+}
+
+void DrawPanel()
+{
+    if (CurrentScene().empty()) {
+        ImGui::TextDisabled("no scene loaded");
+        return;
+    }
+    if (engine::SceneRecords().empty()) {
+        ImGui::TextWrapped("The scene's data was not captured: load the level again (it is read while loading).");
+        return;
+    }
+    if (g_builtFor != CurrentScene())
+        Build();
+    if (engine::ZGEOM* a = ActorOf(Selected()))
+        SetTarget(a);
+
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+    ImGui::Combo("Routes", &g_routes, "off\0selected character\0all characters\0");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Where the characters will go: their routes (numbered, with arrows in walking order)\n"
+                          "and the places in their behaviour (guard point, protect point, ...)");
+    if (!g_message.empty())
+        ImGui::TextWrapped("%s", g_message.c_str());
+
+    if (g_target)
+        DrawTarget();
+    else
+        ImGui::TextDisabled("Select a character (click it, or in the list below) to see and change its behaviour.");
+    DrawList();
+    DrawPlace();
+}
+
+// pick mode result
+void OnParamPick(engine::ZGEOM* hit, const float*, const float*)
+{
+    g_pickPending = false;
+    if (g_pickParam.empty() || !hit)
+        return;
+    engine::ScriptInfo& s = g_pickTable == "new" ? g_new : g_targetEdit;
+    for (engine::ScriptParam& p : s.params) {
+        if (p.name != g_pickParam || p.type != engine::ParamType::Ref)
+            continue;
+        p.bits = engine::RefOf(hit);
+        g_message = p.name + " = " + engine::SafeString(hit->name);
+    }
+    bool target = g_pickTable == "target";
+    g_pickParam.clear();
+    if (target && g_target)
+        ApplyTarget();
 }
 
 } // namespace
 
-bool NpcPlacing() { return g_placing; }
+bool NpcPlacing() { return g_placing || !g_pickParam.empty(); }
 
 void CancelNpcPlacement()
 {
     g_placing = false;
-    g_pickPending = false;
+    g_placePickPending = false;
+    g_pickParam.clear();
 }
 
 void UpdateNpcPlacement()
 {
-    if (!g_placing)
-        return;
     ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsKeyPressed(ImGuiKey_Escape) || g_type < 0) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
         CancelNpcPlacement();
         return;
     }
     bool overWorld = !io.WantCaptureMouse && !ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    if (!g_pickParam.empty()) {  // pick an object for a setting
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        std::string text = "click the object to use as " + g_pickParam + "   Esc: cancel";
+        ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
+        ImVec2 size = ImGui::CalcTextSize(text.c_str());
+        dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170),
+                          4);
+        dl->AddText(p, IM_COL32(255, 220, 120, 255), text.c_str());
+        if (overWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            g_pickPending = true;
+            g_pickFrame = ImGui::GetFrameCount();
+            RequestPick(io.MousePos.x, io.MousePos.y, OnParamPick);
+        }
+        return;
+    }
+    if (!g_placing)
+        return;
+    if (g_type < 0) {
+        CancelNpcPlacement();
+        return;
+    }
     if (!overWorld)
         return;
-    if (g_pickPending && ImGui::GetFrameCount() - g_pickFrame > 10)
-        g_pickPending = false;
-    if (!g_pickPending) {
-        g_pickPending = true;
-        g_pickFrame = ImGui::GetFrameCount();
-        RequestPick(io.MousePos.x, io.MousePos.y, OnPick);
+    if (g_placePickPending && ImGui::GetFrameCount() - g_placePickFrame > 10)
+        g_placePickPending = false;
+    if (!g_placePickPending) {
+        g_placePickPending = true;
+        g_placePickFrame = ImGui::GetFrameCount();
+        RequestPick(io.MousePos.x, io.MousePos.y, OnPlacePick);
     }
     if (g_haveHit) {
-        if (g_routes != kRoutesOff && g_behaviour >= 0) {
+        if (g_routes != kRoutesOff && !g_newBehaviour.empty()) {
             float from[3] = {g_point[0], g_point[1] + 100.0f, g_point[2]};
-            DrawRoutes(from, RoutesOf(g_edit), true);
+            DrawRoutes(from, RoutesOf(g_new), true);
         }
         DrawSnapTarget(g_point, IM_COL32(64, 224, 255, 255));
         float top[3] = {g_point[0], g_point[1] + 180.0f, g_point[2]};
         DrawLine3D(g_point, top, IM_COL32(64, 224, 255, 200), 2.0f);  // about a person's height
     }
     char text[256];
-    snprintf(text, sizeof(text), "%s (%s)\nclick: place   Esc: cancel%s", g_types[g_type].model.c_str(),
-             g_behaviour >= 0 ? g_behaviours[g_behaviour].shortName.c_str() : "no behaviour",
+    snprintf(text, sizeof(text), "%s (%s)\nclick: place   Shift+click: place more   Esc: cancel%s",
+             g_types[g_type].model.c_str(), BehaviourLabel(g_newBehaviour).c_str(),
              g_haveHit ? "" : "\nno surface under the mouse");
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
@@ -707,7 +859,7 @@ void UpdateNpcPlacement()
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && g_haveHit) {
         Place();
         if (!io.KeyShift)
-            CancelNpcPlacement();
+            g_placing = false;
     }
 }
 
@@ -717,18 +869,17 @@ void InstallNpcPanel()
     overlay::AddPanel({"NPCs", &g_visible, DrawPanel, overlay::Dock::Left});
     static bool always = true;
     overlay::AddPanel({nullptr, &always, [] {
-                           if (!NpcPlacing())
+                           if (!g_placing)
                                DrawAllRoutes();
                        }});
     OnScenePushed([](const std::string&) {
         g_builtFor.clear();
         g_types.clear();
-        g_behaviours.clear();
-        g_spawned.clear();
-        g_spawnedScripts.clear();
+        g_behaviourNames.clear();
         g_routeCache.clear();
         g_info.clear();
-        g_type = g_behaviour = -1;
+        g_type = -1;
+        g_target = nullptr;
         g_hitRoom = nullptr;
         CancelNpcPlacement();
     });

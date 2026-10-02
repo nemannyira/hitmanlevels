@@ -269,7 +269,7 @@ void Shortcuts()
             DuplicateSelection();
         } else if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
             DeleteSelection();
-        } else if (ImGui::IsKeyPressed(ImGuiKey_G) && !IsActor(sel)) {
+        } else if (ImGui::IsKeyPressed(ImGuiKey_G)) {
             BeginGrab(sel);
         } else if (ImGui::IsKeyPressed(ImGuiKey_H)) {
             ObjectState before = GetState(sel), after = before;
@@ -302,7 +302,7 @@ void DrawToolbar()
     ImGui::SameLine();
     {
         engine::ZGEOM* sel = Selected();
-        ImGui::BeginDisabled(!sel || !IsLive(sel) || IsActor(sel) || Placing());
+        ImGui::BeginDisabled(!sel || !IsLive(sel) || Placing());
         if (ImGui::Button("Grab (G)"))
             BeginGrab(sel);
         ImGui::EndDisabled();
@@ -348,7 +348,7 @@ void EditMenu()
     ImGui::Separator();
     if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, have))
         DuplicateSelection();
-    if (ImGui::MenuItem("Grab onto a surface", "G", false, have && !IsActor(sel) && !Placing()))
+    if (ImGui::MenuItem("Grab onto a surface", "G", false, have && !Placing()))
         BeginGrab(sel);
     if (ImGui::MenuItem("Delete", "Del", false, have && FindSpawned(sel)))
         DeleteSelection();
@@ -383,7 +383,7 @@ void DrawViewport()
     bool haveCamera = CameraMatrices(view, proj);
     bool using_ = false;
     bool actor = sel && IsLive(sel) && IsActor(sel);
-    if (sel && IsLive(sel) && haveCamera && !FreeCamLooking() && !actor) {
+    if (sel && IsLive(sel) && haveCamera && !FreeCamLooking()) {  // characters: teleported (SetTransform)
         float m[16];
         ToGizmo(GetTransform(sel), m);
         float snap[3] = {g_snapMove, g_snapMove, g_snapMove};

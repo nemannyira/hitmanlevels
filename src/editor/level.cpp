@@ -26,6 +26,7 @@ namespace {
 
 LevelDocument g_level;
 std::map<std::string, engine::ZGEOM*> g_live;  // spawned id -> its object in the loaded scene
+std::map<std::string, engine::ZGEOM*> g_liveNpcs;  // npc id -> its character in the loaded scene
 bool g_panelVisible = true;
 bool g_autoApply = true;
 bool g_applyPending;
@@ -110,6 +111,110 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
     return g;
 }
 
+// ---- characters ----
+
+json ParamsJson(const std::vector<ParamValue>& params)
+{
+    json a = json::array();
+    for (const ParamValue& v : params)
+        a.push_back({{"name", v.name}, {"type", v.type}, {"value", v.value}});
+    return a;
+}
+
+std::vector<ParamValue> ParamsFromJson(const json& a)
+{
+    std::vector<ParamValue> out;
+    if (!a.is_array())
+        return out;
+    for (const json& o : a)
+        out.push_back({o.value("name", ""), o.value("type", ""), o.value("value", "")});
+    return out;
+}
+
+engine::ZGEOM* LiveNpc(const std::string& id)
+{
+    auto it = g_liveNpcs.find(id);
+    if (it == g_liveNpcs.end())
+        return nullptr;
+    if (!IsLive(it->second) || IsRemovedNpc(it->second)) {
+        g_liveNpcs.erase(it);
+        return nullptr;
+    }
+    return it->second;
+}
+
+// A behaviour with the saved settings, on the class's declarations of this scene.
+bool BehaviourFromSaved(const std::string& script, const std::vector<ParamValue>& params, engine::ScriptInfo& out)
+{
+    if (!BehaviourTemplate(script, out))
+        return false;
+    LoadParams(out, params);
+    return true;
+}
+
+engine::ZGEOM* MaterializeNpc(const LevelNpc& n, std::string* error = nullptr)
+{
+    if (engine::ZGEOM* g = LiveNpc(n.id))
+        return g;
+    if (n.record < 0 || NpcModel(n.record) != n.model) {
+        if (error)
+            *error = "the scene has no character " + n.model + " (record " + std::to_string(n.record) + ")";
+        return nullptr;
+    }
+    NpcSpec spec;
+    spec.record = n.record;
+    spec.transform = n.transform;
+    spec.name = n.id;
+    spec.hasBehaviour = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, spec.behaviour);
+    engine::ZGEOM* g = CreateNpc(spec, error);
+    if (g)
+        g_liveNpcs[n.id] = g;
+    return g;
+}
+
+bool AddNpcEntry(const LevelNpc& n)
+{
+    if (!MaterializeNpc(n))
+        return false;
+    g_level.npcs.push_back(n);
+    g_level.dirty = true;
+    return true;
+}
+
+bool RemoveNpcEntry(const std::string& id)
+{
+    if (engine::ZGEOM* g = LiveNpc(id))
+        DeleteNpc(g);
+    g_liveNpcs.erase(id);
+    for (auto it = g_level.npcs.begin(); it != g_level.npcs.end(); ++it)
+        if (it->id == id) {
+            g_level.npcs.erase(it);
+            g_level.dirty = true;
+            return true;
+        }
+    return false;
+}
+
+LevelNpc* NpcEntryOf(engine::ZGEOM* actor)
+{
+    for (auto& n : g_level.npcs)
+        if (LiveNpc(n.id) == actor)
+            return &n;
+    return nullptr;
+}
+
+bool ApplyNpcEdit(const NpcEditEntry& e)
+{
+    engine::ZGEOM* actor = engine::RecordGeom(e.record);
+    if (!actor || !IsLive(actor))
+        return false;
+    engine::ScriptInfo s;
+    if (!CurrentBehaviour(actor, s))
+        return false;
+    LoadParams(s, e.params);
+    return SetNpcBehaviour(actor, &s);
+}
+
 bool RemoveSpawned(const std::string& id)
 {
     if (engine::ZGEOM* g = LiveSpawned(id))
@@ -165,6 +270,7 @@ void OnScene(const std::string& scene)
     g_applyPending = g_autoApply && !g_level.baseScene.empty() && scene == g_level.baseScene;
     g_applyWaitFrames = 2;  // let the scene finish creating its objects
     g_live.clear();         // the editor destroyed them when the previous scene was left
+    g_liveNpcs.clear();
     script::ForgetScriptObjects();
     for (auto& [path, e] : g_level.objects)
         e.hasOriginal = false;  // originals belong to the previous load
@@ -192,8 +298,8 @@ void DrawPanel()
     else
         ImGui::TextDisabled("Mods\\%s", L.folder.c_str());
     ImGui::TextDisabled("scene %s", L.baseScene.empty() ? "-" : L.baseScene.c_str());
-    ImGui::Text("%d edits, %d new objects, %d scripts", int(L.objects.size()), int(L.spawned.size()),
-                int(L.scripts.size()));
+    ImGui::Text("%d edits, %d new objects, %d characters, %d scripts", int(L.objects.size()), int(L.spawned.size()),
+                int(L.npcs.size()), int(L.scripts.size()));
     ImGui::BeginDisabled(L.folder.empty());
     if (ImGui::Button("Save")) {
         std::string err;
@@ -297,6 +403,11 @@ LevelDocument& CurrentLevel() { return g_level; }
 
 void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectState& after)
 {
+    if (LevelNpc* n = NpcEntryOf(geom)) {  // a placed character: its starting place
+        n->transform = after.transform;
+        g_level.dirty = true;
+        return;
+    }
     if (SpawnedObject* s = EntryOf(geom)) {
         s->transform = after.transform;
         s->hidden = after.hidden;
@@ -359,6 +470,25 @@ bool SaveLevel(std::string* error)
         o["hidden"] = s.hidden;
         j["spawned"].push_back(o);
     }
+    j["npcs"] = json::array();
+    for (const LevelNpc& n : g_level.npcs) {
+        ObjectState st;
+        st.transform = n.transform;
+        json o = StateJson(st);
+        o.erase("hidden");
+        o["id"] = n.id;
+        o["record"] = n.record;
+        o["model"] = n.model;
+        if (n.hasBehaviour) {
+            o["behaviour"] = n.behaviour;
+            o["params"] = ParamsJson(n.params);
+        }
+        j["npcs"].push_back(o);
+    }
+    j["npc_edits"] = json::array();
+    for (auto& [record, e] : g_level.npcEdits)
+        j["npc_edits"].push_back({{"record", record}, {"path", e.path}, {"behaviour", e.behaviour},
+                                  {"params", ParamsJson(e.params)}});
     j["scripts"] = g_level.scripts;
 
     std::string dir = ModsDir() + g_level.folder;
@@ -417,6 +547,29 @@ bool LoadLevel(const std::string& folder, std::string* error)
         s.item = o.value("kind", "") == "item";
         s.parentPath = o.value("parent", "");
         L.spawned.push_back(s);
+    }
+    for (const json& o : j.value("npcs", json::array())) {
+        LevelNpc n;
+        ObjectState st;
+        if (!StateFromJson(o, st))
+            continue;
+        n.transform = st.transform;
+        n.id = o.value("id", "");
+        n.record = o.value("record", -1);
+        n.model = o.value("model", "");
+        n.behaviour = o.value("behaviour", "");
+        n.hasBehaviour = !n.behaviour.empty();
+        n.params = ParamsFromJson(o.value("params", json::array()));
+        L.npcs.push_back(n);
+    }
+    for (const json& o : j.value("npc_edits", json::array())) {
+        NpcEditEntry e;
+        e.record = o.value("record", -1);
+        e.path = o.value("path", "");
+        e.behaviour = o.value("behaviour", "");
+        e.params = ParamsFromJson(o.value("params", json::array()));
+        if (e.record >= 0)
+            L.npcEdits[e.record] = e;
     }
     L.scripts = j.value("scripts", std::vector<std::string>{});
     g_level = std::move(L);
@@ -567,6 +720,122 @@ bool DeleteObject(engine::ZGEOM* geom)
 
 const SpawnedObject* FindSpawned(engine::ZGEOM* geom) { return EntryOf(geom); }
 
+const LevelNpc* FindLevelNpc(engine::ZGEOM* actor) { return NpcEntryOf(actor); }
+
+engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error)
+{
+    auto fail = [&](const std::string& why) -> engine::ZGEOM* {
+        if (error)
+            *error = why;
+        return nullptr;
+    };
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return fail("the level is for scene " + g_level.baseScene);
+    LevelNpc n;
+    n.record = spec.record;
+    n.model = NpcModel(spec.record);
+    n.transform = spec.transform;
+    n.hasBehaviour = spec.hasBehaviour;
+    if (spec.hasBehaviour) {
+        n.behaviour = spec.behaviour.name;
+        n.params = SaveParams(spec.behaviour);
+    }
+    for (int k = 1;; ++k) {
+        n.id = "NPC_" + n.model + "_" + std::to_string(k);
+        bool used = false;
+        for (const LevelNpc& o : g_level.npcs)
+            used |= o.id == n.id;
+        if (!used && !Resolve("ROOT/" + n.id + "_Group/" + n.id))
+            break;
+    }
+    std::string err;
+    engine::ZGEOM* g = MaterializeNpc(n, &err);
+    if (!g)
+        return fail(err);
+    g_level.npcs.push_back(n);
+    g_level.dirty = true;
+    std::string id = n.id;
+    PushAction("place character", [id] { return RemoveNpcEntry(id); }, [n] { return AddNpcEntry(n); });
+    return g;
+}
+
+bool RemoveNpc(engine::ZGEOM* actor, std::string* error)
+{
+    LevelNpc* e = NpcEntryOf(actor);
+    if (!e) {
+        if (error)
+            *error = "only characters the level placed can be removed";
+        return false;
+    }
+    LevelNpc copy = *e;
+    RemoveNpcEntry(copy.id);
+    PushAction("remove character", [copy] { return AddNpcEntry(copy); },
+               [copy] { return RemoveNpcEntry(copy.id); });
+    return true;
+}
+
+engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, std::string* error)
+{
+    if (LevelNpc* e = NpcEntryOf(actor)) {
+        LevelNpc before = *e;
+        if (!SetNpcBehaviour(actor, behaviour, error))
+            return nullptr;
+        engine::ZGEOM* now = actor;
+        if (!IsLive(actor) || IsRemovedNpc(actor))  // made again with another behaviour
+            now = LastReplacedNpc();
+        g_liveNpcs[e->id] = now;
+        e->hasBehaviour = behaviour != nullptr;
+        e->behaviour = behaviour ? behaviour->name : "";
+        e->params = behaviour ? SaveParams(*behaviour) : std::vector<ParamValue>{};
+        LevelNpc after = *e;
+        g_level.dirty = true;
+        PushAction("character behaviour",
+                   [before] { return RemoveNpcEntry(before.id) && AddNpcEntry(before); },
+                   [after] { return RemoveNpcEntry(after.id) && AddNpcEntry(after); });
+        return now;
+    }
+    int record = engine::RecordOf(actor);
+    if (record < 0) {
+        if (error)
+            *error = "not a character of this scene";
+        return nullptr;
+    }
+    engine::ScriptInfo old;
+    bool hadOld = CurrentBehaviour(actor, old);
+    if (!SetNpcBehaviour(actor, behaviour, error))
+        return nullptr;
+    NpcEditEntry e;
+    e.record = record;
+    e.path = PathOf(actor);
+    e.behaviour = behaviour ? behaviour->name : "";
+    e.params = behaviour ? SaveParams(*behaviour) : std::vector<ParamValue>{};
+    auto prev = g_level.npcEdits.find(record);
+    NpcEditEntry previous;
+    bool hadPrevious = prev != g_level.npcEdits.end();
+    if (hadPrevious)
+        previous = prev->second;
+    g_level.npcEdits[record] = e;
+    g_level.dirty = true;
+    if (hadOld) {
+        NpcEditEntry undoTo = hadPrevious ? previous : NpcEditEntry{record, e.path, old.name, SaveParams(old)};
+        PushAction("character settings",
+                   [undoTo, hadPrevious, record] {
+                       if (hadPrevious)
+                           g_level.npcEdits[record] = undoTo;
+                       else
+                           g_level.npcEdits.erase(record);
+                       return ApplyNpcEdit(undoTo);
+                   },
+                   [e, record] {
+                       g_level.npcEdits[record] = e;
+                       return ApplyNpcEdit(e);
+                   });
+    }
+    return actor;
+}
+
 int ApplyLevel()
 {
     int n = 0;
@@ -584,6 +853,15 @@ int ApplyLevel()
         SetState(geom, e.state);
         ++n;
     }
+    for (const LevelNpc& npc : g_level.npcs) {
+        std::string err;
+        if (MaterializeNpc(npc, &err))
+            ++n;
+        else
+            Log("level: character %s: %s", npc.id.c_str(), err.c_str());
+    }
+    for (auto& [record, e] : g_level.npcEdits)
+        n += ApplyNpcEdit(e);
     return n;
 }
 
@@ -593,6 +871,16 @@ void RevertLevel()
         if (IsSpawned(g))
             DestroySpawned(g);
     g_live.clear();
+    for (auto& [id, g] : g_liveNpcs)
+        if (IsLive(g))
+            DeleteNpc(g);
+    g_liveNpcs.clear();
+    for (auto& [record, e] : g_level.npcEdits) {  // back to the settings of the scene file
+        engine::ZGEOM* actor = engine::RecordGeom(record);
+        engine::ScriptInfo authored;
+        if (actor && IsLive(actor) && AuthoredBehaviour(record, authored))
+            SetNpcBehaviour(actor, &authored);
+    }
     for (auto& [path, e] : g_level.objects) {
         if (!e.hasOriginal)
             continue;

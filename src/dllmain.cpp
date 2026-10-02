@@ -18,6 +18,7 @@
 #include "editor/level.h"
 #include "editor/models_panel.h"
 #include "editor/npc_panel.h"
+#include "editor/npcs.h"
 #include "editor/placement.h"
 #include "editor/scene_panel.h"
 #include "editor/viewport.h"
@@ -103,6 +104,7 @@ void Init()
     h2::editor::InstallHighlight();
     h2::editor::InstallScenePanels();
     h2::editor::InstallModelsPanel();  // left tabs in this order: Scene, Models, NPCs, Level
+    h2::editor::InstallNpcs();
     h2::editor::InstallNpcPanel();
     h2::editor::InstallLevelPanel();
     h2::editor::InstallPlacement();

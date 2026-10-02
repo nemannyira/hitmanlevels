@@ -61,7 +61,16 @@ engine::ZGEOM* Moving() { return g_grab ? g_grab : g_preview.Main(); }
 const std::vector<engine::ZGEOM*>& ShapeParts() { return g_grab ? g_grabParts : g_preview.parts; }
 const std::vector<Transform>& ShapeOffsets() { return g_grab ? g_grabOffsets : g_preview.offsets; }
 
-bool ShapeBox(const Transform& t, Box& box) { return PartsBox(ShapeParts(), ShapeOffsets(), t, box); }
+bool GrabbingActor() { return g_grab && engine::IsA(g_grab, "ZActor"); }
+
+bool ShapeBox(const Transform& t, Box& box)
+{
+    if (GrabbingActor()) {
+        ActorBox(t, box);
+        return true;
+    }
+    return PartsBox(ShapeParts(), ShapeOffsets(), t, box);
+}
 
 // Ray through a screen position (origin = camera).
 bool ScreenRay(float sx, float sy, float origin[3], float dir[3])
@@ -181,7 +190,7 @@ Transform CurrentTransform()
         v[2] = -x * s + z * c;
     }
     const float* n = SurfaceNormal();
-    if (g_alignToSurface && g_haveNormal && g_haveHit) {
+    if (g_alignToSurface && g_haveNormal && g_haveHit && !GrabbingActor()) {  // characters stand upright
         // rotate world up onto the normal (Rodrigues), applied to every axis
         float axis[3] = {n[2], 0.0f, -n[0]};  // up x n
         float sinA = std::sqrt(axis[0] * axis[0] + axis[2] * axis[2]), cosA = n[1];

@@ -17,5 +17,7 @@ bool DevInjecting();
 
 // Called on Present: pending screenshot.
 void DevOnPresent(void* device);
+// Called before the editor's ImGui frame: injected editor mouse / key events.
+void DevUiStep();
 
 } // namespace h2

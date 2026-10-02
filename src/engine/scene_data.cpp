@@ -292,6 +292,32 @@ std::vector<uint8_t> RemappedBlock(uint32_t offset)
     return b;
 }
 
+std::vector<uint8_t> RawBlock(uint32_t offset)
+{
+    uint32_t header = U32(g_gms, offset);
+    size_t size = header & 0xFFFFFF;
+    if (!offset || size < 4 || offset + size > g_gms.size())
+        return {};
+    return std::vector<uint8_t>(g_gms.begin() + offset, g_gms.begin() + offset + size);
+}
+
+std::vector<size_t> BlockRefOffsets(const std::vector<uint8_t>& b)
+{
+    std::vector<size_t> out;
+    const uint8_t* start = b.data();
+    const uint8_t* p = start + 4;
+    const uint8_t* end = start + b.size();
+    while (p < end) {
+        size_t len = ValueLength(p, end);
+        if (!len || p + len > end)
+            break;
+        if ((*p & 0x3F) == 8)
+            out.push_back(size_t(p + 1 - start));
+        p += len;
+    }
+    return out;
+}
+
 bool ParseScript(uint32_t offset, ScriptInfo& out)
 {
     out = {};

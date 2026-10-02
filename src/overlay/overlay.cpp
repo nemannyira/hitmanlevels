@@ -1,5 +1,7 @@
 #include "overlay.h"
 
+#include "../devcmd.h"
+
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -260,7 +262,7 @@ void DrawLayout()
     float leftW = 0, rightW = 0;
     if (!g_panelsHidden && AnyVisible(Dock::Left)) {
         ImGui::SetNextWindowPos(ImVec2(0, top));
-        ImGui::SetNextWindowSize(ImVec2(W * 0.2f, height), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(W * 0.26f, height), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(200, height), ImVec2(W * 0.45f, height));
         ImGui::Begin("Left panel", nullptr, kDockedFlags);
         leftW = ImGui::GetWindowWidth();
@@ -374,6 +376,7 @@ void OnPresent(void* device)
         return;
     ImGui_ImplDX8_NewFrame();
     ImGui_ImplWin32_NewFrame();
+    DevUiStep();
     ImGui::NewFrame();
     if (g_open)
         DrawLayout();

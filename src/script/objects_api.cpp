@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,9 @@ extern "C" {
 }
 
 #include "../editor/model.h"
+#include "../editor/npcs.h"
+#include "../editor/scene_panel.h"
+#include "../engine/npc.h"
 #include "../engine/spawn.h"
 #include "lua_vm.h"
 
@@ -157,6 +161,206 @@ int Item(lua_State* L)
     return 1;
 }
 
+// ---- NPCs ----
+
+// Lua value -> object ref for a ZGEOMREF parameter: object, name/path, or nil/false
+uint32_t RefArg(lua_State* L, int idx)
+{
+    if (lua_isnoneornil(L, idx) || (lua_isboolean(L, idx) && !lua_toboolean(L, idx)))
+        return 0;
+    engine::ZGEOM* g = nullptr;
+    if (lua_istable(L, idx)) {
+        lua_getfield(L, idx, "_path");
+        g = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+    } else {
+        int i = FindIndex(luaL_checkstring(L, idx));
+        g = i >= 0 ? editor::SceneModel().geoms[i].geom : nullptr;
+    }
+    if (!g)
+        luaL_error(L, "parameter object not found");
+    return engine::RefOf(g);
+}
+
+// Applies a Lua table {Param = value, ...} onto a behaviour.
+void ApplyParams(lua_State* L, int idx, engine::ScriptInfo& s)
+{
+    if (lua_isnoneornil(L, idx))
+        return;
+    luaL_checktype(L, idx, LUA_TTABLE);
+    for (engine::ScriptParam& p : s.params) {
+        lua_getfield(L, idx, p.name.c_str());
+        int top = lua_gettop(L);
+        if (!lua_isnil(L, top)) {
+            switch (p.type) {
+            case engine::ParamType::Long:
+                if (lua_isboolean(L, top))
+                    p.bits = lua_toboolean(L, top) ? 1u : 0u;
+                else
+                    p.bits = uint32_t(luaL_checkinteger(L, top));
+                break;
+            case engine::ParamType::Float: {
+                float f = float(luaL_checknumber(L, top));
+                memcpy(&p.bits, &f, 4);
+                break;
+            }
+            case engine::ParamType::Ref:
+                p.bits = RefArg(L, top);
+                break;
+            case engine::ParamType::String:
+                p.text = luaL_checkstring(L, top);
+                break;
+            default:
+                break;
+            }
+        }
+        lua_pop(L, 1);
+    }
+}
+
+void PushParams(lua_State* L, const engine::ScriptInfo& s)
+{
+    lua_newtable(L);
+    for (const engine::ScriptParam& p : s.params) {
+        switch (p.type) {
+        case engine::ParamType::Long:
+            lua_pushinteger(L, int(p.bits));
+            break;
+        case engine::ParamType::Float: {
+            float f;
+            memcpy(&f, &p.bits, 4);
+            lua_pushnumber(L, f);
+            break;
+        }
+        case engine::ParamType::Ref:
+            if (engine::ZGEOM* g = p.bits ? engine::GeomOfRef(p.bits) : nullptr)
+                PushObject(L, editor::PathOf(g));
+            else
+                lua_pushboolean(L, 0);
+            break;
+        case engine::ParamType::String:
+            lua_pushstring(L, p.text.c_str());
+            break;
+        default:
+            continue;
+        }
+        lua_setfield(L, -2, p.name.c_str());
+    }
+}
+
+// h2.npcs() -> { {record=, model=, behaviour=, object=}, ... } characters of the scene
+int Npcs(lua_State* L)
+{
+    lua_newtable(L);
+    int n = 0;
+    for (int r : editor::NpcRecords()) {
+        lua_newtable(L);
+        lua_pushinteger(L, r);
+        lua_setfield(L, -2, "record");
+        lua_pushstring(L, editor::NpcModel(r).c_str());
+        lua_setfield(L, -2, "model");
+        engine::ScriptInfo s;
+        if (editor::AuthoredBehaviour(r, s)) {
+            lua_pushstring(L, engine::ScriptShortName(s.name).c_str());
+            lua_setfield(L, -2, "behaviour");
+        }
+        if (engine::ZGEOM* g = engine::RecordGeom(r)) {
+            PushObject(L, editor::PathOf(g));
+            lua_setfield(L, -2, "object");
+        }
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+// h2.behaviours() -> { "BaseGuard", ... } behaviours (script classes) of the scene
+int Behaviours(lua_State* L)
+{
+    lua_newtable(L);
+    int n = 0;
+    for (const std::string& b : editor::BehaviourNames()) {
+        lua_pushstring(L, b.c_str());
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+// h2.npc(who, x, y, z [, yaw [, behaviour [, params]]]) -> object
+//   who: model name ("BodyguardMafia_01"), group name, record number or a scene NPC object
+//   behaviour: script name ("BaseGuard"), false for none, nil for the character's own
+//   params: { GuardPoint = h2.find("Lobby"), IsSentry = 1, ... }
+int Npc(lua_State* L)
+{
+    int record = -1;
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "_path");
+        record = editor::FindNpcRecord(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+    } else if (lua_isinteger(L, 1)) {
+        record = editor::FindNpcRecord(std::to_string(lua_tointeger(L, 1)));
+    } else {
+        record = editor::FindNpcRecord(luaL_checkstring(L, 1));
+    }
+    if (record < 0)
+        return luaL_error(L, "npc: no such character (see h2.npcs())");
+    editor::NpcSpec spec;
+    spec.record = record;
+    editor::EulerToMatrix(float(luaL_optnumber(L, 5, 0.0)), 0.0f, 0.0f, spec.transform.mat);
+    for (int i = 0; i < 3; ++i)
+        spec.transform.pos[i] = float(luaL_checknumber(L, 2 + i));
+    if (lua_isboolean(L, 6) && !lua_toboolean(L, 6)) {
+        spec.hasBehaviour = false;
+    } else if (lua_isnoneornil(L, 6)) {
+        spec.hasBehaviour = editor::AuthoredBehaviour(record, spec.behaviour);
+    } else {
+        if (!editor::BehaviourTemplate(luaL_checkstring(L, 6), spec.behaviour))
+            return luaL_error(L, "npc: no behaviour '%s' in this scene (see h2.behaviours())", lua_tostring(L, 6));
+        spec.hasBehaviour = true;
+    }
+    ApplyParams(L, 7, spec.behaviour);
+    std::string err;
+    engine::ZGEOM* g = editor::CreateNpc(spec, &err);
+    if (!g)
+        return luaL_error(L, "npc failed: %s", err.c_str());
+    PushObject(L, editor::PathOf(g));
+    return 1;
+}
+
+// obj:behaviour() -> name, params | nothing ; obj:behaviour(name|false [, params]) changes it
+int Behaviour(lua_State* L)
+{
+    engine::ZGEOM* actor = editor::ActorOf(Geom(L));
+    if (!actor)
+        return luaL_error(L, "not a character");
+    if (lua_gettop(L) == 1) {
+        engine::ScriptInfo s;
+        if (!editor::CurrentBehaviour(actor, s))
+            return 0;
+        lua_pushstring(L, engine::ScriptShortName(s.name).c_str());
+        PushParams(L, s);
+        return 2;
+    }
+    std::string err;
+    if (lua_isboolean(L, 2) && !lua_toboolean(L, 2)) {
+        if (!editor::SetNpcBehaviour(actor, nullptr, &err))
+            return luaL_error(L, "behaviour: %s", err.c_str());
+        return 0;
+    }
+    engine::ScriptInfo s;
+    std::string name = luaL_checkstring(L, 2);
+    engine::ScriptInfo current;
+    bool same = editor::CurrentBehaviour(actor, current) &&
+                engine::ScriptShortName(current.name) == engine::ScriptShortName(name);
+    if (same)
+        s = current;  // keep the other parameters
+    else if (!editor::BehaviourTemplate(name, s))
+        return luaL_error(L, "behaviour: no '%s' in this scene", name.c_str());
+    ApplyParams(L, 3, s);
+    if (!editor::SetNpcBehaviour(actor, &s, &err))
+        return luaL_error(L, "behaviour: %s", err.c_str());
+    return 0;
+}
+
 int Spawn(lua_State* L)
 {
     engine::ZGEOM* source = nullptr;
@@ -198,6 +402,73 @@ int Objects(lua_State* L)
         PushObject(L, g.path);
         lua_rawseti(L, -2, ++n);
     }
+    return 1;
+}
+
+// obj:state() -> name of the state the character's behaviour is in
+int State(lua_State* L)
+{
+    engine::ZGEOM* actor = editor::ActorOf(Geom(L));
+    std::string s = actor ? engine::ScriptState(actor) : std::string();
+    if (s.empty())
+        return 0;
+    lua_pushstring(L, s.c_str());
+    return 1;
+}
+
+// obj:children() -> { objects } ; obj:parent() -> object | nil
+int Children(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    const auto& snap = editor::SceneModel(0);
+    int i = snap.Find(g);
+    lua_newtable(L);
+    if (i < 0)
+        return 1;
+    int n = 0;
+    for (int c : snap.geoms[i].children) {
+        PushObject(L, snap.geoms[c].path);
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+int Parent(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    engine::ZBaseGeom* p = g->node->parent;
+    if (!p || !engine::IsReadable(p, sizeof(*p)) || !p->geom || !editor::IsLive(p->geom))
+        return 0;
+    PushObject(L, editor::PathOf(p->geom));
+    return 1;
+}
+
+// obj:select(): selects the object in the editor
+int SelectObj(lua_State* L)
+{
+    editor::Select(Geom(L));
+    return 0;
+}
+
+// obj:addr() -> geom address, node address (reverse engineering)
+int Addr(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    lua_pushinteger(L, lua_Integer(reinterpret_cast<uintptr_t>(g)));
+    lua_pushinteger(L, lua_Integer(reinterpret_cast<uintptr_t>(g->node)));
+    return 2;
+}
+
+// obj:flags() -> node flags ; obj:mesh() -> mesh ref (0: none)
+int Flags(lua_State* L)
+{
+    lua_pushinteger(L, lua_Integer(Geom(L)->node->flags));
+    return 1;
+}
+
+int Mesh(lua_State* L)
+{
+    lua_pushinteger(L, lua_Integer(engine::MeshOf(Geom(L))));
     return 1;
 }
 
@@ -335,7 +606,8 @@ void RegisterObjectsApi()
         {"name", Name},   {"class", Class},   {"path", Path}, {"isa", IsA},   {"valid", Valid},
         {"pos", Pos},     {"setpos", SetPos}, {"rot", Rot},   {"setrot", SetRot},
         {"hide", Hide},   {"show", Show},     {"hidden", Hidden},
-        {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned},
+        {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State},
+        {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);
@@ -351,6 +623,9 @@ void RegisterObjectsApi()
     Register("objects", Objects);
     Register("spawn", Spawn);
     Register("item", Item);
+    Register("npcs", Npcs);
+    Register("behaviours", Behaviours);
+    Register("npc", Npc);
 }
 
 void DestroyScriptObjects()

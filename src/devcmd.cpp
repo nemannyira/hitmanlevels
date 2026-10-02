@@ -14,6 +14,7 @@ extern "C" {
 }
 
 #include "config.h"
+#include "imgui.h"
 #include "fov.h"
 #include "game.h"
 #include "log.h"
@@ -33,6 +34,14 @@ std::mutex g_mutex;
 std::vector<Held> g_held;
 long g_moveX, g_moveY, g_wheel;  // pending mouse motion and wheel
 std::string g_shotPath;
+
+// editor (ImGui) mouse events, one step per frame: move, press, release
+struct UiStep {
+    int kind;  // 0 move, 1 button down, 2 button up, 3 wheel, 4 key down, 5 key up, 6 char
+    float x, y;
+    int button;
+};
+std::vector<UiStep> g_ui;
 double g_nextPoll;
 
 std::string ModsPath(const char* name) { return GameDir() + "Mods\\" + name; }
@@ -156,12 +165,66 @@ int ViewDist(lua_State* L)
     return 0;
 }
 
+// h2.dev_click(x, y [, button [, double]]): moves the editor's mouse to screen
+// pixel (x, y) and clicks (0 left, 1 right) - drives the editor UI and its
+// clicks in the world
+int Click(lua_State* L)
+{
+    float x = float(luaL_checknumber(L, 1)), y = float(luaL_checknumber(L, 2));
+    int button = int(luaL_optinteger(L, 3, 0));
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_ui.push_back({0, x, y, button});
+    g_ui.push_back({0, x, y, button});
+    g_ui.push_back({1, x, y, button});
+    g_ui.push_back({2, x, y, button});
+    if (lua_toboolean(L, 4)) {
+        g_ui.push_back({1, x, y, button});
+        g_ui.push_back({2, x, y, button});
+    }
+    return 0;
+}
+
+// h2.dev_hover(x, y): moves the editor's mouse
+int Hover(lua_State* L)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_ui.push_back({0, float(luaL_checknumber(L, 1)), float(luaL_checknumber(L, 2)), 0});
+    return 0;
+}
+
+// h2.dev_type(text): types into the focused editor field
+int Type(lua_State* L)
+{
+    std::string text = luaL_checkstring(L, 1);
+    std::lock_guard<std::mutex> lock(g_mutex);
+    for (unsigned char c : text)
+        g_ui.push_back({6, 0, 0, c});
+    return 0;
+}
+
+// h2.dev_uikey(imguiKey): presses an ImGui key in the editor (e.g. 525 = Enter)
+int UiKey(lua_State* L)
+{
+    int key = int(luaL_checkinteger(L, 1));
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_ui.push_back({4, 0, 0, key});
+    g_ui.push_back({5, 0, 0, key});
+    return 0;
+}
+
 // h2.dev_shot(name): saves Screens\<name>.bmp at the next frame
 int Shot(lua_State* L)
 {
     std::string dir = GameDir() + "Screens";
     CreateDirectoryA(dir.c_str(), nullptr);
     g_shotPath = dir + "\\" + luaL_checkstring(L, 1) + ".bmp";
+    return 0;
+}
+
+// h2.dev_panel(name): shows an editor panel (left tab / right section)
+int Panel(lua_State* L)
+{
+    overlay::ShowPanel(luaL_checkstring(L, 1));
     return 0;
 }
 
@@ -187,6 +250,11 @@ void InstallDevCommands()
     script::Register("dev_viewdistance", ViewDist);
     script::Register("dev_shot", Shot);
     script::Register("dev_editor", Editor);
+    script::Register("dev_panel", Panel);
+    script::Register("dev_click", Click);
+    script::Register("dev_hover", Hover);
+    script::Register("dev_type", Type);
+    script::Register("dev_uikey", UiKey);
     Log("dev commands on: Mods\\_cmd.lua");
 }
 
@@ -228,6 +296,26 @@ void DevInjectMouse(long* dx, long* dy, unsigned char* buttons, long* wheel)
     }
 }
 
+void DevUiStep()
+{
+    if (!g_config.devCommands || !ImGui::GetCurrentContext())
+        return;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_ui.empty())
+        return;
+    UiStep s = g_ui.front();
+    g_ui.erase(g_ui.begin());
+    ImGuiIO& io = ImGui::GetIO();
+    switch (s.kind) {
+    case 0: io.AddMousePosEvent(s.x, s.y); break;
+    case 1: io.AddMouseButtonEvent(s.button, true); break;
+    case 2: io.AddMouseButtonEvent(s.button, false); break;
+    case 4: io.AddKeyEvent(ImGuiKey(s.button), true); break;
+    case 5: io.AddKeyEvent(ImGuiKey(s.button), false); break;
+    case 6: io.AddInputCharacter(unsigned(s.button)); break;
+    }
+}
+
 void DevOnPresent(void* device)
 {
     TraceFrameDone();
@@ -237,7 +325,7 @@ void DevOnPresent(void* device)
         return;
     std::string path = g_shotPath;
     g_shotPath.clear();
-    if (!SaveScreenshot(device, path))
+    if (!SaveBackBuffer(device, path) && !SaveScreenshot(device, path))
         Log("devcmd: screenshot %s failed", path.c_str());
 }
 

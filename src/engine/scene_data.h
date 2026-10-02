@@ -40,6 +40,10 @@ int RecordOf(const ZGEOM* geom);
 // `offset`) with its references and message ids remapped to the runtime ones,
 // marked as remapped. Empty when there is no such block.
 std::vector<uint8_t> RemappedBlock(uint32_t offset);
+// Copy of a block as stored in the file (references = 0x80000000 | record + 1).
+std::vector<uint8_t> RawBlock(uint32_t offset);
+// Offsets (in the block) of the reference values (tag 8) of a block.
+std::vector<size_t> BlockRefOffsets(const std::vector<uint8_t>& block);
 
 // ---- scripts (behaviour) ----
 

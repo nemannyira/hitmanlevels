@@ -12,6 +12,12 @@
 //   "spawned": [                                // new objects: visual clones of a scene object
 //     { "id": "Crate_01+1", "source_scene": "C1-1\C1-1__MAIN",
 //       "source_path": "ROOT/.../Crate_01", "pos": [...], "matrix": [...], "hidden": false } ],
+//   "npcs": [                                   // characters the level places
+//     { "id": "NPC_Maid_1", "record": 3803, "model": "Maid", "pos": [...], "matrix": [...],
+//       "behaviour": "scripts\C1\C1_1\Maid.sdl",
+//       "params": [ { "name": "GuardPoint", "type": "ZGEOMREF", "value": "ROOT/.../Lobby" }, ... ] } ],
+//   "npc_edits": [                              // behaviour settings of the scene's characters
+//     { "record": 2350, "path": "ROOT/.../Ground", "behaviour": "...", "params": [...] } ],
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
 //
@@ -21,6 +27,7 @@
 #include <vector>
 
 #include "model.h"
+#include "npcs.h"
 
 namespace h2::editor {
 
@@ -41,12 +48,31 @@ struct SpawnedObject {
     bool hidden = false;
 };
 
+struct LevelNpc {
+    std::string id;          // object name of the character
+    int record = -1;         // actor record of the base scene it copies (body, animations)
+    std::string model;       // that record's model name (checked when loading)
+    Transform transform{};
+    bool hasBehaviour = false;
+    std::string behaviour;   // full script name
+    std::vector<ParamValue> params;
+};
+
+struct NpcEditEntry {        // changed behaviour settings of a character of the scene
+    int record = -1;
+    std::string path;        // its object (information)
+    std::string behaviour;
+    std::vector<ParamValue> params;
+};
+
 struct LevelDocument {
     std::string name = "Untitled";
     std::string folder;  // Mods\<folder>
     std::string baseScene;
     std::map<std::string, ObjectEdit> objects;  // by path
     std::vector<SpawnedObject> spawned;
+    std::vector<LevelNpc> npcs;
+    std::map<int, NpcEditEntry> npcEdits;  // by actor record
     std::vector<std::string> scripts;
     bool dirty = false;
 };
@@ -70,6 +96,14 @@ engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::
 // Deletes an object the level created (undoable); false for scene objects.
 bool DeleteObject(engine::ZGEOM* geom);
 const SpawnedObject* FindSpawned(engine::ZGEOM* geom);
+
+// ---- characters (undoable, kept in the level) ----
+engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error = nullptr);
+bool RemoveNpc(engine::ZGEOM* actor, std::string* error = nullptr);
+// New behaviour settings for any character (or another behaviour for a placed one).
+engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour,
+                                std::string* error = nullptr);
+const LevelNpc* FindLevelNpc(engine::ZGEOM* actor);
 
 // Applies the level's spawned objects and object edits to the loaded scene; returns how many applied.
 int ApplyLevel();

@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "../config.h"
+#include "../engine/npc.h"
 #include "../engine/spawn.h"
 #include "../game.h"
 #include "../log.h"
@@ -16,7 +18,11 @@ namespace h2::editor {
 
 namespace {
 
-engine::SceneSnapshot g_snapshot;
+// The current snapshot; replaced ones stay alive until the frame ends, so a
+// reference somebody is iterating stays valid when a call in the loop
+// (PathOf, Resolve, ...) takes a new snapshot.
+std::shared_ptr<engine::SceneSnapshot> g_snapshot = std::make_shared<engine::SceneSnapshot>();
+std::vector<std::shared_ptr<engine::SceneSnapshot>> g_retired;
 std::vector<std::pair<engine::ZBaseGeom*, engine::ZGEOM*>> g_spawned;
 std::vector<engine::ZGEOM*> g_engineOwned;  // items: the game removes them on unload
 double g_snapshotTime = -1e12;
@@ -44,17 +50,21 @@ const engine::SceneSnapshot& SceneModel(double maxAgeMs)
         std::vector<engine::ZBaseGeom*> extra;
         for (auto& [node, geom] : g_spawned)
             extra.push_back(node);
-        g_snapshot = engine::TakeSnapshot(extra);
+        g_retired.push_back(g_snapshot);
+        g_snapshot = std::make_shared<engine::SceneSnapshot>(engine::TakeSnapshot(extra));
         g_snapshotTime = NowMs();
     }
-    return g_snapshot;
+    return *g_snapshot;
 }
 
 void InvalidateSceneModel()
 {
-    g_snapshot = {};
+    g_retired.push_back(g_snapshot);
+    g_snapshot = std::make_shared<engine::SceneSnapshot>();
     g_snapshotTime = -1e12;
 }
+
+void SceneModelFrameEnd() { g_retired.clear(); }
 
 bool ObjectState::operator==(const ObjectState& o) const
 {
@@ -180,6 +190,17 @@ void AdoptEngineOwned(engine::ZGEOM* geom)
     InvalidateSceneModel();
 }
 
+void ForgetEngineOwned(engine::ZGEOM* geom)
+{
+    g_engineOwned.erase(std::remove(g_engineOwned.begin(), g_engineOwned.end(), geom), g_engineOwned.end());
+    for (auto it = g_spawned.begin(); it != g_spawned.end(); ++it)
+        if (it->second == geom) {
+            g_spawned.erase(it);
+            break;
+        }
+    InvalidateSceneModel();
+}
+
 engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error)
 {
     static bool hooked;
@@ -285,6 +306,10 @@ bool IsSpawned(engine::ZGEOM* geom)
 // transform is expressed relative to the parent node and set as local.
 void SetTransform(engine::ZGEOM* geom, const Transform& t)
 {
+    if (engine::IsA(geom, "ZActor")) {  // characters keep their own position: teleported
+        engine::TeleportActor(geom, t.pos, t.mat);
+        return;
+    }
     EnsureDynamic(geom);
     engine::ZBaseGeom* parent = geom->node->parent;
     engine::ZGEOM* parentGeom = parent && engine::IsReadable(parent, sizeof(*parent)) ? parent->geom : nullptr;

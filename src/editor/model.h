@@ -11,6 +11,8 @@ namespace h2::editor {
 // Snapshot of the loaded scene, refreshed when older than maxAgeMs (or forced).
 const engine::SceneSnapshot& SceneModel(double maxAgeMs = 1000.0);
 void InvalidateSceneModel();
+// Frees snapshots replaced during the frame (called once per frame).
+void SceneModelFrameEnd();
 
 struct Transform {
     float mat[9];  // engine layout: rows forward, up, right
@@ -54,6 +56,8 @@ engine::ZGEOM* SpawnItem(engine::ZGEOM* itemTemplate, std::string* error = nullp
 // An object the editor made by other means that the game removes itself on
 // unload (NPCs): listed as spawned, not destroyed by the editor.
 void AdoptEngineOwned(engine::ZGEOM* geom);
+// The editor removes it itself (no longer listed as spawned).
+void ForgetEngineOwned(engine::ZGEOM* geom);
 
 // The visible models of an object and its descendants, largest first (a
 // working item's template: body, slide, magazine; not its invisible position

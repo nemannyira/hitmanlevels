@@ -10,6 +10,7 @@
 #include "fov.h"
 #include "display.h"
 #include "editor/highlight.h"
+#include "editor/model.h"
 #include "screenshot.h"
 #include "overlay/overlay.h"
 #include "hook.h"
@@ -156,6 +157,7 @@ HRESULT WINAPI hkPresent(void* dev, const RECT* src, const RECT* dst, HWND wnd, 
     PeriodicScreenshot(dev);
     DevOnPresent(dev);
     editor::HighlightBeginFrame();
+    editor::SceneModelFrameEnd();
     if (!g_config.logRender)
         return oPresent(dev, src, dst, wnd, dirty);
     static double last;
@@ -232,6 +234,8 @@ HRESULT WINAPI hkCreateDevice(void* self, UINT adapter, DWORD type, HWND focus, 
         pp->SwapEffect, pp->Windowed, pp->EnableAutoDepthStencil, pp->AutoDepthStencilFormat, pp->Flags,
         pp->FullScreen_RefreshRateInHz, pp->FullScreen_PresentationInterval, flags);
     PrepareDeviceWindow(pp->hDeviceWindow ? pp->hDeviceWindow : focus);
+    if (g_config.devCommands)
+        pp->Flags |= 0x1;  // D3DPRESENTFLAG_LOCKABLE_BACKBUFFER: screenshots of a covered window
     HRESULT hr = oCreateDevice(self, adapter, type, focus, flags, pp, device);
     Log("CreateDevice -> %08lx", hr);
     if (hr >= 0) {

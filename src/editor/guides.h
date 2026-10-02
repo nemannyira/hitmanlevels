@@ -16,6 +16,8 @@ struct Box {
     float c[8][3];
 };
 bool ObjectBox(engine::ZGEOM* geom, const Transform& t, Box& box);
+// Person-sized box standing on t (characters are skinned: their nodes have no useful bounds).
+void ActorBox(const Transform& t, Box& box);
 // Box around several parts given in the frame `t` (offsets[i]: part i in that frame).
 bool PartsBox(const std::vector<engine::ZGEOM*>& parts, const std::vector<Transform>& offsets, const Transform& t,
               Box& box);

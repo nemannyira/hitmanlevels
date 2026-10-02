@@ -1,5 +1,7 @@
 #include "memapi.h"
 
+#include <cstring>
+
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
@@ -141,6 +143,31 @@ int VCall(lua_State* L)
 
 int Call(lua_State* L) { return CallImpl(L, Addr(L, 1), reinterpret_cast<void*>(Addr(L, 2)), 3); }
 
+bool SafeWrite(uintptr_t addr, const void* v, size_t n)
+{
+    __try {
+        memcpy(reinterpret_cast<void*>(addr), v, n);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// h2.mem.wf32(addr, value) / h2.mem.w32(addr, value): writes (reverse engineering only)
+int WriteF32(lua_State* L)
+{
+    float v = float(luaL_checknumber(L, 2));
+    lua_pushboolean(L, SafeWrite(Addr(L, 1), &v, 4));
+    return 1;
+}
+
+int Write32(lua_State* L)
+{
+    uint32_t v = uint32_t(luaL_checkinteger(L, 2));
+    lua_pushboolean(L, SafeWrite(Addr(L, 1), &v, 4));
+    return 1;
+}
+
 } // namespace
 
 void RegisterMemApi()
@@ -150,6 +177,7 @@ void RegisterMemApi()
         {"u8", ReadNum<uint8_t>},   {"u16", ReadNum<uint16_t>}, {"u32", ReadNum<uint32_t>},
         {"i32", ReadNum<int32_t>},  {"f32", ReadNum<float>},    {"str", Str},
         {"hex", Hex},               {"vcall", VCall},           {"call", Call},
+        {"wf32", WriteF32},         {"w32", Write32},
         {nullptr, nullptr},
     };
     lua_getglobal(L, "h2");

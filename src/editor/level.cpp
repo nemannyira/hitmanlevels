@@ -820,7 +820,7 @@ void NewLevel(const std::string& name, const std::string& baseScene)
     g_level.name = name;
     g_level.folder = Sanitize(name);
     // a level of that name already there: the new one gets its own folder
-    for (int k = 2; GetFileAttributesA((ModsDir() + g_level.folder + "\level.json").c_str()) != INVALID_FILE_ATTRIBUTES;
+    for (int k = 2; GetFileAttributesA((ModsDir() + g_level.folder + "\\level.json").c_str()) != INVALID_FILE_ATTRIBUTES;
          ++k)
         g_level.folder = Sanitize(name) + "_" + std::to_string(k);
     g_level.baseScene = baseScene;

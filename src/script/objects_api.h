@@ -1,4 +1,7 @@
 #pragma once
+#include <string>
+
+struct lua_State;
 
 namespace h2::script {
 
@@ -10,5 +13,7 @@ void RegisterObjectsApi();
 // destroys its objects when a scene is left).
 void DestroyScriptObjects();
 void ForgetScriptObjects();
+// Pushes the object handle of a scene path (for events).
+void PushObjectPath(::lua_State* L, const std::string& path);
 
 } // namespace h2::script

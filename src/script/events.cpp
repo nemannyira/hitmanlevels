@@ -1,4 +1,5 @@
 #include "events.h"
+#include "objects_api.h"
 
 extern "C" {
 #include "lauxlib.h"
@@ -114,6 +115,22 @@ void FireScene(const std::string& scene)
 {
     Fire("scene", [&](lua_State* L) {
         lua_pushstring(L, scene.c_str());
+        return 1;
+    });
+}
+
+void FireDeath(const std::string& path)
+{
+    Fire("death", [&](lua_State* L) {
+        PushObjectPath(L, path);
+        return 1;
+    });
+}
+
+void FireObjective(int slot)
+{
+    Fire("objective", [&](lua_State* L) {
+        lua_pushinteger(L, slot);
         return 1;
     });
 }

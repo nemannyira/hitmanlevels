@@ -17,6 +17,7 @@
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
+#include "../script/events.h"
 #include "freecam.h"
 #include "level.h"
 #include "model.h"
@@ -67,6 +68,7 @@ bool g_done[kSlots + 1];
 bool g_ended;
 double g_lastCheck;
 bool g_applied;                            // the mission was applied to this scene
+std::map<engine::ZGEOM*, bool> g_alive;    // characters' life (the "death" event)
 
 MissionDoc& Doc() { return CurrentLevel().mission; }
 
@@ -427,12 +429,31 @@ bool Reached(const MissionObjective& o)
     }
 }
 
+std::vector<engine::ZGEOM*> Characters();
+
+// the "death" event for level scripts
+void WatchDeaths()
+{
+    for (engine::ZGEOM* a : Characters()) {
+        bool alive = engine::IsAlive(a);
+        auto it = g_alive.find(a);
+        if (it != g_alive.end() && it->second && !alive) {
+            std::string path = PathOf(a);
+            if (!path.empty())
+                script::FireDeath(path);
+        }
+        g_alive[a] = alive;
+    }
+}
+
 void Check()
 {
     double now = double(GetTickCount64());
     if (now - g_lastCheck < 250.0)
         return;
     g_lastCheck = now;
+    if (engine::SceneDataValid() && !CurrentScene().empty())
+        WatchDeaths();
     if (!ForThisScene() || !engine::SceneDataValid() || (Doc().objectives.empty() && !Doc().endWhenDone))
         return;
     if (!g_applied) {  // the level was not applied (e.g. a mission edited on a scene without a level yet)
@@ -449,6 +470,7 @@ void Check()
             g_done[o.slot] = true;
             CallSetCompleted(o.slot, true);
             Log("mission: objective %d done", o.slot);
+            script::FireObjective(o.slot);
         }
         all &= g_done[o.slot];
     }
@@ -470,6 +492,7 @@ void OnScene(const std::string&)
     g_locRoot = nullptr;
     g_ended = false;
     g_applied = false;
+    g_alive.clear();
     memset(g_done, 0, sizeof(g_done));
     for (std::string& k : g_lineKeys)
         k.clear();

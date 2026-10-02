@@ -823,4 +823,6 @@ void DestroyScriptObjects()
 
 void ForgetScriptObjects() { g_scriptObjects.clear(); }
 
+void PushObjectPath(lua_State* L, const std::string& path) { PushObject(L, path); }
+
 } // namespace h2::script

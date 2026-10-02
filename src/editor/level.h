@@ -92,6 +92,12 @@ struct MissionDoc {
     float exitRadius = 300.0f;
 };
 
+struct ImportedModel {        // a model of another level the map is loaded with
+    std::string level;        // "C2-1"
+    uint32_t mesh = 0;        // its mesh reference there
+    std::string name;         // its name there (information)
+};
+
 struct LevelDocument {
     std::string name = "Untitled";
     std::string folder;  // Mods\<folder>
@@ -105,6 +111,7 @@ struct LevelDocument {
     MissionDoc mission;
     std::map<std::string, std::string> music;  // music object path -> track name ("RussiaSlow")
     std::vector<std::string> scripts;
+    std::vector<ImportedModel> imports;
     bool dirty = false;
 };
 
@@ -123,6 +130,20 @@ void DrawSaveControl();
 void DrawSaveRow();
 void SaveShortcut();
 bool LoadLevel(const std::string& folder, std::string* error = nullptr);
+
+// ---- models of other levels ----
+// The level's list (the map gets them when it is loaded: see engine/imports.h);
+// each is an object of ROOT/EditorImports in the loaded map, far below the
+// world, which the Models tab lists and places like the map's own models.
+bool IsImported(const std::string& level, uint32_t mesh);
+void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on);
+// Objects of the level made of it (it cannot leave the list while used).
+int ImportUses(const std::string& level, uint32_t mesh);
+// The list differs from what the loaded map has: it has to be loaded again.
+bool ImportsPending();
+void ReloadMapForImports();
+// The level a model of ROOT/EditorImports comes from ("": not one of them).
+std::string ImportLevelOf(const std::string& path);
 void NewLevel(const std::string& name, const std::string& baseScene);
 // Creates a copy of the object next to it (or at `at`, world space) and adds
 // it to the level (undoable).

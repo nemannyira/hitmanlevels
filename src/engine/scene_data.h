@@ -29,6 +29,8 @@ struct SceneRecord {
 
 void InstallSceneData();
 
+// Records of a scene's GMS (unpacked) with names from its BUF.
+std::vector<SceneRecord> ParseSceneRecords(const std::vector<uint8_t>& gms, const std::vector<uint8_t>& buf);
 // Records of the scene loaded last (empty before a scene was loaded).
 const std::vector<SceneRecord>& SceneRecords();
 // The object the engine made of a record (null when gone or unknown).

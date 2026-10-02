@@ -47,54 +47,10 @@ uint32_t U32(const std::vector<uint8_t>& b, size_t off)
     return v;
 }
 
-std::string BufString(uint32_t off)
-{
-    if (off >= g_buf.size())
-        return {};
-    const char* s = reinterpret_cast<const char*>(g_buf.data() + off);
-    return std::string(s, strnlen(s, g_buf.size() - off));
-}
-
 void ParseRecords()
 {
-    g_records.clear();
     g_recordOfRef.clear();
-    uint32_t list = U32(g_gms, 0);
-    uint32_t count = U32(g_gms, list);
-    if (!list || count > 200000 || list + 4 + size_t(count) * 8 > g_gms.size()) {
-        Log("scene data: bad geom list (%u at %08X)", count, list);
-        return;
-    }
-    std::vector<int> groups;  // open groups (record indices)
-    g_records.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        uint32_t rec = U32(g_gms, list + 4 + i * 8);
-        for (uint32_t pop = rec >> 25; pop && !groups.empty(); --pop)
-            groups.pop_back();
-        size_t off = size_t(rec & 0xFFFFFF) * 4;
-        if (off + 0x30 > g_gms.size())
-            break;
-        SceneRecord r;
-        r.index = int(i);
-        r.name = BufString(U32(g_gms, off + 0x00));
-        uint32_t matOff = U32(g_gms, off + 0x04), posOff = U32(g_gms, off + 0x08);
-        if (matOff + 36 <= g_gms.size())
-            memcpy(r.mat, g_gms.data() + matOff, 36);
-        if (posOff + 12 <= g_gms.size())
-            memcpy(r.pos, g_gms.data() + posOff, 12);
-        r.mesh = U32(g_gms, off + 0x0C);
-        r.classId = U32(g_gms, off + 0x10);
-        r.events = U32(g_gms, off + 0x14);
-        r.flags = U32(g_gms, off + 0x18);
-        r.props = U32(g_gms, off + 0x1C);
-        r.data = U32(g_gms, off + 0x20);
-        r.script = U32(g_gms, off + 0x28);
-        r.extra = U32(g_gms, list + 4 + i * 8 + 4);
-        r.parent = groups.empty() ? -1 : groups.back();
-        if (r.classId & 0x100000)
-            groups.push_back(int(i));
-        g_records.push_back(std::move(r));
-    }
+    g_records = ParseSceneRecords(g_gms, g_buf);
     for (size_t i = 0; i < g_refs.size() && i < g_records.size(); ++i)
         if (g_refs[i])
             g_recordOfRef[g_refs[i]] = int(i);
@@ -305,6 +261,54 @@ uint32_t RemapRef(uint32_t fileRef)
 {
     uint32_t idx = fileRef & 0x7FFFFFFF;
     return idx && idx <= g_refs.size() ? g_refs[idx - 1] : 0;
+}
+
+std::vector<SceneRecord> ParseSceneRecords(const std::vector<uint8_t>& gms, const std::vector<uint8_t>& buf)
+{
+    std::vector<SceneRecord> out;
+    auto bufString = [&](uint32_t off) {
+        if (off >= buf.size())
+            return std::string();
+        const char* s = reinterpret_cast<const char*>(buf.data() + off);
+        return std::string(s, strnlen(s, buf.size() - off));
+    };
+    uint32_t list = U32(gms, 0);
+    uint32_t count = U32(gms, list);
+    if (!list || count > 200000 || list + 4 + size_t(count) * 8 > gms.size()) {
+        Log("scene data: bad geom list (%u at %08X)", count, list);
+        return out;
+    }
+    std::vector<int> groups;  // open groups (record indices)
+    out.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t rec = U32(gms, list + 4 + i * 8);
+        for (uint32_t pop = rec >> 25; pop && !groups.empty(); --pop)
+            groups.pop_back();
+        size_t off = size_t(rec & 0xFFFFFF) * 4;
+        if (off + 0x30 > gms.size())
+            break;
+        SceneRecord r;
+        r.index = int(i);
+        r.name = bufString(U32(gms, off + 0x00));
+        uint32_t matOff = U32(gms, off + 0x04), posOff = U32(gms, off + 0x08);
+        if (matOff + 36 <= gms.size())
+            memcpy(r.mat, gms.data() + matOff, 36);
+        if (posOff + 12 <= gms.size())
+            memcpy(r.pos, gms.data() + posOff, 12);
+        r.mesh = U32(gms, off + 0x0C);
+        r.classId = U32(gms, off + 0x10);
+        r.events = U32(gms, off + 0x14);
+        r.flags = U32(gms, off + 0x18);
+        r.props = U32(gms, off + 0x1C);
+        r.data = U32(gms, off + 0x20);
+        r.script = U32(gms, off + 0x28);
+        r.extra = U32(gms, list + 4 + i * 8 + 4);
+        r.parent = groups.empty() ? -1 : groups.back();
+        if (r.classId & 0x100000)
+            groups.push_back(int(i));
+        out.push_back(std::move(r));
+    }
+    return out;
 }
 
 std::vector<uint8_t> RemappedBlock(uint32_t offset)

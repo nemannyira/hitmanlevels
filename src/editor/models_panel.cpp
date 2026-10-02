@@ -10,6 +10,7 @@
 
 #include "imgui.h"
 
+#include "../engine/imports.h"
 #include "../engine/spawn.h"
 #include "../game.h"
 #include "../overlay/overlay.h"
@@ -37,6 +38,7 @@ struct ModelEntry {
     Category category = Category::Other;
     std::string family;
     std::string templatePath;  // working item: its template (sourcePath = its largest visible part)
+    std::string level;         // a model of another level: that level
     Category autoCategory = Category::Other;  // before the user's correction
 
     // what the thumbnail and the preview are made of
@@ -142,7 +144,8 @@ void Build()
     }
     std::map<uint32_t, ModelEntry> byMesh;
     for (const engine::GeomInfo& g : SceneModel().geoms) {  // nothing below refreshes it
-        if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom))
+        std::string level = ImportLevelOf(g.path);
+        if (!IsLive(g.geom) || (IsSpawned(g.geom) && level.empty()) || InActor(g.geom))
             continue;
         uint32_t mesh = engine::MeshOf(g.geom);
         if (!mesh || (g.node->flags & kHelperFlags) || templateMeshes.count(mesh))
@@ -150,7 +153,8 @@ void Build()
         ModelEntry& e = byMesh[mesh];
         if (e.uses++ == 0) {
             e.mesh = mesh;
-            e.name = BaseName(g.name);
+            e.name = level.empty() ? BaseName(g.name) : g.name.substr(0, g.name.find('.'));
+            e.level = level;
             e.className = g.className;
             e.sourcePath = g.path;
             e.radius = g.node->boundRadius;
@@ -251,7 +255,10 @@ void DrawTooltip(const ModelEntry& e)
 {
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(e.name.c_str());
-    ImGui::TextDisabled("%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f, e.uses);
+    if (!e.level.empty())
+        ImGui::TextDisabled("from %s (no collision yet), %.1f m", e.level.c_str(), e.radius * 2.0f / 100.0f);
+    else
+        ImGui::TextDisabled("%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f, e.uses);
     float size = 220.0f * ImGui::GetIO().FontGlobalScale * (ImGui::GetFontSize() / 16.0f);
     void* tex = g_thumbPath == e.Key() ? ThumbnailTexture() : nullptr;
     if (tex)
@@ -306,8 +313,11 @@ void DrawRow(const ModelEntry& e, int index)
 {
     ImGui::PushID(index);
     bool current = PlacementSource() == e.sourcePath;
-    char size[32];
-    snprintf(size, sizeof(size), "%.1f m", e.radius * 2.0f / 100.0f);  // bounding sphere diameter
+    char size[48];
+    if (e.level.empty())
+        snprintf(size, sizeof(size), "%.1f m", e.radius * 2.0f / 100.0f);  // bounding sphere diameter
+    else
+        snprintf(size, sizeof(size), "%s  %.1f m", e.level.c_str(), e.radius * 2.0f / 100.0f);
     float sizeW = ImGui::CalcTextSize(size).x;
     if (ImGui::Selectable(e.name.c_str(), current, ImGuiSelectableFlags_AllowOverlap)) {
         if (current)
@@ -335,6 +345,124 @@ void DrawRow(const ModelEntry& e, int index)
     ImGui::PopID();
 }
 
+// ---- models of other levels ----
+
+bool g_otherOpen;
+int g_otherLevel = -1;
+char g_otherFilter[128];
+std::string g_otherMessage;
+
+void DrawOtherLevels()
+{
+    if (!g_otherOpen)
+        return;
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 30, io.DisplaySize.y * 0.7f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver,
+                            ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Models of other levels", &g_otherOpen)) {
+        ImGui::End();
+        return;
+    }
+    const std::vector<std::string>& levels = engine::GameLevels();
+    std::string here = CurrentLevel().baseScene.empty() ? CurrentScene() : CurrentLevel().baseScene;
+    if (g_otherLevel < 0 || g_otherLevel >= int(levels.size()))
+        for (int i = 0; i < int(levels.size()) && g_otherLevel < 0; ++i)
+            if (here.find(levels[i] + "\\") != 0)
+                g_otherLevel = i;
+    ImGui::TextWrapped("Tick the models this level should have. The map is loaded again to get them; then they are "
+                       "in the Models list (marked with their level) and are placed like the others.");
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
+    if (ImGui::BeginCombo("level", g_otherLevel >= 0 ? levels[g_otherLevel].c_str() : "-")) {
+        for (int i = 0; i < int(levels.size()); ++i)
+            if (ImGui::Selectable(levels[i].c_str(), i == g_otherLevel))
+                g_otherLevel = i;
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##ofilter", "filter", g_otherFilter, sizeof(g_otherFilter));
+    if (g_otherLevel < 0) {
+        ImGui::End();
+        return;
+    }
+    const std::string& level = levels[g_otherLevel];
+    const std::vector<engine::LevelModel>& models = engine::LevelModels(level);
+    engine::ZGEOM* known = Resolve("ROOT");
+    struct Row {
+        const engine::LevelModel* m;
+        Category cat;
+    };
+    std::vector<Row> rows;
+    std::string filter = Lower(g_otherFilter);
+    for (const engine::LevelModel& m : models) {
+        if (!filter.empty() && Lower(m.name).find(filter) == std::string::npos &&
+            Lower(m.group).find(filter) == std::string::npos)
+            continue;
+        std::string chain = engine::ClassChainOfId(m.classId, known);
+        rows.push_back({&m, Categorize(m.name, chain.substr(0, chain.find(' ')))});
+    }
+    std::stable_sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
+        return a.cat != b.cat ? a.cat < b.cat : Lower(a.m->name) < Lower(b.m->name);
+    });
+    float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing();
+    if (ImGui::BeginChild("olist", ImVec2(0, -footer), ImGuiChildFlags_Borders)) {
+        if (models.empty())
+            ImGui::TextDisabled("no models (the level could not be read)");
+        size_t i = 0;
+        while (i < rows.size()) {
+            Category cat = rows[i].cat;
+            size_t end = i;
+            while (end < rows.size() && rows[end].cat == cat)
+                ++end;
+            if (!filter.empty())
+                ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+            char header[96];
+            snprintf(header, sizeof(header), "%s  (%d)###ocat%d", CategoryName(cat), int(end - i), int(cat));
+            if (ImGui::CollapsingHeader(header)) {
+                for (size_t k = i; k < end; ++k) {
+                    const engine::LevelModel& m = *rows[k].m;
+                    ImGui::PushID(int(m.mesh));
+                    bool on = IsImported(level, m.mesh);
+                    if (ImGui::Checkbox(m.name.c_str(), &on)) {
+                        int uses = on ? 0 : ImportUses(level, m.mesh);
+                        if (uses)
+                            g_otherMessage = m.name + " is used by " + std::to_string(uses) +
+                                             " placed objects: remove them first";
+                        else
+                            SetImported(level, m.mesh, m.name, on);
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s\nin %s, used %d times there, %d materials", m.name.c_str(),
+                                          m.group.c_str(), m.uses, m.parts);
+                    char size[32];
+                    snprintf(size, sizeof(size), "%.1f m", m.radius * 2.0f / 100.0f);
+                    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(size).x);
+                    ImGui::TextDisabled("%s", size);
+                    ImGui::PopID();
+                }
+            }
+            i = end;
+        }
+    }
+    ImGui::EndChild();
+    ImGui::Text("%d models of other levels in this level", int(CurrentLevel().imports.size()));
+    if (!g_otherMessage.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.4f, 1.0f), "%s", g_otherMessage.c_str());
+    }
+    bool pending = ImportsPending();
+    ImGui::BeginDisabled(!pending);
+    if (ImGui::Button(pending ? "Load the map again to get them" : "All of them are loaded", ImVec2(-1, 0))) {
+        g_otherOpen = false;
+        ReloadMapForImports();
+    }
+    ImGui::EndDisabled();
+    if (pending && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Your level stays as it is (save it to keep it on disk).");
+    ImGui::End();
+}
+
 void DrawPanel()
 {
     if (CurrentScene().empty()) {
@@ -343,6 +471,13 @@ void DrawPanel()
     }
     if (g_builtFor != CurrentScene() || g_models.empty())
         Build();
+    if (ImGui::Button("Other levels...")) {
+        g_otherOpen = true;
+        g_otherMessage.clear();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Models of the game's other levels for this level");
+    ImGui::SameLine();
     if (ImGui::Button("Refresh"))
         Build();
     ImGui::SameLine();
@@ -363,6 +498,7 @@ void DrawPanel()
     std::string filter = Lower(g_filter);
     auto matches = [&](const ModelEntry& e) {
         return filter.empty() || Lower(e.name).find(filter) != std::string::npos ||
+               (!e.level.empty() && Lower(e.level).find(filter) != std::string::npos) ||
                Lower(e.className).find(filter) != std::string::npos ||
                Lower(CategoryName(e.category)).find(filter) != std::string::npos;
     };
@@ -432,6 +568,7 @@ void InstallModelsPanel()
     overlay::AddPanel({"Models", &g_visible, DrawPanel, overlay::Dock::Left});
     static bool always = true;
     overlay::AddPanel({nullptr, &always, ThumbTick});
+    overlay::AddPanel({nullptr, &always, DrawOtherLevels});
     OnScenePushed([](const std::string&) {
         g_models.clear();
         g_builtFor.clear();

@@ -1,12 +1,14 @@
 #include "level.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cctype>
 #include <fstream>
 
 #include "imgui.h"
 #include "json.hpp"
 
+#include "../engine/imports.h"
 #include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
@@ -696,6 +698,12 @@ bool SaveLevel(std::string* error)
     for (auto& [path, points] : g_level.lists)
         j["lists"].push_back({{"path", path}, {"points", points}});
     j["scripts"] = g_level.scripts;
+    if (!g_level.imports.empty()) {
+        json imports = json::array();
+        for (const ImportedModel& m : g_level.imports)
+            imports.push_back({{"level", m.level}, {"mesh", m.mesh}, {"name", m.name}});
+        j["imports"] = imports;
+    }
 
     std::string dir = ModsDir() + g_level.folder;
     CreateDirectoryA(ModsDir().c_str(), nullptr);
@@ -806,6 +814,14 @@ bool LoadLevel(const std::string& folder, std::string* error)
         if (o.contains("path"))
             L.lists[o["path"].get<std::string>()] = o.value("points", std::vector<std::string>{});
     L.scripts = j.value("scripts", std::vector<std::string>{});
+    for (const json& o : j.value("imports", json::array())) {
+        ImportedModel m;
+        m.level = o.value("level", "");
+        m.mesh = o.value("mesh", 0u);
+        m.name = o.value("name", "");
+        if (!m.level.empty() && m.mesh)
+            L.imports.push_back(m);
+    }
     g_level = std::move(L);
     ClearHistory();
     Log("level loaded: %s (%d edits, %d new objects)", folder.c_str(), int(g_level.objects.size()),
@@ -1279,9 +1295,158 @@ void SetEmptyMap(bool empty)
     ApplyMission();  // the level's objective lines
 }
 
+// ---- models of other levels ----
+
+namespace {
+
+constexpr const char* kLibrary = "EditorImports";
+std::map<std::string, std::string> g_libraryLevel;  // library object path -> its level
+
+std::string LibraryName(const ImportedModel& m)
+{
+    char hex[16];
+    snprintf(hex, sizeof(hex), "%X", m.mesh);
+    return (m.name.empty() ? std::string("Model") : m.name) + "." + m.level + "." + hex;
+}
+
+bool SameScene(std::string a, std::string b)
+{
+    // e.g. "SCENES\C1-1/C1-1__MAIN.gms" and "C1-1\C1-1__MAIN"
+    for (std::string* s : {&a, &b}) {
+        for (char& c : *s)
+            c = c == '/' ? '\\' : char(std::tolower(static_cast<unsigned char>(c)));
+        size_t dot = s->rfind('.');
+        if (dot != std::string::npos && s->find('\\', dot) == std::string::npos)
+            s->resize(dot);
+    }
+    return a.size() >= b.size() ? a.compare(a.size() - b.size(), b.size(), b) == 0
+                                : b.compare(b.size() - a.size(), a.size(), a) == 0;
+}
+
+// the imported models of the loaded map, as objects far below the world
+void BuildImportLibrary()
+{
+    if (g_level.imports.empty() || CurrentScene() != g_level.baseScene)
+        return;
+    engine::ZGEOM* root = Resolve("ROOT");
+    if (!root)
+        return;
+    engine::ZGEOM* group = Resolve(std::string("ROOT/") + kLibrary);
+    const float identity[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    if (!group) {
+        const float away[3] = {0.0f, -100000.0f, 0.0f};
+        std::string err;
+        group = engine::CreateHelper(kLibrary, root, 0, identity, away, &err, "ZGROUP");
+        if (!group) {
+            Log("level: no model library (%s)", err.c_str());
+            return;
+        }
+        AdoptEngineOwned(group);
+    }
+    int made = 0;
+    for (const ImportedModel& m : g_level.imports) {
+        uint32_t mesh = engine::ImportedMesh(m.level, m.mesh);
+        std::string name = LibraryName(m), path = std::string("ROOT/") + kLibrary + "/" + name;
+        if (!mesh || Resolve(path))
+            continue;
+        const engine::LevelModel* info = nullptr;
+        for (const engine::LevelModel& lm : engine::LevelModels(m.level))
+            if (lm.mesh == m.mesh)
+                info = &lm;
+        const float zero[3] = {0, 0, 0};
+        std::string err;
+        engine::ZGEOM* g = engine::CreateObject(name, group, "ZSTDOBJ", mesh, info ? info->flags : 0x200F3,
+                                                info ? info->mat : identity, zero, {}, &err);
+        if (!g) {
+            Log("level: imported model %s: %s", name.c_str(), err.c_str());
+            continue;
+        }
+        AdoptEngineOwned(g);
+        g_libraryLevel[path] = m.level;
+        ++made;
+    }
+    if (made)
+        InvalidateSceneModel();
+    Log("level: %d imported models ready", made);
+}
+
+std::vector<engine::ModelImport> ImportsFor(const std::string& scene)
+{
+    std::vector<engine::ModelImport> out;
+    if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
+        return out;
+    for (const ImportedModel& m : g_level.imports)
+        out.push_back({m.level, m.mesh});
+    return out;
+}
+
+} // namespace
+
+bool IsImported(const std::string& level, uint32_t mesh)
+{
+    for (const ImportedModel& m : g_level.imports)
+        if (m.level == level && m.mesh == mesh)
+            return true;
+    return false;
+}
+
+void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on)
+{
+    if (on == IsImported(level, mesh))
+        return;
+    if (on) {
+        if (g_level.baseScene.empty())
+            g_level.baseScene = CurrentScene();
+        g_level.imports.push_back({level, mesh, name});
+    } else {
+        g_level.imports.erase(std::remove_if(g_level.imports.begin(), g_level.imports.end(),
+                                             [&](const ImportedModel& m) { return m.level == level && m.mesh == mesh; }),
+                              g_level.imports.end());
+    }
+    g_level.dirty = true;
+}
+
+int ImportUses(const std::string& level, uint32_t mesh)
+{
+    for (const ImportedModel& m : g_level.imports) {
+        if (m.level != level || m.mesh != mesh)
+            continue;
+        std::string path = std::string("ROOT/") + kLibrary + "/" + LibraryName(m);
+        int n = 0;
+        for (const SpawnedObject& s : g_level.spawned)
+            n += s.sourcePath == path;
+        return n;
+    }
+    return 0;
+}
+
+bool ImportsPending()
+{
+    if (CurrentScene() != g_level.baseScene)
+        return false;
+    for (const ImportedModel& m : g_level.imports)
+        if (!engine::ImportedMesh(m.level, m.mesh))
+            return true;
+    return false;
+}
+
+void ReloadMapForImports()
+{
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    RequestScene(g_level.baseScene);
+}
+
+std::string ImportLevelOf(const std::string& path)
+{
+    auto it = g_libraryLevel.find(path);
+    return it == g_libraryLevel.end() ? "" : it->second;
+}
+
 int ApplyLevel()
 {
     int n = 0;
+    BuildImportLibrary();
     if (g_level.emptyMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
         ClearScene();
     for (const SpawnedObject& s : g_level.spawned)
@@ -1375,7 +1540,9 @@ void InstallLevelPanel()
     overlay::AddPanel({"Level", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     overlay::AddMenu("File", FileMenu);
     OnScenePushed(OnScene);
+    OnScenePushed([](const std::string&) { g_libraryLevel.clear(); });
     OnFrameEnd(OnFrame);
+    engine::SetImportProvider(ImportsFor);
 }
 
 } // namespace h2::editor

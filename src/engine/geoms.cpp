@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <cstring>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -108,6 +109,47 @@ std::string ClassName(const ZGEOM* geom)
     if (!geom || !ReadAt(geom, offsetof(ZGEOM, classInfo), ci) || !ci || !ReadAt(ci, 0, name))
         return "?";
     return SafeString(name, 64);
+}
+
+std::string ClassChainOfId(uint32_t id, const ZGEOM* known)
+{
+    // the class infos are a linked list (prev / next): every class, found by its id
+    static std::map<uint32_t, std::string> chains;
+    if (chains.empty()) {
+        ZClassInfo* ci = nullptr;
+        if (!known || !ReadAt(known, offsetof(ZGEOM, classInfo), ci) || !ci)
+            return "";
+        for (int i = 0; i < 4096; ++i) {  // to the head
+            ZClassInfo* prev = nullptr;
+            if (!ReadAt(ci, offsetof(ZClassInfo, prev), prev) || !prev || prev == ci)
+                break;
+            ci = prev;
+        }
+        for (int i = 0; ci && i < 4096; ++i) {
+            uint32_t cid = 0;
+            if (!ReadAt(ci, offsetof(ZClassInfo, id), cid))
+                break;
+            std::string chain;
+            ZClassInfo* c = ci;
+            for (int depth = 0; c && depth < 16; ++depth) {
+                const char* name = nullptr;
+                if (!ReadAt(c, 0, name))
+                    break;
+                chain += (chain.empty() ? "" : " : ") + SafeString(name, 64);
+                ZClassInfo* base = nullptr;
+                if (!ReadAt(c, offsetof(ZClassInfo, base), base) || base == c)
+                    break;
+                c = base;
+            }
+            chains.emplace(cid, chain);
+            ZClassInfo* next = nullptr;
+            if (!ReadAt(ci, offsetof(ZClassInfo, next), next) || next == ci)
+                break;
+            ci = next;
+        }
+    }
+    auto it = chains.find(id);
+    return it == chains.end() ? "" : it->second;
 }
 
 std::string ClassChain(const ZGEOM* geom)

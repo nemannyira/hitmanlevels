@@ -2,12 +2,15 @@
 
 #include <windows.h>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <set>
 
 #include "../hook.h"
 #include "../log.h"
+#include "geoms.h"
+#include "scene_data.h"
 #include "zip.h"
 
 namespace h2::engine {
@@ -19,7 +22,6 @@ constexpr uintptr_t kGetPrimsData = 0x41C080;    // ZEngineDataBase::(void* buf,
 constexpr uintptr_t kGetTextureSize = 0x41C270;
 constexpr uintptr_t kGetTextureData = 0x41C300;
 constexpr uintptr_t kGetSceneName = 0x41B880;    // ZEngineDataBase::(void) -> const char*
-constexpr uint32_t kRuntimeReserve = 0x60000;    // AllocSequence's room for runtime prims
 constexpr uint32_t kRecord = 0x84;               // a PRM record (one material of a model)
 constexpr int kTexIds = 2048;
 
@@ -40,6 +42,7 @@ void Put(std::vector<uint8_t>& b, size_t at, uint32_t v) { memcpy(&b[at], &v, 4)
 struct Source {
     bool loaded = false;
     std::vector<uint8_t> prm, tex;
+    std::set<uint32_t> records;  // offsets of the PRM's records (its table)
     uint32_t texTable = 0;
     bool HasTexture(uint32_t id) const { return id && id < kTexIds && U32(tex, texTable + id * 4) != 0; }
     uint32_t TextureAt(uint32_t id) const { return U32(tex, texTable + id * 4); }
@@ -70,11 +73,16 @@ Source* LoadSource(const std::string& level)
         return nullptr;
     }
     s.texTable = U32(s.tex, 0);
+    uint32_t table = U32(s.prm, 8), count = U32(s.prm, 12);
+    for (uint32_t i = 0; i < count && table + i * 4 + 4 <= s.prm.size(); ++i)
+        s.records.insert(U32(s.prm, table + i * 4));
     Log("imports: read %s (PRM %zu, TEX %zu bytes)", level.c_str(), s.prm.size(), s.tex.size());
     return &s;
 }
 
 std::vector<ModelImport> g_requests;
+std::function<std::vector<ModelImport>(const std::string&)> g_provider;
+std::vector<ModelImport> g_load;  // what the scene being loaded gets
 
 // the load in progress
 struct TexUse {  // a texture id field of a copied record
@@ -95,7 +103,14 @@ bool Wanted(void* engine)
 {
     const char* name = reinterpret_cast<const char*(__thiscall*)(void*)>(kGetSceneName)(engine);
     std::string n = name ? name : "";
-    return !g_requests.empty() && n.find("__MAIN") != std::string::npos;
+    g_load.clear();
+    if (n.find("__MAIN") == std::string::npos)
+        return false;
+    if (g_provider)
+        g_load = g_provider(n);
+    g_load.insert(g_load.end(), g_requests.begin(), g_requests.end());
+    Log("imports: %s gets %zu models of other levels", n.c_str(), g_load.size());
+    return !g_load.empty();
 }
 
 // one model: its records and data copied into the blob, offsets moved
@@ -169,17 +184,19 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
     if (!Wanted(self) || int(real) <= 0)
         return real;
     g_primReal = real;
-    g_base = (real + kRuntimeReserve + 15) & ~15u;
+    g_base = (real + 15) & ~15u;
     g_blob.clear();
     g_texUses.clear();
     g_texMap.clear();
     g_pending.clear();
-    for (const ModelImport& m : g_requests)
-        Copy(m);
+    std::set<std::pair<std::string, uint32_t>> done;
+    for (const ModelImport& m : g_load)
+        if (done.insert({m.level, m.mesh}).second)
+            Copy(m);
     if (g_blob.empty())
         return real;
     g_active = true;
-    return real + (g_base - real - kRuntimeReserve) + uint32_t(g_blob.size());
+    return g_base + ((uint32_t(g_blob.size()) + 15) & ~15u);
 }
 
 uint32_t __fastcall hkTexSize(void* self, void* edx)
@@ -261,13 +278,151 @@ void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
         uint32_t v = U32(g_blob, u.at);
         Put(g_blob, u.at, (v & ~u.mask) | (id & u.mask));
     }
-    memcpy(static_cast<uint8_t*>(buf) + g_base, g_blob.data(), g_blob.size());
+    auto b = static_cast<uint8_t*>(buf);
+    memcpy(b + g_base, g_blob.data(), g_blob.size());
+    // header[1]: where the engine adds prims while the level runs (header[2] is the record table)
+    uint32_t used = g_base + ((uint32_t(g_blob.size()) + 15) & ~15u);
+    memcpy(b + 4, &used, 4);
     g_meshes = g_pending;
     g_active = false;
     Log("imports: %zu models placed at %08X (%zu bytes)", g_meshes.size(), g_base, g_blob.size());
 }
 
+// ---- catalogue of another level ----
+
+struct Catalogue {
+    bool built = false;
+    std::vector<LevelModel> models;
+};
+std::map<std::string, Catalogue> g_catalogues;
+
+// any object of the loaded scene: its class info leads to every class
+ZGEOM* KnownGeom()
+{
+    for (int i = 0; i < 64; ++i)
+        if (ZGEOM* g = RecordGeom(i))
+            return g;
+    return nullptr;
+}
+
+// rotation of a record in the world: its matrix and its groups' (the editor's
+// convention: a local vector (x, y, z) is x * row2 + y * row1 + z * row0)
+void Compose(const float parent[9], const float local[9], float out[9])
+{
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c)
+            out[r * 3 + c] = local[r * 3 + 0] * parent[6 + c] + local[r * 3 + 1] * parent[3 + c] +
+                             local[r * 3 + 2] * parent[0 + c];
+}
+
+void BuildCatalogue(const std::string& level, Catalogue& cat)
+{
+    cat.built = true;
+    Source* src = LoadSource(level);
+    if (!src)
+        return;
+    std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
+    std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
+    std::vector<uint8_t> packed, gms, buf;
+    std::string err;
+    if (!ReadZipEntry(zip, base + "GMS", packed, &err) || !ReadZipEntry(zip, base + "BUF", buf, &err) ||
+        packed.size() < 9 || !Inflate(packed.data() + 9, packed.size() - 9, gms, U32(packed, 0))) {
+        Log("imports: %s: scene file not read (%s)", level.c_str(), err.c_str());
+        return;
+    }
+    std::vector<SceneRecord> records = ParseSceneRecords(gms, buf);
+    ZGEOM* known = KnownGeom();
+    std::map<uint32_t, std::string> chains;
+    auto chain = [&](uint32_t id) -> const std::string& {
+        auto it = chains.find(id);
+        if (it == chains.end())
+            it = chains.emplace(id, ClassChainOfId(id, known)).first;
+        return it->second;
+    };
+    std::map<uint32_t, size_t> byMesh;
+    for (const SceneRecord& r : records) {
+        if (!r.mesh || (r.flags & (0x2000 | 0x10000)) || !src->records.count(r.mesh) || U32(src->prm, r.mesh) != 0)
+            continue;
+        // in a room, not part of a character or an item
+        bool inRoom = false, excluded = false;
+        for (int p = r.parent; p >= 0 && size_t(p) < records.size(); p = records[p].parent) {
+            const std::string& c = chain(records[p].classId);
+            inRoom |= c.find("ZROOM") != std::string::npos;
+            excluded |= c.find("ZActor") != std::string::npos || c.find("ZItem") != std::string::npos;
+        }
+        const std::string& own = chain(r.classId);
+        if (!inRoom || excluded || own.find("ZActor") != std::string::npos || own.find("ZItem") != std::string::npos)
+            continue;
+        auto [it, added] = byMesh.emplace(r.mesh, cat.models.size());
+        if (!added) {
+            cat.models[it->second].uses++;
+            continue;
+        }
+        LevelModel m;
+        m.mesh = r.mesh;
+        m.name = r.name;
+        m.group = r.parent >= 0 ? records[r.parent].name : "";
+        m.classId = r.classId;
+        m.flags = r.flags;
+        memcpy(m.mat, r.mat, sizeof(m.mat));
+        for (int p = r.parent; p >= 0 && size_t(p) < records.size(); p = records[p].parent) {
+            float world[9];
+            Compose(records[p].mat, m.mat, world);
+            memcpy(m.mat, world, sizeof(world));
+        }
+        m.uses = 1;
+        for (uint32_t q = r.mesh; q && m.parts < 64 && q + kRecord <= src->prm.size(); q = U32(src->prm, q + 8))
+            ++m.parts;
+        uint32_t bounds = U32(src->prm, r.mesh + 0x18);
+        if (bounds && bounds + 0x3C <= src->prm.size()) {
+            float b[6];
+            memcpy(b, &src->prm[bounds + 0x24], sizeof(b));
+            float dx = b[0] - b[3], dy = b[1] - b[4], dz = b[2] - b[5];
+            float d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 > 0 && d2 < 1e12f)
+                m.radius = 0.5f * sqrtf(d2);
+        }
+        cat.models.push_back(std::move(m));
+    }
+    Log("imports: %s: %zu models", level.c_str(), cat.models.size());
+}
+
 } // namespace
+
+void SetImportProvider(std::function<std::vector<ModelImport>(const std::string&)> provider)
+{
+    g_provider = std::move(provider);
+}
+
+const std::vector<LevelModel>& LevelModels(const std::string& level)
+{
+    Catalogue& c = g_catalogues[level];
+    if (!c.built)
+        BuildCatalogue(level, c);
+    return c.models;
+}
+
+const std::vector<std::string>& GameLevels()
+{
+    static std::vector<std::string> levels;
+    if (!levels.empty())
+        return levels;
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((GameDir() + "Scenes\\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return levels;
+    do {
+        std::string d = fd.cFileName;
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || d == "." || d == "..")
+            continue;
+        if (GetFileAttributesA((GameDir() + "Scenes\\" + d + "\\" + d + "__MAIN.ZIP").c_str()) !=
+            INVALID_FILE_ATTRIBUTES)
+            levels.push_back(d);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    std::sort(levels.begin(), levels.end());
+    return levels;
+}
 
 void SetModelImports(const std::vector<ModelImport>& list) { g_requests = list; }
 

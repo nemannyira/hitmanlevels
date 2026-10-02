@@ -94,6 +94,9 @@ void* GeomTable();
 std::string ClassName(const ZGEOM* geom);
 // "ZCAMERA : ZGEOM : ..." (most derived first)
 std::string ClassChain(const ZGEOM* geom);
+// The same for a class id (e.g. of a scene file's record); `known`: any live
+// object (its class info leads to the others). "" when unknown.
+std::string ClassChainOfId(uint32_t id, const ZGEOM* known);
 bool IsA(const ZGEOM* geom, const char* className);
 
 void WorldPosition(ZGEOM* geom, float pos[3]);

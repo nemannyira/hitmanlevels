@@ -144,6 +144,8 @@ bool DoHelper(HelperArgs& a)
         a.step = 3;
         if (a.parent)
             VFunc<void(__thiscall*)(ZGEOM*, ZBaseGeom*, int, int)>(a.parent, kGeom_AddChild)(a.parent, node, 0, 0);
+        if (a.mesh)
+            reinterpret_cast<void(__thiscall*)(ZBaseGeom*, bool)>(kNode_CalcBounds)(node, false);
         if (a.data) {
             a.step = 6;
             Dblk d;

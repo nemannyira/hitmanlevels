@@ -149,6 +149,13 @@ int TraceCams(lua_State* L)
     return 0;
 }
 
+// h2.dev_viewdistance(scale)
+int ViewDist(lua_State* L)
+{
+    SetViewDistance(float(luaL_checknumber(L, 1)));
+    return 0;
+}
+
 // h2.dev_shot(name): saves Screens\<name>.bmp at the next frame
 int Shot(lua_State* L)
 {
@@ -177,6 +184,7 @@ void InstallDevCommands()
     script::Register("dev_look", Look);
     script::Register("dev_wheel", Wheel);
     script::Register("dev_tracecams", TraceCams);
+    script::Register("dev_viewdistance", ViewDist);
     script::Register("dev_shot", Shot);
     script::Register("dev_editor", Editor);
     Log("dev commands on: Mods\\_cmd.lua");

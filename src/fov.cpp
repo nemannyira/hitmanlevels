@@ -134,6 +134,9 @@ struct CamFov {
 };
 std::unordered_map<game::ZCAMERA*, CamFov> g_fovs;
 
+float g_viewDistance = 1.0f;  // far plane multiplier for world cameras (editor)
+float g_viewDistanceApplied = 1.0f;
+
 bool Eligible(game::ZCAMERA* cam) { return cam && !KeepFov(cam) && !(cam->flags & 1) && Widening(); }
 
 float AppliedFov(game::ZCAMERA* cam, float current)
@@ -159,7 +162,9 @@ void __fastcall hkSetupProjection(game::ZCAMERA* cam, void* edx, float fov, floa
     if (!Eligible(cam))
         return oSetupProjection(cam, edx, fov, nearPlane, farPlane, width, height, aspect);
     float applied = AppliedFov(cam, fov);
-    oSetupProjection(cam, edx, applied, nearPlane, farPlane, width, height, aspect);
+    if (g_viewDistanceApplied != g_viewDistance)
+        cam->flags |= 2;  // the far plane changed: recompute the frustum
+    oSetupProjection(cam, edx, applied, nearPlane, farPlane * g_viewDistance, width, height, aspect);
     cam->fov = applied;
 }
 
@@ -173,14 +178,22 @@ void __fastcall hkRenderCamera(void* self, void* edx, game::ZCAMERA* cam, int ar
     game::NoteRenderedCamera(cam);
     // Overlay cameras (menus, HUD, screen effects) draw on top without
     // clearing; their content is laid out in pixels, so they keep their FOV.
-    if (Eligible(cam)) {
-        float applied = AppliedFov(cam, cam->fov);  // normally set already by SetupProjection
-        if (cam->fov != applied) {
-            cam->fov = applied;
-            cam->flags |= 2;  // planes and focal length follow
-        }
+    if (!Eligible(cam)) {
+        oRenderCamera(self, edx, cam, arg);
+        g_current = nullptr;
+        return;
     }
+    float applied = AppliedFov(cam, cam->fov);  // normally set already by SetupProjection
+    if (cam->fov != applied) {
+        cam->fov = applied;
+        cam->flags |= 2;  // planes and focal length follow
+    }
+    // view distance: projection far plane and fog (both from the camera's far plane)
+    float farOriginal = cam->farPlane;
+    cam->farPlane = farOriginal * g_viewDistance;
+    g_viewDistanceApplied = g_viewDistance;
     oRenderCamera(self, edx, cam, arg);
+    cam->farPlane = farOriginal;
     g_current = nullptr;
 }
 
@@ -216,6 +229,9 @@ float CameraTanHalfFov(const game::ZCAMERA* cam)
 }
 
 void ForgetCameras() { g_fovs.clear(); }
+
+void SetViewDistance(float scale) { g_viewDistance = scale < 0.25f ? 0.25f : (scale > 20.0f ? 20.0f : scale); }
+float ViewDistance() { return g_viewDistance; }
 
 void InstallFovFix()
 {

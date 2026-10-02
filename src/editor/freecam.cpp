@@ -5,6 +5,7 @@
 
 #include "imgui.h"
 
+#include "../fov.h"
 #include "../game.h"
 #include "../hook.h"
 #include "../input/dinput.h"
@@ -24,6 +25,7 @@ float g_pos[3];
 float g_yaw, g_pitch;          // radians; yaw 0 looks along +Z, pitch > 0 looks up
 float g_speed = 400.0f;        // world units (cm) per second
 float g_lookSensitivity = 0.0025f;
+float g_viewDistance = 4.0f;   // far plane multiplier while flying (the game's is short for an editor)
 LARGE_INTEGER g_lastTick;
 
 void Forward(float yaw, float pitch, float f[3])
@@ -129,6 +131,7 @@ void __fastcall hkFrameUpdate(void* self, void* edx)
 void OnScene(const std::string&)
 {
     g_enabled = false;  // the camera objects are recreated with the scene
+    SetViewDistance(1.0f);
 }
 
 } // namespace
@@ -148,6 +151,7 @@ void SetFreeCamEnabled(bool enabled)
     if (enabled && !g_enabled && cam)
         CaptureFromCamera(cam);
     g_enabled = enabled && cam;
+    SetViewDistance(g_enabled ? g_viewDistance : 1.0f);
 }
 
 void FreeCamPosition(float out[3])
@@ -194,6 +198,11 @@ void DrawCameraPanel()
     if (!cam)
         ImGui::TextDisabled("no world camera yet");
     ImGui::SliderFloat("speed", &g_speed, 10.0f, 5000.0f, "%.0f cm/s", ImGuiSliderFlags_Logarithmic);
+    if (ImGui::SliderFloat("view distance", &g_viewDistance, 1.0f, 12.0f, "x%.1f") && g_enabled)
+        SetViewDistance(g_viewDistance);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How far the free camera sees (the game's far plane and fog, times this).\n"
+                          "Only while flying; the game itself keeps its own distance.");
     float pos[3];
     FreeCamPosition(pos);
     if (ImGui::InputFloat3("position", pos, "%.1f") && g_enabled)

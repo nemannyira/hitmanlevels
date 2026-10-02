@@ -20,6 +20,10 @@ float CameraTanHalfFov(const game::ZCAMERA* cam);
 // Scene change: camera objects are gone.
 void ForgetCameras();
 
+// View distance: multiplier on the far plane (and the fog) of world cameras.
+void SetViewDistance(float scale);
+float ViewDistance();
+
 // Debug: log every camera rendered during the next `frames` frames.
 void TraceCameras(int frames);
 void TraceFrameDone();  // called once per presented frame

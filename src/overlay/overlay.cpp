@@ -29,6 +29,9 @@ namespace {
 HWND g_window;
 void* g_device;  // device the DX8 backend is bound to (its font texture holds a reference)
 WNDPROC g_gameWndProc;
+std::vector<void (*)()> g_always;
+ImFont* g_menuFont;
+void (*g_exclusive)();
 bool g_ready;
 bool g_open;
 std::string g_iniPath;
@@ -161,6 +164,11 @@ void ApplyTheme(float scale)
         io.Fonts->AddFontDefault();
         io.FontGlobalScale = scale;
     }
+    // the game's menus are set in Copperplate Gothic (if Windows has it)
+    const char* copperplate = "C:\\Windows\\Fonts\\COPRGTB.TTF";
+    g_menuFont = GetFileAttributesA(copperplate) != INVALID_FILE_ATTRIBUTES
+                     ? io.Fonts->AddFontFromFileTTF(copperplate, 48.0f)
+                     : nullptr;
 }
 
 Menu& MenuNamed(const char* name)
@@ -382,8 +390,14 @@ void OnPresent(void* device)
     ImGui_ImplWin32_NewFrame();
     DevUiStep();
     ImGui::NewFrame();
-    if (g_open)
-        DrawLayout();
+    for (auto draw : g_always)
+        draw();
+    if (g_open) {
+        if (g_exclusive)
+            g_exclusive();
+        else
+            DrawLayout();
+    }
     ImGui::Render();
     ImDrawData* dd = ImGui::GetDrawData();
     if (dd->CmdListsCount > 0 && d3d8::Call<HRESULT>(device, d3d8::Dev_BeginScene) >= 0) {
@@ -406,6 +420,10 @@ void OnDeviceReleased()
 }
 
 bool IsOpen() { return g_open; }
+
+void AddAlwaysDraw(void (*draw)()) { g_always.push_back(draw); }
+ImFont* MenuFont() { return g_menuFont; }
+void SetExclusive(void (*draw)()) { g_exclusive = draw; }
 
 void SetOpen(bool open)
 {

@@ -58,6 +58,7 @@ add_library(h2fix SHARED
     src/editor/npcs.cpp
     src/editor/mission.cpp
     src/editor/music.cpp
+    src/editor/launcher.cpp
     src/editor/placement.cpp
     src/editor/scene_panel.cpp
     src/editor/viewport.cpp

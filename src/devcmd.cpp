@@ -104,17 +104,7 @@ void Poll()
 // h2.dev_loadscene(name): asks the engine to switch scenes (as the menus do)
 int LoadScene(lua_State* L)
 {
-    const char* name = luaL_checkstring(L, 1);
-    auto sys = reinterpret_cast<char*>(game::SysInterface());
-    void* engine = sys ? *reinterpret_cast<void**>(sys + 0x98) : nullptr;
-    if (!engine)
-        return luaL_error(L, "no engine");
-    // a level change: every scene on the stack goes, then the new one (as the menus do)
-    using PopAll_t = void(__thiscall*)(void*);
-    reinterpret_cast<PopAll_t>(game::ZEngineDataBase_PopAllScenes)(engine);
-    using PushScene_t = void*(__thiscall*)(void*, const char*);
-    void* r = reinterpret_cast<PushScene_t>(game::ZEngineDataBase_PushScene)(engine, name);
-    lua_pushboolean(L, r != nullptr);
+    lua_pushboolean(L, RequestScene(luaL_checkstring(L, 1)));
     return 1;
 }
 
@@ -398,8 +388,9 @@ void DevUiStep()
     ImGuiIO& io = ImGui::GetIO();
     switch (s.kind) {
     case 0: io.AddMousePosEvent(s.x, s.y); break;
-    case 1: io.AddMouseButtonEvent(s.button, true); break;
-    case 2: io.AddMouseButtonEvent(s.button, false); break;
+    // the backend adds the OS cursor every frame while the game is in front: clicks bring their position
+    case 1: io.AddMousePosEvent(s.x, s.y); io.AddMouseButtonEvent(s.button, true); break;
+    case 2: io.AddMousePosEvent(s.x, s.y); io.AddMouseButtonEvent(s.button, false); break;
     case 4: io.AddKeyEvent(ImGuiKey(s.button), true); break;
     case 5: io.AddKeyEvent(ImGuiKey(s.button), false); break;
     case 6: io.AddInputCharacter(unsigned(s.button)); break;

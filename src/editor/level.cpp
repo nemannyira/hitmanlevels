@@ -8,6 +8,7 @@
 #include "json.hpp"
 
 #include "../engine/lists.h"
+#include "../engine/npc.h"
 #include "../engine/scene_data.h"
 #include "../engine/spawn.h"
 #include "../log.h"
@@ -34,6 +35,77 @@ std::map<std::string, engine::ZGEOM*> g_liveNpcs;  // npc id -> its character in
 // points taken out of the level: kept in the scene (scripts may still refer to
 // them), used again when they come back (undo)
 std::map<std::string, engine::ZGEOM*> g_retiredPoints;
+// empty map: the scene's characters and items taken out, as they were
+struct Cleared {
+    engine::ZGEOM* geom;
+    ObjectState state;
+    bool actor;
+};
+std::vector<Cleared> g_cleared;
+
+constexpr float kAway = -50000.0f;  // where taken out objects go (below the world)
+
+void ClearScene()
+{
+    if (!g_cleared.empty())
+        return;
+    for (int rec : NpcRecords()) {
+        engine::ZGEOM* actor = engine::RecordGeom(rec);
+        if (!actor || !IsLive(actor))
+            continue;
+        g_cleared.push_back({actor, GetState(actor), true});
+        Transform t = GetTransform(actor);
+        t.pos[1] = kAway;
+        engine::TeleportActor(actor, t.pos);
+        SetHidden(actor, true);
+    }
+    for (const auto& g : SceneModel(0).geoms) {
+        if (!IsLive(g.geom) || !engine::IsA(g.geom, "ZItem") || engine::IsA(g.geom, "ZItemTemplate") ||
+            IsSpawned(g.geom) || InActor(g.geom))
+            continue;
+        g_cleared.push_back({g.geom, GetState(g.geom), false});
+        ObjectState st = g_cleared.back().state;
+        st.transform.pos[1] = kAway;
+        st.hidden = true;
+        SetState(g.geom, st);
+    }
+    InvalidateSceneModel();
+    Log("level: empty map, %d characters and items taken out", int(g_cleared.size()));
+}
+
+// characters whose scripts move them back (a van's driver, a cook going to her place) go again
+void KeepCleared()
+{
+    static double next;
+    if (g_cleared.empty() || NowMs() < next)
+        return;
+    next = NowMs() + 1000.0;
+    for (const Cleared& c : g_cleared) {
+        if (!c.actor || !IsLive(c.geom))
+            continue;
+        Transform t = GetTransform(c.geom);
+        if (t.pos[1] > kAway + 5000.0f) {
+            t.pos[1] = kAway;
+            engine::TeleportActor(c.geom, t.pos);
+        }
+    }
+}
+
+void RestoreScene()
+{
+    for (const Cleared& c : g_cleared) {
+        if (!IsLive(c.geom))
+            continue;
+        if (c.actor) {
+            engine::TeleportActor(c.geom, c.state.transform.pos, c.state.transform.mat);
+            SetHidden(c.geom, c.state.hidden);
+        } else {
+            SetState(c.geom, c.state);
+        }
+    }
+    g_cleared.clear();
+    InvalidateSceneModel();
+}
 bool g_panelVisible = true;
 bool g_autoApply = true;
 bool g_applyPending;
@@ -365,6 +437,7 @@ void OnScene(const std::string& scene)
     g_live.clear();         // the editor destroyed them when the previous scene was left
     g_liveNpcs.clear();
     g_retiredPoints.clear();
+    g_cleared.clear();  // they went with the scene
     script::ForgetScriptObjects();
     for (auto& [path, e] : g_level.objects)
         e.hasOriginal = false;  // originals belong to the previous load
@@ -372,6 +445,7 @@ void OnScene(const std::string& scene)
 
 void OnFrame()
 {
+    KeepCleared();
     if (!g_applyPending || --g_applyWaitFrames > 0)
         return;
     g_applyPending = false;
@@ -404,6 +478,13 @@ void DrawPanel()
         ImGui::SameLine();
         ImGui::TextDisabled("%s", g_status.c_str());
     }
+
+    bool empty = L.emptyMap;
+    if (ImGui::Checkbox("Empty map", &empty))
+        SetEmptyMap(empty);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The scene's characters, items and mission objectives are taken out:\n"
+                          "the map stays for a mission of your own (NPCs, Mission tabs)");
 
     ImGui::SeparatorText("New objects");
     std::string toDelete;
@@ -542,6 +623,8 @@ bool SaveLevel(std::string* error)
     j["version"] = 1;
     j["name"] = g_level.name;
     j["base_scene"] = g_level.baseScene;
+    if (g_level.emptyMap)
+        j["empty_map"] = true;
     j["objects"] = json::array();
     for (auto& [path, e] : g_level.objects) {
         json o = StateJson(e.state);
@@ -647,6 +730,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
     L.folder = folder;
     L.name = j.value("name", folder);
     L.baseScene = j.value("base_scene", "");
+    L.emptyMap = j.value("empty_map", false);
     for (const json& o : j.value("objects", json::array())) {
         ObjectEdit e;
         e.className = o.value("class", "");
@@ -1058,9 +1142,26 @@ bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& point
     return true;
 }
 
+void SetEmptyMap(bool empty)
+{
+    g_level.emptyMap = empty;
+    g_level.dirty = true;
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return;
+    if (empty)
+        ClearScene();
+    else
+        RestoreScene();
+    ApplyMission();  // the level's objective lines
+}
+
 int ApplyLevel()
 {
     int n = 0;
+    if (g_level.emptyMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
+        ClearScene();
     for (const SpawnedObject& s : g_level.spawned)
         if (s.sourceScene.empty() || s.sourceScene == CurrentScene())
             n += Materialize(s) != nullptr;
@@ -1098,6 +1199,7 @@ int ApplyLevel()
 
 void RevertLevel()
 {
+    RestoreScene();
     RevertMission();
     RevertMusic();
     for (auto& [path, points] : g_level.lists)  // the scene file's elements (before the points go)

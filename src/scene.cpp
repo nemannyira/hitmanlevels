@@ -44,4 +44,16 @@ const std::string& CurrentScene() { return g_scene; }
 void OnScenePushed(SceneCallback cb) { g_callbacks.push_back(cb); }
 void OnSceneLeaving(SceneCallback cb) { g_leaving.push_back(cb); }
 
+bool RequestScene(const std::string& name)
+{
+    auto sys = reinterpret_cast<char*>(game::SysInterface());
+    void* engine = sys ? *reinterpret_cast<void**>(sys + 0x98) : nullptr;
+    if (!engine)
+        return false;
+    using PopAll_t = void(__thiscall*)(void*);
+    reinterpret_cast<PopAll_t>(game::ZEngineDataBase_PopAllScenes)(engine);
+    using Push_t = void*(__thiscall*)(void*, const char*);
+    return reinterpret_cast<Push_t>(game::ZEngineDataBase_PushScene)(engine, name.c_str()) != nullptr;
+}
+
 } // namespace h2

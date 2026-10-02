@@ -5,6 +5,7 @@
 // {
 //   "format": "h2level", "version": 1,
 //   "name": "My level",
+//   "empty_map": true,                          // the base scene's characters, items and objectives taken out
 //   "base_scene": "C1-1\\C1-1__MAIN",          // scene the level is built on
 //   "objects": [                                // edits of objects of the base scene
 //     { "path": "ROOT/.../Crate#2", "class": "ZSTDOBJ",
@@ -95,6 +96,7 @@ struct LevelDocument {
     std::string name = "Untitled";
     std::string folder;  // Mods\<folder>
     std::string baseScene;
+    bool emptyMap = false;  // the base scene's characters, items and objective lines are taken out
     std::map<std::string, ObjectEdit> objects;  // by path
     std::vector<SpawnedObject> spawned;
     std::vector<LevelNpc> npcs;
@@ -140,6 +142,8 @@ engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string*
 // New elements of a list (a route: the points in walking order).
 bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& points, std::string* error = nullptr);
 
+// Takes the scene's characters and items out (empty map) or puts them back.
+void SetEmptyMap(bool empty);
 // Applies the level's spawned objects and object edits to the loaded scene; returns how many applied.
 int ApplyLevel();
 // Undoes every edit of the level in the loaded scene (restores originals).

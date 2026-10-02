@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
 
+struct ImFont;
+
 namespace h2::overlay {
 
 // Editor overlay (Dear ImGui on the game's D3D8 device).
@@ -40,5 +42,11 @@ void ShowPanel(const char* name);
 // Items of a main menu ("File", "Edit", "View", "Help"): `items` is called
 // inside the open menu. Menus appear in the order of their first registration.
 void AddMenu(const char* menu, void (*items)());
+// Drawn every frame, also while the editor is closed (e.g. the main menu's entry).
+void AddAlwaysDraw(void (*draw)());
+// While set and the editor is open, only this window is drawn (the launcher).
+void SetExclusive(void (*draw)());
+// The game's menu font (Copperplate Gothic Bold, loaded at 48 px), null when missing.
+ImFont* MenuFont();
 
 } // namespace h2::overlay

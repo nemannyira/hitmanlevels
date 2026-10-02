@@ -100,6 +100,8 @@ const char* EditorKey(int slot)
 
 // the text the level document gives a line ("" = the level's own)
 std::string EditorText(int slot);
+bool InDocument(int slot);
+bool EmptyMap();
 
 // UTF-8 -> the game's 8-bit text (Latin-1; letters it lacks lose their accent)
 std::string ToGameText(const std::string& utf8)
@@ -198,6 +200,8 @@ void __fastcall hkSetObjective(void* self, void* edx, int slot, const char* key)
             g_lineKeys[slot] = key;
         if (!g_restoring && !EditorText(slot).empty())
             key = EditorKey(slot);
+        else if (!g_restoring && EmptyMap() && !InDocument(slot))
+            key = kEmptyKey;  // an empty map has no objectives of the level
     }
     oSetObjective(self, edx, slot, key);
 }
@@ -311,6 +315,18 @@ void BuildTexts()
             g_texts[Lower(EditorKey(o.slot))] = Node(o.text);
 }
 
+bool InDocument(int slot)
+{
+    if (!ForThisScene())
+        return false;
+    for (const MissionObjective& o : Doc().objectives)
+        if (o.slot == slot)
+            return true;
+    return false;
+}
+
+bool EmptyMap() { return ForThisScene() && CurrentLevel().emptyMap; }
+
 std::string EditorText(int slot)
 {
     if (!ForThisScene())
@@ -332,7 +348,7 @@ const uint8_t* SafeLocFind(const char* key, const uint8_t* root)
 
 std::string OwnText(int slot)
 {
-    if (!g_locRoot || !oLocFind || slot < 1 || slot > kSlots || g_lineKeys[slot].empty())
+    if (!g_locRoot || !oLocFind || slot < 1 || slot > kSlots || g_lineKeys[slot].empty() || EmptyMap())
         return "";
     const uint8_t* node = SafeLocFind(g_lineKeys[slot].c_str(), g_locRoot);
     if (!node || !(node[0] & 1))
@@ -363,6 +379,9 @@ void ShowLines(const std::vector<int>& removed = {})
     BuildTexts();
     for (int slot : removed)
         RestoreLine(slot);
+    for (int slot = 1; slot <= kSlots; ++slot)  // the level's lines (taken out on an empty map)
+        if (!InDocument(slot) && !g_lineKeys[slot].empty())
+            RestoreLine(slot);
     for (const MissionObjective& o : Doc().objectives) {
         bool own = !OwnText(o.slot).empty();
         if (!o.text.empty())

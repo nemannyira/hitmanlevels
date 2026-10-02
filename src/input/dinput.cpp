@@ -31,6 +31,8 @@ struct DIMOUSESTATE {
 
 std::atomic<bool> g_blocked{false};
 void* g_mouse;     // IDirectInputDevice8A* of the system mouse
+bool g_leftDown;   // the game's view of the left button
+int g_clicks;      // its presses (TakeGameClicks)
 void* g_keyboard;  // ... and keyboard
 unsigned char g_injectedKeys[256];      // dev commands: keys reported as held by buffered reads
 unsigned char g_injectedButtons[4];
@@ -69,6 +71,12 @@ HRESULT WINAPI hkGetDeviceState(void* self, DWORD size, void* data)
             auto m = static_cast<DIMOUSESTATE*>(data);
             DevInjectMouse(&m->lX, &m->lY, m->rgbButtons, &m->lZ);
         }
+    }
+    if (hr >= 0 && self == g_mouse && size >= sizeof(DIMOUSESTATE)) {
+        bool down = (static_cast<DIMOUSESTATE*>(data)->rgbButtons[0] & 0x80) != 0;
+        if (down && !g_leftDown)
+            ++g_clicks;
+        g_leftDown = down;
     }
     return hr;
 }
@@ -138,6 +146,12 @@ HRESULT WINAPI hkGetDeviceData(void* self, DWORD objSize, void* objData, DWORD* 
         for (DWORD i = 0; i < *inOut; ++i) {
             auto e = reinterpret_cast<const DWORD*>(static_cast<const char*>(objData) + i * objSize);
             long v = static_cast<long>(e[1]);
+            if (e[0] == 12) {  // DIMOFS_BUTTON0
+                bool down = (e[1] & 0x80) != 0;
+                if (down && !g_leftDown)
+                    ++g_clicks;
+                g_leftDown = down;
+            }
             if (e[0] == 0) g_dx += v;
             else if (e[0] == 4) g_dy += v;
             else if (e[0] == 8) g_wheel += v;
@@ -181,6 +195,13 @@ void HookDirectInput(void* directInput8)
 
 void SetGameInputBlocked(bool blocked) { g_blocked = blocked; }
 bool GameInputBlocked() { return g_blocked; }
+
+int TakeGameClicks()
+{
+    int n = g_clicks;
+    g_clicks = 0;
+    return n;
+}
 
 MouseDelta TakeMouseDelta() { return {g_dx.exchange(0), g_dy.exchange(0), g_wheel.exchange(0)}; }
 

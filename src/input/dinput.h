@@ -18,5 +18,8 @@ struct MouseDelta {
     long dx, dy, wheel;
 };
 MouseDelta TakeMouseDelta();
+// Presses of the left mouse button the game has seen since the last call
+// (its own menus' clicks).
+int TakeGameClicks();
 
 } // namespace h2

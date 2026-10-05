@@ -145,19 +145,28 @@ void Build()
     std::sort(g_types.begin(), g_types.end(), [](const NpcType& a, const NpcType& b) {
         return a.script != b.script ? a.script < b.script : a.model < b.model;
     });
-    // characters of other levels: their bodies on a character of this map
-    // with the same animations (its behaviour, data and size)
-    std::map<std::string, int> byAnims;
-    for (int index : NpcRecords())
-        byAnims.try_emplace(NpcAnimSet(index), index);
+    // characters of other levels: their bodies (and animations) on a character
+    // of this map (its behaviour, data and size): one with the same
+    // animations best, and without moves of its own
+    std::vector<int> actors = NpcRecords();
     for (const ImportedBody& b : ImportedBodies()) {
-        auto it = byAnims.find(b.animSet);
-        if (it == byAnims.end())
+        int best = -1, bestScore = -1;
+        for (int index : actors) {
+            std::string set = NpcAnimSet(index);
+            if (set.empty())
+                continue;
+            int score = (set == b.animSet ? 4 : set == "Reg_Male" ? 2 : 0) + (NpcHasExtraAnims(index) ? 0 : 1);
+            if (score > bestScore) {
+                best = index;
+                bestScore = score;
+            }
+        }
+        if (best < 0)
             continue;
         NpcType t;
-        t.record = it->second;
+        t.record = best;
         t.model = b.name + " (" + b.level + ")";
-        t.group = "worn by " + NpcModel(it->second);
+        t.group = "worn by " + NpcModel(best);
         engine::ScriptInfo info;
         if (records[t.record].script && engine::ParseScript(records[t.record].script, info))
             t.script = engine::ScriptShortName(info.name);

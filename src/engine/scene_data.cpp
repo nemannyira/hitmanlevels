@@ -352,6 +352,38 @@ std::vector<size_t> BlockRefOffsets(const std::vector<uint8_t>& b)
     return out;
 }
 
+std::vector<uint8_t> WithStrings(const std::vector<uint8_t>& b, const std::vector<std::string>& strings)
+{
+    if (b.size() < 4)
+        return b;
+    std::vector<uint8_t> out(b.begin(), b.begin() + 4);
+    const uint8_t* p = b.data() + 4;
+    const uint8_t* end = b.data() + b.size();
+    size_t k = 0;
+    while (p < end) {
+        size_t len = ValueLength(p, end);
+        if (!len || p + len > end) {
+            out.insert(out.end(), p, end);  // the end mark and anything not understood, as it is
+            break;
+        }
+        uint8_t tag = *p & 0x3F;
+        if ((tag == 4 || tag == 5) && k < strings.size()) {
+            out.push_back(*p);
+            out.insert(out.end(), strings[k].begin(), strings[k].end());
+            out.push_back(0);
+            ++k;
+        } else {
+            out.insert(out.end(), p, p + len);
+        }
+        p += len;
+    }
+    uint32_t header;
+    memcpy(&header, b.data(), 4);
+    header = (header & 0xFF000000) | (uint32_t(out.size()) & 0xFFFFFF);
+    memcpy(out.data(), &header, 4);
+    return out;
+}
+
 bool ParseScript(uint32_t offset, ScriptInfo& out)
 {
     out = {};

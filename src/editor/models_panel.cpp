@@ -381,12 +381,14 @@ void DrawImportFooter()
         ImGui::SetTooltip("Your level stays as it is (save it to keep it on disk).");
 }
 
-// characters of another level: those with animations a character of this map has
+// characters of another level (any, when this map has a character to lend its
+// behaviour; animations this map does not have come with them)
 void DrawOtherCharacters(const std::string& level)
 {
     std::set<std::string> here;
     for (int r : NpcRecords())
         here.insert(NpcAnimSet(r));
+    here.erase("");
     std::string filter = Lower(g_otherFilter);
     float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing();
     if (ImGui::BeginChild("clist", ImVec2(0, -footer), ImGuiChildFlags_Borders)) {
@@ -398,7 +400,7 @@ void DrawOtherCharacters(const std::string& level)
                 Lower(c.animSet).find(filter) == std::string::npos)
                 continue;
             ImGui::PushID(int(c.mesh));
-            bool on = IsImported(level, c.mesh), usable = here.count(c.animSet) != 0;
+            bool on = IsImported(level, c.mesh), usable = !here.empty(), own = here.count(c.animSet) != 0;
             ImGui::BeginDisabled(!usable && !on);
             if (ImGui::Checkbox(c.model.c_str(), &on)) {
                 int uses = on ? 0 : ImportUses(level, c.mesh);
@@ -408,10 +410,16 @@ void DrawOtherCharacters(const std::string& level)
                     SetImported(level, c.mesh, c.model, on, true, c.animSet, c.outfitMesh, c.nudeMesh);
             }
             ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                ImGui::SetTooltip(usable ? "%s: %s animations, %d in %s (e.g. in %s)"
-                                         : "%s: %s animations, which no character of this map has",
-                                  c.model.c_str(), c.animSet.c_str(), c.uses, level.c_str(), c.group.c_str());
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (!usable)
+                    ImGui::SetTooltip("This map has no character to lend its behaviour.");
+                else if (own)
+                    ImGui::SetTooltip("%s: %s animations, %d in %s (e.g. in %s)", c.model.c_str(), c.animSet.c_str(),
+                                      c.uses, level.c_str(), c.group.c_str());
+                else
+                    ImGui::SetTooltip("%s: %s animations, which come from %s with it; %d there (e.g. in %s)",
+                                      c.model.c_str(), c.animSet.c_str(), level.c_str(), c.uses, c.group.c_str());
+            }
             ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(c.animSet.c_str()).x);
             ImGui::TextDisabled("%s", c.animSet.c_str());
             ImGui::PopID();
@@ -449,9 +457,10 @@ void DrawOtherLevels()
         ImGui::TextWrapped("Tick the models this level should have. The map is loaded again to get them; then they "
                            "are in the Models list (marked with their level) and are placed like the others.");
     else
-        ImGui::TextWrapped("Tick the characters this level should have. The map is loaded again to get their bodies; "
-                           "then they are in the NPCs tab (marked with their level), placed like the others: a "
-                           "character of this map with the same animations wears the body.");
+        ImGui::TextWrapped("Tick the characters this level should have. The map is loaded again to get their bodies "
+                           "and animations; then they are in the NPCs tab (marked with their level), placed like the "
+                           "others: a character of this map (one with the same animations if it has one) lends its "
+                           "behaviour.");
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
     if (ImGui::BeginCombo("level", g_otherLevel >= 0 ? levels[g_otherLevel].c_str() : "-")) {
         for (int i = 0; i < int(levels.size()); ++i)

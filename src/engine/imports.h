@@ -73,10 +73,19 @@ struct LevelCharacter {
     // its clothes on Hitman (HitmanAsGroup/<model>_HMas) and its body without
     // them (<model>_Nude): skinned models too, 0 when it has none
     uint32_t outfitMesh = 0, nudeMesh = 0;
+    // its animation sets as its data block names them (the first two strings:
+    // Worlds\Characters\_Anims\Reg_Male\Reg_Male.anm, an extra one or "")
+    std::vector<std::string> animFiles;
 };
 const std::vector<LevelCharacter>& LevelCharacters(const std::string& level);
+// The animation sets of a body of another level loaded here (a character's,
+// as its level names them; their animations come with it), empty for others.
+std::vector<std::string> ImportedAnimFiles(uint32_t mesh);
 // The animation set named in an actor's data block ("" when none).
 std::string AnimSetOf(const uint8_t* block, size_t size);
+// The animation sets of an actor's data block: its first two strings (the
+// second one "" when it has no extra set; empty when it has no such strings).
+std::vector<std::string> AnimFilesOf(const uint8_t* block, size_t size);
 // The model name of an actor's data block (its first string value).
 std::string ModelNameOf(const uint8_t* block, size_t size);
 // Levels of the game ("C1-1", ...): folders of Scenes with a __MAIN.ZIP.

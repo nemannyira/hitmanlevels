@@ -145,16 +145,52 @@ Vertices are 52 bytes. Index strips may be shared and lie megabytes away.
 Found by comparing the 31 characters several levels have (e.g. SoldierRussian_01
 in C2-1 / C2-2); the renderer reads +0x88.. through the prim manager (vfunc 0xC).
 
-Animations: actors name a set in their data block
-(`Worlds\Characters\_Anims\<set>\<set>.anm`): Reg_Male in every level but
-C0-2, Female_Reg in six, a few special ones.
-
 Importing a character (not run in the game yet): its body's blocks are copied
 one by one with their sizes, the references moved by a map; the NPCs tab
-offers it worn by a character of this map with the same animation set
-(NpcSpawn.mesh): that character's data, size, behaviour and outfits.
+offers it worn by a character of this map (NpcSpawn.mesh): that character's
+data, size and behaviour, the outfits and animations of its own level.
+
+## ANM (animations)
+
+Chunks `{u32 tag, u32 size | flags}` (size with the header, low 30 bits).
+Flag bit 31: a chunk with children: `+8` offset of its own data (from the
+chunk), `+0xC` child count, children at `+0x10` (bit 30: after a u32 count and
+that many u32s). Without flags the data is at `+8`. The file is one chunk
+(tag `MNA\0`) whose children are:
+
+| tag | |
+|---|---|
+| 0xA | an animation **set**, one each: data = its name (`Worlds\Characters\_Anims\Reg_Male\Reg_Male.anm`); one child (tag = animation count) with the offsets of its animations in chunk 5 (0x84-byte records: name, source file, frames, bones, rate...) |
+| 0xE | `{u32 set index, u32 body mesh (PRM offset), u32 offset + 1 in chunk 0xF or 0}` |
+| 0xF | per body data for a set: 28 bytes a bone (Reg_Male bodies, 0x78C each; Hitman and most special sets: none) |
+| 7, 8, 6 | key frames (4 streams each, sizes in the header) |
+| 0xB, 0xD | float tables |
+| 4 | bone names (GROUND, PELVIS, SPINE, ...) |
+| 5 | animations: track tables and the 0x84 records |
+
+The buffer: `ZEngineDataBase+0x40`, allocated with exactly
+`GetAnimsSize` (0x41C760) bytes and filled by `GetAnimsData` (0x41C7F0).
+Pointers into it are saved in save games as offsets from it
+(`ZSaveGame::AddSafePointer`, `CheckInAnimBuffer` 0x401510 uses the
+allocation's size).
+
+An actor (0x47AB10) reads the first two strings of its data block: its set
+and an extra set (`""` when none, e.g. `Kbg_Officer.anm`, `Ninja.anm`,
+cutscene sets), and loads each with the actor's vfunc 0x2D0 (0x47AD80) into
++0x5C / +0x60; animations are looked up by name in the extra set first
+(vfunc 0x208, 0x47AD00). Loading is an animation set object (0x2C bytes,
+vtable 0x65D848), vfunc 0x10 (0x5C8860) `(out, name, body mesh, ANM)`: it
+keeps the data of chunks 4, 5, 6, 7, 8, 0xB, 0xD, 0xF of that ANM, finds the
+set through chunk 0xE (set name and body mesh; `out` = the body's 0xF data,
+to the actor's +0x64 / +0x68) or by name; false when the ANM has no such set.
+
+Imports: the ANM of each level a character comes from is added after the
+level's own (offsets of the level's part stay). The actor of an imported body
+gets that character's two set names; vfunc 0x10 is hooked: a set the level
+lacks is loaded from the body's level (with the body's mesh there); a set it
+has gets the body's 0xF data from the body's level.
 
 ## Not yet
 
 * Objects made of several models (a truck's wheels are models of their own).
-* Characters checked in the game; animation sets this map lacks (ANM).
+* Characters checked in the game (bodies, outfits, animations).

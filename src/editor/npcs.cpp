@@ -12,6 +12,7 @@
 #include "../engine/spawn.h"
 #include "../log.h"
 #include "../scene.h"
+#include "level.h"
 
 namespace h2::editor {
 
@@ -148,6 +149,16 @@ std::string NpcAnimSet(int record)
         return "";
     std::vector<uint8_t> block = engine::RawBlock(records[record].data);
     return block.empty() ? "" : engine::AnimSetOf(block.data(), block.size());
+}
+
+bool NpcHasExtraAnims(int record)
+{
+    const auto& records = engine::SceneRecords();
+    if (record < 0 || size_t(record) >= records.size() || !records[record].data)
+        return false;
+    std::vector<uint8_t> block = engine::RawBlock(records[record].data);
+    std::vector<std::string> files = engine::AnimFilesOf(block.data(), block.size());
+    return files.size() == 2 && !files[1].empty();
 }
 
 std::string NpcModel(int record)
@@ -411,8 +422,17 @@ bool SetNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, 
     // a body of another level stays
     const auto& records = engine::SceneRecords();
     uint32_t body = engine::MeshOf(actor);
-    if (spec.record >= 0 && size_t(spec.record) < records.size() && body && body != records[spec.record].mesh)
+    if (spec.record >= 0 && size_t(spec.record) < records.size() && body && body != records[spec.record].mesh) {
         spec.mesh = body;
+        for (const ImportedBody& b : ImportedBodies())  // and its outfits
+            if (b.mesh == body) {
+                spec.importLevel = b.level;
+                spec.importMesh = b.sourceMesh;
+                spec.importName = b.name;
+                spec.outfitMesh = b.outfit;
+                spec.nudeMesh = b.nude;
+            }
+    }
     spec.hasBehaviour = behaviour != nullptr;
     if (behaviour)
         spec.behaviour = *behaviour;

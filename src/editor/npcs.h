@@ -68,6 +68,8 @@ bool IsRemovedNpc(engine::ZGEOM* actor);
 engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error = nullptr, uint32_t mesh = 0);
 // The animation set of a character record of the scene ("Reg_Male"; "" when none).
 std::string NpcAnimSet(int record);
+// Whether that character has an extra animation set (its own moves).
+bool NpcHasExtraAnims(int record);
 void HidePreviewNpc();
 // The behaviour the NPC runs as far as the editor knows (set here, or as
 // authored in the scene); false when it has none.

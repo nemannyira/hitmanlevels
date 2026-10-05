@@ -5,6 +5,7 @@
 
 #include "../game.h"
 #include "../log.h"
+#include "imports.h"
 #include "spawn.h"
 
 namespace h2::engine {
@@ -602,6 +603,9 @@ ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)
             if (it != s.refSwap.end())
                 memcpy(&block[at], &it->second, 4);
         }
+    // a body of another level: its own animation sets (they come with it)
+    if (std::vector<std::string> anims = ImportedAnimFiles(s.mesh); !anims.empty() && !block.empty())
+        block = WithStrings(block, anims);
     a.data = EngineCopy(block);  // kept: the actor may point into it
     a.script = s.script.empty() ? nullptr : EngineCopy(s.script);
     Log("npc: spawning '%s' from record %d (%s, mesh %08X, flags %08X, data %zu bytes, script %zu bytes)",

@@ -46,6 +46,8 @@ std::vector<uint8_t> RemappedBlock(uint32_t offset);
 std::vector<uint8_t> RawBlock(uint32_t offset);
 // Offsets (in the block) of the reference values (tag 8) of a block.
 std::vector<size_t> BlockRefOffsets(const std::vector<uint8_t>& block);
+// The block with its first string values (tag 4 / 5) replaced by `strings`.
+std::vector<uint8_t> WithStrings(const std::vector<uint8_t>& block, const std::vector<std::string>& strings);
 
 // ---- scripts (behaviour) ----
 

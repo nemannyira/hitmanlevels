@@ -25,6 +25,12 @@ constexpr uintptr_t kGetTextureData = 0x41C300;
 constexpr uintptr_t kGetTreesSize = 0x41BD80;    // OCT: bound trees and collision data
 constexpr uintptr_t kGetTreesData = 0x41BE10;
 constexpr uintptr_t kGetSceneName = 0x41B880;    // ZEngineDataBase::(void) -> const char*
+constexpr uintptr_t kGetAnimsSize = 0x41C760;    // ZEngineDataBase::(void) -> size
+constexpr uintptr_t kGetAnimsData = 0x41C7F0;    // ZEngineDataBase::(void* buf, uint size)
+// an animation set object (0x2C bytes, vtable 0x65D848, made by the actor's
+// vfunc 0x2D0 0x47AD80); vfunc 0x10: finds a set in an ANM
+constexpr uintptr_t kAnimSetVtable = 0x65D848;
+constexpr uintptr_t kAnimSetLoad = 0x5C8860;
 // AllocSequence keeps 0x60000 bytes after the file's prims for the ones made
 // at runtime (from header[1], saved in save games): the copies go after it,
 // header[1] stays, so save games are the same with or without them.
@@ -35,8 +41,8 @@ constexpr int kTexIds = 2048;
 
 using SizeFn = uint32_t(__fastcall*)(void* self, void* edx);
 using DataFn = void(__fastcall*)(void* self, void* edx, void* buf, uint32_t size);
-SizeFn oPrimsSize, oTexSize, oTreesSize;
-DataFn oPrimsData, oTexData, oTreesData;
+SizeFn oPrimsSize, oTexSize, oTreesSize, oAnimsSize;
+DataFn oPrimsData, oTexData, oTreesData, oAnimsData;
 
 uint32_t U32(const std::vector<uint8_t>& b, size_t at)
 {
@@ -50,6 +56,8 @@ void Put(std::vector<uint8_t>& b, size_t at, uint32_t v) { memcpy(&b[at], &v, 4)
 struct Source {
     bool loaded = false;
     std::vector<uint8_t> prm, tex, oct;
+    bool anmLoaded = false;
+    std::vector<uint8_t> anm;  // read when a character of the level is wanted
     std::set<uint32_t> records;  // offsets of the PRM's records (its table)
     uint32_t texTable = 0;
     bool HasTexture(uint32_t id) const { return id && id < kTexIds && U32(tex, texTable + id * 4) != 0; }
@@ -89,6 +97,24 @@ Source* LoadSource(const std::string& level)
     return &s;
 }
 
+// the level's animations (ANM), empty when it cannot be read
+const std::vector<uint8_t>* SourceAnm(const std::string& level)
+{
+    Source* s = LoadSource(level);
+    if (!s)
+        return nullptr;
+    if (!s->anmLoaded) {
+        s->anmLoaded = true;
+        std::string err;
+        if (!ReadZipEntry(GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP",
+                          "SCENES/" + level + "/" + level + "__MAIN.ANM", s->anm, &err)) {
+            Log("imports: %s: %s", level.c_str(), err.c_str());
+            s->anm.clear();
+        }
+    }
+    return s->anm.size() > 0x10 ? &s->anm : nullptr;
+}
+
 std::vector<ModelImport> g_requests;
 std::function<std::vector<ModelImport>(const std::string&)> g_provider;
 std::vector<ModelImport> g_load;  // what the scene being loaded gets
@@ -120,6 +146,7 @@ std::vector<TexUse> g_texUses;
 std::map<std::pair<std::string, uint32_t>, uint32_t> g_texMap;  // (level, id) -> id here
 std::map<std::pair<std::string, uint32_t>, uint32_t> g_meshes;  // (level, mesh) -> mesh here
 std::map<std::pair<std::string, uint32_t>, uint32_t> g_pending; // the same, being loaded
+std::vector<std::string> g_animLevels;  // levels of the characters being loaded (their ANMs are wanted)
 
 bool Wanted(void* engine)
 {
@@ -506,8 +533,11 @@ bool Copy(const ModelImport& m)
 {
     if (m.mesh & kGroupModel)
         return CopyGroup(m);
-    if (Source* s = LoadSource(m.level); s && U32(s->prm, m.mesh) == kSkinned)
+    if (Source* s = LoadSource(m.level); s && U32(s->prm, m.mesh) == kSkinned) {
+        if (std::find(g_animLevels.begin(), g_animLevels.end(), m.level) == g_animLevels.end())
+            g_animLevels.push_back(m.level);
         return CopySkinned(m);
+    }
     Chain c;
     if (!CopyChain(m.level, m.mesh, true, c))
         return false;
@@ -519,6 +549,7 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
 {
     uint32_t real = oPrimsSize(self, edx);
     g_active = false;
+    g_animLevels.clear();
     if (!Wanted(self) || int(real) <= 0)
         return real;
     g_primReal = real;
@@ -827,6 +858,114 @@ void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
     Log("imports: %zu models placed at %08X (%zu bytes)", g_meshes.size(), g_base, g_blob.size());
 }
 
+// ---- animations of characters of other levels ----
+//
+// An actor's data block names its animation sets (first two strings:
+// "Worlds\Characters\_Anims\Reg_Male\Reg_Male.anm" and an extra one or "").
+// The actor finds each in the level's ANM (one buffer, ZEngineDataBase+0x40)
+// with an animation set object, whose vfunc 0x10 (out, name, body mesh, ANM)
+// takes the chunks of that ANM and the set's chunk (tag 0xA) by name; the
+// ANM's chunk 0xE maps (set, body mesh) to the body's data in chunk 0xF
+// (written to `out`, the actor's +0x64 / +0x68; 0: none, e.g. Hitman).
+//
+// The ANM of each level a body comes from goes after the level's own in the
+// buffer (save games keep offsets into it: the level's part stays where it
+// is). A set the level does not have is taken from the body's level; a set it
+// has gets the body's data from the body's level.
+struct AnimRoot {
+    std::string level;
+    uint32_t at;  // in the buffer
+};
+std::vector<AnimRoot> g_animPlan, g_animRoots;  // being loaded / in the buffer now
+uint32_t g_animReal;
+bool g_animActive;
+
+uint32_t __fastcall hkAnimsSize(void* self, void* edx)
+{
+    uint32_t real = oAnimsSize(self, edx);
+    g_animActive = false;
+    g_animPlan.clear();
+    g_animRoots.clear();  // a new buffer
+    if (g_animLevels.empty() || int(real) <= 0)
+        return real;
+    uint32_t at = (real + 15) & ~15u;
+    for (const std::string& level : g_animLevels)
+        if (const std::vector<uint8_t>* anm = SourceAnm(level)) {
+            g_animPlan.push_back({level, at});
+            at += (uint32_t(anm->size()) + 15) & ~15u;
+        }
+    if (g_animPlan.empty())
+        return real;
+    g_animReal = real;
+    g_animActive = true;
+    return at;
+}
+
+void __fastcall hkAnimsData(void* self, void* edx, void* buf, uint32_t size)
+{
+    if (!g_animActive) {
+        oAnimsData(self, edx, buf, size);
+        return;
+    }
+    g_animActive = false;
+    oAnimsData(self, edx, buf, g_animReal);
+    auto b = static_cast<uint8_t*>(buf);
+    for (const AnimRoot& r : g_animPlan) {
+        const std::vector<uint8_t>* anm = SourceAnm(r.level);
+        memcpy(b + r.at, anm->data(), anm->size());
+        g_animRoots.push_back(r);
+        Log("imports: animations of %s at %08X (%zu bytes)", r.level.c_str(), r.at, anm->size());
+    }
+}
+
+// a body of another level loaded here: its level and mesh there
+const std::pair<const std::pair<std::string, uint32_t>, uint32_t>* BodySource(uint32_t mesh)
+{
+    if (!mesh)
+        return nullptr;
+    for (const auto& e : g_meshes)
+        if (e.second == mesh)
+            return &e;
+    return nullptr;
+}
+
+using AnimSetLoadFn = bool(__fastcall*)(void* self, void* edx, uint32_t* out, const char* name, uint32_t mesh,
+                                        const uint8_t* anm);
+AnimSetLoadFn oAnimSetLoad;
+
+bool __fastcall hkAnimSetLoad(void* self, void* edx, uint32_t* out, const char* name, uint32_t mesh,
+                              const uint8_t* anm)
+{
+    bool ok = oAnimSetLoad(self, edx, out, name, mesh, anm);
+    if (!anm || !out || g_animRoots.empty())
+        return ok;
+    const auto* body = BodySource(mesh);
+    if (!body)
+        return ok;
+    const AnimRoot* root = nullptr;
+    for (const AnimRoot& r : g_animRoots)
+        if (r.level == body->first.first)
+            root = &r;
+    if (!root)
+        return ok;
+    const uint8_t* there = anm + root->at;
+    if (!ok) {
+        // a set of the body's level only
+        ok = oAnimSetLoad(self, edx, out, name, body->first.second, there);
+        Log("imports: animations %s of %s: %s", name ? name : "?", root->level.c_str(), ok ? "found" : "not found");
+        return ok;
+    }
+    if (!*out) {
+        // the body's data for the set, as its level has it
+        alignas(4) uint8_t probe[0x2C] = {};
+        *reinterpret_cast<uintptr_t*>(probe) = kAnimSetVtable;
+        uint32_t data = 0;
+        if (oAnimSetLoad(probe, edx, &data, name, body->first.second, there) && data)
+            *out = data;
+    }
+    return ok;
+}
+
 // ---- catalogue of another level ----
 
 struct Catalogue {
@@ -954,6 +1093,7 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
         if (r.parent >= 0)
             c.group = records[r.parent].name;
         c.uses = 1;
+        c.animFiles = AnimFilesOf(&gms[r.data], n);
         // its outfits: references of its data block to groups named *_HMas /
         // *_Nude, whose drawn child has the body
         std::vector<uint8_t> block(gms.begin() + r.data, gms.begin() + r.data + n);
@@ -1154,6 +1294,14 @@ std::string AnimSetOf(const uint8_t* block, size_t size)
     return "";
 }
 
+std::vector<std::string> AnimFilesOf(const uint8_t* block, size_t size)
+{
+    std::vector<std::string> s = BlockStrings(block, size);
+    if (s.size() < 2 || s[0].find("_Anims\\") == std::string::npos)
+        return {};
+    return {s[0], s[1]};
+}
+
 const std::vector<std::string>& GameLevels()
 {
     static std::vector<std::string> levels;
@@ -1178,6 +1326,17 @@ const std::vector<std::string>& GameLevels()
 
 void SetModelImports(const std::vector<ModelImport>& list) { g_requests = list; }
 
+std::vector<std::string> ImportedAnimFiles(uint32_t mesh)
+{
+    const auto* body = BodySource(mesh);
+    if (!body)
+        return {};
+    for (const LevelCharacter& c : LevelCharacters(body->first.first))
+        if (c.mesh == body->first.second)
+            return c.animFiles;
+    return {};
+}
+
 uint32_t ImportedMesh(const std::string& level, uint32_t mesh)
 {
     auto it = g_meshes.find({level, mesh});
@@ -1192,6 +1351,9 @@ void InstallImports()
     Hook("GetTextureData", kGetTextureData, &hkTexData, &oTexData);
     Hook("GetTreesSize", kGetTreesSize, &hkTreesSize, &oTreesSize);
     Hook("GetTreesData", kGetTreesData, &hkTreesData, &oTreesData);
+    Hook("GetAnimsSize", kGetAnimsSize, &hkAnimsSize, &oAnimsSize);
+    Hook("GetAnimsData", kGetAnimsData, &hkAnimsData, &oAnimsData);
+    Hook("AnimSetLoad", kAnimSetLoad, &hkAnimSetLoad, &oAnimSetLoad);
 }
 
 } // namespace h2::engine

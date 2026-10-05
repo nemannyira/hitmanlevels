@@ -25,7 +25,10 @@ constexpr uintptr_t kGetTextureData = 0x41C300;
 constexpr uintptr_t kGetTreesSize = 0x41BD80;    // OCT: bound trees and collision data
 constexpr uintptr_t kGetTreesData = 0x41BE10;
 constexpr uintptr_t kGetSceneName = 0x41B880;    // ZEngineDataBase::(void) -> const char*
-constexpr uint32_t kGuard = 0;
+// AllocSequence keeps 0x60000 bytes after the file's prims for the ones made
+// at runtime (from header[1], saved in save games): the copies go after it,
+// header[1] stays, so save games are the same with or without them.
+constexpr uint32_t kRuntimeReserve = 0x60000;
 constexpr uint32_t kRecord = 0x84;               // a PRM record (one material of a model)
 constexpr int kTexIds = 2048;
 
@@ -123,7 +126,8 @@ bool Wanted(void* engine)
     std::string n = name ? name : "";
     g_load.clear();
     if (n.find("__MAIN") == std::string::npos)
-        return false;
+        return false;  // menus: the level's models stay as they were
+    g_meshes.clear();  // a level: nothing of the one before
     if (g_provider)
         g_load = g_provider(n);
     g_load.insert(g_load.end(), g_requests.begin(), g_requests.end());
@@ -491,7 +495,7 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
     if (!Wanted(self) || int(real) <= 0)
         return real;
     g_primReal = real;
-    g_base = (real + 15) & ~15u;
+    g_base = (real + kRuntimeReserve + 15) & ~15u;
     g_blob.clear();
     g_collisions.clear();
     g_recordMap.clear();
@@ -505,7 +509,7 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
     if (g_blob.empty())
         return real;
     g_active = true;
-    return g_base + ((uint32_t(g_blob.size()) + 15) & ~15u) + kGuard;
+    return g_base + ((uint32_t(g_blob.size()) + 15) & ~15u);
 }
 
 // OCT: room trees, then collision entries {u32 size, object, ..., +0x20 data}
@@ -791,9 +795,6 @@ void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
     memcpy(b + g_base, g_blob.data(), g_blob.size());
     g_primBuf = b;
     g_treesPending = !g_collisions.empty();
-    // header[1]: where the engine adds prims while the level runs (header[2] is the record table)
-    uint32_t used = g_base + ((uint32_t(g_blob.size()) + 15) & ~15u) + kGuard;
-    memcpy(b + 4, &used, 4);
     g_meshes = g_pending;
     g_active = false;
     Log("imports: %zu models placed at %08X (%zu bytes)", g_meshes.size(), g_base, g_blob.size());

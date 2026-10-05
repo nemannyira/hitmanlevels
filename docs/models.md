@@ -107,8 +107,9 @@ node flags 0x8008. Checked: Hitman stops at C2-1's truck in C1-1.
 While a scene loads (GetPrimsSize / Data, GetTextureSize / Data hooked):
 
 1. The level's list (`imports` in level.json) is asked for that scene.
-2. Each model's span is copied after the PRM's data, pointers moved, +0x30
-   cleared; header[1] is set after the copies (runtime prims go after them).
+2. Each model is copied after the PRM's data and the 0x60000 bytes the engine
+   keeps for prims made at runtime (from header[1], which stays: save games
+   are the same with or without imports), its references moved.
 3. Their textures are added to the TEX buffer (free ids, the entry's id field
    changed, the table entry set) and the records' texture ids changed.
 4. After loading, `ROOT/EditorImports/<name>.<level>.<mesh>` objects (far

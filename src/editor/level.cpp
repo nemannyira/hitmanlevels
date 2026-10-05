@@ -285,6 +285,11 @@ engine::ZGEOM* MaterializeNpc(const LevelNpc& n, std::string* error = nullptr)
         spec.importLevel = n.importLevel;
         spec.importMesh = n.importMesh;
         spec.importName = n.importName;
+        for (const ImportedModel& m : g_level.imports)
+            if (m.level == n.importLevel && m.mesh == n.importMesh) {
+                spec.outfitMesh = m.outfitMesh ? engine::ImportedMesh(m.level, m.outfitMesh) : 0;
+                spec.nudeMesh = m.nudeMesh ? engine::ImportedMesh(m.level, m.nudeMesh) : 0;
+            }
     }
     spec.hasBehaviour = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, spec.behaviour);
     engine::ZGEOM* g = CreateNpc(spec, error);
@@ -730,6 +735,8 @@ bool SaveLevel(std::string* error)
             if (m.character) {
                 o["character"] = true;
                 o["anim_set"] = m.animSet;
+                o["outfit_mesh"] = m.outfitMesh;
+                o["nude_mesh"] = m.nudeMesh;
             }
             imports.push_back(o);
         }
@@ -855,6 +862,8 @@ bool LoadLevel(const std::string& folder, std::string* error)
         m.name = o.value("name", "");
         m.character = o.value("character", false);
         m.animSet = o.value("anim_set", "");
+        m.outfitMesh = o.value("outfit_mesh", 0u);
+        m.nudeMesh = o.value("nude_mesh", 0u);
         if (!m.level.empty() && m.mesh)
             L.imports.push_back(m);
     }
@@ -1422,8 +1431,12 @@ std::vector<engine::ModelImport> ImportsFor(const std::string& scene)
     std::vector<engine::ModelImport> out;
     if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
         return out;
-    for (const ImportedModel& m : g_level.imports)
+    for (const ImportedModel& m : g_level.imports) {
         out.push_back({m.level, m.mesh});
+        for (uint32_t extra : {m.outfitMesh, m.nudeMesh})  // a character's outfits
+            if (extra)
+                out.push_back({m.level, extra});
+    }
     return out;
 }
 
@@ -1438,14 +1451,14 @@ bool IsImported(const std::string& level, uint32_t mesh)
 }
 
 void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on, bool character,
-                 const std::string& animSet)
+                 const std::string& animSet, uint32_t outfitMesh, uint32_t nudeMesh)
 {
     if (on == IsImported(level, mesh))
         return;
     if (on) {
         if (g_level.baseScene.empty())
             g_level.baseScene = CurrentScene();
-        g_level.imports.push_back({level, mesh, name, character, animSet});
+        g_level.imports.push_back({level, mesh, name, character, animSet, outfitMesh, nudeMesh});
     } else {
         g_level.imports.erase(std::remove_if(g_level.imports.begin(), g_level.imports.end(),
                                              [&](const ImportedModel& m) { return m.level == level && m.mesh == mesh; }),
@@ -1500,7 +1513,9 @@ std::vector<ImportedBody> ImportedBodies()
     for (const ImportedModel& m : g_level.imports)
         if (m.character)
             if (uint32_t mesh = engine::ImportedMesh(m.level, m.mesh))
-                out.push_back({m.level, m.name, m.animSet, m.mesh, mesh});
+                out.push_back({m.level, m.name, m.animSet, m.mesh, mesh,
+                               m.outfitMesh ? engine::ImportedMesh(m.level, m.outfitMesh) : 0,
+                               m.nudeMesh ? engine::ImportedMesh(m.level, m.nudeMesh) : 0});
     return out;
 }
 

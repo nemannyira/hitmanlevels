@@ -45,6 +45,8 @@ struct NpcSpec {
     std::string importLevel;  // that body's level, its mesh there and model name (saved)
     uint32_t importMesh = 0;
     std::string importName;
+    uint32_t outfitMesh = 0;  // that character's clothes on Hitman / body without them, here
+    uint32_t nudeMesh = 0;
 };
 engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error = nullptr);
 bool IsPlacedNpc(engine::ZGEOM* actor);

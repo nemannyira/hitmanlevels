@@ -101,6 +101,8 @@ struct ImportedModel {        // a model of another level the map is loaded with
     std::string name;         // its name there (information)
     bool character = false;   // a character's body (worn by a character of this map)
     std::string animSet;      // a body's animations ("Reg_Male")
+    uint32_t outfitMesh = 0;  // its clothes on Hitman and its body without them (loaded with it)
+    uint32_t nudeMesh = 0;
 };
 
 struct LevelDocument {
@@ -142,11 +144,12 @@ bool LoadLevel(const std::string& folder, std::string* error = nullptr);
 // world, which the Models tab lists and places like the map's own models.
 bool IsImported(const std::string& level, uint32_t mesh);
 void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on, bool character = false,
-                 const std::string& animSet = "");
+                 const std::string& animSet = "", uint32_t outfitMesh = 0, uint32_t nudeMesh = 0);
 // The characters' bodies of other levels the loaded map has (mesh: here).
 struct ImportedBody {
     std::string level, name, animSet;
     uint32_t sourceMesh = 0, mesh = 0;
+    uint32_t outfit = 0, nude = 0;  // here (0: none)
 };
 std::vector<ImportedBody> ImportedBodies();
 // Objects of the level made of it (it cannot leave the list while used).

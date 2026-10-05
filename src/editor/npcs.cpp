@@ -41,6 +41,77 @@ engine::ScriptInfo Runtime(engine::ScriptInfo s)
 }
 
 std::map<std::pair<int, uint32_t>, engine::ZGEOM*> g_previews;  // (record, body) -> its preview character
+
+// Outfits of characters of other levels: an actor's data block names its
+// clothes on Hitman (a group HitmanAsGroup/<model>_HMas) and its body without
+// them (<model>_Nude), each a group with a drawn child ("Ground") showing a
+// body. For a body of another level, the template character's groups are
+// made again with that level's bodies (one per template group and body).
+std::map<std::pair<int, uint32_t>, engine::ZGEOM*> g_outfits;
+
+engine::ZGEOM* OutfitGroup(int groupRecord, uint32_t body, const std::string& name)
+{
+    auto key = std::make_pair(groupRecord, body);
+    if (auto it = g_outfits.find(key); it != g_outfits.end() && IsLive(it->second))
+        return it->second;
+    const auto& records = engine::SceneRecords();
+    engine::ZGEOM* group = engine::RecordGeom(groupRecord);
+    if (!group || !IsLive(group) || !group->node->parent)
+        return nullptr;
+    int child = -1;
+    for (size_t k = size_t(groupRecord) + 1; k < records.size() && k < size_t(groupRecord) + 8; ++k)
+        if (records[k].parent == groupRecord && records[k].mesh) {
+            child = int(k);
+            break;
+        }
+    engine::ZGEOM* shown = child >= 0 ? engine::RecordGeom(child) : nullptr;
+    engine::ZGEOM* parent = group->node->parent->geom;
+    if (!shown || !IsLive(shown) || !parent || !IsLive(parent))
+        return nullptr;
+    const engine::SceneRecord& g = records[groupRecord];
+    const engine::SceneRecord& c = records[child];
+    std::string err;
+    engine::ZGEOM* made = engine::CreateObject(name, parent, engine::ClassName(group).c_str(), 0, g.flags, g.mat, g.pos,
+                                               engine::RemappedBlock(g.data), &err, false);
+    if (!made) {
+        Log("npc: outfit %s not made (%s)", name.c_str(), err.c_str());
+        return nullptr;
+    }
+    if (!engine::CreateObject(engine::SafeString(shown->name), made, engine::ClassName(shown).c_str(), body, c.flags,
+                              c.mat, c.pos, engine::RemappedBlock(c.data), &err))
+        Log("npc: outfit %s: body not made (%s)", name.c_str(), err.c_str());
+    engine::InitObject(made);
+    AdoptEngineOwned(made);
+    g_outfits[key] = made;
+    Log("npc: outfit %s made", name.c_str());
+    return made;
+}
+
+// the template's outfit references -> the ones made with the imported bodies
+std::map<uint32_t, uint32_t> OutfitSwap(int record, const std::string& name, uint32_t outfit, uint32_t nude)
+{
+    std::map<uint32_t, uint32_t> swap;
+    const auto& records = engine::SceneRecords();
+    if (record < 0 || size_t(record) >= records.size() || !records[record].data)
+        return swap;
+    std::vector<uint8_t> block = engine::RawBlock(records[record].data);
+    for (size_t at : engine::BlockRefOffsets(block)) {
+        uint32_t ref;
+        memcpy(&ref, &block[at], 4);
+        uint32_t idx = (ref & 0x7FFFFFFF) - 1;
+        if (!(ref & 0x80000000) || idx >= records.size())
+            continue;
+        const std::string& g = records[idx].name;
+        std::string suffix = g.size() > 5 ? g.substr(g.size() - 5) : "";
+        uint32_t body = suffix == "_HMas" ? outfit : suffix == "_Nude" ? nude : 0;
+        if (!body)
+            continue;
+        if (engine::ZGEOM* made = OutfitGroup(int(idx), body, name + suffix))
+            if (uint32_t from = engine::RemapRef(ref))
+                swap[from] = engine::RefOf(made);
+    }
+    return swap;
+}
 engine::ZGEOM* g_shownPreview;
 constexpr float kPreviewAway = -50000.0f;
 
@@ -57,6 +128,7 @@ void PutAway(engine::ZGEOM* actor)
 void OnScene(const std::string&)
 {
     g_previews.clear();
+    g_outfits.clear();
     g_shownPreview = nullptr;
     g_placed.clear();
     g_removed.clear();
@@ -195,6 +267,8 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
     engine::NpcSpawn s;
     s.record = spec.record;
     s.mesh = spec.mesh;
+    if (spec.mesh && (spec.outfitMesh || spec.nudeMesh))
+        s.refSwap = OutfitSwap(spec.record, spec.importName, spec.outfitMesh, spec.nudeMesh);
     s.parent = spec.parentRoom ? spec.parentRoom : parent;
     if (!s.parent)
         return fail("no room for the character");

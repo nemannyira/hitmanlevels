@@ -927,6 +927,25 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
         if (r.parent >= 0)
             c.group = records[r.parent].name;
         c.uses = 1;
+        // its outfits: references of its data block to groups named *_HMas /
+        // *_Nude, whose drawn child has the body
+        std::vector<uint8_t> block(gms.begin() + r.data, gms.begin() + r.data + n);
+        for (size_t at : BlockRefOffsets(block)) {
+            uint32_t ref = U32(block, at), idx = (ref & 0x7FFFFFFF) - 1;
+            if (!(ref & 0x80000000) || idx >= records.size())
+                continue;
+            const std::string& g = records[idx].name;
+            bool hmas = g.size() > 5 && g.compare(g.size() - 5, 5, "_HMas") == 0;
+            bool nude = g.size() > 5 && g.compare(g.size() - 5, 5, "_Nude") == 0;
+            if (!hmas && !nude)
+                continue;
+            for (size_t k = idx + 1; k < records.size() && k < idx + 8; ++k)
+                if (records[k].parent == int(idx) && records[k].mesh &&
+                    U32(src->prm, records[k].mesh) == kSkinned) {
+                    (hmas ? c.outfitMesh : c.nudeMesh) = records[k].mesh;
+                    break;
+                }
+        }
         cat.characters.push_back(c);
     }
     std::map<uint32_t, size_t> byMesh;

@@ -70,6 +70,9 @@ struct LevelCharacter {
     std::string animSet;   // "Reg_Male" (Worlds\Characters\_Anims\<set>)
     std::string group;     // the group of its first character
     int uses = 0;
+    // its clothes on Hitman (HitmanAsGroup/<model>_HMas) and its body without
+    // them (<model>_Nude): skinned models too, 0 when it has none
+    uint32_t outfitMesh = 0, nudeMesh = 0;
 };
 const std::vector<LevelCharacter>& LevelCharacters(const std::string& level);
 // The animation set named in an actor's data block ("" when none).

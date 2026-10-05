@@ -1,6 +1,7 @@
 #pragma once
 // Creating NPCs (ZTRACKLNKHM2 actors) at runtime from the actor records of the
 // loaded scene, with a behaviour (SDL script) of choice. See re/npc.md.
+#include <map>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,7 @@ struct NpcSpawn {
     std::vector<uint8_t> script; // behaviour block (BuildScriptBlock), empty: none
     std::string name = "Ground";
     uint32_t mesh = 0;           // another body (an imported character's), 0: the record's
+    std::map<uint32_t, uint32_t> refSwap;  // references of its data block replaced (outfits)
 };
 
 ZGEOM* SpawnNpc(const NpcSpawn& spawn, std::string* error = nullptr);

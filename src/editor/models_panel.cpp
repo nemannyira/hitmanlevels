@@ -405,7 +405,7 @@ void DrawOtherCharacters(const std::string& level)
                 if (uses)
                     g_otherMessage = c.model + " is worn by " + std::to_string(uses) + " placed characters: remove them first";
                 else
-                    SetImported(level, c.mesh, c.model, on, true, c.animSet);
+                    SetImported(level, c.mesh, c.model, on, true, c.animSet, c.outfitMesh, c.nudeMesh);
             }
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

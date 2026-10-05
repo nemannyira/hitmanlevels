@@ -43,6 +43,7 @@ struct NpcType {
     std::string importLevel;
     uint32_t importMesh = 0;
     std::string importName;
+    uint32_t outfitMesh = 0, nudeMesh = 0;
 };
 
 bool g_visible = true;
@@ -164,6 +165,8 @@ void Build()
         t.importLevel = b.level;
         t.importMesh = b.sourceMesh;
         t.importName = b.name;
+        t.outfitMesh = b.outfit;
+        t.nudeMesh = b.nude;
         g_types.push_back(t);
     }
 }
@@ -937,6 +940,8 @@ void Place()
     spec.importLevel = type.importLevel;
     spec.importMesh = type.importMesh;
     spec.importName = type.importName;
+    spec.outfitMesh = type.outfitMesh;
+    spec.nudeMesh = type.nudeMesh;
     spec.transform = PlacingTransform();
     spec.hasBehaviour = !g_newBehaviour.empty();
     int points = 0;

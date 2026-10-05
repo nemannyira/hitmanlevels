@@ -593,7 +593,16 @@ ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)
     memcpy(a.recPos, r.pos, sizeof(a.recPos));
     memcpy(a.mat, s.mat, sizeof(a.mat));
     memcpy(a.pos, s.pos, sizeof(a.pos));
-    a.data = EngineCopy(ActorDataBlock(r, s.name));  // kept: the actor may point into it
+    std::vector<uint8_t> block = ActorDataBlock(r, s.name);
+    if (!s.refSwap.empty() && !block.empty())
+        for (size_t at : BlockRefOffsets(block)) {
+            uint32_t v;
+            memcpy(&v, &block[at], 4);
+            auto it = s.refSwap.find(v);
+            if (it != s.refSwap.end())
+                memcpy(&block[at], &it->second, 4);
+        }
+    a.data = EngineCopy(block);  // kept: the actor may point into it
     a.script = s.script.empty() ? nullptr : EngineCopy(s.script);
     Log("npc: spawning '%s' from record %d (%s, mesh %08X, flags %08X, data %zu bytes, script %zu bytes)",
         s.name.c_str(), s.record, r.name.c_str(), r.mesh, r.flags, a.data ? size_t(*reinterpret_cast<uint32_t*>(a.data) & 0xFFFFFF) : 0,

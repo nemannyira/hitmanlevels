@@ -116,6 +116,27 @@ std::string Lower(std::string s)
     return s;
 }
 
+// a behaviour (or a model's name) of someone armed who attacks trespassers
+bool IsGuardBehaviour(const std::string& name)
+{
+    std::string n = Lower(name);
+    for (const char* w : {"guard", "soldier", "police", "officer", "ninja", "sniper", "patrol", "sentry", "spetsnaz",
+                          "kgb", "army", "commando", "security", "gunman", "militia"})
+        if (n.find(w) != std::string::npos)
+            return true;
+    return false;
+}
+
+// what the list is made of: the scene and the characters of other levels the
+// level has (its list changes with the level, e.g. another one opened)
+std::string BuildKey()
+{
+    std::string key = CurrentScene();
+    for (const ImportedBody& b : ImportedBodies())
+        key += "|" + b.level + "/" + std::to_string(b.mesh);
+    return key;
+}
+
 void Build()
 {
     g_types.clear();
@@ -123,7 +144,7 @@ void Build()
     g_newBehaviour.clear();
     g_new = {};
     g_newMoves.clear();
-    g_builtFor = CurrentScene();
+    g_builtFor = BuildKey();
     g_behaviourNames = BehaviourNames();
     const auto& records = engine::SceneRecords();
     std::map<std::string, int> typeIndex;
@@ -146,16 +167,23 @@ void Build()
         return a.script != b.script ? a.script < b.script : a.model < b.model;
     });
     // characters of other levels: their bodies (and animations) on a character
-    // of this map (its behaviour, data and size): one with the same
-    // animations best, and without moves of its own
+    // of this map (its behaviour, data and size): best one of the same kind
+    // (a guard for a guard, someone harmless for a waiter: a guard's behaviour
+    // attacks Hitman), then with the same animations, without moves of its own
     std::vector<int> actors = NpcRecords();
     for (const ImportedBody& b : ImportedBodies()) {
         int best = -1, bestScore = -1;
+        bool guard = IsGuardBehaviour(b.behaviour.empty() ? b.name : b.behaviour);
         for (int index : actors) {
             std::string set = NpcAnimSet(index);
             if (set.empty())
                 continue;
-            int score = (set == b.animSet ? 4 : set == "Reg_Male" ? 2 : 0) + (NpcHasExtraAnims(index) ? 0 : 1);
+            std::string script;
+            engine::ScriptInfo info;
+            if (records[index].script && engine::ParseScript(records[index].script, info))
+                script = engine::ScriptShortName(info.name);
+            int score = (IsGuardBehaviour(script.empty() ? NpcModel(index) : script) == guard ? 8 : 0) +
+                        (set == b.animSet ? 4 : set == "Reg_Male" ? 2 : 0) + (NpcHasExtraAnims(index) ? 0 : 1);
             if (score > bestScore) {
                 best = index;
                 bestScore = score;
@@ -1077,7 +1105,7 @@ void DrawPanel()
         ImGui::TextWrapped("The scene's data was not captured: load the level again (it is read while loading).");
         return;
     }
-    if (g_builtFor != CurrentScene())
+    if (g_builtFor != BuildKey())
         Build();
     if (engine::ZGEOM* a = ActorOf(Selected()))
         SetTarget(a);

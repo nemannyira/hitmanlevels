@@ -157,6 +157,7 @@ struct ImportedBody {
     std::string level, name, animSet;
     uint32_t sourceMesh = 0, mesh = 0;
     uint32_t outfit = 0, nude = 0;  // here (0: none)
+    std::string behaviour;          // its behaviour there ("Waiter")
 };
 std::vector<ImportedBody> ImportedBodies();
 // Objects of the level made of it (it cannot leave the list while used).

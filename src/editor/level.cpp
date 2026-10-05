@@ -34,6 +34,7 @@ namespace h2::editor {
 namespace {
 
 LevelDocument g_level;
+int CompleteImports();
 std::map<std::string, engine::ZGEOM*> g_live;  // spawned id -> its object in the loaded scene
 std::map<std::string, engine::ZGEOM*> g_liveNpcs;  // npc id -> its character in the loaded scene
 // points taken out of the level: kept in the scene (scripts may still refer to
@@ -727,6 +728,7 @@ bool SaveLevel(std::string* error)
         if (error) *error = "no folder";
         return false;
     }
+    CompleteImports();
     json j;
     j["format"] = "h2level";
     j["version"] = 1;
@@ -956,6 +958,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
             L.imports.push_back(m);
     }
     g_level = std::move(L);
+    CompleteImports();
     ClearHistory();
     Log("level loaded: %s (%d edits, %d new objects)", folder.c_str(), int(g_level.objects.size()),
         int(g_level.spawned.size()));
@@ -1260,6 +1263,7 @@ engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error)
         return fail(err);
     g_level.npcs.push_back(n);
     g_level.dirty = true;
+    CompleteImports();
     std::string id = n.id;
     PushAction("place character", [id] { return RemoveNpcEntry(id); }, [n] { return AddNpcEntry(n); });
     return g;
@@ -1536,6 +1540,49 @@ void BuildImportLibrary()
     Log("level: %d imported models ready", made);
 }
 
+// The level lists every model and character of other levels its objects and
+// characters use: one placed while the map still had another level's list,
+// or saved by an older version, would be missing when the map is loaded
+// again. The missing ones are added; returns how many.
+int CompleteImports()
+{
+    int added = 0;
+    for (const LevelNpc& n : g_level.npcs) {
+        if (!n.importMesh || IsImported(n.importLevel, n.importMesh))
+            continue;
+        ImportedModel m{n.importLevel, n.importMesh, n.importName, true};
+        for (const engine::LevelCharacter& c : engine::LevelCharacters(n.importLevel))
+            if (c.mesh == n.importMesh) {
+                m.animSet = c.animSet;
+                m.outfitMesh = c.outfitMesh;
+                m.nudeMesh = c.nudeMesh;
+            }
+        g_level.imports.push_back(m);
+        ++added;
+    }
+    const std::string prefix = std::string("ROOT/") + kLibrary + "/";
+    for (const SpawnedObject& s : g_level.spawned) {
+        if (s.sourcePath.rfind(prefix, 0) != 0)
+            continue;
+        std::string name = s.sourcePath.substr(prefix.size());  // <name>.<level>.<mesh, hex>
+        size_t b = name.rfind('.');
+        size_t a = b == std::string::npos || b == 0 ? std::string::npos : name.rfind('.', b - 1);
+        if (a == std::string::npos)
+            continue;
+        std::string level = name.substr(a + 1, b - a - 1);
+        uint32_t mesh = uint32_t(strtoul(name.c_str() + b + 1, nullptr, 16));
+        if (!mesh || IsImported(level, mesh))
+            continue;
+        g_level.imports.push_back({level, mesh, name.substr(0, a)});
+        ++added;
+    }
+    if (added) {
+        g_level.dirty = true;
+        Log("level: %d models and characters of other levels its objects use added to its list", added);
+    }
+    return added;
+}
+
 std::vector<engine::ModelImport> ImportsFor(const std::string& scene)
 {
     std::vector<engine::ModelImport> out;
@@ -1622,10 +1669,14 @@ std::vector<ImportedBody> ImportedBodies()
         return out;
     for (const ImportedModel& m : g_level.imports)
         if (m.character)
-            if (uint32_t mesh = engine::ImportedMesh(m.level, m.mesh))
+            if (uint32_t mesh = engine::ImportedMesh(m.level, m.mesh)) {
                 out.push_back({m.level, m.name, m.animSet, m.mesh, mesh,
                                m.outfitMesh ? engine::ImportedMesh(m.level, m.outfitMesh) : 0,
                                m.nudeMesh ? engine::ImportedMesh(m.level, m.nudeMesh) : 0});
+                for (const engine::LevelCharacter& c : engine::LevelCharacters(m.level))
+                    if (c.mesh == m.mesh)
+                        out.back().behaviour = c.behaviour;
+            }
     return out;
 }
 

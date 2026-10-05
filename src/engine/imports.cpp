@@ -1118,6 +1118,11 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
             c.group = records[r.parent].name;
         c.uses = 1;
         c.animFiles = AnimFilesOf(&gms[r.data], n);
+        // its behaviour: the script block's first string ("scripts\C2\C2_4\Waiter.sdl")
+        if (r.script && r.script + 5 < gms.size()) {
+            const char* name = reinterpret_cast<const char*>(&gms[r.script + 5]);
+            c.behaviour = ScriptShortName(std::string(name, strnlen(name, std::min<size_t>(260, gms.size() - r.script - 5))));
+        }
         // its outfits: references of its data block to groups named *_HMas /
         // *_Nude, whose drawn child has the body
         std::vector<uint8_t> block(gms.begin() + r.data, gms.begin() + r.data + n);

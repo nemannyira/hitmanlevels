@@ -76,6 +76,7 @@ struct LevelCharacter {
     // its animation sets as its data block names them (the first two strings:
     // Worlds\Characters\_Anims\Reg_Male\Reg_Male.anm, an extra one or "")
     std::vector<std::string> animFiles;
+    std::string behaviour;  // its first character's behaviour there ("BaseGuard", "Waiter"; "" none)
 };
 const std::vector<LevelCharacter>& LevelCharacters(const std::string& level);
 // A model of the loaded scene made of plain records (not a character's body).

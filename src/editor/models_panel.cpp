@@ -450,9 +450,17 @@ void DrawOtherLevels()
                 g_otherLevel = i;
     }
     static int page = 0;
-    ImGui::RadioButton("Models", &page, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("Characters", &page, 1);
+    if (ImGui::BeginTabBar("##otherpages")) {
+        if (ImGui::BeginTabItem("Models")) {
+            page = 0;
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Characters")) {
+            page = 1;
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
     if (page == 0)
         ImGui::TextWrapped("Tick the models this level should have. The map is loaded again to get them; then they "
                            "are in the Models list (marked with their level) and are placed like the others.");

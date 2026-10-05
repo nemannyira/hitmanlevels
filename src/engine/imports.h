@@ -60,6 +60,22 @@ constexpr uint32_t kGroupModel = 0x80000000;
 // The models of a level (cached; empty when it cannot be read). Only plain
 // objects with a model of their own (no characters, no helpers).
 const std::vector<LevelModel>& LevelModels(const std::string& level);
+
+// A character of another level: its body (a skinned model) can be imported
+// like a model and given to a character of this level with the same
+// animations (see docs/models.md).
+struct LevelCharacter {
+    uint32_t mesh = 0;     // its body
+    std::string model;     // "SoldierRussian_01"
+    std::string animSet;   // "Reg_Male" (Worlds\Characters\_Anims\<set>)
+    std::string group;     // the group of its first character
+    int uses = 0;
+};
+const std::vector<LevelCharacter>& LevelCharacters(const std::string& level);
+// The animation set named in an actor's data block ("" when none).
+std::string AnimSetOf(const uint8_t* block, size_t size);
+// The model name of an actor's data block (its first string value).
+std::string ModelNameOf(const uint8_t* block, size_t size);
 // Levels of the game ("C1-1", ...): folders of Scenes with a __MAIN.ZIP.
 const std::vector<std::string>& GameLevels();
 

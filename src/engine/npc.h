@@ -16,6 +16,7 @@ struct NpcSpawn {
     float pos[3] = {};           // world position
     std::vector<uint8_t> script; // behaviour block (BuildScriptBlock), empty: none
     std::string name = "Ground";
+    uint32_t mesh = 0;           // another body (an imported character's), 0: the record's
 };
 
 ZGEOM* SpawnNpc(const NpcSpawn& spawn, std::string* error = nullptr);

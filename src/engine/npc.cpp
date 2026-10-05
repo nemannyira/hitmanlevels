@@ -587,7 +587,7 @@ ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)
     a.engine = engine;
     a.name = s.name.c_str();
     a.parent = group;
-    a.mesh = r.mesh;
+    a.mesh = s.mesh ? s.mesh : r.mesh;
     a.flags = r.flags;
     memcpy(a.recMat, r.mat, sizeof(a.recMat));
     memcpy(a.recPos, r.pos, sizeof(a.recPos));

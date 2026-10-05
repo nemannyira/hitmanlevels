@@ -356,10 +356,127 @@ bool CopyGroup(const ModelImport& m)
     return true;
 }
 
+// A character's body: a chain of skinned records (type 0x10001, 0xA8 bytes;
+// +0x84 bones) referring to bounds (+0x18), vertices (+0x1C, 52 bytes),
+// index strips (+0x44, +0x48 words), per-bone blocks (+0x88..+0x98: 48 / 28 /
+// 48 / 36 / 48 bytes a bone), the skeleton (+0x9C: a bone map and matrices,
+// up to the next model's records), a size table (+0xA4, +0xA0 pairs); the
+// first record's +0x3C: a LOD table (8 lists {u32 count, records}).
+constexpr uint32_t kSkinned = 0x10001;
+constexpr uint32_t kSkinRecord = 0xA8;
+
+bool CopySkinned(const ModelImport& m)
+{
+    Source* s = LoadSource(m.level);
+    if (!s)
+        return false;
+    const std::vector<uint8_t>& prm = s->prm;
+    std::vector<uint32_t> records;
+    for (uint32_t r = m.mesh; r && records.size() < 64; r = U32(prm, r + 8)) {
+        if (r + kSkinRecord > prm.size() || U32(prm, r) != kSkinned ||
+            std::find(records.begin(), records.end(), r) != records.end())
+            break;
+        records.push_back(r);
+    }
+    if (records.empty()) {
+        Log("imports: %s %08X: no such body", m.level.c_str(), m.mesh);
+        return false;
+    }
+    // the blocks the records refer to and their sizes (the shared ones far
+    // away in the file, e.g. index lists, are copied on their own)
+    std::map<uint32_t, uint32_t> blocks;  // file offset -> size
+    auto want = [&](uint32_t at, uint32_t size) {
+        if (!at || !size || at + size > prm.size() || size > 0x400000)
+            return false;
+        uint32_t& b = blocks[at];
+        b = std::max(b, size);
+        return true;
+    };
+    for (uint32_t r : records) {
+        uint32_t bones = U32(prm, r + 0x84), count = U32(prm, r + 0x14) >> 16;
+        want(U32(prm, r + 0x18), 0x3C);              // bounds
+        want(U32(prm, r + 0x1C), count * 52);        // vertices
+        want(U32(prm, r + 0x44), U32(prm, r + 0x48) * 2);  // index strips
+        static const uint32_t kPerBone[] = {48, 28, 48, 36, 48};  // +0x88 .. +0x98
+        for (int i = 0; i < 5; ++i)
+            want(U32(prm, r + 0x88 + i * 4), bones * kPerBone[i]);
+        want(U32(prm, r + 0xA4), U32(prm, r + 0xA0) * 8);  // size table
+        // the skeleton: up to the next skinned record after it
+        if (uint32_t sk = U32(prm, r + 0x9C); sk && !blocks.count(sk)) {
+            uint32_t end = sk + 0x50;
+            while (end + 0x88 <= prm.size() && end < sk + 0x8000 &&
+                   !(U32(prm, end) == kSkinned && U32(prm, end + 0x84) == bones))
+                end += 2;
+            want(sk, end - sk);
+        }
+    }
+    uint32_t lods = U32(prm, records[0] + 0x3C);
+    std::vector<std::pair<uint32_t, uint32_t>> lists;  // file offset, count
+    if (lods && lods + 0x20 <= prm.size())
+        for (int i = 0; i < 8; ++i) {
+            uint32_t list = U32(prm, lods + i * 4), count = list && list + 4 <= prm.size() ? U32(prm, list) : 0;
+            if (list && count <= 64 && list + 4 + count * 4 <= prm.size())
+                lists.push_back({list, count});
+        }
+    // the blob: blocks, records, LOD table and lists; offsets moved by a map
+    std::map<uint32_t, uint32_t> moved;  // file offset -> offset here
+    auto place = [&](uint32_t from, uint32_t size) {
+        size_t pos = (g_blob.size() + 3) & ~size_t(3);
+        g_blob.resize(pos + size);
+        memcpy(&g_blob[pos], &prm[from], size);
+        moved[from] = g_base + uint32_t(pos);
+        return pos;
+    };
+    for (auto& [at, size] : blocks)
+        place(at, size);
+    std::vector<size_t> copies;
+    for (uint32_t r : records)
+        copies.push_back(place(r, kSkinRecord));
+    size_t lodAt = 0;
+    std::map<uint32_t, size_t> listAt;
+    if (lods) {
+        lodAt = place(lods, 0x20);
+        for (auto& [list, count] : lists)
+            if (!listAt.count(list))
+                listAt[list] = place(list, 4 + count * 4);
+    }
+    int outside = 0;
+    auto move = [&](size_t at) {
+        uint32_t v = U32(g_blob, at);
+        if (!v)
+            return;
+        auto it = moved.find(v);
+        Put(g_blob, at, it != moved.end() ? it->second : 0);
+        outside += it == moved.end();
+    };
+    for (size_t k = 0; k < records.size(); ++k) {
+        size_t q = copies[k];
+        for (size_t f : {0x08, 0x18, 0x1C, 0x3C, 0x44, 0x88, 0x8C, 0x90, 0x94, 0x98, 0x9C, 0xA4})
+            move(q + f);
+        uint32_t tex = U32(g_blob, q + 0x04) & 0x7FF;
+        if (s->HasTexture(tex))
+            g_texUses.push_back({q + 0x04, 0x7FF, m.level, tex});
+    }
+    if (lods) {
+        for (int i = 0; i < 8; ++i)
+            move(lodAt + i * 4);
+        for (auto& [list, at] : listAt)
+            for (uint32_t k = 0, n = U32(g_blob, at); k < n && k < 64; ++k)
+                move(at + 4 + k * 4);
+    }
+    uint32_t mesh = moved[m.mesh];
+    g_pending[{m.level, m.mesh}] = mesh;
+    Log("imports: %s body %08X -> %08X (%zu records, %zu blocks%s)", m.level.c_str(), m.mesh, mesh, records.size(),
+        blocks.size(), outside ? ", some references not followed" : "");
+    return true;
+}
+
 bool Copy(const ModelImport& m)
 {
     if (m.mesh & kGroupModel)
         return CopyGroup(m);
+    if (Source* s = LoadSource(m.level); s && U32(s->prm, m.mesh) == kSkinned)
+        return CopySkinned(m);
     Chain c;
     if (!CopyChain(m.level, m.mesh, true, c))
         return false;
@@ -687,7 +804,46 @@ void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
 struct Catalogue {
     bool built = false;
     std::vector<LevelModel> models;
+    std::vector<LevelCharacter> characters;
 };
+
+// the string values of a typed data block, in order (tag 4 / 5)
+std::vector<std::string> BlockStrings(const uint8_t* b, size_t n)
+{
+    std::vector<std::string> out;
+    size_t p = 4;
+    while (p < n && out.size() < 16) {
+        uint8_t t = b[p];
+        if (t == 0xFF)
+            break;
+        switch (t & 0x3F) {
+        case 1:
+            p += 9;
+            break;
+        case 2: case 3: case 8: case 10: case 11:
+            p += 5;
+            break;
+        case 4: case 5: {
+            size_t e = p + 1;
+            while (e < n && b[e])
+                ++e;
+            out.emplace_back(reinterpret_cast<const char*>(b + p + 1), e - p - 1);
+            p = e + 1;
+            break;
+        }
+        case 7: case 9: case 0xC: {
+            uint32_t len = 0;
+            if (p + 5 <= n)
+                memcpy(&len, b + p + 1, 4);
+            p += 5 + len;
+            break;
+        }
+        default:
+            p += 1;
+        }
+    }
+    return out;
+}
 std::map<std::string, Catalogue> g_catalogues;
 
 // any object of the loaded scene: its class info leads to every class
@@ -749,6 +905,29 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
             it = chains.emplace(id, ClassChainOfId(id, known)).first;
         return it->second;
     };
+    std::map<uint32_t, size_t> bodies;
+    for (const SceneRecord& r : records) {
+        if (r.classId != 0x2003E9 || !r.mesh || r.mesh + 4 > src->prm.size() || U32(src->prm, r.mesh) != kSkinned ||
+            !r.data || r.data + 4 > gms.size())
+            continue;
+        size_t n = std::min<size_t>(U32(gms, r.data) & 0xFFFFFF, gms.size() - r.data);
+        std::string model = ModelNameOf(&gms[r.data], n), set = AnimSetOf(&gms[r.data], n);
+        if (model.empty() || set.empty())
+            continue;
+        auto [it, added] = bodies.emplace(r.mesh, cat.characters.size());
+        if (!added) {
+            cat.characters[it->second].uses++;
+            continue;
+        }
+        LevelCharacter c;
+        c.mesh = r.mesh;
+        c.model = model;
+        c.animSet = set;
+        if (r.parent >= 0)
+            c.group = records[r.parent].name;
+        c.uses = 1;
+        cat.characters.push_back(c);
+    }
     std::map<uint32_t, size_t> byMesh;
     std::map<int, std::vector<size_t>> groupParts;  // group record -> its models' records
     for (const SceneRecord& r : records) {
@@ -881,7 +1060,8 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
         m.radius = reach;
         cat.models.push_back(std::move(m));
     }
-    Log("imports: %s: %zu models, %zu groups", level.c_str(), singles, cat.models.size() - singles);
+    Log("imports: %s: %zu models, %zu groups, %zu characters", level.c_str(), singles, cat.models.size() - singles,
+        cat.characters.size());
 }
 
 } // namespace
@@ -897,6 +1077,34 @@ const std::vector<LevelModel>& LevelModels(const std::string& level)
     if (!c.built)
         BuildCatalogue(level, c);
     return c.models;
+}
+
+const std::vector<LevelCharacter>& LevelCharacters(const std::string& level)
+{
+    Catalogue& c = g_catalogues[level];
+    if (!c.built)
+        BuildCatalogue(level, c);
+    return c.characters;
+}
+
+std::string ModelNameOf(const uint8_t* block, size_t size)
+{
+    for (const std::string& s : BlockStrings(block, size))
+        if (!s.empty() && s.find('\\') == std::string::npos)
+            return s;
+    return "";
+}
+
+std::string AnimSetOf(const uint8_t* block, size_t size)
+{
+    for (const std::string& s : BlockStrings(block, size)) {
+        size_t at = s.find("_Anims\\");
+        if (at == std::string::npos)
+            continue;
+        std::string rest = s.substr(at + 7);
+        return rest.substr(0, rest.find('\\'));
+    }
+    return "";
 }
 
 const std::vector<std::string>& GameLevels()

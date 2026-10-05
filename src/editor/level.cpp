@@ -1309,6 +1309,7 @@ namespace {
 
 constexpr const char* kLibrary = "EditorImports";
 std::map<std::string, std::string> g_libraryLevel;  // library object path -> its level
+int g_libraryVersion;
 
 std::string LibraryName(const ImportedModel& m)
 {
@@ -1376,8 +1377,10 @@ void BuildImportLibrary()
         g_libraryLevel[path] = m.level;
         ++made;
     }
-    if (made)
+    if (made) {
         InvalidateSceneModel();
+        ++g_libraryVersion;
+    }
     Log("level: %d imported models ready", made);
 }
 
@@ -1447,6 +1450,8 @@ void ReloadMapForImports()
         g_level.baseScene = CurrentScene();
     RequestScene(g_level.baseScene);
 }
+
+int ImportLibraryVersion() { return g_libraryVersion; }
 
 std::string ImportLevelOf(const std::string& path)
 {

@@ -53,6 +53,7 @@ char g_filter[128];
 bool g_showHelpers = false;
 std::vector<ModelEntry> g_models;  // sorted by category, family, name
 std::string g_builtFor;  // scene the list was built for
+int g_builtLibrary = -1;  // ImportLibraryVersion it was built with
 std::string g_message;
 
 // Thumbnail of the hovered model: a clone of it stands in front of the camera
@@ -174,6 +175,7 @@ void Build()
         g_models.push_back(e);
     Sort();
     g_builtFor = CurrentScene();
+    g_builtLibrary = ImportLibraryVersion();
 }
 
 void DestroyThumb()
@@ -489,7 +491,7 @@ void DrawPanel()
         ImGui::TextDisabled("no scene loaded");
         return;
     }
-    if (g_builtFor != CurrentScene() || g_models.empty())
+    if (g_builtFor != CurrentScene() || g_models.empty() || g_builtLibrary != ImportLibraryVersion())
         Build();
     if (ImGui::Button("Other levels...")) {
         g_otherOpen = true;

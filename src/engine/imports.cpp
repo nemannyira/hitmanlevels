@@ -709,6 +709,22 @@ void Compose(const float parent[9], const float local[9], float out[9])
                              local[r * 3 + 2] * parent[0 + c];
 }
 
+// a record's transform in the frame of its group `group` (an ancestor)
+void InGroup(const std::vector<SceneRecord>& records, size_t k, int group, float mat[9], float pos[3])
+{
+    memcpy(mat, records[k].mat, 36);
+    memcpy(pos, records[k].pos, 12);
+    for (int p = records[k].parent; p >= 0 && p != group && size_t(p) < records.size(); p = records[p].parent) {
+        const SceneRecord& g = records[p];
+        float m[9], v[3];
+        Compose(g.mat, mat, m);
+        for (int i = 0; i < 3; ++i)
+            v[i] = g.mat[6 + i] * pos[0] + g.mat[3 + i] * pos[1] + g.mat[i] * pos[2] + g.pos[i];
+        memcpy(mat, m, 36);
+        memcpy(pos, v, 12);
+    }
+}
+
 void BuildCatalogue(const std::string& level, Catalogue& cat)
 {
     cat.built = true;
@@ -750,9 +766,12 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
             continue;
         bool visible = (r.flags & 1) != 0;  // drawn (invisible: collision bodies, emitters)
         bool collides = U32(src->prm, r.mesh + 0x30) != 0;
-        if (r.parent >= 0 && chain(records[r.parent].classId).find("ZROOM") == std::string::npos &&
-            (visible || collides))
-            groupParts[r.parent].push_back(size_t(r.index));
+        if (visible || collides)  // a part of each group above it (a wheel in its own group too)
+            for (int p = r.parent; p >= 0 && size_t(p) < records.size(); p = records[p].parent) {
+                if (chain(records[p].classId).find("ZROOM") != std::string::npos)
+                    break;
+                groupParts[p].push_back(size_t(r.index));
+            }
         if (!visible)
             continue;
         auto [it, added] = byMesh.emplace(r.mesh, cat.models.size());
@@ -853,10 +872,10 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
             LevelModelPart part;
             part.mesh = r.mesh;
             part.visible = (r.flags & 1) != 0;
-            memcpy(part.mat, r.mat, sizeof(part.mat));
-            memcpy(part.pos, r.pos, sizeof(part.pos));
+            InGroup(records, k, g, part.mat, part.pos);
             m.pieces.push_back(part);
-            float d[3] = {r.pos[0] - main.pos[0], r.pos[1] - main.pos[1], r.pos[2] - main.pos[2]};
+            const float* o = m.pieces[0].pos;
+            float d[3] = {part.pos[0] - o[0], part.pos[1] - o[1], part.pos[2] - o[2]};
             reach = std::max(reach, sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) + radiusOf(r.mesh));
         }
         m.radius = reach;

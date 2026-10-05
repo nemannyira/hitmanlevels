@@ -6,6 +6,8 @@
 //   "format": "h2level", "version": 1,
 //   "name": "My level",
 //   "empty_map": true,                          // the base scene's characters, items and objectives taken out
+//   "blank_map": true,                          // and its buildings (every model but the sky): hidden, stopping nothing
+//   "place_floor": { "level": "C3-3", "mesh": 6341746 },  // a model of another level to put under Hitman (once)
 //   "base_scene": "C1-1\\C1-1__MAIN",          // scene the level is built on
 //   "objects": [                                // edits of objects of the base scene
 //     { "path": "ROOT/.../Crate#2", "class": "ZSTDOBJ",
@@ -110,6 +112,11 @@ struct LevelDocument {
     std::string folder;  // Mods\<folder>
     std::string baseScene;
     bool emptyMap = false;  // the base scene's characters, items and objective lines are taken out
+    bool blankMap = false;  // its buildings too: every model of the map but the sky (hidden, stopping nothing)
+    // an imported model to put under Hitman when the map is next loaded (a new
+    // blank map's floor); then it is an object of the level like the others
+    std::string floorLevel;
+    uint32_t floorMesh = 0;
     std::map<std::string, ObjectEdit> objects;  // by path
     std::vector<SpawnedObject> spawned;
     std::vector<LevelNpc> npcs;
@@ -189,6 +196,11 @@ bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& point
 
 // Takes the scene's characters and items out (empty map) or puts them back.
 void SetEmptyMap(bool empty);
+// Takes the scene's buildings out too (blank map) or puts them back.
+void SetBlankMap(bool blank);
+// The level gets a model of another level as its floor: under Hitman, once
+// the map is loaded with it.
+void SetFloor(const std::string& level, uint32_t mesh, const std::string& name);
 // Applies the level's spawned objects and object edits to the loaded scene; returns how many applied.
 int ApplyLevel();
 // Undoes every edit of the level in the loaded scene (restores originals).

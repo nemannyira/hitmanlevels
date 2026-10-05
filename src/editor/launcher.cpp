@@ -72,6 +72,22 @@ bool g_launcherOpen;
 int g_map = 1;
 char g_name[64] = "My level";
 bool g_empty = true;
+bool g_blank = false;
+// floors for a map without buildings: large flat models of other levels
+// (single records with collision, in rooms)
+struct Floor {
+    const char* label;
+    const char* level;
+    uint32_t mesh;
+    const char* name;
+};
+const Floor kFloors[] = {
+    {"no floor", "", 0, ""},
+    {"stone yard, 80 x 58 m (C3-3)", "C3-3", 0x60C472, "Yard_06-7-8"},
+    {"stone paving, 70 x 51 m (C5-2)", "C5-2", 0x2951A6, "Ground_11"},
+    {"snowy ground, 102 x 113 m (C2-2)", "C2-2", 0x2D2D2A, "Ground_03"},
+};
+int g_floor = 1;
 struct Saved {
     std::string folder, name, scene;
 };
@@ -286,11 +302,35 @@ void DrawLauncher()
                 ImGui::Checkbox("Empty map", &g_empty);
                 ImGui::SameLine();
                 ImGui::TextDisabled("(no characters, items or objectives of the level)");
+                ImGui::BeginDisabled(!g_empty);
+                ImGui::Indent();
+                ImGui::Checkbox("No buildings either", &g_blank);
+                ImGui::SameLine();
+                ImGui::TextDisabled("(only the sky: build with models)");
+                ImGui::BeginDisabled(!g_blank);
+                ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
+                if (ImGui::BeginCombo("floor", kFloors[g_floor].label)) {
+                    for (int i = 0; i < int(sizeof(kFloors) / sizeof(kFloors[0])); ++i)
+                        if (ImGui::Selectable(kFloors[i].label, i == g_floor))
+                            g_floor = i;
+                    ImGui::EndCombo();
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("A model of another level put under Hitman where he starts: it is an object of "
+                                      "your level\n(move it, copy it, delete it like the others)");
+                ImGui::EndDisabled();
+                ImGui::Unindent();
+                ImGui::EndDisabled();
                 ImGui::Spacing();
                 if (ImGui::Button("Create and start editing", ImVec2(-1, 0))) {
                     NewLevel(g_name, kMaps[g_map].scene);
                     if (g_empty)
                         SetEmptyMap(true);
+                    if (g_empty && g_blank) {
+                        SetBlankMap(true);
+                        if (kFloors[g_floor].mesh)
+                            SetFloor(kFloors[g_floor].level, kFloors[g_floor].mesh, kFloors[g_floor].name);
+                    }
                     std::string err;
                     if (!SaveLevel(&err))
                         g_message = "not saved: " + err;

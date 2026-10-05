@@ -190,7 +190,26 @@ gets that character's two set names; vfunc 0x10 is hooked: a set the level
 lacks is loaded from the body's level (with the body's mesh there); a set it
 has gets the body's 0xF data from the body's level.
 
+## A map without buildings (blank map)
+
+Static models collide through the rooms' trees, not the collision world:
+only movable objects (doors, cars: node flag 0x8000) are registered there
+(C1-1: 2539 colliding models without the flag, 54 with it). Every query goes
+through the pool items to the PRM records and tests the record's +0x34
+first, so a record with mask 0 stops nothing.
+
+The level's `blank_map`: every object of the map with a plain model (not in
+a character, an item or an item template, not hidden already, not the
+`SkyDome`, not Hitman's clothes) is hidden and its model's records get mask
+0 in the loaded prims (the buffer GetPrimsData fills; the renderer keeps
+it); shown again (an edit), the model stops things again. A new blank map
+gets a floor: a large flat model of another level (C3-3 `Yard_06-7-8`, C5-2
+`Ground_11` or C2-2 `Ground_03`, single records with collision, in rooms)
+imported and put under Hitman when the map is loaded (`place_floor`), then
+an object of the level like the others.
+
 ## Not yet
 
 * Objects made of several models (a truck's wheels are models of their own).
 * Characters checked in the game (bodies, outfits, animations).
+* The blank map checked in the game (room visibility of the floor, the sky).

@@ -78,6 +78,12 @@ struct LevelCharacter {
     std::vector<std::string> animFiles;
 };
 const std::vector<LevelCharacter>& LevelCharacters(const std::string& level);
+// A model of the loaded scene made of plain records (not a character's body).
+bool IsPlainModel(uint32_t mesh);
+// The model's triangles stop nothing (every record's query mask, +0x34,
+// cleared: the collision collectors skip them) or what they stopped before.
+// Every object using the model is affected.
+bool SetModelSolid(uint32_t mesh, bool solid);
 // The animation sets of a body of another level loaded here (a character's,
 // as its level names them; their animations come with it), empty for others.
 std::vector<std::string> ImportedAnimFiles(uint32_t mesh);

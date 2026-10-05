@@ -10,6 +10,7 @@
 
 #include "../engine/imports.h"
 #include "../engine/lists.h"
+#include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
 #include "../engine/spawn.h"
@@ -73,6 +74,73 @@ void ClearScene()
     }
     InvalidateSceneModel();
     Log("level: empty map, %d characters and items taken out", int(g_cleared.size()));
+}
+
+// blank map: the scene's models hidden and stopping nothing, as they were
+struct Blanked {
+    engine::ZGEOM* geom;
+    uint32_t mesh;
+};
+std::vector<Blanked> g_blanked;
+
+// in an item or an item template (their models are the items' own)
+bool InItem(engine::ZGEOM* geom)
+{
+    for (engine::ZBaseGeom* n = geom && geom->node ? geom->node : nullptr; n; n = n->parent)
+        if (n->geom && (engine::IsA(n->geom, "ZItem") || engine::IsA(n->geom, "ZItemTemplate")))
+            return true;
+    return false;
+}
+
+void BlankScene()
+{
+    if (!g_blanked.empty())
+        return;
+    for (const auto& g : SceneModel(0).geoms) {
+        engine::ZGEOM* geom = g.geom;
+        if (!IsLive(geom) || IsSpawned(geom) || IsHidden(geom))
+            continue;  // the editor's, or hidden already (templates, cutscenes)
+        uint32_t mesh = engine::MeshOf(geom);
+        if (!mesh || !engine::IsPlainModel(mesh) || InActor(geom) || InItem(geom))
+            continue;
+        if (g.name.rfind("SkyDome", 0) == 0 || g.path.find("HitmanAs") != std::string::npos ||
+            g.path.find("GuiSetup") != std::string::npos || g.path.find("HeroSetup") != std::string::npos)
+            continue;  // the sky stays; clothes Hitman can wear, the interface and Hitman's setup too
+        g_blanked.push_back({geom, mesh});
+        SetHidden(geom, true);
+        engine::SetModelSolid(mesh, false);
+    }
+    InvalidateSceneModel();
+    Log("level: blank map, %d models taken out", int(g_blanked.size()));
+}
+
+void RestoreBlank()
+{
+    for (const Blanked& b : g_blanked) {
+        if (!IsLive(b.geom))
+            continue;
+        SetHidden(b.geom, false);
+        engine::SetModelSolid(b.mesh, true);
+    }
+    g_blanked.clear();
+    InvalidateSceneModel();
+}
+
+// a model taken out shown again (an edit): it stops things again while one of
+// its objects is shown
+void SyncBlanked(engine::ZGEOM* geom)
+{
+    uint32_t mesh = 0;
+    for (const Blanked& b : g_blanked)
+        if (b.geom == geom)
+            mesh = b.mesh;
+    if (!mesh)
+        return;
+    bool shown = false;
+    for (const Blanked& b : g_blanked)
+        if (b.mesh == mesh && IsLive(b.geom) && !IsHidden(b.geom))
+            shown = true;
+    engine::SetModelSolid(mesh, shown);
 }
 
 // characters whose scripts move them back (a van's driver, a cook going to her place) go again
@@ -460,6 +528,7 @@ void OnScene(const std::string& scene)
     g_liveNpcs.clear();
     g_retiredPoints.clear();
     g_cleared.clear();  // they went with the scene
+    g_blanked.clear();
     script::ForgetScriptObjects();
     for (auto& [path, e] : g_level.objects)
         e.hasOriginal = false;  // originals belong to the previous load
@@ -515,6 +584,14 @@ void DrawPanel()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The scene's characters, items and mission objectives are taken out:\n"
                           "the map stays for a mission of your own (NPCs, Mission tabs)");
+    ImGui::SameLine();
+    bool blank = L.blankMap;
+    if (ImGui::Checkbox("No buildings", &blank))
+        SetBlankMap(blank);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Every model of the map but the sky is taken out too (hidden, and it stops nothing):\n"
+                          "build your own place from models (Models tab, Other levels...).\n"
+                          "Stand on something first: Hitman falls without a floor.");
 
     ImGui::SeparatorText("New objects");
     std::string toDelete;
@@ -619,6 +696,7 @@ void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectStat
         g_level.dirty = true;
         return;
     }
+    SyncBlanked(geom);
     std::string path = PathOf(geom);
     if (path.empty())
         return;
@@ -655,6 +733,10 @@ bool SaveLevel(std::string* error)
     j["base_scene"] = g_level.baseScene;
     if (g_level.emptyMap)
         j["empty_map"] = true;
+    if (g_level.blankMap)
+        j["blank_map"] = true;
+    if (!g_level.floorLevel.empty())
+        j["place_floor"] = {{"level", g_level.floorLevel}, {"mesh", g_level.floorMesh}};
     j["objects"] = json::array();
     for (auto& [path, e] : g_level.objects) {
         json o = StateJson(e.state);
@@ -781,6 +863,11 @@ bool LoadLevel(const std::string& folder, std::string* error)
     L.name = j.value("name", folder);
     L.baseScene = j.value("base_scene", "");
     L.emptyMap = j.value("empty_map", false);
+    L.blankMap = j.value("blank_map", false);
+    if (j.contains("place_floor") && j["place_floor"].is_object()) {
+        L.floorLevel = j["place_floor"].value("level", "");
+        L.floorMesh = j["place_floor"].value("mesh", 0u);
+    }
     for (const json& o : j.value("objects", json::array())) {
         ObjectEdit e;
         e.className = o.value("class", "");
@@ -1328,6 +1415,28 @@ bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& point
     return true;
 }
 
+void SetBlankMap(bool blank)
+{
+    g_level.blankMap = blank;
+    g_level.dirty = true;
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return;
+    if (blank)
+        BlankScene();
+    else
+        RestoreBlank();
+}
+
+void SetFloor(const std::string& level, uint32_t mesh, const std::string& name)
+{
+    SetImported(level, mesh, name, true);
+    g_level.floorLevel = level;
+    g_level.floorMesh = mesh;
+    g_level.dirty = true;
+}
+
 void SetEmptyMap(bool empty)
 {
     g_level.emptyMap = empty;
@@ -1525,12 +1634,45 @@ std::string ImportLevelOf(const std::string& path)
     return it == g_libraryLevel.end() ? "" : it->second;
 }
 
+// the new blank map's floor: under Hitman, centred on him, its top at his feet
+bool PlaceFloor()
+{
+    if (g_level.floorLevel.empty() || CurrentScene() != g_level.baseScene)
+        return false;
+    engine::ZGEOM* hitman = engine::Player();
+    const ImportedModel* m = nullptr;
+    for (const ImportedModel& i : g_level.imports)
+        if (i.level == g_level.floorLevel && i.mesh == g_level.floorMesh)
+            m = &i;
+    engine::ZGEOM* model = m ? Resolve(std::string("ROOT/") + kLibrary + "/" + LibraryName(*m)) : nullptr;
+    if (!hitman || !IsLive(hitman) || !model)
+        return false;
+    Transform mt = GetTransform(model), h = GetTransform(hitman), t = mt;
+    float c[3], r = 0.0f;
+    if (!GetBounds(model, c, r))
+        memcpy(c, mt.pos, sizeof(c));
+    for (int k = 0; k < 3; ++k)
+        t.pos[k] = h.pos[k] - (c[k] - mt.pos[k]);
+    t.pos[1] -= 2.0f;  // a flat model: its middle just under his feet
+    std::string err;
+    engine::ZGEOM* floor = DuplicateObject(model, &err, &t, RoomOf(hitman));
+    Log("level: floor %s: %s", LibraryName(*m).c_str(), floor ? "placed under Hitman" : err.c_str());
+    g_level.floorLevel.clear();
+    g_level.floorMesh = 0;
+    g_level.dirty = true;
+    if (floor && !g_level.folder.empty())
+        SaveLevel(&err);
+    return floor != nullptr;
+}
+
 int ApplyLevel()
 {
     int n = 0;
     BuildImportLibrary();
     if (g_level.emptyMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
         ClearScene();
+    if (g_level.blankMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
+        BlankScene();
     for (const SpawnedObject& s : g_level.spawned)
         if (s.sourceScene.empty() || s.sourceScene == CurrentScene())
             n += Materialize(s) != nullptr;
@@ -1543,6 +1685,7 @@ int ApplyLevel()
             e.hasOriginal = true;
         }
         SetState(geom, e.state);
+        SyncBlanked(geom);
         ++n;
     }
     for (auto& [path, points] : g_level.lists) {
@@ -1563,12 +1706,14 @@ int ApplyLevel()
         n += ApplyNpcEdit(e);
     ApplyMission();
     ApplyMusic();
+    PlaceFloor();
     return n;
 }
 
 void RevertLevel()
 {
     RestoreScene();
+    RestoreBlank();
     RevertMission();
     RevertMusic();
     for (auto& [path, points] : g_level.lists)  // the scene file's elements (before the points go)

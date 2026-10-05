@@ -836,8 +836,16 @@ void __fastcall hkTexData(void* self, void* edx, void* buf, uint32_t size)
     Log("imports: textures: %d added, %d shared with this level", added, shared);
 }
 
+// the loaded scene's prims (the renderer keeps them), for SetModelSolid
+uint8_t* g_prims;
+uint32_t g_primsSize;
+std::map<uint32_t, uint32_t> g_masks;  // record -> its query mask before it was cleared
+
 void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
 {
+    g_prims = static_cast<uint8_t*>(buf);
+    g_primsSize = size;
+    g_masks.clear();
     if (!g_active) {
         oPrimsData(self, edx, buf, size);
         return;
@@ -1325,6 +1333,34 @@ const std::vector<std::string>& GameLevels()
 }
 
 void SetModelImports(const std::vector<ModelImport>& list) { g_requests = list; }
+
+bool IsPlainModel(uint32_t mesh)
+{
+    uint32_t type;
+    if (!g_prims || !mesh || mesh + kRecord > g_primsSize)
+        return false;
+    memcpy(&type, g_prims + mesh, 4);
+    return type == 0;
+}
+
+bool SetModelSolid(uint32_t mesh, bool solid)
+{
+    if (!IsPlainModel(mesh))
+        return false;
+    int n = 0;
+    for (uint32_t r = mesh; r && n < 64 && r + kRecord <= g_primsSize; ++n) {
+        uint32_t* mask = reinterpret_cast<uint32_t*>(g_prims + r + 0x34);
+        if (!solid) {
+            g_masks.try_emplace(r, *mask);
+            *mask = 0;
+        } else if (auto it = g_masks.find(r); it != g_masks.end()) {
+            *mask = it->second;
+            g_masks.erase(it);
+        }
+        memcpy(&r, g_prims + r + 8, 4);
+    }
+    return true;
+}
 
 std::vector<std::string> ImportedAnimFiles(uint32_t mesh)
 {

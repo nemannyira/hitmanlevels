@@ -30,6 +30,7 @@ constexpr uintptr_t kGetSceneName = 0x41B880;    // ZEngineDataBase::(void) -> c
 // header[1] stays, so save games are the same with or without them.
 constexpr uint32_t kRuntimeReserve = 0x60000;
 constexpr uint32_t kRecord = 0x84;               // a PRM record (one material of a model)
+constexpr size_t kVertex = 36;                   // a vertex of a model: position, normal, colour, uv
 constexpr int kTexIds = 2048;
 
 using SizeFn = uint32_t(__fastcall*)(void* self, void* edx);
@@ -160,29 +161,57 @@ bool CopyChain(const std::string& level, uint32_t first, bool main, Chain& out)
         Log("imports: %s %08X: no such model", m.level.c_str(), m.mesh);
         return false;
     }
-    uint32_t lo = UINT32_MAX, hi = 0;
+    // What it is made of: its records, bounds (+0x18), vertices (+0x1C) and
+    // index strips (+0x44, +0x48 words). Level files share strips and some
+    // vertices between models, megabytes away: pieces near each other are
+    // copied together (as the file has them), the others on their own.
+    struct Span {
+        uint32_t from, end;
+        size_t pos = 0;
+    };
+    std::vector<Span> spans;
+    auto want = [&](uint32_t at, size_t size) {
+        if (at && size && at + size <= prm.size())
+            spans.push_back({at, uint32_t(at + size)});
+    };
     for (uint32_t r : records) {
-        lo = std::min(lo, r);
-        hi = std::max(hi, r + kRecord);
-        for (size_t f : {0x18, 0x1C, 0x44}) {
-            uint32_t v = U32(prm, r + f);
-            if (v && v < r)
-                lo = std::min(lo, v);
-        }
+        want(r, kRecord);
+        want(U32(prm, r + 0x18), 0x3C);
+        want(U32(prm, r + 0x1C), (U32(prm, r + 0x14) >> 16) * kVertex);
+        want(U32(prm, r + 0x44), size_t(U32(prm, r + 0x48)) * 2);
     }
-    if (hi - lo > 0x400000) {
-        Log("imports: %s %08X: model spans %u bytes, not copied", m.level.c_str(), m.mesh, hi - lo);
+    std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.from < b.from; });
+    std::vector<Span> merged;
+    for (const Span& sp : spans)
+        if (!merged.empty() && sp.from <= merged.back().end + 0x1000)
+            merged.back().end = std::max(merged.back().end, sp.end);
+        else
+            merged.push_back(sp);
+    size_t bytes = 0;
+    for (const Span& sp : merged)
+        bytes += sp.end - sp.from;
+    if (bytes > 0x400000) {
+        Log("imports: %s %08X: model has %zu bytes, not copied", m.level.c_str(), m.mesh, bytes);
         return false;
     }
-    size_t pos = (g_blob.size() + 15) & ~size_t(15);
-    g_blob.resize(pos + (hi - lo));
-    memcpy(&g_blob[pos], &prm[lo], hi - lo);
-    uint32_t delta = g_base + uint32_t(pos) - lo;
+    // each piece where the file has it modulo 16 (the data's alignment)
+    out.pos = (g_blob.size() + 15) & ~size_t(15);
+    for (Span& sp : merged) {
+        sp.pos = ((g_blob.size() + 15) & ~size_t(15)) + (sp.from & 15);
+        g_blob.resize(sp.pos + (sp.end - sp.from));
+        memcpy(&g_blob[sp.pos], &prm[sp.from], sp.end - sp.from);
+    }
+    constexpr size_t kNone = SIZE_MAX;
+    auto where = [&](uint32_t v) -> size_t {  // a file offset -> its copy in the blob
+        for (const Span& sp : merged)
+            if (v >= sp.from && v < sp.end)
+                return sp.pos + (v - sp.from);
+        return kNone;
+    };
     int outside = 0;
-    out.pos = pos;
     out.records.clear();
     for (uint32_t r : records) {
-        size_t q = pos + (r - lo);
+        size_t q = where(r);
         out.records.push_back(q);
         if (main)
             g_recordMap[{m.level, r}] = g_base + uint32_t(q);
@@ -190,8 +219,8 @@ bool CopyChain(const std::string& level, uint32_t first, bool main, Chain& out)
             uint32_t v = U32(g_blob, q + f);
             if (!v)
                 continue;
-            if (v >= lo && v < hi) {
-                Put(g_blob, q + f, v + delta);
+            if (size_t at = where(v); at != kNone) {
+                Put(g_blob, q + f, g_base + uint32_t(at));
             } else {
                 Put(g_blob, q + f, 0);
                 ++outside;
@@ -211,9 +240,9 @@ bool CopyChain(const std::string& level, uint32_t first, bool main, Chain& out)
         if (s->HasTexture(tex))
             g_texUses.push_back({q + 0x04, 0x7FF, m.level, tex});
     }
-    out.mesh = g_base + uint32_t(pos) + (m.mesh - lo);
-    Log("imports: %s %08X -> %08X (%zu records, %u bytes%s)", m.level.c_str(), m.mesh, out.mesh, records.size(),
-        hi - lo, outside ? ", some references outside dropped" : "");
+    out.mesh = g_base + uint32_t(where(m.mesh));
+    Log("imports: %s %08X -> %08X (%zu records, %zu bytes in %zu pieces%s)", m.level.c_str(), m.mesh, out.mesh,
+        records.size(), bytes, merged.size(), outside ? ", some references outside dropped" : "");
     return true;
 }
 
@@ -232,8 +261,6 @@ void FromParent(const float mat[9], const float pos[3], const float v[3], float 
     out[1] = d[0] * mat[3] + d[1] * mat[4] + d[2] * mat[5];
     out[2] = d[0] * mat[0] + d[1] * mat[1] + d[2] * mat[2];
 }
-
-constexpr size_t kVertex = 36;  // position, normal, colour, uv
 
 // a group: its parts copied, the others' vertices moved into the main
 // part's frame, their records chained after the main part's, bounds of all

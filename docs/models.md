@@ -58,8 +58,13 @@ chain of **0x84-byte records** linked by +0x08, one per material:
 * Found by comparing the 1466 models C2-1 and C2-2 share at different
   offsets: the differences equal to the offset distance are the pointers
   (+0x08, +0x18, +0x1C, +0x44).
-* A model's data (vertices, indices, bounds) lies right before its records:
-  one span from the lowest pointer to the last record's end.
+* A model's data (vertices, indices, bounds) mostly lies right before its
+  records, but index strips (and some vertices) are shared between models
+  and can be megabytes away: ~9% of the models span more than 4 MB. Sizes:
+  vertices `count (u16 at +0x16) * 36`, strips `+0x48 * 2` (checked on every
+  record of C2-1 and C6-1), bounds 0x3C. Imports copy these pieces (those
+  closer than 4 KB together) instead of one span; `tools/check_imports.py`
+  checks the rule on every level.
 * The first part of every PRM (the AllLevels prims) is identical in all
   levels, at the same offsets.
 

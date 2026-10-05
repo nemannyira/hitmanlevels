@@ -542,7 +542,7 @@ int MeshObject(lua_State* L)
     if (!parent)
         return luaL_error(L, "mesh_object: no parent");
     uint32_t flags = uint32_t(luaL_optinteger(L, 6, 0x200F3));
-    const float mat[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    const float mat[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};  // rows forward, up, right
     std::string name = "Imported_" + std::to_string(++g_spawnCounter), err;
     engine::ZGEOM* g = engine::CreateObject(name, parent, "ZSTDOBJ", mesh, flags, mat, pos, {}, &err);
     if (!g)

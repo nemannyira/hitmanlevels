@@ -167,6 +167,7 @@ struct Chain {
     size_t pos = 0;                // where its span went in the blob
     std::vector<size_t> records;   // its records in the blob
     uint32_t mesh = 0;             // the first record's offset here
+    size_t pieces = 0;             // parts of the file it was copied from
 };
 
 // A model's records and data copied into the blob, offsets moved. `main`:
@@ -268,6 +269,7 @@ bool CopyChain(const std::string& level, uint32_t first, bool main, Chain& out)
             g_texUses.push_back({q + 0x04, 0x7FF, m.level, tex});
     }
     out.mesh = g_base + uint32_t(where(m.mesh));
+    out.pieces = merged.size();
     Log("imports: %s %08X -> %08X (%zu records, %zu bytes in %zu pieces%s)", m.level.c_str(), m.mesh, out.mesh,
         records.size(), bytes, merged.size(), outside ? ", some references outside dropped" : "");
     return true;
@@ -287,6 +289,77 @@ void FromParent(const float mat[9], const float pos[3], const float v[3], float 
     out[0] = d[0] * mat[6] + d[1] * mat[7] + d[2] * mat[8];
     out[1] = d[0] * mat[3] + d[1] * mat[4] + d[2] * mat[5];
     out[2] = d[0] * mat[0] + d[1] * mat[1] + d[2] * mat[2];
+}
+
+// The records (blob offsets, drawing order) made one model again, laid out
+// as the level files do it (the renderer keeps a model's vertices together:
+// parts far apart in the buffer draw wrong): each record's vertices and
+// indices, the bounds block (the first record's; `lo` / `hi`: new bounds),
+// the records (the first one last), numbered again. Their collision goes
+// with them. Returns the first record (prims offset).
+uint32_t Relayout(const std::vector<size_t>& drawn, const float* lo, const float* hi)
+{
+    size_t region = (g_blob.size() + 15) & ~size_t(15);
+    std::vector<uint8_t> out;
+    std::vector<uint32_t> verts(drawn.size()), indices(drawn.size());
+    for (size_t k = 0; k < drawn.size(); ++k) {
+        size_t q = drawn[k];
+        uint32_t v = U32(g_blob, q + 0x1C), count = U32(g_blob, q + 0x14) >> 16;
+        uint32_t ix = U32(g_blob, q + 0x44), words = U32(g_blob, q + 0x48);
+        verts[k] = indices[k] = 0;
+        if (v >= g_base && v - g_base + size_t(count) * kVertex <= g_blob.size()) {
+            verts[k] = g_base + uint32_t(region + out.size());
+            out.insert(out.end(), g_blob.begin() + (v - g_base), g_blob.begin() + (v - g_base) + count * kVertex);
+        }
+        if (ix >= g_base && ix - g_base + size_t(words) * 2 <= g_blob.size()) {
+            indices[k] = g_base + uint32_t(region + out.size());
+            out.insert(out.end(), g_blob.begin() + (ix - g_base), g_blob.begin() + (ix - g_base) + words * 2);
+        }
+        while (out.size() & 3)
+            out.push_back(0);
+    }
+    uint32_t box = 0, oldBox = U32(g_blob, drawn[0] + 0x18);
+    if (oldBox >= g_base && oldBox - g_base + 0x3C <= g_blob.size()) {
+        box = g_base + uint32_t(region + out.size());
+        out.insert(out.end(), g_blob.begin() + (oldBox - g_base), g_blob.begin() + (oldBox - g_base) + 0x3C);
+        if (lo && hi) {
+            memcpy(&out[box - g_base - region + 0x24], hi, 12);
+            memcpy(&out[box - g_base - region + 0x30], lo, 12);
+        }
+    }
+    while (out.size() & 3)
+        out.push_back(0);
+    std::vector<uint32_t> at(drawn.size());  // the new records, the first one last
+    for (size_t k = drawn.size(); k-- > 0;) {
+        at[k] = g_base + uint32_t(region + out.size());
+        out.insert(out.end(), g_blob.begin() + drawn[k], g_blob.begin() + drawn[k] + kRecord);
+    }
+    std::vector<TexUse> newUses;
+    for (size_t k = 0; k < drawn.size(); ++k) {
+        size_t q = at[k] - g_base - region;
+        auto put = [&](size_t f, uint32_t v) { memcpy(&out[q + f], &v, 4); };
+        put(0x08, k + 1 < drawn.size() ? at[k + 1] : 0);
+        put(0x18, k == 0 ? box : 0);
+        put(0x1C, verts[k]);
+        put(0x2C, 0);
+        put(0x30, 0);
+        put(0x44, indices[k]);
+        // +0x04 above 16 bits: the record's number in its model (the renderer
+        // keeps a model's parts by it): numbered again through the parts
+        uint32_t tex;
+        memcpy(&tex, &out[q + 0x04], 4);
+        put(0x04, (tex & 0xFFFF) | uint32_t(k) << 16);
+        for (const TexUse& t : g_texUses)
+            if (t.at == drawn[k] + 0x04)
+                newUses.push_back({at[k] - g_base + 0x04, t.mask, t.level, t.id});
+        for (CollisionUse& c : g_collisions)  // set when the OCT is read
+            if (c.at == drawn[k] + 0x30)
+                c.at = at[k] - g_base + 0x30;
+    }
+    g_texUses.insert(g_texUses.end(), newUses.begin(), newUses.end());
+    g_blob.resize(region);
+    g_blob.insert(g_blob.end(), out.begin(), out.end());
+    return at[0];
 }
 
 // a group: its parts copied, the others' vertices moved into the main
@@ -339,77 +412,19 @@ bool CopyGroup(const ModelImport& m)
             continue;
         bounds(chains[i], &model->pieces[i]);  // moves an invisible part's vertices too (unused)
     }
-    // One new model of the drawn parts, laid out as the level files do it (the
-    // renderer keeps a model's vertices together: parts far apart in the
-    // buffer draw wrong): each record's vertices and indices, the bounds
-    // block, the records (the first one last); the first record gets
-    // pieces[0]'s collision.
+    // one new model of the drawn parts, its bounds those of them all
     std::vector<size_t> drawn;  // records (blob offsets) in drawing order
     for (size_t i = 0; i < chains.size(); ++i)
         if (model->pieces[i].visible)
             drawn.insert(drawn.end(), chains[i].records.begin(), chains[i].records.end());
     if (drawn.empty())
         return false;
-    size_t region = (g_blob.size() + 15) & ~size_t(15);
-    std::vector<uint8_t> out;
-    std::vector<uint32_t> verts(drawn.size()), indices(drawn.size());
-    for (size_t k = 0; k < drawn.size(); ++k) {
-        size_t q = drawn[k];
-        uint32_t v = U32(g_blob, q + 0x1C), count = U32(g_blob, q + 0x14) >> 16;
-        uint32_t ix = U32(g_blob, q + 0x44), words = U32(g_blob, q + 0x48);
-        verts[k] = indices[k] = 0;
-        if (v >= g_base && v - g_base + size_t(count) * kVertex <= g_blob.size()) {
-            verts[k] = g_base + uint32_t(region + out.size());
-            out.insert(out.end(), g_blob.begin() + (v - g_base), g_blob.begin() + (v - g_base) + count * kVertex);
-        }
-        if (ix >= g_base && ix - g_base + size_t(words) * 2 <= g_blob.size()) {
-            indices[k] = g_base + uint32_t(region + out.size());
-            out.insert(out.end(), g_blob.begin() + (ix - g_base), g_blob.begin() + (ix - g_base) + words * 2);
-        }
-        while (out.size() & 3)
-            out.push_back(0);
-    }
-    uint32_t box = 0, oldBox = U32(g_blob, drawn[0] + 0x18);
-    if (oldBox >= g_base && oldBox - g_base + 0x3C <= g_blob.size()) {
-        box = g_base + uint32_t(region + out.size());
-        out.insert(out.end(), g_blob.begin() + (oldBox - g_base), g_blob.begin() + (oldBox - g_base) + 0x3C);
-        memcpy(&out[box - g_base - region + 0x24], hi, 12);
-        memcpy(&out[box - g_base - region + 0x30], lo, 12);
-    }
-    while (out.size() & 3)
-        out.push_back(0);
-    std::vector<uint32_t> at(drawn.size());  // the new records, the first one last
-    for (size_t k = drawn.size(); k-- > 0;) {
-        at[k] = g_base + uint32_t(region + out.size());
-        out.insert(out.end(), g_blob.begin() + drawn[k], g_blob.begin() + drawn[k] + kRecord);
-    }
-    std::vector<TexUse> newUses;
-    for (size_t k = 0; k < drawn.size(); ++k) {
-        size_t q = at[k] - g_base - region;
-        auto put = [&](size_t f, uint32_t v) { memcpy(&out[q + f], &v, 4); };
-        put(0x08, k + 1 < drawn.size() ? at[k + 1] : 0);
-        put(0x18, k == 0 ? box : 0);
-        put(0x1C, verts[k]);
-        put(0x2C, 0);
-        put(0x30, 0);
-        put(0x44, indices[k]);
-        // +0x04 above 16 bits: the record's number in its model (the renderer
-        // keeps a model's parts by it): numbered again through the parts
-        uint32_t tex;
-        memcpy(&tex, &out[q + 0x04], 4);
-        put(0x04, (tex & 0xFFFF) | uint32_t(k) << 16);
-        for (const TexUse& t : g_texUses)
-            if (t.at == drawn[k] + 0x04)
-                newUses.push_back({at[k] - g_base + 0x04, t.mask, t.level, t.id});
-    }
-    g_texUses.insert(g_texUses.end(), newUses.begin(), newUses.end());
-    size_t from = chains[0].records[0] + 0x30;
-    for (CollisionUse& c : g_collisions)
-        if (c.at == from)
-            c.at = at[0] - g_base + 0x30;
-    g_blob.resize(region);
-    g_blob.insert(g_blob.end(), out.begin(), out.end());
-    g_pending[{m.level, m.mesh}] = at[0];
+    uint32_t first = Relayout(drawn, lo, hi);
+    if (!main.visible)  // the invisible collision body: its collision on the new model
+        for (CollisionUse& c : g_collisions)
+            if (c.at == chains[0].records[0] + 0x30)
+                c.at = first - g_base + 0x30;
+    g_pending[{m.level, m.mesh}] = first;
     Log("imports: %s group %s: %zu parts", m.level.c_str(), model->name.c_str(), model->pieces.size());
     return true;
 }
@@ -541,7 +556,8 @@ bool Copy(const ModelImport& m)
     Chain c;
     if (!CopyChain(m.level, m.mesh, true, c))
         return false;
-    g_pending[{m.level, m.mesh}] = c.mesh;
+    // data of other models between its pieces in the file: laid out again
+    g_pending[{m.level, m.mesh}] = c.pieces > 1 ? Relayout(c.records, nullptr, nullptr) : c.mesh;
     return true;
 }
 

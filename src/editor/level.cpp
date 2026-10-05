@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 
 #include "imgui.h"
@@ -1490,7 +1491,7 @@ void BuildImportLibrary()
     if (!root)
         return;
     engine::ZGEOM* group = Resolve(std::string("ROOT/") + kLibrary);
-    const float identity[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    const float identity[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};  // rows forward, up, right
     if (!group) {
         const float away[3] = {0.0f, -100000.0f, 0.0f};
         std::string err;
@@ -1634,6 +1635,34 @@ std::string ImportLevelOf(const std::string& path)
     return it == g_libraryLevel.end() ? "" : it->second;
 }
 
+// The room of the map a point is in: the room of the smallest model of the
+// map (taken out or not) whose bounding sphere holds it, else of the nearest
+// one (Hitman's own room is the root, which is not drawn like the others).
+engine::ZGEOM* RoomAt(const float p[3])
+{
+    engine::ZGEOM* best = nullptr;
+    float bestScore = 1e30f;
+    for (const auto& g : SceneModel(0).geoms) {
+        if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom) || !engine::MeshOf(g.geom) ||
+            g.name.rfind("SkyDome", 0) == 0 || g.path.find("HeroSetup") != std::string::npos ||
+            g.path.find("GuiSetup") != std::string::npos)
+            continue;  // the sky, Hitman's own setup (camera, binoculars) and the interface are not places
+        float c[3], r = 0.0f;
+        if (!GetBounds(g.geom, c, r))
+            continue;
+        float d = std::sqrt((p[0] - c[0]) * (p[0] - c[0]) + (p[1] - c[1]) * (p[1] - c[1]) + (p[2] - c[2]) * (p[2] - c[2]));
+        float score = d <= r ? r : 1e9f + (d - r);
+        if (score >= bestScore)
+            continue;
+        engine::ZGEOM* room = RoomOf(g.geom);
+        if (room && PathOf(room) != "ROOT") {
+            best = room;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
 // the new blank map's floor: under Hitman, centred on him, its top at his feet
 bool PlaceFloor()
 {
@@ -1655,7 +1684,8 @@ bool PlaceFloor()
         t.pos[k] = h.pos[k] - (c[k] - mt.pos[k]);
     t.pos[1] -= 2.0f;  // a flat model: its middle just under his feet
     std::string err;
-    engine::ZGEOM* floor = DuplicateObject(model, &err, &t, RoomOf(hitman));
+    engine::ZGEOM* room = RoomAt(h.pos);
+    engine::ZGEOM* floor = DuplicateObject(model, &err, &t, room ? room : RoomOf(hitman));
     Log("level: floor %s: %s", LibraryName(*m).c_str(), floor ? "placed under Hitman" : err.c_str());
     g_level.floorLevel.clear();
     g_level.floorMesh = 0;
@@ -1665,10 +1695,63 @@ bool PlaceFloor()
     return floor != nullptr;
 }
 
+// The rotation a stored matrix (rows forward, up, right) stands for: its
+// columns are the local x, y, z axes (right, up, forward).
+void ToRotation(const float m[9], float r[3][3])
+{
+    for (int i = 0; i < 3; ++i) {
+        r[i][0] = m[6 + i];
+        r[i][1] = m[3 + i];
+        r[i][2] = m[i];
+    }
+}
+
+// Copies of models of other levels placed before 2026-10-06 are mirrored:
+// the library group's matrix was {1,0,0, 0,1,0, 0,0,1}, which in the engine's
+// layout swaps x and z. Such a copy (`t`, a reflection) is turned into the
+// rotation it was meant to have: t * L^T * S * L (L: the model's rotation in
+// the library, S: the swap).
+bool Unmirror(Transform& t, const Transform& library)
+{
+    float r[3][3], l[3][3];
+    ToRotation(t.mat, r);
+    ToRotation(library.mat, l);
+    float det = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) +
+                r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+    if (det > 0.0f)
+        return false;  // a rotation: fine
+    float a[3][3], b[3][3], out[3][3];
+    for (int i = 0; i < 3; ++i)  // a = L^T * S * L: (S L)[k][j] = L[2-k][j]
+        for (int j = 0; j < 3; ++j) {
+            a[i][j] = 0.0f;
+            for (int k = 0; k < 3; ++k)
+                a[i][j] += l[k][i] * l[2 - k][j];
+        }
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            b[i][j] = 0.0f;
+            for (int k = 0; k < 3; ++k)
+                b[i][j] += r[i][k] * a[k][j];
+        }
+    memcpy(out, b, sizeof(out));
+    for (int i = 0; i < 3; ++i) {
+        t.mat[6 + i] = out[i][0];
+        t.mat[3 + i] = out[i][1];
+        t.mat[i] = out[i][2];
+    }
+    return true;
+}
+
 int ApplyLevel()
 {
     int n = 0;
     BuildImportLibrary();
+    for (SpawnedObject& s : g_level.spawned)
+        if (s.sourcePath.rfind(std::string("ROOT/") + kLibrary + "/", 0) == 0)
+            if (engine::ZGEOM* lib = Resolve(s.sourcePath); lib && Unmirror(s.transform, GetTransform(lib))) {
+                g_level.dirty = true;
+                Log("level: %s turned the right way (placed mirrored by an older version)", s.id.c_str());
+            }
     if (g_level.emptyMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
         ClearScene();
     if (g_level.blankMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))

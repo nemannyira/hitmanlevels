@@ -64,7 +64,15 @@ chain of **0x84-byte records** linked by +0x08, one per material:
   vertices `count (u16 at +0x16) * 36`, strips `+0x48 * 2` (checked on every
   record of C2-1 and C6-1), bounds 0x3C. Imports copy these pieces (those
   closer than 4 KB together) instead of one span; `tools/check_imports.py`
-  checks the rule on every level.
+  checks the rule on every level. A model copied in several pieces is laid
+  out again as one (each record's vertices and indices, bounds, records),
+  as groups are: the renderer draws a model's records with their data far
+  apart wrong.
+* Matrices are stored as rows forward, up, right: the identity is
+  `{0,0,1, 0,1,0, 1,0,0}`; `{1,0,0, 0,1,0, 0,0,1}` swaps x and z (a mirror:
+  the model is drawn inside out). The library group had it until
+  2026-10-06; copies placed then are turned the right way when a level is
+  applied (`t * L^T * S * L`).
 * The first part of every PRM (the AllLevels prims) is identical in all
   levels, at the same offsets.
 
@@ -205,11 +213,12 @@ a character, an item or an item template, not hidden already, not the
 it); shown again (an edit), the model stops things again. A new blank map
 gets a floor: a large flat model of another level (C3-3 `Yard_06-7-8`, C5-2
 `Ground_11` or C2-2 `Ground_03`, single records with collision, in rooms)
-imported and put under Hitman when the map is loaded (`place_floor`), then
-an object of the level like the others.
+imported and put under Hitman when the map is loaded (`place_floor`), in
+the room of the smallest map model around his feet (his own parent is the
+root, whose objects are not drawn), then an object of the level like the
+others. Checked in the game (C1-1 with C3-3's yard).
 
 ## Not yet
 
 * Objects made of several models (a truck's wheels are models of their own).
 * Characters checked in the game (bodies, outfits, animations).
-* The blank map checked in the game (room visibility of the floor, the sky).

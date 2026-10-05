@@ -118,8 +118,37 @@ While a scene loads (GetPrimsSize / Data, GetTextureSize / Data hooked):
 Checked: C2-1's truck and street lamp in C1-1 with their textures, placed,
 saved, the game restarted, loaded again.
 
+## Characters (skinned bodies)
+
+An actor record's mesh (+0x0C) is a chain of **skinned records** (type
+0x00010001, 0xA8 bytes: the 0x84 record and an extension shared by the
+model's records):
+
+| off | |
+|---|---|
+| +0x04, +0x08, +0x14, +0x18, +0x1C, +0x44, +0x48 | as in the plain record (texture, next, vertex count, bounds 0x3C, vertices, index strips, words) |
+| +0x3C | first record: LOD table, 8 lists `{u32 count, record offsets}` |
+| +0x40 | colour |
+| +0x80 | ? (per record) |
+| +0x84 | bones (0x45 for Reg_Male) |
+| +0x88, +0x8C, +0x90, +0x94, +0x98 | per-bone blocks: 48, 28, 48, 36, 48 bytes a bone |
+| +0x9C | skeleton: bone map and matrices (0xA14 bytes for Reg_Male), up to the next model's records; shared by several models |
+| +0xA0, +0xA4 | size table: `+0xA0` pairs of u32 |
+
+Vertices are 52 bytes. Index strips may be shared and lie megabytes away.
+Found by comparing the 31 characters several levels have (e.g. SoldierRussian_01
+in C2-1 / C2-2); the renderer reads +0x88.. through the prim manager (vfunc 0xC).
+
+Animations: actors name a set in their data block
+(`Worlds\Characters\_Anims\<set>\<set>.anm`): Reg_Male in every level but
+C0-2, Female_Reg in six, a few special ones.
+
+Importing a character (not run in the game yet): its body's blocks are copied
+one by one with their sizes, the references moved by a map; the NPCs tab
+offers it worn by a character of this map with the same animation set
+(NpcSpawn.mesh): that character's data, size, behaviour and outfits.
+
 ## Not yet
 
 * Objects made of several models (a truck's wheels are models of their own).
-* Records of other types (+0x00 != 0), skinned meshes, characters (bodies,
-  bones, ANM animations).
+* Characters checked in the game; animation sets this map lacks (ANM).

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,7 @@
 #include "level.h"
 #include "model.h"
 #include "model_catalog.h"
+#include "npcs.h"
 #include "placement.h"
 #include "scene_panel.h"
 
@@ -360,6 +362,64 @@ int g_otherLevel = -1;
 char g_otherFilter[128];
 std::string g_otherMessage;
 
+// the window's footer: what the level has, loading the map again
+void DrawImportFooter()
+{
+    ImGui::Text("%d models and characters of other levels in this level", int(CurrentLevel().imports.size()));
+    if (!g_otherMessage.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.4f, 1.0f), "%s", g_otherMessage.c_str());
+    }
+    bool pending = ImportsPending();
+    ImGui::BeginDisabled(!pending);
+    if (ImGui::Button(pending ? "Load the map again to get them" : "All of them are loaded", ImVec2(-1, 0))) {
+        g_otherOpen = false;
+        ReloadMapForImports();
+    }
+    ImGui::EndDisabled();
+    if (pending && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Your level stays as it is (save it to keep it on disk).");
+}
+
+// characters of another level: those with animations a character of this map has
+void DrawOtherCharacters(const std::string& level)
+{
+    std::set<std::string> here;
+    for (int r : NpcRecords())
+        here.insert(NpcAnimSet(r));
+    std::string filter = Lower(g_otherFilter);
+    float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing();
+    if (ImGui::BeginChild("clist", ImVec2(0, -footer), ImGuiChildFlags_Borders)) {
+        const std::vector<engine::LevelCharacter>& chars = engine::LevelCharacters(level);
+        if (chars.empty())
+            ImGui::TextDisabled("no characters (the level could not be read)");
+        for (const engine::LevelCharacter& c : chars) {
+            if (!filter.empty() && Lower(c.model).find(filter) == std::string::npos &&
+                Lower(c.animSet).find(filter) == std::string::npos)
+                continue;
+            ImGui::PushID(int(c.mesh));
+            bool on = IsImported(level, c.mesh), usable = here.count(c.animSet) != 0;
+            ImGui::BeginDisabled(!usable && !on);
+            if (ImGui::Checkbox(c.model.c_str(), &on)) {
+                int uses = on ? 0 : ImportUses(level, c.mesh);
+                if (uses)
+                    g_otherMessage = c.model + " is worn by " + std::to_string(uses) + " placed characters: remove them first";
+                else
+                    SetImported(level, c.mesh, c.model, on, true, c.animSet);
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip(usable ? "%s: %s animations, %d in %s (e.g. in %s)"
+                                         : "%s: %s animations, which no character of this map has",
+                                  c.model.c_str(), c.animSet.c_str(), c.uses, level.c_str(), c.group.c_str());
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(c.animSet.c_str()).x);
+            ImGui::TextDisabled("%s", c.animSet.c_str());
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+}
+
 void DrawOtherLevels()
 {
     if (!g_otherOpen)
@@ -381,8 +441,17 @@ void DrawOtherLevels()
             if (!isHere(i))
                 g_otherLevel = i;
     }
-    ImGui::TextWrapped("Tick the models this level should have. The map is loaded again to get them; then they are "
-                       "in the Models list (marked with their level) and are placed like the others.");
+    static int page = 0;
+    ImGui::RadioButton("Models", &page, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Characters", &page, 1);
+    if (page == 0)
+        ImGui::TextWrapped("Tick the models this level should have. The map is loaded again to get them; then they "
+                           "are in the Models list (marked with their level) and are placed like the others.");
+    else
+        ImGui::TextWrapped("Tick the characters this level should have. The map is loaded again to get their bodies; "
+                           "then they are in the NPCs tab (marked with their level), placed like the others: a "
+                           "character of this map with the same animations wears the body.");
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
     if (ImGui::BeginCombo("level", g_otherLevel >= 0 ? levels[g_otherLevel].c_str() : "-")) {
         for (int i = 0; i < int(levels.size()); ++i)
@@ -398,6 +467,12 @@ void DrawOtherLevels()
         return;
     }
     const std::string& level = levels[g_otherLevel];
+    if (page == 1) {
+        DrawOtherCharacters(level);
+        DrawImportFooter();
+        ImGui::End();
+        return;
+    }
     const std::vector<engine::LevelModel>& models = engine::LevelModels(level);
     engine::ZGEOM* known = Resolve("ROOT");
     struct Row {
@@ -468,20 +543,7 @@ void DrawOtherLevels()
         }
     }
     ImGui::EndChild();
-    ImGui::Text("%d models of other levels in this level", int(CurrentLevel().imports.size()));
-    if (!g_otherMessage.empty()) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.4f, 1.0f), "%s", g_otherMessage.c_str());
-    }
-    bool pending = ImportsPending();
-    ImGui::BeginDisabled(!pending);
-    if (ImGui::Button(pending ? "Load the map again to get them" : "All of them are loaded", ImVec2(-1, 0))) {
-        g_otherOpen = false;
-        ReloadMapForImports();
-    }
-    ImGui::EndDisabled();
-    if (pending && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Your level stays as it is (save it to keep it on disk).");
+    DrawImportFooter();
     ImGui::End();
 }
 

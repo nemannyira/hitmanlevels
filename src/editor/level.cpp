@@ -275,6 +275,17 @@ engine::ZGEOM* MaterializeNpc(const LevelNpc& n, std::string* error = nullptr)
     spec.record = n.record;
     spec.transform = n.transform;
     spec.name = n.id;
+    if (n.importMesh) {
+        spec.mesh = engine::ImportedMesh(n.importLevel, n.importMesh);
+        if (!spec.mesh) {
+            if (error)
+                *error = "the map was loaded without " + n.importName + " of " + n.importLevel;
+            return nullptr;
+        }
+        spec.importLevel = n.importLevel;
+        spec.importMesh = n.importMesh;
+        spec.importName = n.importName;
+    }
     spec.hasBehaviour = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, spec.behaviour);
     engine::ZGEOM* g = CreateNpc(spec, error);
     if (g)
@@ -672,6 +683,11 @@ bool SaveLevel(std::string* error)
         o["id"] = n.id;
         o["record"] = n.record;
         o["model"] = n.model;
+        if (n.importMesh) {
+            o["import_level"] = n.importLevel;
+            o["import_mesh"] = n.importMesh;
+            o["import_name"] = n.importName;
+        }
         if (n.hasBehaviour) {
             o["behaviour"] = n.behaviour;
             o["params"] = ParamsJson(n.params);
@@ -709,7 +725,14 @@ bool SaveLevel(std::string* error)
     if (!g_level.imports.empty()) {
         json imports = json::array();
         for (const ImportedModel& m : g_level.imports)
-            imports.push_back({{"level", m.level}, {"mesh", m.mesh}, {"name", m.name}});
+        {
+            json o = {{"level", m.level}, {"mesh", m.mesh}, {"name", m.name}};
+            if (m.character) {
+                o["character"] = true;
+                o["anim_set"] = m.animSet;
+            }
+            imports.push_back(o);
+        }
         j["imports"] = imports;
     }
 
@@ -781,6 +804,9 @@ bool LoadLevel(const std::string& folder, std::string* error)
         n.id = o.value("id", "");
         n.record = o.value("record", -1);
         n.model = o.value("model", "");
+        n.importLevel = o.value("import_level", "");
+        n.importMesh = o.value("import_mesh", 0u);
+        n.importName = o.value("import_name", "");
         n.behaviour = o.value("behaviour", "");
         n.hasBehaviour = !n.behaviour.empty();
         n.params = ParamsFromJson(o.value("params", json::array()));
@@ -827,6 +853,8 @@ bool LoadLevel(const std::string& folder, std::string* error)
         m.level = o.value("level", "");
         m.mesh = o.value("mesh", 0u);
         m.name = o.value("name", "");
+        m.character = o.value("character", false);
+        m.animSet = o.value("anim_set", "");
         if (!m.level.empty() && m.mesh)
             L.imports.push_back(m);
     }
@@ -1112,6 +1140,9 @@ engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error)
     LevelNpc n;
     n.record = spec.record;
     n.model = NpcModel(spec.record);
+    n.importLevel = spec.importLevel;
+    n.importMesh = spec.importMesh;
+    n.importName = spec.importName;
     n.transform = spec.transform;
     n.hasBehaviour = spec.hasBehaviour;
     if (spec.hasBehaviour) {
@@ -1119,7 +1150,7 @@ engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error)
         n.params = SaveParams(spec.behaviour);
     }
     for (int k = 1;; ++k) {
-        n.id = "NPC_" + n.model + "_" + std::to_string(k);
+        n.id = "NPC_" + (n.importName.empty() ? n.model : n.importName) + "_" + std::to_string(k);
         bool used = false;
         for (const LevelNpc& o : g_level.npcs)
             used |= o.id == n.id;
@@ -1354,6 +1385,8 @@ void BuildImportLibrary()
     }
     int made = 0;
     for (const ImportedModel& m : g_level.imports) {
+        if (m.character)
+            continue;  // worn by characters (ImportedBodies), not an object
         uint32_t mesh = engine::ImportedMesh(m.level, m.mesh);
         std::string name = LibraryName(m), path = std::string("ROOT/") + kLibrary + "/" + name;
         if (!mesh || Resolve(path))
@@ -1404,14 +1437,15 @@ bool IsImported(const std::string& level, uint32_t mesh)
     return false;
 }
 
-void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on)
+void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on, bool character,
+                 const std::string& animSet)
 {
     if (on == IsImported(level, mesh))
         return;
     if (on) {
         if (g_level.baseScene.empty())
             g_level.baseScene = CurrentScene();
-        g_level.imports.push_back({level, mesh, name});
+        g_level.imports.push_back({level, mesh, name, character, animSet});
     } else {
         g_level.imports.erase(std::remove_if(g_level.imports.begin(), g_level.imports.end(),
                                              [&](const ImportedModel& m) { return m.level == level && m.mesh == mesh; }),
@@ -1425,8 +1459,13 @@ int ImportUses(const std::string& level, uint32_t mesh)
     for (const ImportedModel& m : g_level.imports) {
         if (m.level != level || m.mesh != mesh)
             continue;
-        std::string path = std::string("ROOT/") + kLibrary + "/" + LibraryName(m);
         int n = 0;
+        if (m.character) {
+            for (const LevelNpc& c : g_level.npcs)
+                n += c.importLevel == level && c.importMesh == mesh;
+            return n;
+        }
+        std::string path = std::string("ROOT/") + kLibrary + "/" + LibraryName(m);
         for (const SpawnedObject& s : g_level.spawned)
             n += s.sourcePath == path;
         return n;
@@ -1452,6 +1491,18 @@ void ReloadMapForImports()
 }
 
 int ImportLibraryVersion() { return g_libraryVersion; }
+
+std::vector<ImportedBody> ImportedBodies()
+{
+    std::vector<ImportedBody> out;
+    if (CurrentScene() != g_level.baseScene)
+        return out;
+    for (const ImportedModel& m : g_level.imports)
+        if (m.character)
+            if (uint32_t mesh = engine::ImportedMesh(m.level, m.mesh))
+                out.push_back({m.level, m.name, m.animSet, m.mesh, mesh});
+    return out;
+}
 
 std::string ImportLevelOf(const std::string& path)
 {

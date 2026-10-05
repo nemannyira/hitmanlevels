@@ -62,6 +62,9 @@ struct LevelNpc {
     std::string id;          // object name of the character
     int record = -1;         // actor record of the base scene it copies (body, animations)
     std::string model;       // that record's model name (checked when loading)
+    std::string importLevel; // its body from a character of another level (ImportedModel)
+    uint32_t importMesh = 0;
+    std::string importName;  // that character's model name
     Transform transform{};
     bool hasBehaviour = false;
     std::string behaviour;   // full script name
@@ -96,6 +99,8 @@ struct ImportedModel {        // a model of another level the map is loaded with
     std::string level;        // "C2-1"
     uint32_t mesh = 0;        // its mesh reference there
     std::string name;         // its name there (information)
+    bool character = false;   // a character's body (worn by a character of this map)
+    std::string animSet;      // a body's animations ("Reg_Male")
 };
 
 struct LevelDocument {
@@ -136,7 +141,14 @@ bool LoadLevel(const std::string& folder, std::string* error = nullptr);
 // each is an object of ROOT/EditorImports in the loaded map, far below the
 // world, which the Models tab lists and places like the map's own models.
 bool IsImported(const std::string& level, uint32_t mesh);
-void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on);
+void SetImported(const std::string& level, uint32_t mesh, const std::string& name, bool on, bool character = false,
+                 const std::string& animSet = "");
+// The characters' bodies of other levels the loaded map has (mesh: here).
+struct ImportedBody {
+    std::string level, name, animSet;
+    uint32_t sourceMesh = 0, mesh = 0;
+};
+std::vector<ImportedBody> ImportedBodies();
 // Objects of the level made of it (it cannot leave the list while used).
 int ImportUses(const std::string& level, uint32_t mesh);
 // The list differs from what the loaded map has: it has to be loaded again.

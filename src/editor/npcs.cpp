@@ -6,8 +6,10 @@
 #include <cstring>
 #include <map>
 
+#include "../engine/imports.h"
 #include "../engine/lists.h"
 #include "../engine/npc.h"
+#include "../engine/spawn.h"
 #include "../log.h"
 #include "../scene.h"
 
@@ -38,7 +40,7 @@ engine::ScriptInfo Runtime(engine::ScriptInfo s)
     return s;
 }
 
-std::map<int, engine::ZGEOM*> g_previews;  // record -> its preview character
+std::map<std::pair<int, uint32_t>, engine::ZGEOM*> g_previews;  // (record, body) -> its preview character
 engine::ZGEOM* g_shownPreview;
 constexpr float kPreviewAway = -50000.0f;
 
@@ -66,6 +68,15 @@ void OnScene(const std::string&)
 } // namespace
 
 std::vector<int> NpcRecords() { return engine::ActorRecords(); }
+
+std::string NpcAnimSet(int record)
+{
+    const auto& records = engine::SceneRecords();
+    if (record < 0 || size_t(record) >= records.size() || !records[record].data)
+        return "";
+    std::vector<uint8_t> block = engine::RawBlock(records[record].data);
+    return block.empty() ? "" : engine::AnimSetOf(block.data(), block.size());
+}
 
 std::string NpcModel(int record)
 {
@@ -183,6 +194,7 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
         parent = RoomOf(original);
     engine::NpcSpawn s;
     s.record = spec.record;
+    s.mesh = spec.mesh;
     s.parent = spec.parentRoom ? spec.parentRoom : parent;
     if (!s.parent)
         return fail("no room for the character");
@@ -192,7 +204,8 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
         s.script = engine::BuildScriptBlock(spec.behaviour);
     if (spec.name.empty()) {
         char name[96];
-        snprintf(name, sizeof(name), "NPC_%s_%d", NpcModel(spec.record).c_str(), ++g_counter);
+        snprintf(name, sizeof(name), "NPC_%s_%d",
+                 (spec.importName.empty() ? NpcModel(spec.record) : spec.importName).c_str(), ++g_counter);
         s.name = name;
     } else {
         s.name = spec.name;
@@ -244,16 +257,17 @@ bool DeleteNpc(engine::ZGEOM* actor, std::string* error)
     return true;
 }
 
-engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error)
+engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error, uint32_t mesh)
 {
     engine::ZGEOM* actor = nullptr;
-    auto it = g_previews.find(record);
+    auto it = g_previews.find({record, mesh});
     if (it != g_previews.end() && IsLive(it->second)) {
         actor = it->second;
     } else {
         engine::ZGEOM* original = engine::RecordGeom(record);
         engine::NpcSpawn s;
         s.record = record;
+        s.mesh = mesh;
         s.parent = original ? RoomOf(original) : nullptr;
         if (!s.parent) {
             if (error)
@@ -267,7 +281,7 @@ engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error
         if (!actor)
             return nullptr;
         AdoptEngineOwned(actor);
-        g_previews[record] = actor;
+        g_previews[{record, mesh}] = actor;
     }
     if (g_shownPreview && g_shownPreview != actor)
         PutAway(g_shownPreview);
@@ -320,6 +334,11 @@ bool SetNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, 
     NpcSpec spec;
     spec.record = NpcRecordOf(actor);
     spec.transform = GetTransform(actor);
+    // a body of another level stays
+    const auto& records = engine::SceneRecords();
+    uint32_t body = engine::MeshOf(actor);
+    if (spec.record >= 0 && size_t(spec.record) < records.size() && body && body != records[spec.record].mesh)
+        spec.mesh = body;
     spec.hasBehaviour = behaviour != nullptr;
     if (behaviour)
         spec.behaviour = *behaviour;

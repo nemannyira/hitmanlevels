@@ -41,6 +41,10 @@ struct NpcSpec {
     engine::ScriptInfo behaviour;  // runtime refs
     std::string name;         // object name (made unique when empty)
     engine::ZGEOM* parentRoom = nullptr;  // room it starts in (default: the original character's)
+    uint32_t mesh = 0;        // another body (a character of another level), 0: the record's
+    std::string importLevel;  // that body's level, its mesh there and model name (saved)
+    uint32_t importMesh = 0;
+    std::string importName;
 };
 engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error = nullptr);
 bool IsPlacedNpc(engine::ZGEOM* actor);
@@ -59,7 +63,9 @@ bool IsRemovedNpc(engine::ZGEOM* actor);
 
 // Placing: a character of the record standing at `t` (no behaviour, not part
 // of the level; one per model, used again), and putting it away.
-engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error = nullptr);
+engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error = nullptr, uint32_t mesh = 0);
+// The animation set of a character record of the scene ("Reg_Male"; "" when none).
+std::string NpcAnimSet(int record);
 void HidePreviewNpc();
 // The behaviour the NPC runs as far as the editor knows (set here, or as
 // authored in the scene); false when it has none.

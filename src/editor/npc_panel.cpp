@@ -38,6 +38,11 @@ struct NpcType {
     std::string group;     // name of the group it is in ("BodyguardMafia_Bedroom_00")
     std::string script;    // short behaviour name ("BaseGuard")
     int count = 0;
+    // a character of another level: its body on `record` (same animations)
+    uint32_t mesh = 0;
+    std::string importLevel;
+    uint32_t importMesh = 0;
+    std::string importName;
 };
 
 bool g_visible = true;
@@ -139,6 +144,28 @@ void Build()
     std::sort(g_types.begin(), g_types.end(), [](const NpcType& a, const NpcType& b) {
         return a.script != b.script ? a.script < b.script : a.model < b.model;
     });
+    // characters of other levels: their bodies on a character of this map
+    // with the same animations (its behaviour, data and size)
+    std::map<std::string, int> byAnims;
+    for (int index : NpcRecords())
+        byAnims.try_emplace(NpcAnimSet(index), index);
+    for (const ImportedBody& b : ImportedBodies()) {
+        auto it = byAnims.find(b.animSet);
+        if (it == byAnims.end())
+            continue;
+        NpcType t;
+        t.record = it->second;
+        t.model = b.name + " (" + b.level + ")";
+        t.group = "worn by " + NpcModel(it->second);
+        engine::ScriptInfo info;
+        if (records[t.record].script && engine::ParseScript(records[t.record].script, info))
+            t.script = engine::ScriptShortName(info.name);
+        t.mesh = b.mesh;
+        t.importLevel = b.level;
+        t.importMesh = b.sourceMesh;
+        t.importName = b.name;
+        g_types.push_back(t);
+    }
 }
 
 // a new behaviour for the next character: as authored, but starting where it is put
@@ -904,7 +931,12 @@ void Place()
     if (g_type < 0 || !g_haveHit)
         return;
     NpcSpec spec;
-    spec.record = g_types[g_type].record;
+    const NpcType& type = g_types[g_type];
+    spec.record = type.record;
+    spec.mesh = type.mesh;
+    spec.importLevel = type.importLevel;
+    spec.importMesh = type.importMesh;
+    spec.importName = type.importName;
     spec.transform = PlacingTransform();
     spec.hasBehaviour = !g_newBehaviour.empty();
     int points = 0;
@@ -1240,7 +1272,8 @@ void UpdateNpcPlacement()
         DrawSnapTarget(g_point, IM_COL32(64, 224, 255, 255));
         // the character itself where it will stand
         std::string err;
-        if (engine::ZGEOM* preview = ShowPreviewNpc(g_types[g_type].record, PlacingTransform(), &err)) {
+        if (engine::ZGEOM* preview =
+                ShowPreviewNpc(g_types[g_type].record, PlacingTransform(), &err, g_types[g_type].mesh)) {
             SetPickIgnore(preview);
         } else {
             float top[3] = {g_point[0], g_point[1] + 180.0f, g_point[2]};

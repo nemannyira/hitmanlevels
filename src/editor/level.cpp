@@ -10,6 +10,7 @@
 #include "json.hpp"
 
 #include "../engine/imports.h"
+#include "../engine/inject.h"
 #include "../engine/lists.h"
 #include "../engine/messages.h"
 #include "../engine/npc.h"
@@ -1583,6 +1584,29 @@ int CompleteImports()
     return added;
 }
 
+// the level's characters, made with the scene as its own (engine/inject.h)
+std::vector<engine::SceneNpc> NpcsFor(const std::string& scene)
+{
+    std::vector<engine::SceneNpc> out;
+    if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
+        return out;
+    for (const LevelNpc& n : g_level.npcs) {
+        engine::SceneNpc s;
+        s.name = n.id;
+        s.record = n.record;
+        memcpy(s.mat, n.transform.mat, sizeof(s.mat));
+        memcpy(s.pos, n.transform.pos, sizeof(s.pos));
+        if (n.importMesh) {
+            s.mesh = engine::ImportedMesh(n.importLevel, n.importMesh);
+            if (!s.mesh)
+                continue;  // its body was not loaded: made at runtime (it says why)
+            s.anims = engine::ImportedAnimFiles(s.mesh);
+        }
+        out.push_back(std::move(s));
+    }
+    return out;
+}
+
 std::vector<engine::ModelImport> ImportsFor(const std::string& scene)
 {
     std::vector<engine::ModelImport> out;
@@ -1904,6 +1928,7 @@ void InstallLevelPanel()
     OnScenePushed([](const std::string&) { g_libraryLevel.clear(); });
     OnFrameEnd(OnFrame);
     engine::SetImportProvider(ImportsFor);
+    engine::SetSceneNpcProvider(NpcsFor);
 }
 
 } // namespace h2::editor

@@ -1,11 +1,15 @@
 #include "npc.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cstring>
 
 #include "../game.h"
+#include "../hook.h"
 #include "../log.h"
 #include "imports.h"
+#include "inject.h"
+#include "lists.h"
 #include "spawn.h"
 
 namespace h2::engine {
@@ -35,6 +39,12 @@ constexpr int kInitEntry_Phase = 0x50 / 4;            // (phase, 0, 0)
 constexpr int kScript_Destroy = 0x68 / 4;             // (instance)
 constexpr uintptr_t kGeom_CreateScript = 0x43CE30;    // ZGEOM: creates and starts the instance of its script entry
 constexpr uint32_t kFlagInitialized = 0x800000;
+// ZLIST_ActorCollision (event, vtable 0x649930; +0x6E its list, +0x72 / +0x76
+// arrays of 0x11 / 4 bytes per element, made by vfunc 0x1C for the elements
+// the list has then; vfunc 0x2C pushes apart the elements close to each other)
+constexpr uintptr_t kActorCollision_Init = 0x489900;
+constexpr uint32_t kActorCollisionRoom = 64;            // elements added at runtime it has room for
+const char* const kActorList = "TrackLinkObjects";
 
 template <typename T>
 T VFunc(void* obj, int index)
@@ -329,7 +339,7 @@ std::vector<int> ActorRecords()
 {
     std::vector<int> out;
     for (const SceneRecord& r : SceneRecords())
-        if (r.classId == kActorClass)
+        if (r.classId == kActorClass && !IsSceneNpcRecord(r.index))  // the level's characters are not the scene's
             out.push_back(r.index);
     return out;
 }
@@ -552,6 +562,81 @@ bool SetScript(ZGEOM* geom, const std::vector<uint8_t>* block, std::string* erro
     return true;
 }
 
+namespace {
+
+using InitFn = void(__fastcall*)(char* self, void* edx);
+InitFn oActorCollisionInit;
+
+// as the game's, with room for the characters the editor adds
+void __fastcall hkActorCollisionInit(char* self, void* edx)
+{
+    __try {
+        char* list = *reinterpret_cast<char**>(self + 0x6E);
+        void* container = *reinterpret_cast<void**>(list + 0x18);
+        uint32_t n = VFunc<uint32_t(__thiscall*)(void*)>(container, 0x14 / 4)(container) + kActorCollisionRoom;
+        *reinterpret_cast<void**>(self + 0x72) = Alloc(n * 0x11);
+        *reinterpret_cast<void**>(self + 0x76) = Alloc(n * 4);
+        Log("npc: actor collision %p of list %p: room for %u", static_cast<void*>(self), static_cast<void*>(list), n);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        oActorCollisionInit(self, edx);
+    }
+}
+
+// the scene's actor lists (one in each scene: AllLevels_AnimSound)
+std::vector<ZGEOM*> ActorLists()
+{
+    std::vector<ZGEOM*> out;
+    const auto& records = SceneRecords();
+    for (size_t i = 0; i < records.size(); ++i)
+        if (records[i].name == kActorList)
+            if (ZGEOM* g = RecordGeom(int(i)); g && IsEditableList(g))
+                out.push_back(g);
+    return out;
+}
+
+bool CalcActorBounds(ZGEOM* actor)
+{
+    __try {
+        VFunc<void(__thiscall*)(ZGEOM*)>(actor, 0)(actor);  // ZActor: its box (0x47A380)
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+} // namespace
+
+bool SetActorCollides(ZGEOM* actor, bool on)
+{
+    if (!actor)
+        return false;
+    if (on)
+        CalcActorBounds(actor);  // made at runtime: no bounds, nothing finds it
+    uint32_t ref = RefOf(actor);
+    bool changed = false;
+    for (ZGEOM* list : ActorLists()) {
+        std::vector<uint32_t> refs = ListRefs(list);
+        auto it = std::find(refs.begin(), refs.end(), ref);
+        if (on == (it != refs.end()))
+            continue;
+        if (on)
+            refs.push_back(ref);
+        else
+            refs.erase(it);
+        std::string err;
+        if (SetListRefs(list, refs, &err))
+            changed = true;
+        else
+            Log("npc: %s: %s", kActorList, err.c_str());
+    }
+    return changed;
+}
+
+void InstallNpc()
+{
+    Hook("ZLIST_ActorCollision init", kActorCollision_Init, &hkActorCollisionInit, &oActorCollisionInit);
+}
+
 ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)
 {
     auto fail = [&](const std::string& why) -> ZGEOM* {
@@ -625,6 +710,8 @@ ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)
     }
     Log("npc: spawned '%s' geom %p node %p", s.name.c_str(), static_cast<void*>(a.result),
         static_cast<void*>(a.result->node));
+    if (s.collides)
+        SetActorCollides(a.result, true);
     return a.result;
 }
 

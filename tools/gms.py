@@ -63,7 +63,7 @@ class Scene:
                      props=f[7], events=f[5], data=f[8], script=f[10],
                      pool=self.gms[off + 0x2D], extra=extra)
             yield g
-            if f[4] & 0x100000:
+            if rec & 0x1000000:  # the next records are its children
                 stack.append(path)
 
 

@@ -8,6 +8,7 @@
 #include "../hook.h"
 #include "../log.h"
 #include "../scene.h"
+#include "inject.h"
 
 namespace h2::engine {
 
@@ -19,6 +20,17 @@ constexpr uintptr_t kRemapCreatedDataBlock = 0x41CD80;  // (DBLK*, const uint* r
 constexpr uintptr_t kGeomPtrToRef = 0x422AE0;           // ?GeomPtrToRef@ZEngineDataBase@@QAEIPAVZGEOM@@@Z
 constexpr uintptr_t kGeomRefToPtr = 0x422B00;           // ?GeomRefToPtr@ZEngineDataBase@@QAEPAVZGEOM@@I@Z
 constexpr size_t kMaxGms = 64u << 20;
+constexpr uintptr_t kAlloc = 0x530490;                  // engine allocation (cdecl size)
+constexpr uintptr_t kGetSceneName = 0x41B880;           // ZEngineDataBase::(void) -> const char*
+
+// an engine allocation holding a copy (the engine keeps and frees it as its own)
+char* EngineBuffer(const std::vector<uint8_t>& v)
+{
+    char* p = reinterpret_cast<char*(__cdecl*)(size_t)>(kAlloc)(v.size() + 16);
+    if (p)
+        memcpy(p, v.data(), v.size());
+    return p;
+}
 
 std::vector<uint8_t> g_gms;     // unpacked GMS of the last scene
 std::vector<uint8_t> g_buf;     // its BUF (names, property blocks)
@@ -92,6 +104,21 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
     }
     if (buf && bufSize && bufSize < kMaxGms && IsReadable(buf, bufSize))
         g_buf.assign(buf, buf + bufSize);
+    // the level's characters as records of the scene (inject.h)
+    if (!g_gms.empty() && !g_buf.empty()) {
+        const char* scene = reinterpret_cast<const char*(__thiscall*)(void*)>(kGetSceneName)(self);
+        std::vector<uint8_t> moreGms = g_gms, moreBuf = g_buf;
+        if (AddSceneNpcs(scene ? scene : "", moreGms, moreBuf)) {
+            char* newGms = EngineBuffer(moreGms);
+            char* newBuf = EngineBuffer(moreBuf);
+            if (newGms && newBuf) {
+                gms = newGms;
+                buf = newBuf;
+                g_gms = std::move(moreGms);
+                g_buf = std::move(moreBuf);
+            }
+        }
+    }
     g_inCreateGeoms = true;
     g_refsCaptured = false;
     oCreateGeoms(self, edx, reftab, dynamics, gms, buf, reftab2);
@@ -304,7 +331,7 @@ std::vector<SceneRecord> ParseSceneRecords(const std::vector<uint8_t>& gms, cons
         r.script = U32(gms, off + 0x28);
         r.extra = U32(gms, list + 4 + i * 8 + 4);
         r.parent = groups.empty() ? -1 : groups.back();
-        if (r.classId & 0x100000)
+        if (rec & 0x1000000)  // the next records are its children (CreateGeoms)
             groups.push_back(int(i));
         out.push_back(std::move(r));
     }

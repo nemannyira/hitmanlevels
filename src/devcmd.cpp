@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <cstdio>
 #include <fstream>
+#include <intrin.h>
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -315,6 +317,125 @@ void InstallBackgroundSound()
     HookApi("dsound.dll", "DirectSoundCreate8", hkDirectSoundCreate8, &oDirectSoundCreate8);
 }
 
+// ---- callers of a function per object (reverse engineering) ----
+// h2.dev_callers(addr, argc): records the return addresses of thiscall calls
+// of the function (argc stack arguments, 0-3) per `this`, until
+// h2.dev_callers_dump(obj [, clear]) reads them ("ret count" lines).
+std::mutex g_callersMutex;
+std::map<std::pair<uintptr_t, uintptr_t>, int> g_callers;  // (this, return address) -> calls
+void* g_callersOrig[4];
+
+template <int N>
+uint32_t __fastcall CallersHook(void* self, void* edx, uint32_t a, uint32_t b, uint32_t c)
+{
+    {
+        std::lock_guard<std::mutex> lock(g_callersMutex);
+        ++g_callers[{reinterpret_cast<uintptr_t>(self), reinterpret_cast<uintptr_t>(_ReturnAddress())}];
+    }
+    if (N == 0)
+        return reinterpret_cast<uint32_t(__fastcall*)(void*, void*)>(g_callersOrig[N])(self, edx);
+    if (N == 1)
+        return reinterpret_cast<uint32_t(__fastcall*)(void*, void*, uint32_t)>(g_callersOrig[N])(self, edx, a);
+    if (N == 2)
+        return reinterpret_cast<uint32_t(__fastcall*)(void*, void*, uint32_t, uint32_t)>(g_callersOrig[N])(self, edx,
+                                                                                                         a, b);
+    return reinterpret_cast<uint32_t(__fastcall*)(void*, void*, uint32_t, uint32_t, uint32_t)>(g_callersOrig[N])(
+        self, edx, a, b, c);
+}
+// fastcall stub per argc so the callee cleans the right number of bytes
+uint32_t __fastcall Callers0(void* s, void* e) { return CallersHook<0>(s, e, 0, 0, 0); }
+uint32_t __fastcall Callers1(void* s, void* e, uint32_t a) { return CallersHook<1>(s, e, a, 0, 0); }
+uint32_t __fastcall Callers2(void* s, void* e, uint32_t a, uint32_t b) { return CallersHook<2>(s, e, a, b, 0); }
+uint32_t __fastcall Callers3(void* s, void* e, uint32_t a, uint32_t b, uint32_t c) { return CallersHook<3>(s, e, a, b, c); }
+
+int Callers(lua_State* L)
+{
+    uintptr_t addr = uintptr_t(luaL_checkinteger(L, 1));
+    int argc = int(luaL_optinteger(L, 2, 0));
+    void* detour = argc == 0 ? (void*)&Callers0 : argc == 1 ? (void*)&Callers1 : argc == 2 ? (void*)&Callers2 : (void*)&Callers3;
+    MH_STATUS st = MH_CreateHook(reinterpret_cast<void*>(addr), detour, &g_callersOrig[argc > 3 ? 3 : argc]);
+    if (st == MH_OK)
+        st = MH_EnableHook(reinterpret_cast<void*>(addr));
+    lua_pushstring(L, MH_StatusToString(st));
+    return 1;
+}
+
+int CallersDump(lua_State* L)
+{
+    uintptr_t obj = uintptr_t(luaL_checkinteger(L, 1));
+    bool clear = lua_toboolean(L, 2);
+    std::string out;
+    std::lock_guard<std::mutex> lock(g_callersMutex);
+    for (auto it = g_callers.begin(); it != g_callers.end();) {
+        if (it->first.first == obj) {
+            char line[48];
+            snprintf(line, sizeof(line), "%08X %d\n", unsigned(it->first.second), it->second);
+            out += line;
+        }
+        it = clear ? g_callers.erase(it) : std::next(it);
+    }
+    lua_pushstring(L, out.c_str());
+    return 1;
+}
+
+// ---- what collision queries return (reverse engineering) ----
+// h2.dev_coll(): hooks the collision manager's node gathering (RenderD3D:
+// vfunc 0x38 rooms + dynamic, vfunc 0x7c dynamic tree); h2.dev_coll_seen(node)
+// -> how often that node was returned since.
+std::map<uintptr_t, int> g_collSeen;
+using Gather10 = int(__fastcall*)(void*, void*, void**, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                                  uint32_t, uint32_t, uint32_t);
+using Gather8 = int(__fastcall*)(void*, void*, void**, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                                 uint32_t);
+Gather10 oGatherNodes;
+Gather8 oGatherDynamic;
+void Seen(void** out, int n)
+{
+    std::lock_guard<std::mutex> lock(g_callersMutex);
+    for (int i = 0; i < n && i < 4096; ++i)
+        ++g_collSeen[reinterpret_cast<uintptr_t>(out[i])];
+}
+int __fastcall hkGatherNodes(void* self, void* edx, void** out, uint32_t a, uint32_t b, uint32_t c, uint32_t d,
+                             uint32_t e, uint32_t f, uint32_t g, uint32_t h, uint32_t i)
+{
+    int n = oGatherNodes(self, edx, out, a, b, c, d, e, f, g, h, i);
+    Seen(out, n);
+    {
+        std::lock_guard<std::mutex> lock(g_callersMutex);
+        ++g_callers[{1, reinterpret_cast<uintptr_t>(_ReturnAddress())}];
+    }
+    return n;
+}
+int __fastcall hkGatherDynamic(void* self, void* edx, void** out, uint32_t a, uint32_t b, uint32_t c, uint32_t d,
+                               uint32_t e, uint32_t f, uint32_t g)
+{
+    int n = oGatherDynamic(self, edx, out, a, b, c, d, e, f, g);
+    Seen(out, n);
+    {
+        std::lock_guard<std::mutex> lock(g_callersMutex);
+        ++g_callers[{2, reinterpret_cast<uintptr_t>(_ReturnAddress())}];
+    }
+    return n;
+}
+int Coll(lua_State* L)
+{
+    uintptr_t render = reinterpret_cast<uintptr_t>(GetModuleHandleA("RenderD3D.dll"));
+    if (!render)
+        return luaL_error(L, "no RenderD3D.dll");
+    bool ok = Hook("GatherNodes", render + 0x28C80, &hkGatherNodes, &oGatherNodes) &&
+              Hook("GatherDynamic", render + 0x28DE0, &hkGatherDynamic, &oGatherDynamic);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+int CollSeen(lua_State* L)
+{
+    uintptr_t node = uintptr_t(luaL_checkinteger(L, 1));
+    std::lock_guard<std::mutex> lock(g_callersMutex);
+    auto it = g_collSeen.find(node);
+    lua_pushinteger(L, it == g_collSeen.end() ? 0 : it->second);
+    return 1;
+}
+
 void InstallDevCommands()
 {
     if (!g_config.devCommands)
@@ -335,6 +456,10 @@ void InstallDevCommands()
     script::Register("dev_hover", Hover);
     script::Register("dev_type", Type);
     script::Register("dev_uikey", UiKey);
+    script::Register("dev_callers", Callers);
+    script::Register("dev_callers_dump", CallersDump);
+    script::Register("dev_coll", Coll);
+    script::Register("dev_coll_seen", CollSeen);
     Log("dev commands on: Mods\\_cmd.lua");
 }
 

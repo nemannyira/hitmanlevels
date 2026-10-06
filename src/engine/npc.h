@@ -19,9 +19,17 @@ struct NpcSpawn {
     std::string name = "Ground";
     uint32_t mesh = 0;           // another body (an imported character's), 0: the record's
     std::map<uint32_t, uint32_t> refSwap;  // references of its data block replaced (outfits)
+    bool collides = true;        // one of the level's characters (SetActorCollides); false: a preview
 };
 
 ZGEOM* SpawnNpc(const NpcSpawn& spawn, std::string* error = nullptr);
+// Characters bump into each other and Hitman, can be shot and seen through
+// the scene's list "TrackLinkObjects" (every actor of the scene file; its
+// events ZLIST_ActorCollision, ZLIST_CheckVisible, ZLIST_SelectNotify): an
+// actor made at runtime is added to it (and gets its bounds), or taken out.
+bool SetActorCollides(ZGEOM* actor, bool on);
+// Hooks: room for actors added at runtime in the lists' events.
+void InstallNpc();
 // Removes an NPC made by SpawnNpc (its script stopped, the actor, its group).
 // NOT safe at runtime: the engine keeps pointers to actors (crash right after).
 bool DestroyNpc(ZGEOM* actor, std::string* error = nullptr);

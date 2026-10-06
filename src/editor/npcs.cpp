@@ -7,6 +7,7 @@
 #include <map>
 
 #include "../engine/imports.h"
+#include "../engine/inject.h"
 #include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
@@ -295,6 +296,22 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
     } else {
         s.name = spec.name;
     }
+    // made with the scene when it loaded (engine/inject.h): only its behaviour is set
+    if (int rec = engine::SceneNpcRecord(s.name); rec >= 0)
+        if (engine::ZGEOM* made = engine::RecordGeom(rec);
+            made && IsLive(made) && !IsPlacedNpc(made) && !IsRemovedNpc(made) && !engine::ScriptInstance(made)) {
+            std::string err;
+            if (!s.script.empty() && !engine::SetScript(made, &s.script, &err))
+                Log("npc %s: behaviour not set (%s)", s.name.c_str(), err.c_str());
+            g_placed.push_back(made);
+            g_placedRecord[made] = spec.record;
+            if (spec.hasBehaviour)
+                g_behaviour[made] = spec.behaviour;
+            else
+                g_noBehaviour[made] = true;
+            Log("npc %s: the scene's own (made while loading)", s.name.c_str());
+            return made;
+        }
     engine::ZGEOM* npc = engine::SpawnNpc(s, error);
     if (!npc)
         return nullptr;
@@ -334,6 +351,7 @@ bool DeleteNpc(engine::ZGEOM* actor, std::string* error)
     g_behaviour.erase(actor);
     g_noBehaviour.erase(actor);
     g_placedRecord.erase(actor);
+    engine::SetActorCollides(actor, false);
     Transform t = GetTransform(actor);
     float away[3] = {t.pos[0], t.pos[1] - 50000.0f, t.pos[2]};
     engine::TeleportActor(actor, away);
@@ -353,6 +371,7 @@ engine::ZGEOM* ShowPreviewNpc(int record, const Transform& t, std::string* error
         engine::NpcSpawn s;
         s.record = record;
         s.mesh = mesh;
+        s.collides = false;  // a preview: nothing bumps into it
         s.parent = original ? RoomOf(original) : nullptr;
         if (!s.parent) {
             if (error)

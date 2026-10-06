@@ -9,6 +9,7 @@
 
 #include "../hook.h"
 #include "../log.h"
+#include "imports.h"
 #include "zip.h"
 
 namespace h2::engine {
@@ -79,6 +80,8 @@ size_t FirstChild(const std::vector<uint8_t>& b, size_t c)
 
 bool ReadZgf(const std::string& level, std::vector<uint8_t>& zgf)
 {
+    if (!IsGameLevel(level))
+        return false;
     std::vector<uint8_t> packed;
     std::string err;
     if (!ReadZipEntry(GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP",
@@ -176,6 +179,8 @@ int __fastcall hkRead(void* self, void* edx, const char* path, void* buf, uint32
 // a level's scene file (unpacked GMS) and its strings (BUF)
 bool ReadScene(const std::string& level, std::vector<uint8_t>& gms, std::vector<uint8_t>& buf)
 {
+    if (!IsGameLevel(level))
+        return false;
     std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
     std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
     std::vector<uint8_t> packed;

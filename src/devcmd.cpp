@@ -80,7 +80,7 @@ void RunCommandFile()
     std::string out;
     int base = lua_gettop(L);
     if (luaL_loadbuffer(L, code.c_str(), code.size(), "@_cmd.lua") != LUA_OK ||
-        lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
+        script::PCall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
         out = std::string("error: ") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
     } else {
         for (int i = base + 1; i <= lua_gettop(L); ++i) {

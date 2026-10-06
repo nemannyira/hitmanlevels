@@ -64,7 +64,7 @@ void Fire(const char* name, Push push)
         lua_getfield(L, -1, "fn");
         lua_remove(L, -2);
         int nargs = push(L);
-        if (lua_pcall(L, nargs, 0, 0) != LUA_OK) {
+        if (PCall(L, nargs, 0, 0) != LUA_OK) {
             ConsolePrint(LineKind::Error, std::string(name) + " handler: " + lua_tostring(L, -1));
             lua_pop(L, 1);
         }

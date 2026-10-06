@@ -78,6 +78,8 @@ std::map<std::string, Source> g_sources;
 
 Source* LoadSource(const std::string& level)
 {
+    if (!IsGameLevel(level))
+        return nullptr;
     Source& s = g_sources[level];
     if (s.loaded)
         return s.prm.empty() ? nullptr : &s;
@@ -1304,6 +1306,8 @@ const std::vector<LevelSkyPart>& LevelSky(const std::string& level)
     if (it != cache.end())
         return it->second;
     std::vector<LevelSkyPart>& out = cache[level];
+    if (!IsGameLevel(level))
+        return out;
     std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
     std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
     std::vector<uint8_t> packed, gms, buf;
@@ -1376,6 +1380,14 @@ std::vector<std::string> AnimFilesOf(const uint8_t* block, size_t size)
     if (s.size() < 2 || s[0].find("_Anims\\") == std::string::npos)
         return {};
     return {s[0], s[1]};
+}
+
+bool IsGameLevel(const std::string& level)
+{
+    for (const std::string& l : GameLevels())
+        if (_stricmp(l.c_str(), level.c_str()) == 0)
+            return true;
+    return false;
 }
 
 const std::vector<std::string>& GameLevels()

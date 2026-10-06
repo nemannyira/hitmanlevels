@@ -196,6 +196,8 @@ char g_saveAsName[64] = "My level";
 std::string g_saveStatus;
 double g_saveStatusTime;
 
+constexpr size_t kMaxLevelNpcs = 200;  // characters a level adds to the scene file
+
 std::string Sanitize(const std::string& name)
 {
     std::string out;
@@ -219,6 +221,12 @@ bool StateFromJson(const json& j, ObjectState& s)
         s.transform.pos[i] = j["pos"][i].get<float>();
     for (int i = 0; i < 9; ++i)
         s.transform.mat[i] = j["matrix"][i].get<float>();
+    for (float v : s.transform.pos)
+        if (!std::isfinite(v) || std::fabs(v) > 1e7f)  // the engine has no use for it (NaN breaks its trees)
+            return false;
+    for (float v : s.transform.mat)
+        if (!std::isfinite(v) || std::fabs(v) > 1e3f)
+            return false;
     s.hidden = j.value("hidden", false);
     return true;
 }
@@ -542,6 +550,12 @@ void RunLevelScripts()
     script::ClearHandlers("level");
     script::DestroyScriptObjects();
     for (const std::string& s : g_level.scripts) {
+        // a file of the level's folder (a level from elsewhere names no other)
+        if (s.empty() || s.find("..") != std::string::npos || s.find(':') != std::string::npos || s[0] == '\\' ||
+            s[0] == '/') {
+            script::ConsolePrint(script::LineKind::Error, "level script skipped (not in the level's folder): " + s);
+            continue;
+        }
         std::string path = ModsDir() + g_level.folder + "\\" + s;
         script::SetHandlerOwner("level");
         if (!script::ExecFile(path))
@@ -919,105 +933,116 @@ bool LoadLevel(const std::string& folder, std::string* error)
     }
     RevertLevel();
     LevelDocument L;
-    L.folder = folder;
-    L.name = j.value("name", folder);
-    L.baseScene = j.value("base_scene", "");
-    L.emptyMap = j.value("empty_map", false);
-    L.blankMap = j.value("blank_map", false);
-    if (j.contains("place_floor") && j["place_floor"].is_object()) {
-        L.floorLevel = j["place_floor"].value("level", "");
-    if (j.contains("sky") && j["sky"].is_object()) {
-        L.skyLevel = j["sky"].value("level", "");
-    }
-        L.floorMesh = j["place_floor"].value("mesh", 0u);
-    }
-    for (const json& o : j.value("objects", json::array())) {
-        ObjectEdit e;
-        e.className = o.value("class", "");
-        if (StateFromJson(o, e.state) && o.contains("path"))
-            L.objects[o["path"].get<std::string>()] = e;
-    }
-    for (const json& o : j.value("spawned", json::array())) {
-        SpawnedObject s;
-        ObjectState st;
-        if (!StateFromJson(o, st))
-            continue;
-        s.transform = st.transform;
-        s.hidden = st.hidden;
-        s.id = o.value("id", "");
-        s.sourceScene = o.value("source_scene", "");
-        s.sourcePath = o.value("source_path", "");
-        s.item = o.value("kind", "") == "item";
-        s.point = o.value("kind", "") == "point";
-        s.parentPath = o.value("parent", "");
-        L.spawned.push_back(s);
-    }
-    for (const json& o : j.value("npcs", json::array())) {
-        LevelNpc n;
-        ObjectState st;
-        if (!StateFromJson(o, st))
-            continue;
-        n.transform = st.transform;
-        n.id = o.value("id", "");
-        n.record = o.value("record", -1);
-        n.model = o.value("model", "");
-        n.importLevel = o.value("import_level", "");
-        n.importMesh = o.value("import_mesh", 0u);
-        n.importName = o.value("import_name", "");
-        n.behaviour = o.value("behaviour", "");
-        n.behaviourLevel = o.value("behaviour_level", "");
-        n.hasBehaviour = !n.behaviour.empty();
-        n.params = ParamsFromJson(o.value("params", json::array()));
-        L.npcs.push_back(n);
-    }
-    for (const json& o : j.value("npc_edits", json::array())) {
-        NpcEditEntry e;
-        e.record = o.value("record", -1);
-        e.path = o.value("path", "");
-        e.behaviour = o.value("behaviour", "");
-        e.params = ParamsFromJson(o.value("params", json::array()));
-        if (e.record >= 0)
-            L.npcEdits[e.record] = e;
-    }
-    if (j.contains("mission") && j["mission"].is_object()) {
-        const json& m = j["mission"];
-        for (const json& o : m.value("objectives", json::array())) {
-            MissionObjective mo;
-            mo.slot = o.value("slot", 1);
-            mo.text = o.value("text", "");
-            std::string goal = o.value("goal", "level");
-            mo.goal = goal == "kill" ? MissionObjective::Kill
-                                     : goal == "reach" ? MissionObjective::Reach : MissionObjective::Level;
-            mo.target = o.value("target", "");
-            mo.radius = o.value("radius", 250.0f);
-            mo.replacesOriginal = o.value("replaces_original", true);
-            if (mo.slot >= 1 && mo.slot <= 6)
-                L.mission.objectives.push_back(mo);
+    // a level from elsewhere: any field of the wrong kind is a load error, not a crash
+    try {
+        L.folder = folder;
+        L.name = j.value("name", folder);
+        L.baseScene = j.value("base_scene", "");
+        L.emptyMap = j.value("empty_map", false);
+        L.blankMap = j.value("blank_map", false);
+        if (j.contains("place_floor") && j["place_floor"].is_object()) {
+            L.floorLevel = j["place_floor"].value("level", "");
+        if (j.contains("sky") && j["sky"].is_object()) {
+            L.skyLevel = j["sky"].value("level", "");
         }
-        L.mission.endWhenDone = m.value("end_when_done", false);
-        L.mission.exitPath = m.value("exit", "");
-        L.mission.exitRadius = m.value("exit_radius", 300.0f);
-        L.mission.briefing = m.value("briefing", "");
-    }
-    if (j.contains("music") && j["music"].is_object())
-        for (auto& [path, track] : j["music"].items())
-            if (track.is_string())
-                L.music[path] = track.get<std::string>();
-    for (const json& o : j.value("lists", json::array()))
-        if (o.contains("path"))
-            L.lists[o["path"].get<std::string>()] = o.value("points", std::vector<std::string>{});
-    L.scripts = j.value("scripts", std::vector<std::string>{});
-    for (const json& o : j.value("imports", json::array())) {
-        ImportedModel m;
-        m.level = o.value("level", "");
-        m.mesh = o.value("mesh", 0u);
-        m.name = o.value("name", "");
-        m.character = o.value("character", false);
-        m.animSet = o.value("anim_set", "");
-        m.outfitMesh = o.value("outfit_mesh", 0u);
-        m.nudeMesh = o.value("nude_mesh", 0u);
-        if (!m.level.empty() && m.mesh)
-            L.imports.push_back(m);
+            L.floorMesh = j["place_floor"].value("mesh", 0u);
+        }
+        for (const json& o : j.value("objects", json::array())) {
+            ObjectEdit e;
+            e.className = o.value("class", "");
+            if (StateFromJson(o, e.state) && o.contains("path"))
+                L.objects[o["path"].get<std::string>()] = e;
+        }
+        for (const json& o : j.value("spawned", json::array())) {
+            SpawnedObject s;
+            ObjectState st;
+            if (!StateFromJson(o, st))
+                continue;
+            s.transform = st.transform;
+            s.hidden = st.hidden;
+            s.id = o.value("id", "");
+            s.sourceScene = o.value("source_scene", "");
+            s.sourcePath = o.value("source_path", "");
+            s.item = o.value("kind", "") == "item";
+            s.point = o.value("kind", "") == "point";
+            s.parentPath = o.value("parent", "");
+            L.spawned.push_back(s);
+        }
+        for (const json& o : j.value("npcs", json::array())) {
+            LevelNpc n;
+            ObjectState st;
+            if (!StateFromJson(o, st))
+                continue;
+            n.transform = st.transform;
+            // its object's name in the scene file: short, plain, one of a kind
+            n.id = Sanitize(o.value("id", "")).substr(0, 64);
+            if (std::any_of(L.npcs.begin(), L.npcs.end(), [&](const LevelNpc& m) { return m.id == n.id; }) ||
+                L.npcs.size() >= kMaxLevelNpcs)
+                continue;
+            n.record = o.value("record", -1);
+            n.model = o.value("model", "");
+            n.importLevel = o.value("import_level", "");
+            n.importMesh = o.value("import_mesh", 0u);
+            n.importName = o.value("import_name", "");
+            n.behaviour = o.value("behaviour", "");
+            n.behaviourLevel = o.value("behaviour_level", "");
+            n.hasBehaviour = !n.behaviour.empty();
+            n.params = ParamsFromJson(o.value("params", json::array()));
+            L.npcs.push_back(n);
+        }
+        for (const json& o : j.value("npc_edits", json::array())) {
+            NpcEditEntry e;
+            e.record = o.value("record", -1);
+            e.path = o.value("path", "");
+            e.behaviour = o.value("behaviour", "");
+            e.params = ParamsFromJson(o.value("params", json::array()));
+            if (e.record >= 0)
+                L.npcEdits[e.record] = e;
+        }
+        if (j.contains("mission") && j["mission"].is_object()) {
+            const json& m = j["mission"];
+            for (const json& o : m.value("objectives", json::array())) {
+                MissionObjective mo;
+                mo.slot = o.value("slot", 1);
+                mo.text = o.value("text", "");
+                std::string goal = o.value("goal", "level");
+                mo.goal = goal == "kill" ? MissionObjective::Kill
+                                         : goal == "reach" ? MissionObjective::Reach : MissionObjective::Level;
+                mo.target = o.value("target", "");
+                mo.radius = o.value("radius", 250.0f);
+                mo.replacesOriginal = o.value("replaces_original", true);
+                if (mo.slot >= 1 && mo.slot <= 6)
+                    L.mission.objectives.push_back(mo);
+            }
+            L.mission.endWhenDone = m.value("end_when_done", false);
+            L.mission.exitPath = m.value("exit", "");
+            L.mission.exitRadius = m.value("exit_radius", 300.0f);
+            L.mission.briefing = m.value("briefing", "");
+        }
+        if (j.contains("music") && j["music"].is_object())
+            for (auto& [path, track] : j["music"].items())
+                if (track.is_string())
+                    L.music[path] = track.get<std::string>();
+        for (const json& o : j.value("lists", json::array()))
+            if (o.contains("path"))
+                L.lists[o["path"].get<std::string>()] = o.value("points", std::vector<std::string>{});
+        L.scripts = j.value("scripts", std::vector<std::string>{});
+        for (const json& o : j.value("imports", json::array())) {
+            ImportedModel m;
+            m.level = o.value("level", "");
+            m.mesh = o.value("mesh", 0u);
+            m.name = o.value("name", "");
+            m.character = o.value("character", false);
+            m.animSet = o.value("anim_set", "");
+            m.outfitMesh = o.value("outfit_mesh", 0u);
+            m.nudeMesh = o.value("nude_mesh", 0u);
+            if (!m.level.empty() && m.mesh)
+                L.imports.push_back(m);
+        }
+    } catch (const std::exception& ex) {
+        if (error)
+            *error = std::string("level.json: ") + ex.what();
+        return false;
     }
     g_level = std::move(L);
     CompleteImports();
@@ -1900,9 +1925,12 @@ void RestoreSky()
     for (auto& [g, hidden] : g_ownSky)
         if (IsLive(g))
             SetHidden(g, hidden);
-    for (engine::ZGEOM* g : g_madeSky)
-        if (IsLive(g))
-            SetHidden(g, true);
+    for (engine::ZGEOM* g : g_madeSky)  // plain objects: gone (another sky makes its own)
+        if (IsLive(g)) {
+            ForgetEngineOwned(g);
+            if (!engine::DestroyGeom(g))
+                SetHidden(g, true);
+        }
     g_ownSky.clear();
     g_madeSky.clear();
 }

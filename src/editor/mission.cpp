@@ -129,6 +129,14 @@ std::string ToGameText(const std::string& utf8)
         else if (cp == 0x150) cp = 0xD6;  // Ő -> Ö
         else if (cp == 0x171) cp = 0xFC;  // ű -> ü
         else if (cp == 0x170) cp = 0xDC;  // Ű -> Ü
+        // Control characters are the game's markup: the briefing menu writes
+        // a byte per 0x02 (page break) into a 16-byte array of its own
+        // (SetLocaleFolder 0x52D340, BriefingMenu+0x5DC) unchecked. A text
+        // keeps new lines only.
+        if (cp == 0x09)  // tab
+            cp = ' ';
+        if ((cp < 0x20 && cp != 0x0A) || cp == 0x7F)  // new line kept
+            continue;
         out += cp < 0x100 ? char(cp) : '?';
     }
     return out;

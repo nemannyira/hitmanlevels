@@ -107,5 +107,8 @@ std::vector<std::string> AnimFilesOf(const uint8_t* block, size_t size);
 std::string ModelNameOf(const uint8_t* block, size_t size);
 // Levels of the game ("C1-1", ...): folders of Scenes with a __MAIN.ZIP.
 const std::vector<std::string>& GameLevels();
+// Whether a level name (from a level file: imports, behaviours, sky) is one of
+// them: only those are made into paths (no "..\.." out of Scenes).
+bool IsGameLevel(const std::string& level);
 
 } // namespace h2::engine

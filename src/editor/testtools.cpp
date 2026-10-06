@@ -44,15 +44,28 @@ void WriteFloat(uintptr_t at, float v)
     }
 }
 
-// every frame: the values hold on a map (the game's own cheats would change them back)
+// The values are written when the editor's setting or the map changes, so
+// the game's own cheats (EnableCheats: GodMode) still work in between.
 void OnFrame()
 {
+    static bool wasMap;
+    static float lastSpeed = 1.0f;
+    static bool lastGod, lastInvisible;
     bool map = OnMap();
+    bool changed = map != wasMap;
+    wasMap = map;
+    float speed = map ? g_speed : 1.0f;
+    bool god = map && g_god, invisible = map && g_invisible;
     char* sys = reinterpret_cast<char*>(game::SysInterface());
-    if (sys)
-        WriteFloat(reinterpret_cast<uintptr_t>(sys + kSys_TimeScale), map ? g_speed : 1.0f);
-    WriteFloat(kGodMode, map && g_god ? 1.0f : 0.0f);
-    WriteFloat(kInvisible, map && g_invisible ? 1.0f : 0.0f);
+    if (sys && (changed || speed != lastSpeed))
+        WriteFloat(reinterpret_cast<uintptr_t>(sys + kSys_TimeScale), speed);
+    if (changed || god != lastGod)
+        WriteFloat(kGodMode, god ? 1.0f : 0.0f);
+    if (changed || invisible != lastInvisible)
+        WriteFloat(kInvisible, invisible ? 1.0f : 0.0f);
+    lastSpeed = speed;
+    lastGod = god;
+    lastInvisible = invisible;
 }
 
 std::string ActiveText()

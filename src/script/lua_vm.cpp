@@ -1,5 +1,7 @@
 #include "lua_vm.h"
 
+#include <windows.h>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -17,6 +19,58 @@ namespace {
 
 lua_State* L;
 std::vector<ConsoleLine> g_console;
+
+constexpr size_t kMemoryLimit = 256u << 20;
+constexpr ULONGLONG kCallBudgetMs = 3000;
+size_t g_memory;          // bytes the state has
+int g_depth;              // calls into Lua under way (PCall)
+ULONGLONG g_callStart;    // when the outermost began
+
+void* LimitedAlloc(void*, void* ptr, size_t osize, size_t nsize)
+{
+    if (!ptr)
+        osize = 0;  // a type tag, not a size
+    if (nsize == 0) {
+        free(ptr);
+        g_memory -= osize;
+        return nullptr;
+    }
+    if (nsize > osize && g_memory + (nsize - osize) > kMemoryLimit)
+        return nullptr;  // Lua raises "not enough memory"
+    void* p = realloc(ptr, nsize);
+    if (p)
+        g_memory = g_memory - osize + nsize;
+    return p;
+}
+
+int Panic(lua_State* s)
+{
+    Log("lua: unprotected error: %s", lua_tostring(s, -1) ? lua_tostring(s, -1) : "?");
+    return 0;  // abort
+}
+
+void CountHook(lua_State* s, lua_Debug*)
+{
+    if (g_depth > 0 && GetTickCount64() - g_callStart > kCallBudgetMs)
+        luaL_error(s, "script stopped: it ran longer than %d s", int(kCallBudgetMs / 1000));
+}
+
+// load(chunk [, name [, mode [, env]]]) of the base library, source text only
+int LoadText(lua_State* s)
+{
+    int n = lua_gettop(s);
+    lua_pushvalue(s, lua_upvalueindex(1));
+    lua_pushvalue(s, 1);
+    if (n >= 2)
+        lua_pushvalue(s, 2);
+    else
+        lua_pushnil(s);
+    lua_pushliteral(s, "t");
+    if (n >= 4)
+        lua_pushvalue(s, 4);
+    lua_call(s, n >= 4 ? 4 : 3, LUA_MULTRET);
+    return lua_gettop(s) - n;
+}
 constexpr size_t kMaxConsoleLines = 2000;
 
 int Print(lua_State* s)
@@ -48,7 +102,7 @@ bool Run(int nargs, bool printResults)
     int base = lua_gettop(L) - nargs;
     lua_pushcfunction(L, Traceback);
     lua_insert(L, base);
-    int status = lua_pcall(L, nargs, printResults ? LUA_MULTRET : 0, base);
+    int status = PCall(L, nargs, printResults ? LUA_MULTRET : 0, base);
     lua_remove(L, base);
     if (status != LUA_OK) {
         ConsolePrint(LineKind::Error, lua_tostring(L, -1) ? lua_tostring(L, -1) : "error");
@@ -60,7 +114,7 @@ bool Run(int nargs, bool printResults)
         if (n > 0) {
             lua_getglobal(L, "print");
             lua_insert(L, base);
-            lua_pcall(L, n, 0, 0);
+            PCall(L, n, 0, 0);
         }
     }
     return true;
@@ -82,6 +136,15 @@ void OpenSandboxedLibs()
         lua_pushnil(L);
         lua_setglobal(L, name);
     }
+    // load: source text only (a precompiled chunk can corrupt the VM)
+    lua_getglobal(L, "load");
+    lua_pushcclosure(L, LoadText, 1);
+    lua_setglobal(L, "load");
+    // string.dump is of no use then
+    lua_getglobal(L, "string");
+    lua_pushnil(L);
+    lua_setfield(L, -2, "dump");
+    lua_pop(L, 1);
     // os: keep only harmless functions
     lua_getglobal(L, "os");
     for (const char* name : {"execute", "exit", "getenv", "remove", "rename", "setlocale", "tmpname"}) {
@@ -97,7 +160,9 @@ void Init()
 {
     if (L)
         return;
-    L = luaL_newstate();
+    L = lua_newstate(LimitedAlloc, nullptr);
+    lua_atpanic(L, Panic);
+    lua_sethook(L, CountHook, LUA_MASKCOUNT, 100000);
     OpenSandboxedLibs();
     lua_pushcfunction(L, Print);
     lua_setglobal(L, "print");
@@ -107,6 +172,15 @@ void Init()
 }
 
 lua_State* State() { return L; }
+
+int PCall(lua_State* s, int nargs, int nresults, int errfunc)
+{
+    if (g_depth++ == 0)
+        g_callStart = GetTickCount64();
+    int status = lua_pcall(s, nargs, nresults, errfunc);
+    --g_depth;
+    return status;
+}
 
 void ExecConsole(const std::string& code)
 {

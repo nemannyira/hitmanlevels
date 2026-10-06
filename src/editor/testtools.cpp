@@ -114,10 +114,10 @@ bool OnKey(int vk)
 
 void DrawPanel()
 {
-    ImGui::TextDisabled("For trying the level out (not saved with it).");
-    ImGui::SetNextItemWidth(-ImGui::CalcTextSize("game speed").x - ImGui::GetStyle().ItemSpacing.x * 2);
+    ImGui::TextDisabled("Trying out (not saved)");
+    ImGui::SetNextItemWidth(-ImGui::CalcTextSize("speed").x - ImGui::GetStyle().ItemSpacing.x * 2);
     float speed = g_speed;
-    if (ImGui::SliderFloat("game speed", &speed, 0.1f, 8.0f, "x%.2f", ImGuiSliderFlags_Logarithmic))
+    if (ImGui::SliderFloat("speed", &speed, 0.1f, 8.0f, "x%.2f", ImGuiSliderFlags_Logarithmic))
         SetGameSpeed(speed);
     for (float s : kSpeeds) {
         char label[16];
@@ -128,16 +128,18 @@ void DrawPanel()
     }
     ImGui::NewLine();
     bool frozen = WorldFrozenWhilePlaying();
-    if (ImGui::Checkbox("Frozen while playing", &frozen))
+    if (ImGui::Checkbox("Frozen", &frozen))
         SetWorldFrozenWhilePlaying(frozen);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The world stands still also with the editor closed (Hitman too).%s",
                           g_config.freezeKey ? "\nWhile playing: the freeze key toggles it." : "");
     bool god = g_god;
-    if (ImGui::Checkbox("God mode (Hitman cannot be hurt)", &god))
+    if (ImGui::Checkbox("God mode", &god))
         SetGodMode(god);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Hitman cannot be hurt");
     bool invisible = g_invisible;
-    if (ImGui::Checkbox("Hitman invisible (no one sees him)", &invisible))
+    if (ImGui::Checkbox("Invisible Hitman", &invisible))
         SetHitmanInvisible(invisible);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Characters do not see anyone: they still hear shots and noise,\n"
@@ -156,7 +158,7 @@ void DrawPanel()
         snprintf(keys + strlen(keys), sizeof(keys) - strlen(keys), "%sspeed: %s", *keys ? ", " : "",
                  keyName(g_config.speedKey).c_str());
     if (*keys)
-        ImGui::TextDisabled("Keys while playing: %s", keys);
+        ImGui::TextDisabled("keys: %s", keys);
 }
 
 } // namespace

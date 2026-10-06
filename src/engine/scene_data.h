@@ -65,10 +65,13 @@ struct ScriptParam {
 struct ScriptInfo {
     std::string name;      // e.g. "scripts\C1\C1_1\BaseGuard.sdl"
     std::vector<ScriptParam> params;
+    std::string level;     // the level whose compiled scripts have it ("": the scene's own; script_files.h)
 };
 
 // Parses the script block at `offset` in the GMS (references as in the file).
 bool ParseScript(uint32_t offset, ScriptInfo& out);
+// ... in another scene file (unpacked GMS).
+bool ParseScriptIn(const std::vector<uint8_t>& gms, uint32_t offset, ScriptInfo& out);
 // Script block for a new object: references must already be runtime refs.
 std::vector<uint8_t> BuildScriptBlock(const ScriptInfo& script);
 // Runtime ref <-> object, file reference (0x80000000|record) -> runtime ref.

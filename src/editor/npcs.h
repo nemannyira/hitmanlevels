@@ -31,6 +31,16 @@ bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out);
 // weapon, guard group, alarm, level control), none to an object of its level
 // (an item it takes, a door, another character, a stove).
 bool IsPortableBehaviour(const engine::ScriptInfo& s);
+// A behaviour of another level's characters by name: "Pedestrian2 (C7-1)"
+// (BehaviourTemplate takes it; its compiled scripts are loaded from that level).
+std::string ForeignBehaviourName(const std::string& script, const std::string& level);
+// The portable behaviours of the game's other levels, as such names (sorted).
+const std::vector<std::string>& ForeignBehaviourNames();
+// Its zero references filled from the scene's characters' settings of the same
+// name (help and safe points, weapon template, guard group, alarm list, a
+// route of the same name, ...); how many.
+// requiredOnly: only those it cannot start without (engine/script_files.h).
+int FillSharedRefs(engine::ScriptInfo& s, bool requiredOnly = false);
 // The game's plain civilian (AllLevels/Std2/Neutral2: stands, panics and runs
 // for help at trouble), "" when the scene's scripts do not have it.
 std::string CivilianBehaviour();

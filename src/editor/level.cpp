@@ -325,9 +325,10 @@ engine::ZGEOM* LiveNpc(const std::string& id)
 }
 
 // A behaviour with the saved settings, on the class's declarations of this scene.
-bool BehaviourFromSaved(const std::string& script, const std::vector<ParamValue>& params, engine::ScriptInfo& out)
+bool BehaviourFromSaved(const std::string& script, const std::vector<ParamValue>& params, engine::ScriptInfo& out,
+                        const std::string& level = "")
 {
-    if (!BehaviourTemplate(script, out))
+    if (!BehaviourTemplate(level.empty() ? script : ForeignBehaviourName(script, level), out))
         return false;
     LoadParams(out, params);
     return true;
@@ -362,7 +363,7 @@ engine::ZGEOM* MaterializeNpc(const LevelNpc& n, std::string* error = nullptr)
                 spec.nudeMesh = m.nudeMesh ? engine::ImportedMesh(m.level, m.nudeMesh) : 0;
             }
     }
-    spec.hasBehaviour = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, spec.behaviour);
+    spec.hasBehaviour = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, spec.behaviour, n.behaviourLevel);
     engine::ZGEOM* g = CreateNpc(spec, error);
     if (g)
         g_liveNpcs[n.id] = g;
@@ -389,11 +390,12 @@ bool SetNpcEntryBehaviour(const LevelNpc& n)
     if (!g || !e)
         return false;
     engine::ScriptInfo s;
-    bool has = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, s);
+    bool has = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, s, n.behaviourLevel);
     if (!SetNpcBehaviour(g, has ? &s : nullptr))
         return false;
     e->hasBehaviour = n.hasBehaviour;
     e->behaviour = n.behaviour;
+    e->behaviourLevel = n.behaviourLevel;
     e->params = n.params;
     g_level.dirty = true;
     return true;
@@ -802,6 +804,8 @@ bool SaveLevel(std::string* error)
         }
         if (n.hasBehaviour) {
             o["behaviour"] = n.behaviour;
+            if (!n.behaviourLevel.empty())
+                o["behaviour_level"] = n.behaviourLevel;
             o["params"] = ParamsJson(n.params);
         }
         j["npcs"].push_back(o);
@@ -930,6 +934,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         n.importMesh = o.value("import_mesh", 0u);
         n.importName = o.value("import_name", "");
         n.behaviour = o.value("behaviour", "");
+        n.behaviourLevel = o.value("behaviour_level", "");
         n.hasBehaviour = !n.behaviour.empty();
         n.params = ParamsFromJson(o.value("params", json::array()));
         L.npcs.push_back(n);
@@ -1291,6 +1296,7 @@ engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error)
     n.hasBehaviour = spec.hasBehaviour;
     if (spec.hasBehaviour) {
         n.behaviour = spec.behaviour.name;
+        n.behaviourLevel = spec.behaviour.level;
         n.params = SaveParams(spec.behaviour);
     }
     for (int k = 1;; ++k) {
@@ -1337,6 +1343,7 @@ engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* 
         engine::ZGEOM* now = actor;  // (another kind of behaviour: from the next load)
         e->hasBehaviour = behaviour != nullptr;
         e->behaviour = behaviour ? behaviour->name : "";
+        e->behaviourLevel = behaviour ? behaviour->level : "";
         e->params = behaviour ? SaveParams(*behaviour) : std::vector<ParamValue>{};
         LevelNpc after = *e;
         g_level.dirty = true;

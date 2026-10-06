@@ -419,15 +419,17 @@ std::vector<uint8_t> WithStrings(const std::vector<uint8_t>& b, const std::vecto
     return out;
 }
 
-bool ParseScript(uint32_t offset, ScriptInfo& out)
+bool ParseScript(uint32_t offset, ScriptInfo& out) { return ParseScriptIn(g_gms, offset, out); }
+
+bool ParseScriptIn(const std::vector<uint8_t>& gms, uint32_t offset, ScriptInfo& out)
 {
     out = {};
-    uint32_t header = U32(g_gms, offset);
+    uint32_t header = U32(gms, offset);
     size_t size = header & 0xFFFFFF;
-    if (!offset || size < 8 || offset + size > g_gms.size())
+    if (!offset || size < 8 || offset + size > gms.size())
         return false;
-    const uint8_t* p = g_gms.data() + offset + 4;
-    const uint8_t* end = g_gms.data() + offset + size;
+    const uint8_t* p = gms.data() + offset + 4;
+    const uint8_t* end = gms.data() + offset + size;
     auto str = [&](std::string& s) {
         if (p >= end)
             return false;

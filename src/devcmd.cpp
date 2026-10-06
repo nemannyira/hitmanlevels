@@ -21,6 +21,7 @@ extern "C" {
 #include "editor/model.h"
 #include "editor/npcs.h"
 #include "editor/playtest.h"
+#include "engine/npc.h"
 #include "imgui.h"
 #include "hook.h"
 #include "fov.h"
@@ -285,6 +286,55 @@ int PlaceNpcCmd(lua_State* L)
     return 1;
 }
 
+// h2.dev_setscript(path, script, decl): starts the script on the character
+// (decl as a script record has it: "LONG a=1;ZGEOMREF b;"; values: the
+// defaults written there, 0 else) -> true / error text
+int SetScriptCmd(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    if (!g)
+        return luaL_error(L, "no such object");
+    engine::ScriptInfo s;
+    s.name = luaL_checkstring(L, 2);
+    std::string decl = luaL_checkstring(L, 3);
+    for (size_t start = 0; start < decl.size();) {
+        size_t semi = decl.find(';', start);
+        if (semi == std::string::npos)
+            semi = decl.size();
+        std::string item = decl.substr(start, semi - start), value;
+        start = semi + 1;
+        if (size_t eq = item.find('='); eq != std::string::npos) {
+            value = item.substr(eq + 1);
+            item.resize(eq);
+        }
+        size_t sp = item.rfind(' ');
+        if (sp == std::string::npos)
+            continue;
+        engine::ScriptParam p;
+        p.typeName = item.substr(0, sp);
+        p.name = item.substr(sp + 1);
+        if (p.typeName == "LONG") {
+            p.type = engine::ParamType::Long;
+            p.bits = uint32_t(atoi(value.c_str()));
+        } else if (p.typeName == "FLOAT") {
+            p.type = engine::ParamType::Float;
+            float f = float(atof(value.c_str()));
+            memcpy(&p.bits, &f, 4);
+        } else {
+            p.type = engine::ParamType::Ref;
+        }
+        s.params.push_back(p);
+    }
+    std::vector<uint8_t> block = engine::BuildScriptBlock(s);
+    std::string err;
+    if (!engine::SetScript(g, &block, &err)) {
+        lua_pushstring(L, err.c_str());
+        return 1;
+    }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 // h2.dev_test(): the toolbar's Test
 int TestCmd(lua_State*)
 {
@@ -485,6 +535,7 @@ void InstallDevCommands()
     script::Register("dev_editor", Editor);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);
+    script::Register("dev_setscript", SetScriptCmd);
     script::Register("dev_panel", Panel);
     script::Register("dev_level", Level);
     script::Register("dev_click", Click);

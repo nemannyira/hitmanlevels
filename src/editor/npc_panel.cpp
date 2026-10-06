@@ -13,6 +13,7 @@
 #include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
+#include "../engine/script_files.h"
 #include "../game.h"
 #include "../log.h"
 #include "../overlay/overlay.h"
@@ -910,6 +911,10 @@ void DrawTarget()
             for (const std::string& b : g_behaviourNames)
                 if (ImGui::Selectable(b.c_str(), g_changeTo == b))
                     g_changeTo = b;
+            ImGui::SeparatorText("from other levels");
+            for (const std::string& b : ForeignBehaviourNames())
+                if (ImGui::Selectable(b.c_str(), g_changeTo == b))
+                    g_changeTo = b;
             ImGui::EndCombo();
         }
         ImGui::SameLine();
@@ -945,6 +950,9 @@ void DrawTarget()
         ImGui::TextDisabled("(its kind of behaviour stays; its settings can change)");
     }
     if (g_targetHasBehaviour) {
+        if (std::string missing = engine::MissingRequiredRef(g_targetEdit); !missing.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "Needs %s: without it the behaviour does not start.",
+                               missing.c_str());
         ImGui::TextDisabled("Settings (live; a change applies when you leave the field):");
         if (DrawParams(g_targetEdit, true, "target"))
             ApplyTarget();
@@ -1058,11 +1066,22 @@ void DrawPlace()
         for (const std::string& b : g_behaviourNames)
             if (ImGui::Selectable(b.c_str(), g_newBehaviour == b))
                 ChooseNewBehaviour(b);
+        ImGui::SeparatorText("from other levels");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Behaviours of other levels' characters that work anywhere: their scripts are\n"
+                              "loaded from that level. Routes they walk have to be set.");
+        for (const std::string& b : ForeignBehaviourNames())
+            if (ImGui::Selectable(b.c_str(), g_newBehaviour == b))
+                ChooseNewBehaviour(b);
         ImGui::EndCombo();
     }
     if (!g_newBehaviour.empty()) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", DescribeBehaviour(g_newBehaviour).c_str());
+        if (std::string missing = engine::MissingRequiredRef(g_new); !missing.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f),
+                               "Needs %s (pick a list of the map below): without it the character stands still.",
+                               missing.c_str());
         ImGui::PopTextWrapPos();
         if (!g_newMoves.empty()) {
             if (ImGui::Checkbox("Starts where you put it", &g_startHere))

@@ -70,6 +70,7 @@ struct LevelNpc {
     Transform transform{};
     bool hasBehaviour = false;
     std::string behaviour;   // full script name
+    std::string behaviourLevel;  // the level whose scripts have it ("": this map's; engine/script_files.h)
     std::vector<ParamValue> params;
 };
 

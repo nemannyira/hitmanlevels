@@ -202,3 +202,36 @@ every level, checked offline), whose matrix and position are replaced in the
 GMS copy while the scene loads (inject.cpp MovePlayerStart), so the engine
 puts him there itself (rooms included). Closing the editor while placed
 characters are not made yet asks whether to test first.
+
+## Behaviours of other levels (src/engine/script_files.cpp)
+
+The scene's **ZGF** is a chunk tree (tools/zgf.py): fonts, particle palettes
+and the compiled script classes `scripts\<dir>\<Class>.ppo`, base classes
+under paths relative to their subclass (`scripts\C1\C1_1\..\..\AllLevels\
+Std2\Neutral2.ppo`; one class can be there several times). AllocSequence
+reads it (GetGeomFilesData), mounts it on ZSysFile (vtable 0x639A18, vfunc
+0x84 -> archive object 0x5B5F40, lookup 0x5B6280) and unmounts it after
+InitializeGeoms (0x8C). The script engine loads a class by path
+(0x5D5BA0: cached by name, else "Cannot load script" + int3) through
+SysInterface vfunc 200 (".sdl" -> ".ppo") and ZSysFile Exists 0x40E2C0 /
+Size 0x40E1B0 / Read 0x40E540, which ask the mounted archives first and then
+the disk. Loaded classes stay cached for the scene: that is why a class of
+the scene can be given at runtime, and why Neutral2 is only found under the
+name its first subclass loaded it as.
+
+The editor hooks those three: when neither answers, the .ppo files of the
+levels it was asked for (ProvideLevelScripts, read from their ZIPs, keyed by
+the normalised path) are served from memory. A behaviour of another level
+("Guard2_1 (C2-1)") is its class path with that level's declarations; its
+references are empty and filled from this scene's characters' parameters of
+the same name (FillSharedRefs: weapon template, guard group, help and safe
+points, alarm list, ...). Checked in C1-1: C2-1's Guard2_1 runs (Guard2.Guard)
+across reloads.
+
+Parameters never empty in any level's characters (offline count over every
+scene) are required: a behaviour without one (WayPointList, WayPoints,
+HelpPoints, ...) is not started (C7-1's Pedestrian2 without a list crashed the
+script engine 2 s later, a call on a null reference in 0x5D67A0). Behaviours
+tied to their level's furniture without a reference (sitting, sleeping,
+patients...) are not offered: C6-3's DoctorSitting on C1-1 made the game free
+a room twice when the map was left.

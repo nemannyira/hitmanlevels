@@ -70,6 +70,7 @@ add_library(h2fix SHARED
     src/engine/lists.cpp
     src/engine/messages.cpp
     src/engine/scene_data.cpp
+    src/engine/script_files.cpp
     src/engine/imports.cpp
     src/engine/inject.cpp
     src/engine/zip.cpp

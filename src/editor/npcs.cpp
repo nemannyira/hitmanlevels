@@ -12,6 +12,7 @@
 #include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
+#include "../engine/script_files.h"
 #include "../engine/zip.h"
 #include "../log.h"
 #include "../scene.h"
@@ -265,8 +266,90 @@ std::vector<std::string> BehaviourNames()
     return names;
 }
 
+// Behaviours that use their level's furniture or props without a reference
+// to them (a chair, a bed, an operating table, a perch): C6-3's DoctorSitting
+// on C1-1 broke the game when the map was left (a room freed twice).
+bool TiedToFurniture(const std::string& name)
+{
+    std::string n = Lower(name);
+    for (const char* w : {"sit", "sleep", "patient", "operation", "surgeon", "scarecrow", "bird", "bed", "chair",
+                          "lying", "dead", "toilet", "shower"})
+        if (n.find(w) != std::string::npos)
+            return true;
+    return false;
+}
+
+std::string ForeignBehaviourName(const std::string& script, const std::string& level)
+{
+    return engine::ScriptShortName(script) + " (" + level + ")";
+}
+
+const std::vector<std::string>& ForeignBehaviourNames()
+{
+    static std::string builtFor;
+    static std::vector<std::string> names;
+    std::string here = CurrentScene().substr(0, CurrentScene().find('\\'));
+    if (builtFor == here)
+        return names;
+    builtFor = here;
+    names.clear();
+    for (const std::string& level : engine::GameLevels()) {
+        if (_stricmp(level.c_str(), here.c_str()) == 0)
+            continue;
+        for (const engine::LevelBehaviour& b : engine::LevelBehaviours(level))
+            if (IsPortableBehaviour(b.script) && !TiedToFurniture(b.name))
+                names.push_back(ForeignBehaviourName(b.script.name, level));
+    }
+    std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) { return Lower(a) < Lower(b); });
+    return names;
+}
+
+int FillSharedRefs(engine::ScriptInfo& s, bool requiredOnly)
+{
+    std::map<std::string, uint32_t> wanted;  // lower-case name -> value found
+    for (const engine::ScriptParam& p : s.params)
+        if (p.type == engine::ParamType::Ref && !p.bits && (!requiredOnly || engine::IsRequiredRef(p.name)))
+            wanted[Lower(p.name)] = 0;
+    if (wanted.empty())
+        return 0;
+    for (const engine::SceneRecord& r : engine::SceneRecords()) {
+        if (!r.script || r.classId != 0x2003E9)
+            continue;
+        engine::ScriptInfo other;
+        if (!engine::ParseScript(r.script, other))
+            continue;
+        for (const engine::ScriptParam& p : other.params) {
+            auto it = wanted.find(Lower(p.name));
+            if (it != wanted.end() && !it->second && p.type == engine::ParamType::Ref && p.bits)
+                it->second = engine::RemapRef(p.bits);
+        }
+    }
+    int n = 0;
+    for (engine::ScriptParam& p : s.params) {
+        if (p.type != engine::ParamType::Ref || p.bits)
+            continue;
+        auto it = wanted.find(Lower(p.name));
+        if (it != wanted.end() && it->second) {
+            p.bits = it->second;
+            ++n;
+        }
+    }
+    return n;
+}
+
 bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out)
 {
+    // a behaviour of another level: "Pedestrian2 (C7-1)"
+    if (size_t open = name.rfind(" ("); open != std::string::npos && !name.empty() && name.back() == ')') {
+        std::string level = name.substr(open + 2, name.size() - open - 3), cls = Lower(name.substr(0, open));
+        for (const engine::LevelBehaviour& b : engine::LevelBehaviours(level))
+            if (Lower(b.name) == Lower(engine::ScriptShortName(cls))) {
+                out = b.script;
+                FillSharedRefs(out);
+                return true;
+            }
+        return false;
+    }
     std::string want = Lower(name);
     for (const engine::SceneRecord& r : engine::SceneRecords()) {
         if (!r.script)
@@ -296,6 +379,7 @@ bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out)
         add("LONG", "Mute", engine::ParamType::Long, 0);
         add("ZGEOMREF", "HelpPoints", engine::ParamType::Ref, 0);
         add("ZGEOMREF", "SafePoints", engine::ParamType::Ref, 0);
+        FillSharedRefs(out);  // where it runs for help or to safety
         return true;
     }
     return false;
@@ -370,8 +454,19 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
         return fail("no room for the character");
     memcpy(s.mat, spec.transform.mat, sizeof(s.mat));
     memcpy(s.pos, spec.transform.pos, sizeof(s.pos));
+    // A behaviour without one of its routes stops the game when it walks it:
+    // the character is made without it then.
+    engine::ScriptInfo behaviour = spec.behaviour;
     if (spec.hasBehaviour)
-        s.script = engine::BuildScriptBlock(spec.behaviour);
+        FillSharedRefs(behaviour, true);  // e.g. a civilian saved without help points
+    std::string missing = spec.hasBehaviour ? engine::MissingRequiredRef(behaviour) : "";
+    if (!missing.empty())
+        Log("npc %s: behaviour %s not started: its %s is not set", spec.name.c_str(), spec.behaviour.name.c_str(),
+            missing.c_str());
+    if (spec.hasBehaviour && !spec.behaviour.level.empty())
+        engine::ProvideLevelScripts(spec.behaviour.level);
+    if (spec.hasBehaviour && missing.empty())
+        s.script = engine::BuildScriptBlock(behaviour);
     if (spec.name.empty()) {
         char name[96];
         snprintf(name, sizeof(name), "NPC_%s_%d",
@@ -392,7 +487,7 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
             g_placed.push_back(made);
             g_placedRecord[made] = spec.record;
             if (spec.hasBehaviour)
-                g_behaviour[made] = spec.behaviour;
+                g_behaviour[made] = behaviour;
             else
                 g_noBehaviour[made] = true;
             Log("npc %s: the scene's own (made while loading)", s.name.c_str());
@@ -418,7 +513,7 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
     g_placed.push_back(npc);
     g_placedRecord[npc] = spec.record;
     if (spec.hasBehaviour)
-        g_behaviour[npc] = spec.behaviour;
+        g_behaviour[npc] = behaviour;
     else
         g_noBehaviour[npc] = true;
     return npc;

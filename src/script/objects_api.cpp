@@ -27,6 +27,7 @@
 //   npc:alive(), npc:kill()
 //   h2.player()                            -- Hitman
 //   h2.objective(slot [, text [, done]])   -- a laptop objective line; returns the level's own text
+//   h2.briefing(text)                      -- the laptop's mission briefing ("" = the level's own)
 //   h2.mission("complete" | "fail")
 //
 // Music:
@@ -302,6 +303,13 @@ int Player(lua_State* L)
         return 1;
     }
     PushObject(L, editor::PathOf(g));
+    return 1;
+}
+
+// h2.briefing(text): the laptop's mission briefing until the map loads again
+int Briefing(lua_State* L)
+{
+    lua_pushboolean(L, editor::SetBriefingText(luaL_checkstring(L, 1)));
     return 1;
 }
 
@@ -870,6 +878,7 @@ void RegisterObjectsApi()
     Register("point", Point);
     Register("player", Player);
     Register("objective", Objective);
+    Register("briefing", Briefing);
     Register("mission", Mission);
     Register("music", Music);
 }

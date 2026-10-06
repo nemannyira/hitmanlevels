@@ -824,9 +824,12 @@ bool SaveLevel(std::string* error)
                 jo["radius"] = o.radius;
             objs.push_back(jo);
         }
-        if (!objs.empty() || m.endWhenDone)
+        if (!objs.empty() || m.endWhenDone || !m.briefing.empty()) {
             j["mission"] = {{"objectives", objs}, {"end_when_done", m.endWhenDone}, {"exit", m.exitPath},
                             {"exit_radius", m.exitRadius}};
+            if (!m.briefing.empty())
+                j["mission"]["briefing"] = m.briefing;
+        }
     }
     if (!g_level.music.empty())
         j["music"] = g_level.music;
@@ -958,6 +961,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         L.mission.endWhenDone = m.value("end_when_done", false);
         L.mission.exitPath = m.value("exit", "");
         L.mission.exitRadius = m.value("exit_radius", 300.0f);
+        L.mission.briefing = m.value("briefing", "");
     }
     if (j.contains("music") && j["music"].is_object())
         for (auto& [path, track] : j["music"].items())

@@ -26,6 +26,9 @@ void RevertMission();
 // Runtime (also for Lua): a line's text (UTF-8; "" = the level's own), its check mark.
 bool SetObjectiveText(int slot, const std::string& text);
 bool SetObjectiveDone(int slot, bool done);
+// The laptop's mission briefing (UTF-8, "\n" new line; "" = as the level has
+// it): a script's text, over the level document's until the map loads again.
+bool SetBriefingText(const std::string& text);
 bool CompleteMission();
 bool FailMission();
 // The level's own text of a line ("" when the level has none or it is not known yet).

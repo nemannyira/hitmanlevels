@@ -62,6 +62,7 @@ const uint8_t* g_locRoot;                  // LOC tree the folder's texts were f
 std::map<std::string, std::string> g_texts;  // lower-case LOC path -> node: 0x01, Latin-1 text, NUL
 std::map<std::string, std::string> g_scriptTexts;  // ... set by scripts (h2.objective)
 std::map<std::string, std::string> g_fixedTexts;   // ... of the editor itself (main menu entry)
+std::string g_scriptBriefing;              // h2.briefing (this load), over the document's
 std::string g_lineKeys[kSlots + 1];         // the level's LOC key of each line (as it set them)
 bool g_ours;                               // the editor itself checks a line
 bool g_restoring;                          // lines go back to the level's texts
@@ -163,7 +164,7 @@ uint8_t* __stdcall hkLocFind(const char* path, const uint8_t* root)
         key[n] = 0;
         auto it = g_texts.find(key);
         if (it != g_texts.end())
-            return reinterpret_cast<uint8_t*>(it->second.data());
+            return it->second.empty() ? nullptr : reinterpret_cast<uint8_t*>(it->second.data());
     }
     uint8_t* node = oLocFind(path, root);
     if (node && !g_locRoot && path && !g_folder.empty() && _strnicmp(path, g_folder.c_str(), g_folder.size()) == 0)
@@ -171,11 +172,14 @@ uint8_t* __stdcall hkLocFind(const char* path, const uint8_t* root)
     return node;
 }
 
+void BuildTexts();
+
 void __fastcall hkSetFolder(void* self, void* edx, const char* folder)
 {
     g_briefing = self;
     g_folder = folder ? folder : "";
     g_locRoot = nullptr;
+    BuildTexts();  // the level's briefing text is read now
     oSetFolder(self, edx, folder);
 }
 
@@ -366,6 +370,15 @@ void BuildTexts()
     g_texts[Lower(kEmptyKey)] = Node("");
     if (!ForThisScene())
         return;
+    // The briefing is the texts of "<folder>/MissionBriefing/1a", "2a", ...
+    // as long as they exist (SetLocaleFolder 0x52D340): the level's own
+    // further parts are answered "not there".
+    const std::string& briefing = g_scriptBriefing.empty() ? Doc().briefing : g_scriptBriefing;
+    if (!briefing.empty() && !g_folder.empty()) {
+        g_texts[Lower(g_folder + "/MissionBriefing/1a")] = Node(briefing);
+        for (int i = 2; i <= 40; ++i)
+            g_texts[Lower(g_folder + "/MissionBriefing/" + std::to_string(i) + "a")] = "";
+    }
     for (const MissionObjective& o : Doc().objectives)
         if (!o.text.empty())
             g_texts[Lower(EditorKey(o.slot))] = Node(o.text);
@@ -449,6 +462,59 @@ void ShowLines(const std::vector<int>& removed = {})
             CallSetCompleted(o.slot, g_done[o.slot]);
         }
     }
+}
+
+bool CallSetFolder(void* briefing, const char* folder)
+{
+    __try {
+        oSetFolder(briefing, nullptr, folder);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// The briefing is read when the folder is set: it is set again (the lines
+// it resets get their texts and check marks back).
+void RefreshBriefing()
+{
+    BuildTexts();
+    if (!g_briefing || g_folder.empty())
+        return;
+    uint32_t done = 0;
+    if (engine::IsReadable(static_cast<char*>(g_briefing) + kBriefingDoneBits, 4))
+        done = *reinterpret_cast<uint32_t*>(static_cast<char*>(g_briefing) + kBriefingDoneBits);
+    if (!CallSetFolder(g_briefing, g_folder.c_str()))
+        Log("mission: the briefing was not set again");
+    ShowLines();
+    for (int slot = 1; slot <= kSlots; ++slot)
+        if ((done >> slot) & 1)
+            CallSetCompleted(slot, true);
+}
+
+void DrawBriefingEditor()
+{
+    static char buf[4096];
+    static bool editing;
+    MissionDoc& m = Doc();
+    if (!editing)
+        snprintf(buf, sizeof(buf), "%s", m.briefing.c_str());
+    ImGui::InputTextMultiline("##briefing", buf, sizeof(buf), ImVec2(-1, ImGui::GetTextLineHeight() * 6));
+    editing = ImGui::IsItemActive();
+    if (ImGui::IsItemDeactivatedAfterEdit() && m.briefing != buf) {
+        m.briefing = buf;
+        CurrentLevel().dirty = true;
+        RefreshBriefing();
+    }
+    if (ImGui::IsItemHovered() && m.briefing.empty())
+        ImGui::SetTooltip("Empty: the level's own briefing. The laptop shows it scrolled, the way it is written here.");
+    ImGui::BeginDisabled(m.briefing.empty());
+    if (ImGui::SmallButton("The level's own briefing")) {
+        m.briefing.clear();
+        CurrentLevel().dirty = true;
+        RefreshBriefing();
+    }
+    ImGui::EndDisabled();
 }
 
 // ---- goals ----
@@ -553,6 +619,7 @@ void OnScene(const std::string&)
     for (std::string& k : g_lineKeys)
         k.clear();
     g_scriptTexts.clear();
+    g_scriptBriefing.clear();
     BuildTexts();
 }
 
@@ -963,6 +1030,8 @@ void DrawPanel()
     if (!g_status.empty())
         ImGui::TextWrapped("%s", g_status.c_str());
 
+    ImGui::SeparatorText("Briefing (the laptop's text)");
+    DrawBriefingEditor();
     ImGui::SeparatorText("Objectives (the laptop's lines)");
     if (!g_briefing)
         ImGui::TextDisabled("(this map has no laptop briefing yet)");
@@ -1013,6 +1082,13 @@ bool SetObjectiveText(int slot, const std::string& text)
         CallSetCompleted(slot, g_done[slot]);
     }
     return ok;
+}
+
+bool SetBriefingText(const std::string& text)
+{
+    g_scriptBriefing = text;
+    RefreshBriefing();
+    return g_briefing != nullptr;
 }
 
 bool SetObjectiveDone(int slot, bool done)

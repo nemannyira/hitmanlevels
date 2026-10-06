@@ -95,6 +95,7 @@ struct MissionDoc {
     bool endWhenDone = false;      // the mission is completed when every objective is done ...
     std::string exitPath;          // ... and Hitman reaches this place ("" = at once)
     float exitRadius = 300.0f;
+    std::string briefing;          // the laptop's mission briefing ("" = the level's own)
 };
 
 struct ImportedModel {        // a model of another level the map is loaded with

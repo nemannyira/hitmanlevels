@@ -43,6 +43,12 @@ Addresses are hitman2.exe (Steam build).
     clears 0x400 (SetFlags 0x5BAC80) and unhides (vfunc 0xC0 = SetHidden,
     flag 0x800: 0 shows) the lines it uses, and moves SavesLeft below the
     last one (local y + one line height). The laptop opens with B.
+  * The briefing (scroll area) is the texts of `<folder>/MissionBriefing/1a`,
+    `2a`, ... while they exist (the format can be overridden by
+    `<folder>/formatstring`), read in SetLocaleFolder. The editor answers 1a
+    with the level document's `mission.briefing` (or h2.briefing's) and the
+    level's further parts with "not there"; a change calls SetLocaleFolder
+    again (it clears the check marks: they are set again).
 * LOC tree lookup 0x428FF0 (**stdcall** path, root) -> node `{flags, text}`
   (flag 1: text follows). The editor answers its own keys there.
 * The completion bits are display only; the mission's logic is in the level

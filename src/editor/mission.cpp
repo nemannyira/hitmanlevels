@@ -764,8 +764,8 @@ void DrawLineEditor(int slot)
         ImGui::SameLine();
         ImGui::TextDisabled("(the level's line)");
     } else if (LevelLines() > 0 && slot > LevelLines()) {
-        ImGui::TextDisabled("The laptop of this map shows %d lines: this one is not listed there,", LevelLines());
-        ImGui::TextDisabled("but it still counts for the end of the mission.");
+        ImGui::SameLine();
+        ImGui::TextDisabled("(a new line: the laptop lists it below the level's %d)", LevelLines());
     }
 
     // text

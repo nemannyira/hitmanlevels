@@ -14,6 +14,9 @@ namespace h2::engine {
 
 namespace {
 
+constexpr uintptr_t kGetStaticSize = 0x41BEB0;          // ?GetStaticSize@ZEngineDataBase@@IAEIXZ (the BUF)
+constexpr uintptr_t kGetStaticData = 0x41BF40;          // ?GetStaticData@ZEngineDataBase@@IAEXPAXI@Z
+constexpr uint32_t kBufReserve = 0x10000;               // room after the BUF for the strings levels add
 constexpr uintptr_t kGetGeomsData = 0x41C1C0;           // ?GetGeomsData@ZEngineDataBase@@IAEXPAXI@Z
 constexpr uintptr_t kCreateGeoms = 0x41CDA0;            // ?CreateGeoms@ZEngineDataBase@@QAEXPAVREFTAB@@...
 constexpr uintptr_t kRemapCreatedDataBlock = 0x41CD80;  // (DBLK*, const uint* refs, uint n, const uint* msgs)
@@ -72,6 +75,41 @@ void ParseRecords()
 
 // ---- hooks ----
 
+// The BUF (names, properties) stays where the engine read it (engine
+// +0x1C47): a saved game writes a runtime object's properties as an offset
+// into it and stops the game (int3, 0x424C40) for one outside it. Strings a
+// level adds while the scene loads (its characters' names) go after the BUF
+// in the same allocation: GetStaticSize asks for kBufReserve more.
+uint32_t g_staticSize;       // the BUF's own size (file)
+char* g_staticBuf;           // the allocation it was read into
+
+using GetStaticSize_t = uint32_t(__fastcall*)(void* self, void* edx);
+GetStaticSize_t oGetStaticSize;
+uint32_t __fastcall hkGetStaticSize(void* self, void* edx)
+{
+    uint32_t n = oGetStaticSize(self, edx);
+    if (int32_t(n) <= 0 || n > kMaxGms) {
+        g_staticSize = 0;
+        return n;
+    }
+    g_staticSize = n;
+    return n + kBufReserve;
+}
+
+using GetStaticData_t = void(__fastcall*)(void* self, void* edx, void* buf, uint32_t size);
+GetStaticData_t oGetStaticData;
+void __fastcall hkGetStaticData(void* self, void* edx, void* buf, uint32_t size)
+{
+    if (g_staticSize && size == g_staticSize + kBufReserve && buf) {
+        oGetStaticData(self, edx, buf, g_staticSize);
+        memset(static_cast<char*>(buf) + g_staticSize, 0, kBufReserve);
+        g_staticBuf = static_cast<char*>(buf);
+        return;
+    }
+    g_staticBuf = nullptr;
+    oGetStaticData(self, edx, buf, size);
+}
+
 using GetGeomsData_t = void(__fastcall*)(void* self, void* edx, void* buf, unsigned size);
 GetGeomsData_t oGetGeomsData;
 void __fastcall hkGetGeomsData(void* self, void* edx, void* buf, unsigned size)
@@ -100,7 +138,9 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
         Log("scene data: GMS not kept (size %u)", g_unpackedSize);
     // BUF is an engine allocation: its size is in the block header
     uint32_t bufSize = 0;
-    if (buf && IsReadable(buf - 8, 4)) {
+    if (buf && buf == g_staticBuf && g_staticSize) {
+        bufSize = g_staticSize;  // without the reserve after it
+    } else if (buf && IsReadable(buf - 8, 4)) {
         memcpy(&bufSize, buf - 8, 4);
         bufSize &= 0x1FFFFFFF;
     }
@@ -116,7 +156,16 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
         bool start = MovePlayerStart(scene ? scene : "", moreGms, moreBuf);  // after: the records it reads
         if (npcs || start) {
             char* newGms = EngineBuffer(moreGms);
-            char* newBuf = EngineBuffer(moreBuf);
+            // the added strings in the reserve after the engine's BUF (saved games)
+            size_t added = moreBuf.size() - g_buf.size();
+            char* newBuf = nullptr;
+            if (buf == g_staticBuf && added <= kBufReserve) {
+                memcpy(const_cast<char*>(buf) + g_buf.size(), moreBuf.data() + g_buf.size(), added);
+                newBuf = const_cast<char*>(buf);
+            } else {
+                Log("scene data: %zu bytes of strings do not fit after the BUF: saving this game will fail", added);
+                newBuf = EngineBuffer(moreBuf);
+            }
             if (newGms && newBuf) {
                 gms = newGms;
                 buf = newBuf;
@@ -237,6 +286,8 @@ size_t ValueLength(const uint8_t* p, const uint8_t* end)
 
 void InstallSceneData()
 {
+    Hook("ZEngineDataBase::GetStaticSize", kGetStaticSize, hkGetStaticSize, &oGetStaticSize);
+    Hook("ZEngineDataBase::GetStaticData", kGetStaticData, hkGetStaticData, &oGetStaticData);
     Hook("ZEngineDataBase::GetGeomsData", kGetGeomsData, hkGetGeomsData, &oGetGeomsData);
     Hook("ZEngineDataBase::CreateGeoms", kCreateGeoms, hkCreateGeoms, &oCreateGeoms);
     InstallSceneNpcs();

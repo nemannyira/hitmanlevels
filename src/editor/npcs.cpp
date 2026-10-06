@@ -303,6 +303,8 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
             std::string err;
             if (!s.script.empty() && !engine::SetScript(made, &s.script, &err))
                 Log("npc %s: behaviour not set (%s)", s.name.c_str(), err.c_str());
+            else if (!s.script.empty())
+                engine::KeepStartPlace(made, s.pos, s.mat);
             g_placed.push_back(made);
             g_placedRecord[made] = spec.record;
             if (spec.hasBehaviour)
@@ -315,6 +317,8 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
     engine::ZGEOM* npc = engine::SpawnNpc(s, error);
     if (!npc)
         return nullptr;
+    if (!s.script.empty())
+        engine::KeepStartPlace(npc, s.pos, s.mat);
     AdoptEngineOwned(npc);
     g_placed.push_back(npc);
     g_placedRecord[npc] = spec.record;

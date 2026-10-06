@@ -159,3 +159,10 @@ Checked offline over every level's scripts:
 A placed copy of such a character would jump to the original's start, so
 the editor turns the LONGs off and points a single start reference at a new
 point where the character is put (`StartMoves` in src/editor/npcs.cpp).
+
+Behaviours also move their character by their own code (C1-1 DeliveryBoy:
+crates, van and exit references, no start parameter), so the editor also
+watches a placed character while its behaviour starts (`KeepStartPlace` in
+src/engine/npc.cpp): for 10 s (at least 120 frames) a jump of more than 250
+units in one frame, or being away from where it was put on the first frame,
+puts it back there (up to 10 times); it walks its route from there.

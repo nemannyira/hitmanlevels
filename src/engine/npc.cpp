@@ -7,6 +7,8 @@
 #include "../game.h"
 #include "../hook.h"
 #include "../log.h"
+#include "../mainloop.h"
+#include "../scene.h"
 #include "imports.h"
 #include "inject.h"
 #include "lists.h"
@@ -439,7 +441,80 @@ void* DoScriptInstance(ZGEOM* geom)
     }
 }
 
+// Characters kept where they were put while their behaviour starts (KeepStartPlace).
+struct StartGuard {
+    ZGEOM* actor;
+    float home[3], mat[9];  // where it was put
+    float last[3];          // where it was the frame before
+    ULONGLONG until;        // GetTickCount64
+    int frames = 0;
+    int putBack = 0;
+};
+std::vector<StartGuard> g_guards;
+constexpr float kJump = 250.0f;     // further in one frame: put there, not walked or pushed
+constexpr int kGuardFrames = 120;   // at least this many frames of the game
+constexpr int kMaxPutBack = 10;     // a behaviour that keeps putting it elsewhere wins
+
+bool ActorAt(ZGEOM* actor, float mat[9], float pos[3])
+{
+    if (!actor || !IsReadable(actor, 0x588) || !IsA(actor, "ZActor"))
+        return false;
+    game::GetWorldTransform(actor, mat, pos);
+    return true;
+}
+
+void GuardFrame()
+{
+    if (g_guards.empty())
+        return;
+    ULONGLONG now = GetTickCount64();
+    for (size_t i = 0; i < g_guards.size();) {
+        StartGuard& g = g_guards[i];
+        float mat[9], pos[3];
+        if (!ActorAt(g.actor, mat, pos) || (++g.frames > kGuardFrames && now > g.until)) {
+            g_guards.erase(g_guards.begin() + ptrdiff_t(i));
+            continue;
+        }
+        float dx = pos[0] - g.last[0], dy = pos[1] - g.last[1], dz = pos[2] - g.last[2];
+        float hx = pos[0] - g.home[0], hz = pos[2] - g.home[2];
+        bool away = g.frames == 1 && hx * hx + hz * hz > kJump * kJump;  // put elsewhere while it was made
+        if ((away || dx * dx + dy * dy + dz * dz > kJump * kJump) && g.putBack >= kMaxPutBack) {
+            Log("npc %p: its behaviour keeps putting it elsewhere: left there", static_cast<void*>(g.actor));
+            g_guards.erase(g_guards.begin() + ptrdiff_t(i));
+            continue;
+        }
+        if (away || dx * dx + dy * dy + dz * dz > kJump * kJump) {
+            ++g.putBack;
+            Log("npc %p: its behaviour put it at (%.0f %.0f %.0f): back where it was put", static_cast<void*>(g.actor),
+                pos[0], pos[1], pos[2]);
+            float home[3], homeMat[9];  // (TeleportActor writes them into g too)
+            memcpy(home, g.home, sizeof(home));
+            memcpy(homeMat, g.mat, sizeof(homeMat));
+            TeleportActor(g.actor, home, homeMat);
+        } else {
+            memcpy(g.last, pos, sizeof(pos));
+        }
+        ++i;
+    }
+}
+
 } // namespace
+
+void KeepStartPlace(ZGEOM* actor, const float pos[3], const float mat[9], float seconds)
+{
+    StartGuard g{actor};
+    if (!ActorAt(actor, g.mat, g.last))  // g.last: where it is now (already moved, the first frame tells)
+        return;
+    memcpy(g.home, pos, sizeof(g.home));
+    memcpy(g.mat, mat, sizeof(g.mat));
+    g.until = GetTickCount64() + ULONGLONG(seconds * 1000.0f);
+    for (StartGuard& had : g_guards)
+        if (had.actor == actor) {
+            had = g;
+            return;
+        }
+    g_guards.push_back(g);
+}
 
 void* ScriptInstance(ZGEOM* geom)
 {
@@ -513,6 +588,13 @@ bool TeleportActor(ZGEOM* actor, const float pos[3], const float* newMat)
     p[1] = pos[1] + above;
     p[2] = pos[2];
     game::SetWorldTransform(actor, newMat ? newMat : mat, pos);
+    for (StartGuard& g : g_guards)  // moved by the editor: kept there
+        if (g.actor == actor) {
+            memcpy(g.home, pos, sizeof(g.home));
+            memcpy(g.last, pos, sizeof(g.last));
+            if (newMat)
+                memcpy(g.mat, newMat, sizeof(g.mat));
+        }
     return true;
 }
 
@@ -635,6 +717,8 @@ bool SetActorCollides(ZGEOM* actor, bool on)
 void InstallNpc()
 {
     Hook("ZLIST_ActorCollision init", kActorCollision_Init, &hkActorCollisionInit, &oActorCollisionInit);
+    OnFrameEnd(GuardFrame);
+    OnSceneLeaving([](const std::string&) { g_guards.clear(); });
 }
 
 ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)

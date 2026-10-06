@@ -38,6 +38,15 @@ bool DestroyNpc(ZGEOM* actor, std::string* error = nullptr);
 // drawn with does not change (it stays invisible in another room).
 bool TeleportActor(ZGEOM* actor, const float pos[3], const float* mat = nullptr);
 
+// A behaviour starting may put its character elsewhere at once (on its
+// route's first point, a start point of the level it was written for: the
+// LONG WarpToPathPoint, start references, or its own code, like C1-1's
+// DeliveryBoy), even while it is made. For `seconds` (and at least 120
+// frames) from now, a jump of the actor further than walking (or being away
+// from `pos` already) is undone: it is put back at `pos` (or where
+// TeleportActor puts it meanwhile), and walks from there.
+void KeepStartPlace(ZGEOM* actor, const float pos[3], const float mat[9], float seconds = 10.0f);
+
 // Stops the geom's running script (if any) and, with `block` (a script block
 // as BuildScriptBlock makes it), starts that one instead - the way PostInit
 // starts it (ZGEOM::CreateScript 0x43CE30).

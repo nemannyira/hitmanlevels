@@ -95,8 +95,10 @@ Now: scene, frame, death (polled 4 times a second), objective.
   end, msg_lightswitchtoggled, windowbroken, restrictedzoneenter ...).
 * **The level routine** (handler 0x504960, vtable slot 0x34 of the level
   routine; per level classes call it): CharacterKilled -> vfunc 0xB0
-  classifies the victim, vfunc 0xB4 (base 0x505530: type 1 enemy, 2
-  innocent; counts for the rating, then sends ScriptCharacterKilled),
+  classifies the victim, vfunc 0xB4 (base 0x505530: type 2 enemy, 1
+  innocent, as the statistics 0x5058B0 list them; the level's scripts call
+  it too, through LevelControl_if 0x56BEB0, with 0 for a death not by
+  Hitman; then it sends ScriptCharacterKilled),
   CharacterHarmed -> 0xB8 (base 0x505600), MissionFailed -> 0xC0,
   MissionCompleted -> 0xC4, pick up / use item / change clothes
   (levelcontrolnotify*) -> 0x84 / 0x88 / 0x8C, BriefingMenuOpened,

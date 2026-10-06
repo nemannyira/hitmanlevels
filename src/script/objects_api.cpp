@@ -61,6 +61,7 @@ extern "C" {
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
 #include "../engine/spawn.h"
+#include "../engine/game_events.h"
 #include "../engine/imports.h"
 #include "../log.h"
 #include "lua_vm.h"
@@ -813,13 +814,23 @@ int Pos(lua_State* L)
     return 3;
 }
 
+// Characters keep their own position (and write it into their node every
+// frame): they are teleported.
+void Place(engine::ZGEOM* g, const editor::Transform& t)
+{
+    if (engine::IsA(g, "ZActor"))
+        engine::TeleportActor(g, t.pos, t.mat);
+    else
+        editor::SetTransform(g, t);
+}
+
 int SetPos(lua_State* L)
 {
     engine::ZGEOM* g = Geom(L);
     editor::Transform t = editor::GetTransform(g);
     for (int i = 0; i < 3; ++i)
         t.pos[i] = Coordinate(L, 2 + i);
-    editor::SetTransform(g, t);
+    Place(g, t);
     return 0;
 }
 
@@ -841,7 +852,7 @@ int SetRot(lua_State* L)
     float y = Coordinate(L, 2), p = lua_isnoneornil(L, 3) ? 0.0f : Coordinate(L, 3),
           r = lua_isnoneornil(L, 4) ? 0.0f : Coordinate(L, 4);
     editor::EulerToMatrix(y, p, r, t.mat);
-    editor::SetTransform(g, t);
+    Place(g, t);
     return 0;
 }
 
@@ -1006,11 +1017,18 @@ bool PushGeom(lua_State* L, engine::ZGEOM* g)
     return true;
 }
 
+bool PushScriptGeom(lua_State* L, void* instance)
+{
+    return PushGeom(L, instance ? engine::ScriptGeom(instance, editor::SceneModel()) : nullptr);
+}
+
 bool PushCarriedGeom(lua_State* L, uint32_t value)
 {
-    if (value >= 0x10000 && PushGeom(L, reinterpret_cast<engine::ZGEOM*>(uintptr_t(value))))
-        return true;
-    lua_pop(L, 1);
+    if (value >= 0x10000) {
+        if (PushGeom(L, reinterpret_cast<engine::ZGEOM*>(uintptr_t(value))))
+            return true;
+        lua_pop(L, 1);
+    }
     // a geom reference: dynamic ones are looked up in a table, static ones are
     // offsets of 0x70 byte nodes
     bool ref = value && !(value & 0x80000000) && (!(value & 0x40000000) || (value & 0x3FFFFFFF) % 0x70 == 0);

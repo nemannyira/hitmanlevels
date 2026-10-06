@@ -23,5 +23,7 @@ void PushObjectPath(::lua_State* L, const std::string& path);
 bool PushGeom(::lua_State* L, engine::ZGEOM* geom);
 // The same for a value an engine message carries: a pointer or a geom ref.
 bool PushCarriedGeom(::lua_State* L, uint32_t value);
+// The object whose script is `instance` (messages between scripts), or nil.
+bool PushScriptGeom(::lua_State* L, void* instance);
 
 } // namespace h2::script

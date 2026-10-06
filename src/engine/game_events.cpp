@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstring>
 #include <map>
+#include <unordered_map>
 
 #include "../game.h"
 #include "../hook.h"
@@ -16,6 +17,7 @@ namespace {
 
 constexpr uintptr_t kGeom_SendMessage = 0x43CBE0;  // ZGEOM vfunc 0x120 (this = sender; receiver, msg, param*)
 constexpr uintptr_t kHitman_Damage = 0x519390;     // ZHITMAN2 (float amount)
+constexpr uintptr_t kScript_Deliver = 0x5E13A0;    // script engine: (instance, name, param*) to a script, by name
 constexpr uint32_t kMsgNames = 0xC37;              // engine: char* name[id]
 constexpr uint32_t kMsgCount = 0x1C43;             // engine: the last id
 constexpr uint32_t kMaxMessages = 0x402;           // room of the name table
@@ -34,6 +36,9 @@ bool g_watchAll;
 uint32_t g_mappedCount = ~0u;           // message count the flags were made for
 std::vector<GameEvent> g_queue;
 size_t g_dropped;
+// the message SendMessage is delivering (its script gets it again by name)
+const char* g_sending[16];
+int g_sendDepth;
 
 void* Engine()
 {
@@ -54,6 +59,19 @@ bool CopyMem(void* dst, const void* src, size_t n)
 bool ReadDword(uintptr_t p, uint32_t& out)
 {
     return p >= 0x10000 && CopyMem(&out, reinterpret_cast<const void*>(p), 4);
+}
+
+// the dwords a message's param points to (as many as are readable, up to 4)
+void ReadWords(GameEvent& e)
+{
+    e.wordCount = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (!ReadDword(e.param + i * 4, e.words[i]))
+            break;
+        e.wordCount = i + 1;
+    }
+    e.hasValue = e.wordCount > 0;
+    e.value = e.words[0];
 }
 
 // a short printable NUL-terminated text at p (names, event names)
@@ -145,13 +163,74 @@ void __fastcall hkSend(ZGEOM* self, void* edx, ZGEOM* to, uint32_t msg, void* pa
         e.to = to;
         e.from = self;
         e.param = reinterpret_cast<uintptr_t>(param);
-        e.hasValue = ReadDword(e.param, e.value);
+        ReadWords(e);
         char text[65];
         if (ReadText(e.param, text) || (e.hasValue && ReadText(e.value, text)))
             e.text = text;
         Queue(std::move(e));
     }
+    if (g_sendDepth < 16)
+        g_sending[g_sendDepth] = id < kMaxMessages ? g_names[id].c_str() : "";
+    ++g_sendDepth;
     oSend(self, edx, to, msg, param);
+    --g_sendDepth;
+}
+
+// a script's message name, lower case (false: unreadable or too long)
+bool LowerName(const char* name, char (&out)[64])
+{
+    __try {
+        for (int i = 0; i < 63; ++i) {
+            char c = name[i];
+            out[i] = c >= 'A' && c <= 'Z' ? char(c + 32) : c;
+            if (!c)
+                return i > 0;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    return false;
+}
+
+bool ReadPointer(const void* p, const void*& out)
+{
+    return CopyMem(&out, p, 4);
+}
+
+// Messages scripts get by name: from SendMessage (already kept: skipped) and
+// from other scripts (the alarm, Hitman spotted...).
+using Deliver_t = void(__fastcall*)(void* self, void* edx, void* instance, const char* name, void* param);
+Deliver_t oDeliver;
+void __fastcall hkDeliver(void* self, void* edx, void* instance, const char* name, void* param)
+{
+    if (g_watchAll || !g_watch.empty()) {
+        char lower[64];
+        const char* real = name;
+        uintptr_t realParam = reinterpret_cast<uintptr_t>(param);
+        if (LowerName(name, lower) && !strcmp(lower, "scriptevent")) {
+            const void* inner = nullptr;  // {char* name, params...}
+            if (param && ReadPointer(param, inner)) {
+                real = static_cast<const char*>(inner);
+                realParam += 4;
+            }
+        }
+        const char* top = g_sendDepth > 0 && g_sendDepth <= 16 ? g_sending[g_sendDepth - 1] : nullptr;
+        char topLower[64];
+        bool fromSend = top && LowerName(top, topLower) &&
+                        (!strcmp(topLower, "scriptevent") || (LowerName(name, lower) && !strcmp(topLower, lower)));
+        if (!fromSend && LowerName(real, lower) && (g_watchAll || g_watch.count(lower))) {
+            GameEvent e;
+            e.name = real;
+            e.instance = instance;
+            e.param = realParam;
+            ReadWords(e);
+            char text[65];
+            if (e.hasValue && ReadText(e.value, text))
+                e.text = text;
+            e.script = true;
+            Queue(std::move(e));
+        }
+    }
+    oDeliver(self, edx, instance, name, param);
 }
 
 using Damage_t = void(__fastcall*)(void* hitman, void* edx, float amount);
@@ -237,12 +316,50 @@ bool PatchEntry(void** vt, int index, void* detour)
     return true;
 }
 
+// the script instance of a geom: extra data (+0x10) -> script list (+0x1C)
+// -> entry (+4) -> instance (+4), as HandleMessage 0x43CFE0 reads it
+void* InstanceOf(const ZGEOM* g)
+{
+    __try {
+        const char* extra = *reinterpret_cast<char* const*>(reinterpret_cast<const char*>(g) + 0x10);
+        if (!extra)
+            return nullptr;
+        const char* list = *reinterpret_cast<char* const*>(extra + 0x1C);
+        if (!list)
+            return nullptr;
+        const char* entry = *reinterpret_cast<char* const*>(list + 4);
+        return entry ? *reinterpret_cast<void* const*>(entry + 4) : nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 } // namespace
+
+ZGEOM* ScriptGeom(void* instance, const SceneSnapshot& scene)
+{
+    static const SceneSnapshot* cached;
+    static const GeomInfo* data;
+    static size_t size;
+    static std::unordered_map<void*, ZGEOM*> geoms;
+    if (&scene != cached || scene.geoms.data() != data || scene.geoms.size() != size) {
+        geoms.clear();
+        for (const GeomInfo& g : scene.geoms)
+            if (void* i = g.geom ? InstanceOf(g.geom) : nullptr)
+                geoms.emplace(i, g.geom);
+        cached = &scene;
+        data = scene.geoms.data();
+        size = scene.geoms.size();
+    }
+    auto it = geoms.find(instance);
+    return it == geoms.end() ? nullptr : it->second;
+}
 
 void InstallGameEvents()
 {
     Hook("ZGEOM::SendMessage", kGeom_SendMessage, hkSend, &oSend);
     Hook("ZHITMAN2::Damage", kHitman_Damage, hkDamage, &oDamage);
+    Hook("Script::Deliver", kScript_Deliver, hkDeliver, &oDeliver);
     OnSceneLeaving([](const std::string&) {
         g_queue.clear();
         g_any = false;  // ids may be given again with the next scene

@@ -1,9 +1,12 @@
 #include "events.h"
 
 #include <cctype>
+#include <iterator>
+#include <map>
 #include <set>
 
 #include "../engine/game_events.h"
+#include "../log.h"
 #include "objects_api.h"
 
 extern "C" {
@@ -31,7 +34,8 @@ std::string Lower(std::string s)
 // The game's messages under names of their own (the same table as
 // "msg:<name>", with a field: `flag` 1 / 0 sets it to true / false, -1 to
 // whether the message's param is not 0). `once`: a message many objects get
-// (a noise, a change of clothes): the event comes once a frame.
+// (a noise everyone near hears, over half a second: its words are where it
+// was; a change of clothes): the same one comes once a second.
 struct Alias {
     const char* event;
     const char* message;  // lower case
@@ -42,6 +46,7 @@ struct Alias {
 const Alias kAliases[] = {
     {"spotted", "hitmanspotted", nullptr, 0, false},
     {"spotted", "hitmandetected", nullptr, 0, false},
+    {"spotted", "reportnewtarget", nullptr, 0, false},  // a guard takes Hitman as his target
     {"alarm", "enteralarmstate", "on", 1, false},
     {"alarm", "alarmraised", "on", 1, false},
     {"alarm", "leavealarmstate", "on", 0, false},
@@ -151,30 +156,45 @@ int Messages(lua_State* L)
     return 1;
 }
 
+// Calls the handlers of an event. Everything runs in a protected call: a
+// Lua error while the arguments are made (out of memory) must not stop the
+// game (an unprotected error aborts).
 template <typename Push>
 void Fire(const std::string& name, Push push)
 {
     lua_State* L = State();
     if (!L)
         return;
-    lua_getfield(L, LUA_REGISTRYINDEX, kHandlers);
-    if (lua_getfield(L, -1, name.c_str()) != LUA_TTABLE) {
-        lua_pop(L, 2);
-        return;
-    }
-    lua_Integer n = lua_rawlen(L, -1);
-    for (lua_Integer i = 1; i <= n; ++i) {
-        lua_rawgeti(L, -1, i);
-        lua_getfield(L, -1, "fn");
-        lua_remove(L, -2);
-        int nargs = push(L);
-        if (PCall(L, nargs, 0, 0) != LUA_OK) {
-            const char* err = lua_tostring(L, -1);
-            ConsolePrint(LineKind::Error, name + " handler: " + (err ? err : "error"));
-            lua_pop(L, 1);
+    struct Call {
+        const std::string* name;
+        Push* push;
+    } call{&name, &push};
+    lua_pushcfunction(L, [](lua_State* L) -> int {
+        const Call& c = *static_cast<const Call*>(lua_touserdata(L, 1));
+        lua_getfield(L, LUA_REGISTRYINDEX, kHandlers);
+        if (lua_getfield(L, -1, c.name->c_str()) != LUA_TTABLE)
+            return 0;
+        lua_Integer n = lua_rawlen(L, -1);
+        for (lua_Integer i = 1; i <= n; ++i) {
+            int top = lua_gettop(L);
+            lua_rawgeti(L, -1, i);
+            lua_getfield(L, -1, "fn");
+            lua_remove(L, -2);
+            int nargs = (*c.push)(L);
+            if (PCall(L, nargs, 0, 0) != LUA_OK) {
+                const char* err = lua_tostring(L, -1);
+                ConsolePrint(LineKind::Error, *c.name + " handler: " + (err ? err : "error"));
+            }
+            lua_settop(L, top);
         }
+        return 0;
+    });
+    lua_pushlightuserdata(L, &call);
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+        const char* err = lua_tostring(L, -1);
+        ConsolePrint(LineKind::Error, name + " event: " + (err ? err : "error"));
+        lua_pop(L, 1);
     }
-    lua_pop(L, 2);
 }
 
 bool HasHandlers(const std::string& name)
@@ -198,18 +218,22 @@ void SetBool(lua_State* L, const char* field, bool v)
     lua_setfield(L, -2, field);
 }
 
-// {name, to, from, object, value, param, text}
+// {name, to, from, object, value, words, param, text}
 void PushMessage(lua_State* L, const engine::GameEvent& e)
 {
     lua_createtable(L, 0, 8);
     lua_pushstring(L, e.name.c_str());
     lua_setfield(L, -2, "name");
-    PushGeom(L, e.to);
+    if (e.script)
+        PushScriptGeom(L, e.instance);
+    else
+        PushGeom(L, e.to);
     lua_setfield(L, -2, "to");
     PushGeom(L, e.from);
     lua_setfield(L, -2, "from");
-    // the object the message is about: the param itself or what it points to
-    if (!PushGeom(L, reinterpret_cast<engine::ZGEOM*>(e.param))) {
+    // the object the message is about: the param itself (a pointer or a
+    // geom ref) or what it points to
+    if (!PushCarriedGeom(L, uint32_t(e.param))) {
         lua_pop(L, 1);
         if (e.hasValue)
             PushCarriedGeom(L, e.value);
@@ -217,8 +241,15 @@ void PushMessage(lua_State* L, const engine::GameEvent& e)
             lua_pushnil(L);
     }
     lua_setfield(L, -2, "object");
-    if (e.hasValue)
+    if (e.hasValue) {
         SetInteger(L, "value", lua_Integer(int32_t(e.value)));
+        lua_createtable(L, e.wordCount, 0);
+        for (int i = 0; i < e.wordCount; ++i) {
+            lua_pushinteger(L, lua_Integer(int32_t(e.words[i])));
+            lua_rawseti(L, -2, i + 1);
+        }
+        lua_setfield(L, -2, "words");
+    }
     SetInteger(L, "param", lua_Integer(e.param));
     if (!e.text.empty()) {
         lua_pushstring(L, e.text.c_str());
@@ -228,7 +259,8 @@ void PushMessage(lua_State* L, const engine::GameEvent& e)
 
 const char* KindName(int type)
 {
-    return type == 1 ? "enemy" : type == 2 ? "innocent" : "other";
+    // the statistics count type 2 as enemies, 1 as innocents (0x5058B0)
+    return type == 2 ? "enemy" : type == 1 ? "innocent" : "other";
 }
 
 void FireVictim(const char* event, const engine::GameEvent& e)
@@ -244,7 +276,9 @@ void FireVictim(const char* event, const engine::GameEvent& e)
     });
 }
 
-void FireGameMessage(const engine::GameEvent& e, std::set<std::string>& once)
+std::map<std::string, double> g_recent;  // `once` events fired lately
+
+void FireGameMessage(const engine::GameEvent& e)
 {
     std::string name = Lower(e.name);
     auto push = [&](lua_State* L) {
@@ -257,8 +291,16 @@ void FireGameMessage(const engine::GameEvent& e, std::set<std::string>& once)
         if (name != a.message || !HasHandlers(a.event))
             continue;
         bool flag = a.flag < 0 ? e.param != 0 : a.flag != 0;
-        if (a.once && !once.insert(std::string(a.event) + (flag ? "1" : "0")).second)
-            continue;
+        if (a.once) {
+            std::string key = std::string(a.event) + (flag ? "1" : "0");
+            for (int i = 0; i < e.wordCount && i < 3; ++i)
+                key += ":" + std::to_string(e.words[i]);
+            double now = NowMs();
+            auto it = g_recent.find(key);
+            if (it != g_recent.end() && now - it->second < 1000.0)
+                continue;
+            g_recent[key] = now;
+        }
         Fire(a.event, [&](lua_State* L) {
             PushMessage(L, e);
             if (a.field)
@@ -273,11 +315,15 @@ void FireGameMessage(const engine::GameEvent& e, std::set<std::string>& once)
 void FireGameEvents()
 {
     std::vector<engine::GameEvent> events = engine::TakeGameEvents();
-    std::set<std::string> once;
+    if (g_recent.size() > 256) {
+        double now = NowMs();
+        for (auto it = g_recent.begin(); it != g_recent.end();)
+            it = now - it->second > 2000.0 ? g_recent.erase(it) : std::next(it);
+    }
     for (const engine::GameEvent& e : events) {
         switch (e.kind) {
         case engine::GameEvent::Message:
-            FireGameMessage(e, once);
+            FireGameMessage(e);
             break;
         case engine::GameEvent::Kill:
             FireVictim("kill", e);

@@ -7,11 +7,18 @@
 // by name and vfunc 0x10C to its routines. Names: engine +0xC37 + id*4
 // (GetZMsgName 0x41EEB0), ids 1..engine +0x1C43.
 //
-// The level routine (LevelControl) classifies a killed / harmed character
-// (vfunc 0xB0) and calls vfunc 0xB4 / 0xB8 (victim, kind: 1 enemy, 2
-// innocent), the end of a mission vfunc 0xC4 (completed) / 0xC0 (failed).
+// The level routine (LevelControl) gets a killed / harmed character with its
+// kind (vfunc 0xB4 / 0xB8 (victim, kind): 2 enemy, 1 innocent, as the
+// statistics 0x5058B0 count them; 0 not counted), called by the level's
+// scripts (LevelControl_if 0x56BEB0) or its CharacterKilled message (kind
+// from vfunc 0xB0); the end of a mission vfunc 0xC4 (completed) / 0xC0
+// (failed).
 // Hitman's damage: ZHITMAN2 0x519390 (hitman, float amount), hit points at
 // +0xD72.
+//
+// Scripts also message each other by name (the script engine's delivery
+// 0x5E13A0 (instance, name, param*), ScriptEvent unpacked: the alarm, Hitman
+// spotted...): kept as messages without a sender.
 //
 // Only the messages asked for are kept (WatchMessages); everything is
 // queued and taken after the frame (TakeGameEvents): scripts never run inside
@@ -33,11 +40,18 @@ struct GameEvent {
     uintptr_t param = 0;     // Message: the param pointer itself (some messages pass a value: 0 / 1)
     bool hasValue = false;   // the dword the param points to was readable
     uint32_t value = 0;      //   (Kill / Harm: the victim, a geom ref or pointer)
+    uint32_t words[4] = {};  // the first dwords the param points to (words[0] = value)
+    int wordCount = 0;
     std::string text;        // a text the param (or what it points to) is
-    int type = 0;            // Kill / Harm: the level's classification (1 enemy, 2 innocent)
+    int type = 0;            // Kill / Harm: the kind (2 enemy, 1 innocent, 0 not counted)
     float amount = 0.0f;     // HitmanDamage: damage, health after it
     float health = 0.0f;
+    bool script = false;     // Message: one script sent to another (to: ScriptGeom(instance))
+    void* instance = nullptr;
 };
+
+// The object whose script is `instance` (null: none of the snapshot's).
+ZGEOM* ScriptGeom(void* instance, const SceneSnapshot& scene);
 
 void InstallGameEvents();
 // Lower case message names to keep; `all`: every message.

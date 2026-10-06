@@ -11,18 +11,21 @@ namespace h2::script {
 //
 // The game's events (taken after every frame, see engine/game_events.h);
 // handlers get one table:
-//   "message"   every message of the game (many!): e.name, e.to, e.from
+//   "message"   every message of the game (about 100 a second; those between
+//               scripts too, without e.from): e.name, e.to, e.from
 //               (objects or nil), e.object (the object it carries, or nil),
+//               e.words (the first 4 numbers its param points to),
 //               e.value (the number its param points to), e.param, e.text
 //   "msg:<name>" one message, e.g. "msg:hitmanspotted" (any case); the same
 //               table. h2.messages() lists the names the engine knows.
-//   "kill" / "harm"  e.victim, e.kind ("enemy", "innocent", "other": the
-//               level's rating), e.type (its number)
+//   "kill" / "harm"  e.victim, e.kind ("enemy", "innocent", "other": as the
+//               rating counts it; "other": not counted, e.g. not by Hitman)
 //   "mission"   e.result ("completed" / "failed")
 //   "hitman_damage"  e.amount, e.health, e.dead
 //   messages under names of their own (the message table plus a field):
 //   "spotted", "alarm" (e.on), "unconscious", "disguise", "pickup",
-//   "useitem", "drop", "damage", "hit", "shot" (e.silent), "door" (e.open),
+//   "useitem", "drop", "damage", "hit", "shot" (e.silent; once a second per
+//   place: everyone near hears it), "door" (e.open),
 //   "explosion", "drag" (e.started), "laptop" / "map" / "menu" /
 //   "inventory" (e.open), "cutscene" (e.started), "restart"
 void RegisterEvents();

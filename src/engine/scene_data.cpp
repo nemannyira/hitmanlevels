@@ -24,6 +24,8 @@ constexpr uintptr_t kAlloc = 0x530490;                  // engine allocation (cd
 constexpr uintptr_t kGetSceneName = 0x41B880;           // ZEngineDataBase::(void) -> const char*
 
 // an engine allocation holding a copy (the engine keeps and frees it as its own)
+constexpr uintptr_t kFree = 0x585830;  // engine free (cdecl pointer), the pair of kAlloc
+
 char* EngineBuffer(const std::vector<uint8_t>& v)
 {
     char* p = reinterpret_cast<char*(__cdecl*)(size_t)>(kAlloc)(v.size() + 16);
@@ -106,6 +108,7 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
         g_buf.assign(buf, buf + bufSize);
     // the level's characters as records of the scene (inject.h)
     const char* npcGms = nullptr;  // the GMS with them
+    char* madeGms = nullptr;       // our copy of the GMS (engine memory)
     if (!g_gms.empty() && !g_buf.empty()) {
         const char* scene = reinterpret_cast<const char*(__thiscall*)(void*)>(kGetSceneName)(self);
         std::vector<uint8_t> moreGms = g_gms, moreBuf = g_buf;
@@ -117,6 +120,7 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
             if (newGms && newBuf) {
                 gms = newGms;
                 buf = newBuf;
+                madeGms = newGms;
                 if (npcs)
                     npcGms = newGms;
                 g_gms = std::move(moreGms);
@@ -129,6 +133,10 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
     SetSceneNpcGms(npcGms);
     oCreateGeoms(self, edx, reftab, dynamics, gms, buf, reftab2);
     SetSceneNpcGms(nullptr);
+    // The loader frees its GMS right after (AllocSequence): ours goes too.
+    // The BUF copy stays: the objects' names point into it.
+    if (madeGms)
+        reinterpret_cast<void(__cdecl*)(void*)>(kFree)(madeGms);
     g_inCreateGeoms = false;
     g_valid = true;
     ParseRecords();

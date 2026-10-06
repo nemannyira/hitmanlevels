@@ -109,13 +109,16 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
     if (!g_gms.empty() && !g_buf.empty()) {
         const char* scene = reinterpret_cast<const char*(__thiscall*)(void*)>(kGetSceneName)(self);
         std::vector<uint8_t> moreGms = g_gms, moreBuf = g_buf;
-        if (AddSceneNpcs(scene ? scene : "", moreGms, moreBuf)) {
+        bool npcs = AddSceneNpcs(scene ? scene : "", moreGms, moreBuf);
+        bool start = MovePlayerStart(scene ? scene : "", moreGms, moreBuf);  // after: the records it reads
+        if (npcs || start) {
             char* newGms = EngineBuffer(moreGms);
             char* newBuf = EngineBuffer(moreBuf);
             if (newGms && newBuf) {
                 gms = newGms;
                 buf = newBuf;
-                npcGms = newGms;
+                if (npcs)
+                    npcGms = newGms;
                 g_gms = std::move(moreGms);
                 g_buf = std::move(moreBuf);
             }

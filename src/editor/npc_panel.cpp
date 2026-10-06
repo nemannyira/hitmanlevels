@@ -25,6 +25,7 @@
 #include "model.h"
 #include "npc_docs.h"
 #include "npcs.h"
+#include "playtest.h"
 #include "scene_panel.h"
 
 namespace h2::editor {
@@ -885,7 +886,7 @@ void DrawTarget()
     if (IsPendingNpc(actor))
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f),
                            "Not real yet: it gets its behaviour, can be bumped into and shot when the map "
-                           "loads again (Save and reload above).");
+                           "loads again (Test).");
     std::string current = g_targetHasBehaviour ? engine::ScriptShortName(g_targetEdit.name) : "";
     ImGui::Text("Behaviour: %s", BehaviourLabel(current).c_str());
     if (placed && g_targetHasBehaviour && !IsPortableBehaviour(g_targetEdit)) {
@@ -1145,14 +1146,13 @@ void DrawPanel()
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f),
                            "%d placed character%s not real yet (no behaviour, nothing bumps into %s, %s cannot be "
-                           "shot): the map makes %s when it loads again.",
+                           "shot): the map makes %s when it loads again (Test).",
                            pending, pending == 1 ? " is" : "s are", pending == 1 ? "it" : "them",
                            pending == 1 ? "it" : "they", pending == 1 ? "it" : "them");
         ImGui::PopTextWrapPos();
-        if (ImGui::Button("Save and reload the map", ImVec2(-1, 0))) {
-            std::string err;
+        if (ImGui::Button("Test now (save and reload)", ImVec2(-1, 0))) {
             g_target = nullptr;
-            g_message = ReloadLevelMap(&err) ? "loading the map again..." : "not reloaded: " + err;
+            TestLevel();
         }
     }
 

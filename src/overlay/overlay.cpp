@@ -44,6 +44,7 @@ std::vector<Menu> g_menus;
 bool g_showDemo = false;
 bool g_panelsHidden = false;  // Tab: game view only (toolbar stays)
 std::string g_selectTab;      // left tab to select on the next frame
+bool (*g_closeGuard)();       // SetCloseGuard
 
 constexpr ImGuiWindowFlags kDockedFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
                                           ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus;
@@ -56,7 +57,8 @@ bool IsInputMessage(UINT msg)
 LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_KEYDOWN && wp == static_cast<WPARAM>(g_config.editorKey) && !(lp & (1 << 30))) {
-        SetOpen(!g_open);
+        if (!g_open || !g_closeGuard || g_closeGuard())
+            SetOpen(!g_open);
         return 0;
     }
     if (g_ready && g_open) {
@@ -424,6 +426,8 @@ bool IsOpen() { return g_open; }
 void AddAlwaysDraw(void (*draw)()) { g_always.push_back(draw); }
 ImFont* MenuFont() { return g_menuFont; }
 void SetExclusive(void (*draw)()) { g_exclusive = draw; }
+
+void SetCloseGuard(bool (*guard)()) { g_closeGuard = guard; }
 
 void SetOpen(bool open)
 {

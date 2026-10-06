@@ -17,6 +17,9 @@ void OnDeviceReleased();
 
 bool IsOpen();
 void SetOpen(bool open);
+// Asked when the editor key would close the editor: false keeps it open
+// (e.g. the guard asks the user first).
+void SetCloseGuard(bool (*guard)());
 
 // Fixed editor layout:
 //   main menu bar (File / Edit / View / Help)

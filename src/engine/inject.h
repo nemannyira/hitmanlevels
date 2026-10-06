@@ -38,6 +38,13 @@ bool IsSceneNpcRecord(int index);
 void InstallSceneNpcs();
 // scene_data.cpp: the GMS CreateGeoms reads (nullptr after).
 void SetSceneNpcGms(const void* gms);
+// Hitman starts at `pos` facing `mat` (world; rows forward, up, right) the
+// next time the scene `scene` ("C1-1\C1-1__MAIN") loads, once.
+void SetPlayerStart(const std::string& scene, const float pos[3], const float mat[9]);
+// scene_data.cpp: the GMS copy of the loading scene `scene` gets Hitman's
+// start (his group, the parent of the ZHITMAN2 record: its ancestors are
+// at the origin on every level); true when it changed.
+bool MovePlayerStart(const std::string& scene, std::vector<uint8_t>& gms, const std::vector<uint8_t>& buf);
 // scene_data.cpp: the GMS / BUF copies of the loading scene `scene` get the
 // characters; true when they changed.
 bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vector<uint8_t>& buf);

@@ -16,6 +16,7 @@
 #include "editor/freecam.h"
 #include "editor/highlight.h"
 #include "editor/level.h"
+#include "editor/playtest.h"
 #include "editor/mission.h"
 #include "editor/music.h"
 #include "editor/launcher.h"
@@ -113,6 +114,7 @@ void Init()
     h2::editor::InstallNpcs();
     h2::editor::InstallNpcPanel();
     h2::editor::InstallLevelPanel();
+    h2::editor::InstallPlayTest();
     h2::editor::InstallMission();
     h2::editor::InstallMusic();
     h2::editor::InstallLauncher();

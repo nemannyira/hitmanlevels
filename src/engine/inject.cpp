@@ -48,6 +48,12 @@ int NodeKind(uint32_t cls)
 std::function<std::vector<SceneNpc>(const std::string&)> g_provider;
 std::map<std::string, int> g_made;  // name -> actor record (scene loaded last)
 std::set<uint32_t> g_groups;        // offsets of the new groups' records in the GMS
+struct PlayerStart {
+    std::string scene;  // lower case
+    float pos[3], mat[9];
+};
+std::vector<PlayerStart> g_start;   // for the next load (SetPlayerStart)
+constexpr uint32_t kHitmanClass = 0x2003E8;  // ZHITMAN2
 const uint8_t* g_gms = nullptr;     // the GMS CreateGeoms reads (while it does)
 
 constexpr uintptr_t kTakeNodeCall = 0x41D056;  // CreateGeoms: kind = 0x5BE500(class, flags)
@@ -181,6 +187,49 @@ void InstallSceneNpcs()
 }
 
 void SetSceneNpcGms(const void* gms) { g_gms = static_cast<const uint8_t*>(gms); }
+
+namespace {
+std::string LowerCase(std::string s)
+{
+    for (char& c : s)
+        c = char(tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+} // namespace
+
+void SetPlayerStart(const std::string& scene, const float pos[3], const float mat[9])
+{
+    PlayerStart s;
+    s.scene = LowerCase(scene);
+    memcpy(s.pos, pos, sizeof(s.pos));
+    memcpy(s.mat, mat, sizeof(s.mat));
+    g_start.assign(1, s);
+}
+
+bool MovePlayerStart(const std::string& scene, std::vector<uint8_t>& gms, const std::vector<uint8_t>& buf)
+{
+    if (g_start.empty())
+        return false;
+    PlayerStart s = g_start.front();
+    if (s.scene.empty() || LowerCase(scene).find(s.scene) == std::string::npos)
+        return false;
+    g_start.clear();  // once
+    std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
+    uint32_t list = U32(gms, 0);
+    for (size_t i = 0; i < recs.size(); ++i) {
+        if (recs[i].classId != kHitmanClass || recs[i].parent < 0)
+            continue;
+        size_t group = size_t(U32(gms, list + 4 + size_t(recs[i].parent) * 8) & 0xFFFFFF) * 4;
+        uint32_t mat = Append(gms, s.mat, sizeof(s.mat));
+        uint32_t pos = Append(gms, s.pos, sizeof(s.pos));
+        Put(gms, group + 0x04, mat);
+        Put(gms, group + 0x08, pos);
+        Log("scene: Hitman starts at (%.0f %.0f %.0f)", s.pos[0], s.pos[1], s.pos[2]);
+        return true;
+    }
+    Log("scene: no Hitman in %s, he starts where the level has him", scene.c_str());
+    return false;
+}
 
 bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vector<uint8_t>& buf)
 {

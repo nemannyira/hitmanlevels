@@ -19,6 +19,7 @@
 #include "model.h"
 #include "mission.h"
 #include "npc_panel.h"
+#include "playtest.h"
 #include "placement.h"
 #include "scene_panel.h"
 
@@ -344,6 +345,10 @@ void DrawToolbar()
     ImGui::TextDisabled("|");
     ImGui::SameLine();
     DrawSaveControl();
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+    DrawPlayTestControl();
     if (!g_message.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("  %s", g_message.c_str());

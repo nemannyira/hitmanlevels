@@ -466,9 +466,19 @@ bool ActorAt(ZGEOM* actor, float mat[9], float pos[3])
 
 void GuardFrame()
 {
+    static ULONGLONG last;
+    ULONGLONG now = GetTickCount64(), passed = last ? now - last : 0;
+    last = now;
     if (g_guards.empty())
         return;
-    ULONGLONG now = GetTickCount64();
+    // the scene paused (the editor's edit mode, the game's menu): its time does not count
+    char* sys = *reinterpret_cast<char**>(game::g_pSysInterface);
+    char* engine = sys ? *reinterpret_cast<char**>(sys + 0x98) : nullptr;
+    if (engine && engine[0xB9C]) {
+        for (StartGuard& g : g_guards)
+            g.until += passed;
+        return;
+    }
     for (size_t i = 0; i < g_guards.size();) {
         StartGuard& g = g_guards[i];
         float mat[9], pos[3];

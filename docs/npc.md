@@ -173,7 +173,7 @@ A character made while the game runs (SpawnNpc) is bumped into by other
 characters but not by Hitman, and cannot be shot. The level's characters
 are therefore added to the scene file while it loads (src/engine/inject.cpp):
 the editor's Place shows a character without behaviour or collision until
-the map is loaded again (NPCs panel: Save and reload the map); then it is
+the map is loaded again (Test in the toolbar); then it is
 one of the scene's and gets its behaviour. Another kind of behaviour for a
 placed character also waits for the next load (a running script cannot be
 replaced). Lua's h2.npc still makes a character at once (NpcSpec::now).
@@ -185,3 +185,20 @@ game's plain civilian `scripts\AllLevels\Std2\Neutral2.sdl` (HelpPoints,
 SafePoints) when the scene's ZGF has the class (its state Neutral2.normal).
 Checked offline: C1-1 offers BaseGuard and Neutral2; behaviours like Chef,
 PostMan (its Flowers), DeliveryBoy (crates, van) are not offered.
+
+## Edit mode and Test (src/editor/playtest.cpp)
+
+While the editor is open on a map the world stands still: the engine's own
+`ZEngineDataBase::PauseScene(true)` (0x41B890, flag engine+0xB9C). MainLoop
+then skips the scripts (g_pScriptDll vfunc 0x9C) and TimerUpdate runs only
+the timers flagged 0x100; FrameUpdate (the editor's camera) still runs. The
+game's own pause is left alone (only a pause the editor made is undone).
+
+Test saves the level and loads its map again, then closes the editor.
+Hitman starts where he is, where the camera looks (pick at the screen
+centre) or at the level's start: his start is his group's record (parent
+of the ZHITMAN2 record, class 0x2003E8; its ancestors are at the origin on
+every level, checked offline), whose matrix and position are replaced in the
+GMS copy while the scene loads (inject.cpp MovePlayerStart), so the engine
+puts him there itself (rooms included). Closing the editor while placed
+characters are not made yet asks whether to test first.

@@ -75,6 +75,48 @@ Proposed, in order of value:
    music moods (done: tracks per zone).
 8. **Safety** (done): text-only load, 3 s per call, 256 MB, no io / os.
 
+### Game events for Lua (where to hook them)
+
+Now: scene, frame, death (polled 4 times a second), objective.
+
+* **Every message** goes through `ZGEOM::SendMessage` (vfunc 0x120 =
+  0x43CBE0, the same function in 119 geom vtables, the characters' too):
+  `this` = sender, args (receiver, msg id, param*). It calls the receiver's
+  vfunc 0x15C (HandleMessage: 0x43CFE0 hands it to the geom's script,
+  `g_pScriptDll` vfunc 0x5C = 0x5D4CE0, **by name**) and vfunc 0x10C (the
+  geom's events / routines, 0x43C6E0). Names: `GetZMsgName` 0x41EEB0
+  (engine +0xC37 + id*4); ~250 engine messages (MSG_DAMAGE, ProjectileHit,
+  HitObject, MSG_DRAGSTART / DRAGEND, MSG_PICKUPITEM, MSG_DROPITEM,
+  MSG_EXPLODE, msg_sound_shot / silentshot / footstep / die / door ...) and
+  ~550 script messages registered in 0x568850 (hitmanspotted,
+  HitmanDetected, alarm, alarmraised, enteralarmstate, leavealarmstate,
+  characterkilled, CharacterUnconscious, ActorDead, hitman_changedclothes,
+  hitmanaiming, weapondetected, dooropen / doorclose, cutsequence_start /
+  end, msg_lightswitchtoggled, windowbroken, restrictedzoneenter ...).
+* **The level routine** (handler 0x504960, vtable slot 0x34 of the level
+  routine; per level classes call it): CharacterKilled -> vfunc 0xB0
+  classifies the victim, vfunc 0xB4 (base 0x505530: type 1 enemy, 2
+  innocent; counts for the rating, then sends ScriptCharacterKilled),
+  CharacterHarmed -> 0xB8 (base 0x505600), MissionFailed -> 0xC0,
+  MissionCompleted -> 0xC4, pick up / use item / change clothes
+  (levelcontrolnotify*) -> 0x84 / 0x88 / 0x8C, BriefingMenuOpened,
+  IngameMenuOpened, IngameMapOpened, IngameInventoryOpened, RestartLevel.
+* Characters (ZTRACKLNKHM2 HandleMessage 0x508950) handle MSG_DAMAGE,
+  ProjectileHit, HitObject, MSG_DRAGSTART / DRAGEND, MSG_CHANGECLOTHES,
+  Hitman_ChangedClothes natively, the rest goes on to their script.
+
+Plan: hook 0x43CBE0; a message is queued only when Lua has a handler for its
+id (a bit set: one test per message), with receiver and sender as refs;
+the queue is fired after the frame (no Lua inside the engine's dispatch, no
+re-entrancy, deleted objects are just not found). Lua: `h2.on("message",
+fn(name, to, from))`, `h2.on("msg:hitmanspotted", fn(to, from))`, and
+decoded events: kill (victim, enemy / innocent, from 0x505530), harm,
+unconscious, spotted, alarm (on / off), disguise, pickup / use / drop,
+damage (Hitman: 0x519390), shot / noise, door, explosion, body dragged,
+mission completed / failed, laptop / map / menu, cut scene. Not messages:
+zones, timers, keys, save / load. To check in the game: how many messages
+a second, and what each decoded event's param is (ref or pointer).
+
 ## 3. Maps of their own
 
 * The engine loads a scene by path: a renamed copy of a map

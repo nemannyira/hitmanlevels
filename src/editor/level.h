@@ -136,6 +136,9 @@ LevelDocument& CurrentLevel();
 void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectState& after);
 
 bool SaveLevel(std::string* error = nullptr);
+// Saves the level and loads its map again: the characters placed since are
+// made with the scene then (npcs.h CreateNpc). False when it is not saved.
+bool ReloadLevelMap(std::string* error = nullptr);
 // The edits so far become a level of that name (its own folder in Mods) and are saved.
 bool SaveLevelAs(const std::string& name, std::string* error = nullptr);
 // Toolbar: the level's name, unsaved mark and Save / Save as; Ctrl+S.

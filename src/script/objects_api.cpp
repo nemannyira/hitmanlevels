@@ -438,6 +438,7 @@ int Npc(lua_State* L)
         spec.hasBehaviour = true;
     }
     ApplyParams(L, 7, spec.behaviour);
+    spec.now = true;  // the game runs: it acts at once
     std::string err;
     engine::ZGEOM* g = editor::CreateNpc(spec, &err);
     if (!g)

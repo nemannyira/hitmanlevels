@@ -225,16 +225,26 @@ void ChooseNewBehaviour(const std::string& name)
     SetNewBehaviour(s);
 }
 
+// A behaviour that works anywhere for a character of that kind: its own when
+// it does, else a guard's for a guard, the plain civilian for the others.
 void ChooseType(int t)
 {
     g_type = t;
     engine::ScriptInfo info;
-    if (AuthoredBehaviour(g_types[t].record, info)) {
+    bool authored = AuthoredBehaviour(g_types[t].record, info);
+    if (authored && IsPortableBehaviour(info)) {
         g_newBehaviour = engine::ScriptShortName(info.name);
         SetNewBehaviour(info);  // this character's own settings
-    } else {
-        ChooseNewBehaviour("");
+        return;
     }
+    bool guard = IsGuardBehaviour(authored ? engine::ScriptShortName(info.name) : g_types[t].model);
+    std::string pick;
+    for (const std::string& b : g_behaviourNames)
+        if (pick.empty() && guard && IsGuardBehaviour(b))
+            pick = b;
+    if (pick.empty() && !guard)
+        pick = CivilianBehaviour();
+    ChooseNewBehaviour(pick);
 }
 
 // The start point references of `moves` that `s` still has get a new point at
@@ -872,8 +882,19 @@ void DrawTarget()
         }
     }
 
+    if (IsPendingNpc(actor))
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f),
+                           "Not real yet: it gets its behaviour, can be bumped into and shot when the map "
+                           "loads again (Save and reload above).");
     std::string current = g_targetHasBehaviour ? engine::ScriptShortName(g_targetEdit.name) : "";
     ImGui::Text("Behaviour: %s", BehaviourLabel(current).c_str());
+    if (placed && g_targetHasBehaviour && !IsPortableBehaviour(g_targetEdit)) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f),
+                           "A behaviour of this level's own character: it uses objects of the level (items, "
+                           "doors, other characters) and may act oddly. Choose another one below.");
+        ImGui::PopTextWrapPos();
+    }
     if (!current.empty()) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", DescribeBehaviour(current).c_str());
@@ -892,7 +913,10 @@ void DrawTarget()
         }
         ImGui::SameLine();
         ImGui::BeginDisabled(g_changeTo.empty());
-        if (ImGui::Button("Change")) {
+        bool change = ImGui::Button("Change");
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("The character gets it when the map loads again");
+        if (change) {
             int points = 0;
             if (g_changeTo == "-") {
                 g_targetHasBehaviour = false;
@@ -1117,6 +1141,20 @@ void DrawPanel()
                           "and the places in their behaviour (guard point, protect point, ...)");
     if (!g_message.empty())
         ImGui::TextWrapped("%s", g_message.c_str());
+    if (int pending = PendingNpcCount()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f),
+                           "%d placed character%s not real yet (no behaviour, nothing bumps into %s, %s cannot be "
+                           "shot): the map makes %s when it loads again.",
+                           pending, pending == 1 ? " is" : "s are", pending == 1 ? "it" : "them",
+                           pending == 1 ? "it" : "they", pending == 1 ? "it" : "them");
+        ImGui::PopTextWrapPos();
+        if (ImGui::Button("Save and reload the map", ImVec2(-1, 0))) {
+            std::string err;
+            g_target = nullptr;
+            g_message = ReloadLevelMap(&err) ? "loading the map again..." : "not reloaded: " + err;
+        }
+    }
 
     if (g_target)
         DrawTarget();

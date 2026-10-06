@@ -19,10 +19,21 @@ std::vector<int> NpcRecords();
 std::string NpcModel(int record);
 // The behaviour the record has in the scene file (runtime refs); false: none.
 bool AuthoredBehaviour(int record, engine::ScriptInfo& out);
-// Script classes used in the scene: short names ("BaseGuard"), sorted.
+// The behaviours a placed character can have: the script classes used in the
+// scene that work anywhere (IsPortableBehaviour), and the game's plain
+// civilian (Neutral2) when the scene has it. Short names ("BaseGuard"), sorted.
 std::vector<std::string> BehaviourNames();
-// The parameters a script class has at its first use in the scene (runtime refs).
+// The parameters a script class has at its first use in the scene (runtime
+// refs); Neutral2's as the game's characters declare them.
 bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out);
+// Whether a behaviour works anywhere: its references are only places and
+// lists the editor can give it (guard point, route, help and safe points,
+// weapon, guard group, alarm, level control), none to an object of its level
+// (an item it takes, a door, another character, a stove).
+bool IsPortableBehaviour(const engine::ScriptInfo& s);
+// The game's plain civilian (AllLevels/Std2/Neutral2: stands, panics and runs
+// for help at trouble), "" when the scene's scripts do not have it.
+std::string CivilianBehaviour();
 // Actor record by model name, group name ("BodyguardMafia_Bedroom_00"),
 // record index as text, or an object path of a scene NPC; -1 if none.
 int FindNpcRecord(const std::string& what);
@@ -47,17 +58,28 @@ struct NpcSpec {
     std::string importName;
     uint32_t outfitMesh = 0;  // that character's clothes on Hitman / body without them, here
     uint32_t nudeMesh = 0;
+    // made now with its behaviour (a script's character while the game runs:
+    // nothing but other characters bump into it), not shown until the map
+    // loads again
+    bool now = false;
 };
+// A character placed now is not yet one of the scene's: it only shows where
+// it will be (no behaviour, nothing bumps into it, it cannot be shot). The
+// level's characters are made with the scene when it loads (engine/inject.h):
+// it is a real one after the map is loaded again, with its behaviour.
 engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error = nullptr);
 bool IsPlacedNpc(engine::ZGEOM* actor);
+// A placed character that is as it should be only after the map is loaded
+// again (placed now, or its behaviour changed), and how many there are.
+bool IsPendingNpc(engine::ZGEOM* actor);
+int PendingNpcCount();
 const std::vector<engine::ZGEOM*>& PlacedNpcs();
 
 // Changes an NPC's behaviour: the same kind of behaviour gets the new settings
-// in place (any character); another kind (or none) makes a placed character
-// again (LastReplacedNpc() is the new object). The level's own characters
-// keep their kind of behaviour.
+// in place (any character); a placed character's other kind (or none) is
+// kept for the next load (IsPendingNpc). The level's own characters keep
+// their kind of behaviour.
 bool SetNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, std::string* error = nullptr);
-engine::ZGEOM* LastReplacedNpc();
 // Removes a character the editor placed (hidden and moved far away: actors
 // cannot be destroyed while the scene runs).
 bool DeleteNpc(engine::ZGEOM* actor, std::string* error = nullptr);

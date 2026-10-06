@@ -5,12 +5,14 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 
 #include "../engine/imports.h"
 #include "../engine/inject.h"
 #include "../engine/lists.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
+#include "../engine/zip.h"
 #include "../log.h"
 #include "../scene.h"
 #include "level.h"
@@ -23,8 +25,9 @@ std::vector<engine::ZGEOM*> g_placed;
 std::map<engine::ZGEOM*, engine::ScriptInfo> g_behaviour;  // set by the editor (runtime refs)
 std::map<engine::ZGEOM*, bool> g_noBehaviour;               // stopped by the editor
 std::map<engine::ZGEOM*, int> g_placedRecord;               // record a placed NPC copies
+std::set<engine::ZGEOM*> g_pending;                         // as it should be after the next load
+std::set<engine::ZGEOM*> g_now;                             // made with NpcSpec::now (scripts)
 int g_counter;
-engine::ZGEOM* g_replaced;  // the character SetNpcBehaviour made last
 std::vector<engine::ZGEOM*> g_removed;  // placed characters removed (hidden, far below)
 
 std::string Lower(std::string s)
@@ -137,6 +140,37 @@ void OnScene(const std::string&)
     g_behaviour.clear();
     g_noBehaviour.clear();
     g_placedRecord.clear();
+    g_pending.clear();
+    g_now.clear();
+}
+
+constexpr const char* kCivilian = "scripts\\AllLevels\\Std2\\Neutral2.sdl";
+
+// Whether the loaded scene's compiled scripts (its ZGF) have the class (its
+// state "<class>.normal"); read once per scene.
+bool SceneHasScriptClass(const std::string& cls)
+{
+    static std::string scene;
+    static std::vector<uint8_t> zgf;
+    if (scene != CurrentScene()) {
+        scene = CurrentScene();
+        zgf.clear();
+        std::string level = scene.substr(0, scene.find('\\'));
+        std::vector<uint8_t> packed;
+        std::string err;
+        if (engine::ReadZipEntry(GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP",
+                                 "SCENES/" + level + "/" + level + "__MAIN.ZGF", packed, &err) &&
+            packed.size() > 9) {
+            uint32_t size;
+            memcpy(&size, packed.data(), 4);
+            if (size > (64u << 20) || !engine::Inflate(packed.data() + 9, packed.size() - 9, zgf, size))
+                zgf.clear();
+        }
+        if (zgf.empty())
+            Log("npc: scripts of %s not read (%s)", scene.c_str(), err.c_str());
+    }
+    std::string state = cls + ".normal";
+    return std::search(zgf.begin(), zgf.end(), state.begin(), state.end()) != zgf.end();
 }
 
 } // namespace
@@ -183,6 +217,27 @@ bool AuthoredBehaviour(int record, engine::ScriptInfo& out)
     return true;
 }
 
+bool IsPortableBehaviour(const engine::ScriptInfo& s)
+{
+    static const char* const kAllowed[] = {
+        "helppoints", "safepoints", "weapontemplate", "m_arbiter", "guardpoint", "protectpoint",
+        "m_rdistractpoint", "m_panicarbiter", "waypoints", "waypointlist", "patrolpointlist", "pausepoints",
+        "m_rstartpos", "rlevelcontrol", "m_alarmlist", "alarmpoint", "alarmswitches", "ralarmrelay", "ralarmpos"};
+    for (const engine::ScriptParam& p : s.params) {
+        if (p.type != engine::ParamType::Ref)
+            continue;
+        std::string n = Lower(p.name);
+        if (std::none_of(std::begin(kAllowed), std::end(kAllowed), [&](const char* a) { return n == a; }))
+            return false;
+    }
+    return true;
+}
+
+std::string CivilianBehaviour()
+{
+    return SceneHasScriptClass("Neutral2") ? engine::ScriptShortName(kCivilian) : "";
+}
+
 std::vector<std::string> BehaviourNames()
 {
     std::vector<std::string> names;
@@ -190,12 +245,14 @@ std::vector<std::string> BehaviourNames()
         if (!r.script || r.classId != 0x2003E9)
             continue;
         engine::ScriptInfo info;
-        if (!engine::ParseScript(r.script, info))
+        if (!engine::ParseScript(r.script, info) || !IsPortableBehaviour(info))
             continue;
         std::string n = engine::ScriptShortName(info.name);
         if (std::find(names.begin(), names.end(), n) == names.end())
             names.push_back(n);
     }
+    if (std::string c = CivilianBehaviour(); !c.empty() && std::find(names.begin(), names.end(), c) == names.end())
+        names.push_back(c);
     std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) { return Lower(a) < Lower(b); });
     return names;
 }
@@ -213,6 +270,24 @@ bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out)
             out = Runtime(info);
             return true;
         }
+    }
+    if (want == Lower(kCivilian) || want == Lower(engine::ScriptShortName(kCivilian))) {
+        // its part as its subclasses (Maid, Pedestrian2, ...) declare it
+        out = {};
+        out.name = kCivilian;
+        auto add = [&](const char* type, const char* name, engine::ParamType t, uint32_t bits) {
+            engine::ScriptParam p;
+            p.typeName = type;
+            p.name = name;
+            p.type = t;
+            p.bits = bits;
+            out.params.push_back(p);
+        };
+        add("LONG", "m_iHitpoints", engine::ParamType::Long, 20);
+        add("LONG", "Mute", engine::ParamType::Long, 0);
+        add("ZGEOMREF", "HelpPoints", engine::ParamType::Ref, 0);
+        add("ZGEOMREF", "SafePoints", engine::ParamType::Ref, 0);
+        return true;
     }
     return false;
 }
@@ -314,12 +389,23 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
             Log("npc %s: the scene's own (made while loading)", s.name.c_str());
             return made;
         }
+    // not one of the scene's yet: it shows where it will be (CreateNpc in npcs.h)
+    if (!spec.now) {
+        s.script.clear();
+        s.collides = false;
+    }
     engine::ZGEOM* npc = engine::SpawnNpc(s, error);
     if (!npc)
         return nullptr;
-    if (!s.script.empty())
-        engine::KeepStartPlace(npc, s.pos, s.mat);
     AdoptEngineOwned(npc);
+    if (spec.now) {
+        if (!s.script.empty())
+            engine::KeepStartPlace(npc, s.pos, s.mat);
+        g_now.insert(npc);
+    } else {
+        Log("npc %s: shown until the map is loaded again", s.name.c_str());
+        g_pending.insert(npc);
+    }
     g_placed.push_back(npc);
     g_placedRecord[npc] = spec.record;
     if (spec.hasBehaviour)
@@ -327,6 +413,16 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
     else
         g_noBehaviour[npc] = true;
     return npc;
+}
+
+bool IsPendingNpc(engine::ZGEOM* actor) { return g_pending.count(actor) != 0; }
+
+int PendingNpcCount()
+{
+    int n = 0;
+    for (engine::ZGEOM* g : PlacedNpcs())
+        n += IsPendingNpc(g) ? 1 : 0;
+    return n;
 }
 
 bool IsPlacedNpc(engine::ZGEOM* actor)
@@ -355,6 +451,8 @@ bool DeleteNpc(engine::ZGEOM* actor, std::string* error)
     g_behaviour.erase(actor);
     g_noBehaviour.erase(actor);
     g_placedRecord.erase(actor);
+    g_pending.erase(actor);
+    g_now.erase(actor);
     engine::SetActorCollides(actor, false);
     Transform t = GetTransform(actor);
     float away[3] = {t.pos[0], t.pos[1] - 50000.0f, t.pos[2]};
@@ -424,49 +522,49 @@ bool SetNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, 
         return fail("no character");
     engine::ScriptInfo current;
     bool has = CurrentBehaviour(actor, current);
-    // Same behaviour: its settings are written into the running script.
-    // Replacing a running script leaves the guard groups and the level
-    // control holding the old one (crash), so another behaviour means a new
-    // character - only for the ones the editor placed.
-    if (behaviour && has && engine::ScriptInstance(actor) &&
-        Lower(engine::ScriptShortName(current.name)) == Lower(engine::ScriptShortName(behaviour->name))) {
+    bool sameKind = behaviour && has &&
+                    Lower(engine::ScriptShortName(current.name)) == Lower(engine::ScriptShortName(behaviour->name));
+    // Same behaviour, running: its settings are written into the script.
+    if (sameKind && !IsPendingNpc(actor) && engine::ScriptInstance(actor)) {
         int n = engine::SetScriptVariables(actor, *behaviour, error);
         Log("npc %p: %d settings of %s written", static_cast<void*>(actor), n, current.name.c_str());
         g_behaviour[actor] = *behaviour;
         return true;
     }
+    // Replacing a running script leaves the guard groups and the level
+    // control holding the old one (crash): a placed character gets another
+    // one (or its first one) when the map loads again.
     if (!IsPlacedNpc(actor))
         return fail("the level's own characters keep their kind of behaviour (only its settings can change); "
                     "place a new character for another behaviour");
-    // a placed character: made again with the new behaviour
-    NpcSpec spec;
-    spec.record = NpcRecordOf(actor);
-    spec.transform = GetTransform(actor);
-    // a body of another level stays
-    const auto& records = engine::SceneRecords();
-    uint32_t body = engine::MeshOf(actor);
-    if (spec.record >= 0 && size_t(spec.record) < records.size() && body && body != records[spec.record].mesh) {
-        spec.mesh = body;
-        for (const ImportedBody& b : ImportedBodies())  // and its outfits
-            if (b.mesh == body) {
-                spec.importLevel = b.level;
-                spec.importMesh = b.sourceMesh;
-                spec.importName = b.name;
-                spec.outfitMesh = b.outfit;
-                spec.nudeMesh = b.nude;
-            }
+    if (g_now.count(actor)) {  // a script's character: made again now
+        NpcSpec spec;
+        spec.record = NpcRecordOf(actor);
+        spec.transform = GetTransform(actor);
+        spec.mesh = engine::MeshOf(actor);
+        const auto& records = engine::SceneRecords();
+        if (spec.record < 0 || size_t(spec.record) >= records.size() || spec.mesh == records[spec.record].mesh)
+            spec.mesh = 0;
+        spec.hasBehaviour = behaviour != nullptr;
+        if (behaviour)
+            spec.behaviour = *behaviour;
+        spec.name = engine::SafeString(actor->name);
+        spec.now = true;
+        std::string err;
+        if (!DeleteNpc(actor, &err) || !CreateNpc(spec, &err))
+            return fail(err);
+        return true;
     }
-    spec.hasBehaviour = behaviour != nullptr;
-    if (behaviour)
-        spec.behaviour = *behaviour;
-    spec.name = engine::SafeString(actor->name);
-    std::string err;
-    if (!DeleteNpc(actor, &err))
-        return fail(err);
-    engine::ZGEOM* again = CreateNpc(spec, &err);
-    if (!again)
-        return fail(err);
-    g_replaced = again;
+    if (behaviour) {
+        g_behaviour[actor] = *behaviour;
+        g_noBehaviour.erase(actor);
+    } else {
+        g_behaviour.erase(actor);
+        g_noBehaviour[actor] = true;
+    }
+    g_pending.insert(actor);
+    Log("npc %p: behaviour %s from the next load", static_cast<void*>(actor),
+        behaviour ? behaviour->name.c_str() : "(none)");
     return true;
 }
 
@@ -484,7 +582,8 @@ bool CurrentBehaviour(engine::ZGEOM* actor, engine::ScriptInfo& out)
         if (rec < 0 || !AuthoredBehaviour(rec, out))
             return false;
     }
-    engine::GetScriptVariables(actor, out);  // what the running script has now
+    if (!IsPendingNpc(actor))
+        engine::GetScriptVariables(actor, out);  // what the running script has now
     return true;
 }
 
@@ -585,8 +684,6 @@ void LoadParams(engine::ScriptInfo& s, const std::vector<ParamValue>& values)
         }
     }
 }
-
-engine::ZGEOM* LastReplacedNpc() { return g_replaced; }
 
 void InstallNpcs() { OnScenePushed(OnScene); }
 

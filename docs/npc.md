@@ -166,3 +166,22 @@ watches a placed character while its behaviour starts (`KeepStartPlace` in
 src/engine/npc.cpp): for 10 s (at least 120 frames) a jump of more than 250
 units in one frame, or being away from where it was put on the first frame,
 puts it back there (up to 10 times); it walks its route from there.
+
+## Placed characters are made with the scene (2026-10)
+
+A character made while the game runs (SpawnNpc) is bumped into by other
+characters but not by Hitman, and cannot be shot. The level's characters
+are therefore added to the scene file while it loads (src/engine/inject.cpp):
+the editor's Place shows a character without behaviour or collision until
+the map is loaded again (NPCs panel: Save and reload the map); then it is
+one of the scene's and gets its behaviour. Another kind of behaviour for a
+placed character also waits for the next load (a running script cannot be
+replaced). Lua's h2.npc still makes a character at once (NpcSpec::now).
+
+Only behaviours that work anywhere are offered (IsPortableBehaviour: their
+references are guard / protect / distract points, routes, help and safe
+points, weapon template, guard group, alarm and level control), and the
+game's plain civilian `scripts\AllLevels\Std2\Neutral2.sdl` (HelpPoints,
+SafePoints) when the scene's ZGF has the class (its state Neutral2.normal).
+Checked offline: C1-1 offers BaseGuard and Neutral2; behaviours like Chef,
+PostMan (its Flowers), DeliveryBoy (crates, van) are not offered.

@@ -378,6 +378,27 @@ bool AddNpcEntry(const LevelNpc& n)
     return true;
 }
 
+// The behaviour of a placed character as `n` has it (undo, redo).
+bool SetNpcEntryBehaviour(const LevelNpc& n)
+{
+    engine::ZGEOM* g = LiveNpc(n.id);
+    LevelNpc* e = nullptr;
+    for (auto& o : g_level.npcs)
+        if (o.id == n.id)
+            e = &o;
+    if (!g || !e)
+        return false;
+    engine::ScriptInfo s;
+    bool has = n.hasBehaviour && BehaviourFromSaved(n.behaviour, n.params, s);
+    if (!SetNpcBehaviour(g, has ? &s : nullptr))
+        return false;
+    e->hasBehaviour = n.hasBehaviour;
+    e->behaviour = n.behaviour;
+    e->params = n.params;
+    g_level.dirty = true;
+    return true;
+}
+
 bool RemoveNpcEntry(const std::string& id)
 {
     if (engine::ZGEOM* g = LiveNpc(id))
@@ -992,6 +1013,24 @@ void WriteMainScript(const std::string& name)
     }
 }
 
+bool ReloadLevelMap(std::string* error)
+{
+    if (g_level.folder.empty() || g_level.baseScene.empty()) {
+        if (error)
+            *error = "save the level first (it needs a name)";
+        return false;
+    }
+    if (!SaveLevel(error))
+        return false;
+    if (!RequestScene(g_level.baseScene)) {
+        if (error)
+            *error = "the game did not load the map";
+        return false;
+    }
+    Log("level '%s': saved, map %s loading again", g_level.name.c_str(), g_level.baseScene.c_str());
+    return true;
+}
+
 bool SaveLevelAs(const std::string& name, std::string* error)
 {
     if (name.empty()) {
@@ -1291,18 +1330,14 @@ engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* 
         LevelNpc before = *e;
         if (!SetNpcBehaviour(actor, behaviour, error))
             return nullptr;
-        engine::ZGEOM* now = actor;
-        if (!IsLive(actor) || IsRemovedNpc(actor))  // made again with another behaviour
-            now = LastReplacedNpc();
-        g_liveNpcs[e->id] = now;
+        engine::ZGEOM* now = actor;  // (another kind of behaviour: from the next load)
         e->hasBehaviour = behaviour != nullptr;
         e->behaviour = behaviour ? behaviour->name : "";
         e->params = behaviour ? SaveParams(*behaviour) : std::vector<ParamValue>{};
         LevelNpc after = *e;
         g_level.dirty = true;
-        PushAction("character behaviour",
-                   [before] { return RemoveNpcEntry(before.id) && AddNpcEntry(before); },
-                   [after] { return RemoveNpcEntry(after.id) && AddNpcEntry(after); });
+        PushAction("character behaviour", [before] { return SetNpcEntryBehaviour(before); },
+                   [after] { return SetNpcEntryBehaviour(after); });
         return now;
     }
     int record = engine::RecordOf(actor);

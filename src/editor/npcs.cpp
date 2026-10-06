@@ -1,5 +1,7 @@
 #include "npcs.h"
 
+#include <windows.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -293,6 +295,7 @@ const std::vector<std::string>& ForeignBehaviourNames()
         return names;
     builtFor = here;
     names.clear();
+    ULONGLONG start = GetTickCount64();
     for (const std::string& level : engine::GameLevels()) {
         if (_stricmp(level.c_str(), here.c_str()) == 0)
             continue;
@@ -301,6 +304,7 @@ const std::vector<std::string>& ForeignBehaviourNames()
                 names.push_back(ForeignBehaviourName(b.script.name, level));
     }
     std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) { return Lower(a) < Lower(b); });
+    Log("npc: %zu behaviours of other levels (%llu ms)", names.size(), GetTickCount64() - start);
     return names;
 }
 

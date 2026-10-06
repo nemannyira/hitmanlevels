@@ -401,7 +401,8 @@ int Point(lua_State* L)
     return 1;
 }
 
-// h2.behaviours() -> { "BaseGuard", ... } behaviours (script classes) of the scene
+// h2.behaviours([others]) -> { "BaseGuard", ... } behaviours placed characters can have
+// (others: also those of the other levels, "Guard2_1 (C2-1)")
 int Behaviours(lua_State* L)
 {
     lua_newtable(L);
@@ -410,6 +411,11 @@ int Behaviours(lua_State* L)
         lua_pushstring(L, b.c_str());
         lua_rawseti(L, -2, ++n);
     }
+    if (lua_toboolean(L, 1))
+        for (const std::string& b : editor::ForeignBehaviourNames()) {
+            lua_pushstring(L, b.c_str());
+            lua_rawseti(L, -2, ++n);
+        }
     return 1;
 }
 

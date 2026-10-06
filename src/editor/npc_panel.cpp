@@ -46,6 +46,7 @@ struct NpcType {
     uint32_t importMesh = 0;
     std::string importName;
     uint32_t outfitMesh = 0, nudeMesh = 0;
+    std::string importBehaviour;  // its behaviour in its level ("Waiter")
 };
 
 bool g_visible = true;
@@ -206,6 +207,7 @@ void Build()
         t.importName = b.name;
         t.outfitMesh = b.outfit;
         t.nudeMesh = b.nude;
+        t.importBehaviour = b.behaviour;
         g_types.push_back(t);
     }
 }
@@ -232,6 +234,16 @@ void ChooseNewBehaviour(const std::string& name)
 void ChooseType(int t)
 {
     g_type = t;
+    // a character of another level: its own behaviour there when it works here
+    const NpcType& type = g_types[t];
+    if (!type.importBehaviour.empty()) {
+        std::string own = ForeignBehaviourName(type.importBehaviour, type.importLevel);
+        const auto& offered = ForeignBehaviourNames();
+        if (std::find(offered.begin(), offered.end(), own) != offered.end()) {
+            ChooseNewBehaviour(own);
+            return;
+        }
+    }
     engine::ScriptInfo info;
     bool authored = AuthoredBehaviour(g_types[t].record, info);
     if (authored && IsPortableBehaviour(info)) {

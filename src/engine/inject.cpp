@@ -2,7 +2,9 @@
 
 #include <cstring>
 #include <map>
+#include <set>
 
+#include "../loader.h"
 #include "../log.h"
 #include "scene_data.h"
 
@@ -13,8 +15,16 @@ namespace {
 // GMS: header u32s at 0x00 (record list: count, then {u32 offset / 4 |
 // pops << 25, u32 light table handle} per record), 0x10 (geom counts: count,
 // then {class id, count, count when ForceExtraGeom is off} per class), 0x14
-// (node pools: u32, then 24 counts, 8 per pool: a record's node comes from
-// pool byte +0x2D * 8 + NodeKind(class), 0x5BE500).
+// (nodes: u32 blocks, then per block 24 counts, one block for the root
+// group's children and one for each record of a group class (0x100000), in
+// list order: the nodes of that group's children, 8 counts per pool: a
+// record's node comes from pool byte +0x2D * 8 + NodeKind(class), 0x5BE500).
+// 0x28: links (count, then pairs of static node references - 0x70: offsets in
+// the node buffer after the root group's node, made with those counts). The
+// level's other files (OCT, RMC, RMI, SGP) hold such references too, so the
+// nodes made from the scene file must stay where they are: the root's block
+// is the buffer's first, and the new groups (root children) get nodes of
+// their own after all the others instead (TakeNode).
 // A record is 0x30 bytes: name (BUF), matrix, position, mesh, class, events,
 // node flags, properties (BUF), data, ?, script, pool.
 constexpr uint32_t kActorClass = 0x2003E9;   // ZTRACKLNKHM2
@@ -37,6 +47,43 @@ int NodeKind(uint32_t cls)
 
 std::function<std::vector<SceneNpc>(const std::string&)> g_provider;
 std::map<std::string, int> g_made;  // name -> actor record (scene loaded last)
+std::set<uint32_t> g_groups;        // offsets of the new groups' records in the GMS
+const uint8_t* g_gms = nullptr;     // the GMS CreateGeoms reads (while it does)
+
+constexpr uintptr_t kTakeNodeCall = 0x41D056;  // CreateGeoms: kind = 0x5BE500(class, flags)
+constexpr uintptr_t kNodeKind = 0x5BE500;
+constexpr uintptr_t kAllocNodes = 0x426730;    // geom table: (count) -> first of count new static nodes
+constexpr uintptr_t kSysInterface = 0x6A6C5C;
+
+// CreateGeoms takes a record's node from its parent's block: cursors[pool * 8
+// + kind], then moves that cursor on. A new group gets a node made for it
+// instead, the last of the buffer so far.
+void __cdecl TakeNode(int kind, const uint8_t* record, uintptr_t* cursors)
+{
+    if (!g_gms || record < g_gms || !g_groups.count(uint32_t(record - g_gms)))
+        return;
+    int at = record[0x2D] * 8 + kind;
+    uintptr_t engine = *reinterpret_cast<uintptr_t*>(*reinterpret_cast<uintptr_t*>(kSysInterface) + 0x98);
+    void* table = *reinterpret_cast<void**>(engine + 4);
+    if (at < kPools && table)
+        cursors[at] = reinterpret_cast<uintptr_t(__thiscall*)(void*, int)>(kAllocNodes)(table, 1);
+}
+
+__declspec(naked) void TakeNodeThunk()
+{
+    __asm {
+        mov eax, kNodeKind
+        call eax
+        push eax
+        push dword ptr [ebp - 0x24]  // the parent's cursors
+        push ebx                     // the record
+        push eax                     // its kind
+        call TakeNode
+        add esp, 12
+        pop eax
+        ret
+    }
+}
 
 uint32_t U32(const std::vector<uint8_t>& b, size_t at)
 {
@@ -122,9 +169,23 @@ bool IsSceneNpcRecord(int index)
     return false;
 }
 
+void InstallSceneNpcs()
+{
+    uint8_t original[5], call[5] = {0xE8};
+    int32_t rel = int32_t(kNodeKind - (kTakeNodeCall + 5));
+    original[0] = 0xE8;
+    memcpy(original + 1, &rel, 4);
+    rel = int32_t(reinterpret_cast<uintptr_t>(&TakeNodeThunk) - (kTakeNodeCall + 5));
+    memcpy(call + 1, &rel, 4);
+    PatchBytes(reinterpret_cast<void*>(kTakeNodeCall), original, call, 5, "CreateGeoms node of a scene npc group");
+}
+
+void SetSceneNpcGms(const void* gms) { g_gms = static_cast<const uint8_t*>(gms); }
+
 bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vector<uint8_t>& buf)
 {
     g_made.clear();
+    g_groups.clear();
     if (!g_provider)
         return false;
     std::vector<SceneNpc> npcs = g_provider(scene);
@@ -152,7 +213,8 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         depth = 0;
     std::vector<uint8_t> table(gms.begin() + entry(0), gms.begin() + entry(int(count)));
     std::map<uint32_t, int> moreOfClass;
-    int moreInPool[kPools] = {};
+    std::vector<uint32_t> rootNodes(kPools);          // not in the root's block (TakeNode)
+    std::vector<std::vector<uint32_t>> groupBlocks;    // node counts of the new groups' children
     std::vector<uint32_t> listed;  // actor references for TrackLinkObjects
     int added = 0;
     for (const SceneNpc& npc : npcs) {
@@ -199,20 +261,22 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             Log("scene npcs: the record list is too deep");
             break;
         }
-        auto add = [&](const std::vector<uint8_t>& rec, uint32_t flags, uint32_t extra) {
+        auto add = [&](const std::vector<uint8_t>& rec, uint32_t flags, uint32_t extra, std::vector<uint32_t>& nodes) {
             uint32_t off = Append(gms, rec);
             uint32_t e[2] = {(off / 4) | flags, extra};
             table.insert(table.end(), reinterpret_cast<uint8_t*>(e), reinterpret_cast<uint8_t*>(e) + 8);
             ++moreOfClass[U32(rec, 0x10)];
             int pool = rec[0x2D] * 8 + NodeKind(U32(rec, 0x10));
             if (pool < kPools)
-                ++moreInPool[pool];
+                ++nodes[pool];
             ++added;
         };
-        add(g, kOpens | (pops << 25), group.extra);
-        add(a, 0, actor.extra);
+        groupBlocks.emplace_back(kPools);
+        g_groups.insert(uint32_t((gms.size() + 3) & ~size_t(3)));
+        add(g, kOpens | (pops << 25), group.extra, rootNodes);
+        add(a, 0, actor.extra, groupBlocks.back());
         if (helper >= 0)
-            add(h, 0, recs[helper].extra);
+            add(h, 0, recs[helper].extra, groupBlocks.back());
         listed.push_back(0x80000000 | uint32_t(actorIndex + 1));
         g_made[npc.name] = actorIndex;
     }
@@ -238,11 +302,16 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     Put(countsBlock, 0, classes);
     countsBlock.insert(countsBlock.end(), ct.begin(), ct.end());
     Put(gms, 0x10, Append(gms, countsBlock));
-    // node pools
-    uint32_t pools = U32(gms, 0x14);
-    for (int p = 0; p < kPools; ++p)
-        if (moreInPool[p])
-            Put(gms, pools + 4 + p * 4, U32(gms, pools + 4 + p * 4) + moreInPool[p]);
+    // node counts: a block for each group (the groups' own nodes: TakeNode)
+    uint32_t nodes = U32(gms, 0x14), blocks = U32(gms, nodes);
+    std::vector<uint8_t> nb(gms.begin() + nodes + 4, gms.begin() + nodes + 4 + size_t(blocks) * kPools * 4);
+    for (const std::vector<uint32_t>& block : groupBlocks)
+        nb.insert(nb.end(), reinterpret_cast<const uint8_t*>(block.data()),
+                  reinterpret_cast<const uint8_t*>(block.data()) + kPools * 4);
+    std::vector<uint8_t> nodesBlock(4);
+    Put(nodesBlock, 0, blocks + uint32_t(groupBlocks.size()));
+    nodesBlock.insert(nodesBlock.end(), nb.begin(), nb.end());
+    Put(gms, 0x14, Append(gms, nodesBlock));
     // the scene's actor list gets them
     for (uint32_t i = 0; i < count; ++i) {
         if (recs[i].name != kActorList || !recs[i].data)

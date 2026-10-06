@@ -105,6 +105,7 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
     if (buf && bufSize && bufSize < kMaxGms && IsReadable(buf, bufSize))
         g_buf.assign(buf, buf + bufSize);
     // the level's characters as records of the scene (inject.h)
+    const char* npcGms = nullptr;  // the GMS with them
     if (!g_gms.empty() && !g_buf.empty()) {
         const char* scene = reinterpret_cast<const char*(__thiscall*)(void*)>(kGetSceneName)(self);
         std::vector<uint8_t> moreGms = g_gms, moreBuf = g_buf;
@@ -114,6 +115,7 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
             if (newGms && newBuf) {
                 gms = newGms;
                 buf = newBuf;
+                npcGms = newGms;
                 g_gms = std::move(moreGms);
                 g_buf = std::move(moreBuf);
             }
@@ -121,7 +123,9 @@ void __fastcall hkCreateGeoms(void* self, void* edx, void* reftab, void* dynamic
     }
     g_inCreateGeoms = true;
     g_refsCaptured = false;
+    SetSceneNpcGms(npcGms);
     oCreateGeoms(self, edx, reftab, dynamics, gms, buf, reftab2);
+    SetSceneNpcGms(nullptr);
     g_inCreateGeoms = false;
     g_valid = true;
     ParseRecords();
@@ -224,6 +228,7 @@ void InstallSceneData()
 {
     Hook("ZEngineDataBase::GetGeomsData", kGetGeomsData, hkGetGeomsData, &oGetGeomsData);
     Hook("ZEngineDataBase::CreateGeoms", kCreateGeoms, hkCreateGeoms, &oCreateGeoms);
+    InstallSceneNpcs();
     Hook("ZEngineDataBase::RemapCreatedDataBlock", kRemapCreatedDataBlock, hkRemap, &oRemap);
     OnSceneLeaving([](const std::string&) { g_valid = false; });
 }

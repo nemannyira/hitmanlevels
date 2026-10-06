@@ -35,6 +35,9 @@ int SceneNpcRecord(const std::string& name);
 // Whether a record of the scene loaded last is one of those (not the scene file's).
 bool IsSceneNpcRecord(int index);
 
+void InstallSceneNpcs();
+// scene_data.cpp: the GMS CreateGeoms reads (nullptr after).
+void SetSceneNpcGms(const void* gms);
 // scene_data.cpp: the GMS / BUF copies of the loading scene `scene` get the
 // characters; true when they changed.
 bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vector<uint8_t>& buf);

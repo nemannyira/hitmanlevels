@@ -18,6 +18,9 @@ extern "C" {
 #include "config.h"
 #include "editor/history.h"
 #include "editor/level.h"
+#include "editor/model.h"
+#include "editor/npcs.h"
+#include "editor/playtest.h"
 #include "imgui.h"
 #include "hook.h"
 #include "fov.h"
@@ -259,6 +262,36 @@ int Panel(lua_State* L)
     return 0;
 }
 
+// h2.dev_place_npc(record, x, y, z [, behaviour]): places a character as the
+// NPCs panel does (shown until the map loads again) -> its object name
+int PlaceNpcCmd(lua_State* L)
+{
+    editor::NpcSpec spec;
+    spec.record = int(luaL_checkinteger(L, 1));
+    float m[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};
+    memcpy(spec.transform.mat, m, sizeof(m));
+    for (int i = 0; i < 3; ++i)
+        spec.transform.pos[i] = float(luaL_checknumber(L, 2 + i));
+    if (lua_isstring(L, 5)) {
+        if (!editor::BehaviourTemplate(lua_tostring(L, 5), spec.behaviour))
+            return luaL_error(L, "no behaviour %s", lua_tostring(L, 5));
+        spec.hasBehaviour = true;
+    }
+    std::string err;
+    engine::ZGEOM* g = editor::PlaceNpc(spec, &err);
+    if (!g)
+        return luaL_error(L, "place: %s", err.c_str());
+    lua_pushstring(L, engine::SafeString(g->name).c_str());
+    return 1;
+}
+
+// h2.dev_test(): the toolbar's Test
+int TestCmd(lua_State*)
+{
+    editor::TestLevel();
+    return 0;
+}
+
 // h2.dev_editor(open): opens / closes the editor overlay
 int Editor(lua_State* L)
 {
@@ -450,6 +483,8 @@ void InstallDevCommands()
     script::Register("dev_viewdistance", ViewDist);
     script::Register("dev_shot", Shot);
     script::Register("dev_editor", Editor);
+    script::Register("dev_place_npc", PlaceNpcCmd);
+    script::Register("dev_test", TestCmd);
     script::Register("dev_panel", Panel);
     script::Register("dev_level", Level);
     script::Register("dev_click", Click);

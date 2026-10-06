@@ -144,11 +144,12 @@ void OnScene(const std::string&)
     g_now.clear();
 }
 
-constexpr const char* kCivilian = "scripts\\AllLevels\\Std2\\Neutral2.sdl";
-
-// Whether the loaded scene's compiled scripts (its ZGF) have the class (its
-// state "<class>.normal"); read once per scene.
-bool SceneHasScriptClass(const std::string& cls)
+// The script a class of the loaded scene's compiled scripts (its ZGF: files
+// "<path>.ppo") is loaded as ("<path>.sdl"; "" when it has none), read once
+// per scene. A base class is loaded relative to its first subclass
+// ("scripts\C1\C1_1\..\..\AllLevels\Std2\Neutral2.sdl") and the script
+// engine keeps it by that name: other names do not find it.
+std::string SceneScriptPath(const std::string& cls)
 {
     static std::string scene;
     static std::vector<uint8_t> zgf;
@@ -169,8 +170,15 @@ bool SceneHasScriptClass(const std::string& cls)
         if (zgf.empty())
             Log("npc: scripts of %s not read (%s)", scene.c_str(), err.c_str());
     }
-    std::string state = cls + ".normal";
-    return std::search(zgf.begin(), zgf.end(), state.begin(), state.end()) != zgf.end();
+    std::string file = "\\" + cls + ".ppo";
+    file.push_back('\0');
+    auto at = std::search(zgf.begin(), zgf.end(), file.begin(), file.end());
+    if (at == zgf.end())
+        return "";
+    auto from = at;
+    while (from != zgf.begin() && *(from - 1) != 0)
+        --from;
+    return std::string(from, at + (file.size() - 5)) + ".sdl";  // "...\Neutral2" + ".sdl"
 }
 
 } // namespace
@@ -235,7 +243,7 @@ bool IsPortableBehaviour(const engine::ScriptInfo& s)
 
 std::string CivilianBehaviour()
 {
-    return SceneHasScriptClass("Neutral2") ? engine::ScriptShortName(kCivilian) : "";
+    return SceneScriptPath("Neutral2").empty() ? "" : "Neutral2";
 }
 
 std::vector<std::string> BehaviourNames()
@@ -271,10 +279,11 @@ bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out)
             return true;
         }
     }
-    if (want == Lower(kCivilian) || want == Lower(engine::ScriptShortName(kCivilian))) {
+    std::string civilian = SceneScriptPath("Neutral2");
+    if (!civilian.empty() && Lower(engine::ScriptShortName(want)) == "neutral2") {
         // its part as its subclasses (Maid, Pedestrian2, ...) declare it
         out = {};
-        out.name = kCivilian;
+        out.name = civilian;
         auto add = [&](const char* type, const char* name, engine::ParamType t, uint32_t bits) {
             engine::ScriptParam p;
             p.typeName = type;

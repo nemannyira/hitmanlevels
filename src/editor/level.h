@@ -119,6 +119,8 @@ struct LevelDocument {
     // blank map's floor); then it is an object of the level like the others
     std::string floorLevel;
     uint32_t floorMesh = 0;
+    // the sky of another level instead of the map's own (its backdrop's models, imported)
+    std::string skyLevel;
     std::map<std::string, ObjectEdit> objects;  // by path
     std::vector<SpawnedObject> spawned;
     std::vector<LevelNpc> npcs;
@@ -207,6 +209,14 @@ void SetBlankMap(bool blank);
 // The level gets a model of another level as its floor: under Hitman, once
 // the map is loaded with it.
 void SetFloor(const std::string& level, uint32_t mesh, const std::string& name);
+// The sky: another level's sky ("" = the map's own): its backdrop's models
+// (sky dome, cloud planes) instead of the map's. The map is loaded again for
+// a sky not imported yet (ImportsPending).
+// The levels that have a sky (read once).
+const std::vector<std::string>& SkyLevels();
+void SetSky(const std::string& level);
+// The scene changed: the sky made for the previous one is gone.
+void ForgetSky();
 // Applies the level's spawned objects and object edits to the loaded scene; returns how many applied.
 int ApplyLevel();
 // Undoes every edit of the level in the loaded scene (restores originals).

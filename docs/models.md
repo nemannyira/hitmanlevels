@@ -222,3 +222,17 @@ others. Checked in the game (C1-1 with C3-3's yard).
 
 * Objects made of several models (a truck's wheels are models of their own).
 * Characters checked in the game (bodies, outfits, animations).
+
+## The sky (another level's)
+
+A map's sky is the plain models (ZSTDOBJ) of its backdrop's group, next to
+the sun / glow (Z2DOBJ) and lens flare (ZLightOverlay): C1-1's
+`C1-1_BACKDROP.zip/C1-1_Backdrop` has `SkyDome` and seven `Cloud_Plane_*`;
+C3-3's 19 models. A cut scene has a SkyDome of its own elsewhere. Hiding the
+SkyDome alone changes nothing visible: the clouds are the sky.
+
+Level setting `sky: {level}` (Level panel, Lua h2.sky): the other level's
+backdrop models are imported (the map is loaded again for them), the map's
+are hidden and the other level's are made in the map's backdrop group with
+their own local transforms and node flags (not objects of the level; made
+again on every load). Checked: C3-3's sky over C1-1.

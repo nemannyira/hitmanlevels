@@ -79,6 +79,16 @@ struct LevelCharacter {
     std::string behaviour;  // its first character's behaviour there ("BaseGuard", "Waiter"; "" none)
 };
 const std::vector<LevelCharacter>& LevelCharacters(const std::string& level);
+// A level's sky: the plain models of its backdrop's group (its SkyDome, cloud
+// planes...), in that group (from its scene file, cached; empty: none).
+struct LevelSkyPart {
+    uint32_t mesh = 0;
+    std::string name;
+    uint32_t flags = 0;   // node flags
+    float mat[9] = {};    // in the group
+    float pos[3] = {};
+};
+const std::vector<LevelSkyPart>& LevelSky(const std::string& level);
 // A model of the loaded scene made of plain records (not a character's body).
 bool IsPlainModel(uint32_t mesh);
 // The model's triangles stop nothing (every record's query mask, +0x34,

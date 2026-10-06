@@ -48,6 +48,7 @@ extern "C" {
 #include "lua.h"
 }
 
+#include "../editor/level.h"
 #include "../editor/mission.h"
 #include "../editor/model.h"
 #include "../editor/music.h"
@@ -305,6 +306,23 @@ int Player(lua_State* L)
         return 1;
     }
     PushObject(L, editor::PathOf(g));
+    return 1;
+}
+
+// h2.sky([level]) -> level: the sky of another level ("C3-3"; "" = the map's own;
+// saved with the level, the map is loaded again for a sky not imported yet)
+int Sky(lua_State* L)
+{
+    if (lua_gettop(L) >= 1) {
+        std::string level = luaL_checkstring(L, 1);
+        const auto& levels = editor::SkyLevels();
+        auto it = std::find_if(levels.begin(), levels.end(),
+                               [&](const std::string& l) { return _stricmp(l.c_str(), level.c_str()) == 0; });
+        if (!level.empty() && it == levels.end())
+            return luaL_error(L, "sky: no level %s with a sky", level.c_str());
+        editor::SetSky(level.empty() ? "" : *it);
+    }
+    lua_pushstring(L, editor::CurrentLevel().skyLevel.c_str());
     return 1;
 }
 
@@ -901,6 +919,7 @@ void RegisterObjectsApi()
     Register("player", Player);
     Register("objective", Objective);
     Register("briefing", Briefing);
+    Register("sky", Sky);
     Register("mission", Mission);
     Register("music", Music);
 }

@@ -53,6 +53,8 @@ uint32_t U32(const std::vector<uint8_t>& b, size_t at)
 }
 void Put(std::vector<uint8_t>& b, size_t at, uint32_t v) { memcpy(&b[at], &v, 4); }
 
+constexpr uint32_t kStdObjClass = 0x200002;  // ZSTDOBJ
+
 struct Source {
     bool loaded = false;
     std::vector<uint8_t> prm, tex, oct;
@@ -1293,6 +1295,51 @@ const std::vector<LevelModel>& LevelModels(const std::string& level)
     if (!c.built)
         BuildCatalogue(level, c);
     return c.models;
+}
+
+const std::vector<LevelSkyPart>& LevelSky(const std::string& level)
+{
+    static std::map<std::string, std::vector<LevelSkyPart>> cache;
+    auto it = cache.find(level);
+    if (it != cache.end())
+        return it->second;
+    std::vector<LevelSkyPart>& out = cache[level];
+    std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
+    std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
+    std::vector<uint8_t> packed, gms, buf;
+    if (!ReadZipEntry(zip, base + "GMS", packed) || !ReadZipEntry(zip, base + "BUF", buf) || packed.size() <= 9 ||
+        !Inflate(packed.data() + 9, packed.size() - 9, gms, U32(packed, 0)))
+        return out;
+    std::vector<SceneRecord> records = ParseSceneRecords(gms, buf);
+    auto lower = [](std::string n) {
+        for (char& c : n)
+            c = char(tolower(static_cast<unsigned char>(c)));
+        return n;
+    };
+    // the group of its sky dome: the backdrop's (a cut scene has its own too)
+    int group = -1;
+    for (const SceneRecord& r : records) {
+        if (!r.mesh || r.name.rfind("SkyDome", 0) != 0 || r.parent < 0)
+            continue;
+        bool backdrop = false;
+        for (int p = r.parent; p >= 0 && size_t(p) < records.size(); p = records[p].parent)
+            backdrop |= lower(records[p].name).find("backdrop") != std::string::npos;
+        if (group < 0 || backdrop)
+            group = r.parent;
+        if (backdrop)
+            break;
+    }
+    for (const SceneRecord& r : records)
+        if (group >= 0 && r.parent == group && r.mesh && r.classId == kStdObjClass) {
+            LevelSkyPart p;
+            p.mesh = r.mesh;
+            p.name = r.name;
+            p.flags = r.flags & 0xFFFFF;
+            memcpy(p.mat, r.mat, sizeof(p.mat));
+            memcpy(p.pos, r.pos, sizeof(p.pos));
+            out.push_back(p);
+        }
+    return out;
 }
 
 const std::vector<LevelCharacter>& LevelCharacters(const std::string& level)

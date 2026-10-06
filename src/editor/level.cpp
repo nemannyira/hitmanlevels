@@ -9,6 +9,7 @@
 #include "imgui.h"
 #include "json.hpp"
 
+#include "../config.h"
 #include "../engine/imports.h"
 #include "../engine/inject.h"
 #include "../engine/lists.h"
@@ -31,6 +32,9 @@
 using json = nlohmann::json;
 
 namespace h2::editor {
+
+bool ApplySky();
+void RestoreSky();
 
 namespace {
 
@@ -548,6 +552,7 @@ void RunLevelScripts()
 
 void OnScene(const std::string& scene)
 {
+    ForgetSky();
     g_applyPending = g_autoApply && !g_level.baseScene.empty() && scene == g_level.baseScene;
     g_applyWaitFrames = 2;  // let the scene finish creating its objects
     g_live.clear();         // the editor destroyed them when the previous scene was left
@@ -618,6 +623,27 @@ void DrawPanel()
         ImGui::SetTooltip("Every model of the map but the sky is taken out too (hidden, and it stops nothing):\n"
                           "build your own place from models (Models tab, Other levels...).\n"
                           "Stand on something first: Hitman falls without a floor.");
+
+    // the sky
+    std::string skyLabel = L.skyLevel.empty() ? "the map's own" : L.skyLevel;
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+    if (ImGui::BeginCombo("Sky", skyLabel.c_str())) {
+        if (ImGui::Selectable("the map's own", L.skyLevel.empty()))
+            SetSky("");
+        for (const std::string& level : SkyLevels())
+            if (ImGui::Selectable(level.c_str(), L.skyLevel == level))
+                SetSky(level);
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The sky of another level (its sky dome and clouds) instead of this map's");
+    if (ImportsPending()) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Load the map again"))
+            ReloadMapForImports();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Models of other levels (a sky too) come with the map when it loads");
+    }
 
     ImGui::SeparatorText("New objects");
     std::string toDelete;
@@ -764,6 +790,8 @@ bool SaveLevel(std::string* error)
         j["blank_map"] = true;
     if (!g_level.floorLevel.empty())
         j["place_floor"] = {{"level", g_level.floorLevel}, {"mesh", g_level.floorMesh}};
+    if (!g_level.skyLevel.empty())
+        j["sky"] = {{"level", g_level.skyLevel}};
     j["objects"] = json::array();
     for (auto& [path, e] : g_level.objects) {
         json o = StateJson(e.state);
@@ -898,6 +926,9 @@ bool LoadLevel(const std::string& folder, std::string* error)
     L.blankMap = j.value("blank_map", false);
     if (j.contains("place_floor") && j["place_floor"].is_object()) {
         L.floorLevel = j["place_floor"].value("level", "");
+    if (j.contains("sky") && j["sky"].is_object()) {
+        L.skyLevel = j["sky"].value("level", "");
+    }
         L.floorMesh = j["place_floor"].value("mesh", 0u);
     }
     for (const json& o : j.value("objects", json::array())) {
@@ -1816,6 +1847,108 @@ bool PlaceFloor()
     return floor != nullptr;
 }
 
+// ---- the sky ----
+
+namespace {
+
+std::vector<std::pair<engine::ZGEOM*, bool>> g_ownSky;  // the map's sky objects hidden (and if they were)
+std::vector<engine::ZGEOM*> g_madeSky;                  // the other level's sky shown instead
+
+bool IsSkyObject(const std::string& name) { return name.rfind("SkyDome", 0) == 0; }
+
+std::string LowerText(std::string s)
+{
+    for (char& c : s)
+        c = char(tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+} // namespace
+
+const std::vector<std::string>& SkyLevels()
+{
+    static std::vector<std::string> out;
+    static bool built;
+    if (!built) {
+        built = true;
+        for (const std::string& level : engine::GameLevels())
+            if (!engine::LevelSky(level).empty())
+                out.push_back(level);
+    }
+    return out;
+}
+
+void SetSky(const std::string& level)
+{
+    if (!level.empty())
+        for (const engine::LevelSkyPart& p : engine::LevelSky(level))
+            SetImported(level, p.mesh, level + " " + p.name, true);
+    g_level.skyLevel = level;
+    g_level.dirty = true;
+    RestoreSky();
+    ApplySky();
+}
+
+void ForgetSky()
+{
+    g_ownSky.clear();
+    g_madeSky.clear();
+}
+
+void RestoreSky()
+{
+    for (auto& [g, hidden] : g_ownSky)
+        if (IsLive(g))
+            SetHidden(g, hidden);
+    for (engine::ZGEOM* g : g_madeSky)
+        if (IsLive(g))
+            SetHidden(g, true);
+    g_ownSky.clear();
+    g_madeSky.clear();
+}
+
+// The map's backdrop models (its sky dome's group: the dome, cloud planes)
+// hidden, the other level's made in that group (not objects of the level).
+bool ApplySky()
+{
+    if (g_level.skyLevel.empty() || CurrentScene() != g_level.baseScene || !g_madeSky.empty())
+        return false;
+    const auto& parts = engine::LevelSky(g_level.skyLevel);
+    engine::ZGEOM* group = nullptr;
+    for (const auto& g : SceneModel(0).geoms)
+        if (IsLive(g.geom) && IsSkyObject(g.name) && !IsSpawned(g.geom) && g.path.find(kLibrary) == std::string::npos &&
+            g.geom->node->parent && (!group || LowerText(g.path).find("backdrop") != std::string::npos))
+            group = g.geom->node->parent->geom;
+    if (!group || !IsLive(group) || parts.empty())
+        return false;
+    for (const auto& g : SceneModel(0).geoms)
+        if (IsLive(g.geom) && g.geom->node->parent && g.geom->node->parent->geom == group && engine::MeshOf(g.geom) &&
+            engine::ClassName(g.geom) == "ZSTDOBJ") {
+            g_ownSky.push_back({g.geom, (g.geom->node->flags & g_config.hideFlag) != 0});
+            SetHidden(g.geom, true);
+        }
+    int missing = 0;
+    for (const engine::LevelSkyPart& p : parts) {
+        uint32_t mesh = engine::ImportedMesh(g_level.skyLevel, p.mesh);
+        if (!mesh) {
+            ++missing;
+            continue;
+        }
+        std::string err;
+        engine::ZGEOM* made = engine::CreateObject("EditorSky_" + p.name, group, "ZSTDOBJ", mesh, p.flags, p.mat, p.pos, {},
+                                                   &err);
+        if (!made) {
+            Log("level: sky part %s not made (%s)", p.name.c_str(), err.c_str());
+            continue;
+        }
+        AdoptEngineOwned(made);
+        g_madeSky.push_back(made);
+    }
+    Log("level: the sky of %s: %zu of its %zu models instead of %zu (%d not imported yet)", g_level.skyLevel.c_str(),
+        g_madeSky.size(), parts.size(), g_ownSky.size(), missing);
+    return !g_madeSky.empty();
+}
+
 // The rotation a stored matrix (rows forward, up, right) stands for: its
 // columns are the local x, y, z axes (right, up, forward).
 void ToRotation(const float m[9], float r[3][3])
@@ -1911,11 +2044,13 @@ int ApplyLevel()
     ApplyMission();
     ApplyMusic();
     PlaceFloor();
+    ApplySky();
     return n;
 }
 
 void RevertLevel()
 {
+    RestoreSky();
     RestoreScene();
     RestoreBlank();
     RevertMission();

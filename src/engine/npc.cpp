@@ -45,6 +45,7 @@ constexpr uint32_t kFlagInitialized = 0x800000;
 // arrays of 0x11 / 4 bytes per element, made by vfunc 0x1C for the elements
 // the list has then; vfunc 0x2C pushes apart the elements close to each other)
 constexpr uintptr_t kActorCollision_Init = 0x489900;
+constexpr uintptr_t kItem_SetOwner = 0x4723F0;        // ZITEM: (owner ref, its group, notify)
 constexpr uint32_t kActorCollisionRoom = 64;            // elements added at runtime it has room for
 const char* const kActorList = "TrackLinkObjects";
 
@@ -664,6 +665,34 @@ void __fastcall hkActorCollisionInit(char* self, void* edx)
     }
 }
 
+// A placed copy of a character runs the original's behaviour, and some
+// behaviours take an item of the level (C1-1 PostMan: its Flowers) that the
+// original already has. An item held (node flag 0x200000) going to another
+// owner is a stop of the game (int3): the item stays with its owner instead.
+using SetOwnerFn = uint32_t(__fastcall*)(char* item, void* edx, uint32_t owner, void* group, char notify);
+SetOwnerFn oItemSetOwner;
+
+bool ItemHeld(char* item, uint32_t& owner)
+{
+    __try {
+        owner = *reinterpret_cast<uint32_t*>(item + 0x64);
+        return (reinterpret_cast<ZGEOM*>(item)->node->flags & 0x200000) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+uint32_t __fastcall hkItemSetOwner(char* item, void* edx, uint32_t owner, void* group, char notify)
+{
+    uint32_t had = 0;
+    if (ItemHeld(item, had) && had != owner) {
+        Log("npc: item %s is %08X's, not given to %08X", SafeString(reinterpret_cast<ZGEOM*>(item)->name).c_str(), had,
+            owner);
+        return had;
+    }
+    return oItemSetOwner(item, edx, owner, group, notify);
+}
+
 // the scene's actor lists (one in each scene: AllLevels_AnimSound)
 std::vector<ZGEOM*> ActorLists()
 {
@@ -717,6 +746,7 @@ bool SetActorCollides(ZGEOM* actor, bool on)
 void InstallNpc()
 {
     Hook("ZLIST_ActorCollision init", kActorCollision_Init, &hkActorCollisionInit, &oActorCollisionInit);
+    Hook("ZITEM::SetOwner", kItem_SetOwner, &hkItemSetOwner, &oItemSetOwner);
     OnFrameEnd(GuardFrame);
     OnSceneLeaving([](const std::string&) { g_guards.clear(); });
 }

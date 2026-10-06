@@ -1,0 +1,310 @@
+#include "game_events.h"
+
+#include <windows.h>
+#include <cctype>
+#include <cstring>
+#include <map>
+
+#include "../game.h"
+#include "../hook.h"
+#include "../scene.h"
+#include "scene_data.h"
+
+namespace h2::engine {
+
+namespace {
+
+constexpr uintptr_t kGeom_SendMessage = 0x43CBE0;  // ZGEOM vfunc 0x120 (this = sender; receiver, msg, param*)
+constexpr uintptr_t kHitman_Damage = 0x519390;     // ZHITMAN2 (float amount)
+constexpr uint32_t kMsgNames = 0xC37;              // engine: char* name[id]
+constexpr uint32_t kMsgCount = 0x1C43;             // engine: the last id
+constexpr uint32_t kMaxMessages = 0x402;           // room of the name table
+constexpr uint32_t kHitmanHealth = 0xD72;          // float
+constexpr size_t kMaxQueue = 4096;
+constexpr int kLevel_Kill = 0xB4 / 4;              // (victim, kind)
+constexpr int kLevel_Harm = 0xB8 / 4;
+constexpr int kLevel_Failed = 0xC0 / 4;            // ()
+constexpr int kLevel_Completed = 0xC4 / 4;
+
+uint8_t g_flags[kMaxMessages];          // messages to keep (read by the hook)
+bool g_any;                             // any flag set
+std::string g_names[kMaxMessages];      // as registered
+std::set<std::string> g_watch;          // lower case
+bool g_watchAll;
+uint32_t g_mappedCount = ~0u;           // message count the flags were made for
+std::vector<GameEvent> g_queue;
+size_t g_dropped;
+
+void* Engine()
+{
+    auto sys = reinterpret_cast<char*>(game::SysInterface());
+    return sys ? *reinterpret_cast<void**>(sys + 0x98) : nullptr;
+}
+
+bool CopyMem(void* dst, const void* src, size_t n)
+{
+    __try {
+        memcpy(dst, src, n);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool ReadDword(uintptr_t p, uint32_t& out)
+{
+    return p >= 0x10000 && CopyMem(&out, reinterpret_cast<const void*>(p), 4);
+}
+
+// a short printable NUL-terminated text at p (names, event names)
+bool ReadText(uintptr_t p, char (&out)[65])
+{
+    if (p < 0x10000)
+        return false;
+    for (int i = 0; i < 64; ++i) {
+        char c;
+        if (!CopyMem(&c, reinterpret_cast<const char*>(p) + i, 1))
+            return false;
+        out[i] = c;
+        if (!c)
+            return i >= 2;
+        if (c < 0x20 || c > 0x7E)
+            return false;
+    }
+    return false;
+}
+
+std::string Lower(std::string s)
+{
+    for (char& c : s)
+        c = char(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+uint32_t MessageCount(void* engine)
+{
+    uint32_t n = 0;
+    if (!engine || !CopyMem(&n, static_cast<char*>(engine) + kMsgCount, 4))
+        return 0;
+    return n < kMaxMessages ? n : kMaxMessages - 1;
+}
+
+std::string MessageName(void* engine, uint32_t id)
+{
+    uint32_t p = 0;
+    if (!CopyMem(&p, static_cast<char*>(engine) + kMsgNames + id * 4, 4) || !p)
+        return {};
+    std::string s;
+    for (int i = 0; i < 64; ++i) {
+        char c;
+        if (!CopyMem(&c, reinterpret_cast<const char*>(uintptr_t(p)) + i, 1) || !c)
+            break;
+        s += c;
+    }
+    return s;
+}
+
+// the flags for the names asked for, when the engine's messages changed
+void Remap(bool force)
+{
+    void* engine = Engine();
+    uint32_t count = MessageCount(engine);
+    if (!force && count == g_mappedCount)
+        return;
+    g_mappedCount = count;
+    memset(g_flags, 0, sizeof(g_flags));
+    g_any = false;
+    for (uint32_t id = 1; id <= count; ++id) {
+        g_names[id] = MessageName(engine, id);
+        if (g_names[id].empty())
+            continue;
+        if (g_watchAll || g_watch.count(Lower(g_names[id]))) {
+            g_flags[id] = 1;
+            g_any = true;
+        }
+    }
+}
+
+void Queue(GameEvent&& e)
+{
+    if (g_queue.size() >= kMaxQueue) {
+        ++g_dropped;
+        return;
+    }
+    g_queue.push_back(std::move(e));
+}
+
+using Send_t = void(__fastcall*)(ZGEOM* self, void* edx, ZGEOM* to, uint32_t msg, void* param);
+Send_t oSend;
+void __fastcall hkSend(ZGEOM* self, void* edx, ZGEOM* to, uint32_t msg, void* param)
+{
+    uint32_t id = msg & 0xFFFF;
+    if (g_any && id < kMaxMessages && g_flags[id]) {
+        GameEvent e;
+        e.name = g_names[id];
+        e.to = to;
+        e.from = self;
+        e.param = reinterpret_cast<uintptr_t>(param);
+        e.hasValue = ReadDword(e.param, e.value);
+        char text[65];
+        if (ReadText(e.param, text) || (e.hasValue && ReadText(e.value, text)))
+            e.text = text;
+        Queue(std::move(e));
+    }
+    oSend(self, edx, to, msg, param);
+}
+
+using Damage_t = void(__fastcall*)(void* hitman, void* edx, float amount);
+Damage_t oDamage;
+void __fastcall hkDamage(void* hitman, void* edx, float amount)
+{
+    oDamage(hitman, edx, amount);
+    GameEvent e;
+    e.kind = GameEvent::HitmanDamage;
+    e.amount = amount;
+    CopyMem(&e.health, static_cast<char*>(hitman) + kHitmanHealth, 4);
+    Queue(std::move(e));
+}
+
+// The level routine's entries, per vtable (each level has its own class).
+struct LevelEntries {
+    void* kill = nullptr;
+    void* harm = nullptr;
+    void* failed = nullptr;
+    void* completed = nullptr;
+};
+std::map<void**, LevelEntries> g_levels;
+
+const LevelEntries* EntriesOf(void* level)
+{
+    auto it = g_levels.find(*static_cast<void***>(level));
+    return it == g_levels.end() ? nullptr : &it->second;
+}
+
+using Victim_t = void(__fastcall*)(void* level, void* edx, uint32_t victim, int type);
+using End_t = void(__fastcall*)(void* level, void* edx);
+
+void QueueVictim(GameEvent::Kind kind, void* level, uint32_t victim, int type)
+{
+    GameEvent e;
+    e.kind = kind;
+    e.to = static_cast<ZGEOM*>(level);
+    e.hasValue = true;
+    e.value = victim;
+    e.type = type;
+    Queue(std::move(e));
+}
+
+void __fastcall hkKill(void* level, void* edx, uint32_t victim, int type)
+{
+    QueueVictim(GameEvent::Kill, level, victim, type);
+    if (const LevelEntries* o = EntriesOf(level))
+        reinterpret_cast<Victim_t>(o->kill)(level, edx, victim, type);
+}
+
+void __fastcall hkHarm(void* level, void* edx, uint32_t victim, int type)
+{
+    QueueVictim(GameEvent::Harm, level, victim, type);
+    if (const LevelEntries* o = EntriesOf(level))
+        reinterpret_cast<Victim_t>(o->harm)(level, edx, victim, type);
+}
+
+void __fastcall hkFailed(void* level, void* edx)
+{
+    GameEvent e;
+    e.kind = GameEvent::MissionFailed;
+    Queue(std::move(e));
+    if (const LevelEntries* o = EntriesOf(level))
+        reinterpret_cast<End_t>(o->failed)(level, edx);
+}
+
+void __fastcall hkCompleted(void* level, void* edx)
+{
+    GameEvent e;
+    e.kind = GameEvent::MissionCompleted;
+    Queue(std::move(e));
+    if (const LevelEntries* o = EntriesOf(level))
+        reinterpret_cast<End_t>(o->completed)(level, edx);
+}
+
+bool PatchEntry(void** vt, int index, void* detour)
+{
+    DWORD old;
+    if (!VirtualProtect(&vt[index], sizeof(void*), PAGE_READWRITE, &old))
+        return false;
+    vt[index] = detour;
+    VirtualProtect(&vt[index], sizeof(void*), old, &old);
+    return true;
+}
+
+} // namespace
+
+void InstallGameEvents()
+{
+    Hook("ZGEOM::SendMessage", kGeom_SendMessage, hkSend, &oSend);
+    Hook("ZHITMAN2::Damage", kHitman_Damage, hkDamage, &oDamage);
+    OnSceneLeaving([](const std::string&) {
+        g_queue.clear();
+        g_any = false;  // ids may be given again with the next scene
+        g_mappedCount = ~0u;
+    });
+    OnScenePushed([](const std::string&) { Remap(true); });
+}
+
+void WatchMessages(const std::set<std::string>& names, bool all)
+{
+    if (names == g_watch && all == g_watchAll)
+        return;
+    g_watch = names;
+    g_watchAll = all;
+    Remap(true);
+}
+
+void WatchLevel(void* level)
+{
+    void** vt = nullptr;
+    if (!level || !CopyMem(&vt, level, 4) || !vt || g_levels.count(vt))
+        return;
+    LevelEntries o;
+    if (!CopyMem(&o.kill, &vt[kLevel_Kill], 4) || !CopyMem(&o.harm, &vt[kLevel_Harm], 4) ||
+        !CopyMem(&o.failed, &vt[kLevel_Failed], 4) || !CopyMem(&o.completed, &vt[kLevel_Completed], 4))
+        return;
+    g_levels[vt] = o;  // before the entries change: a call finds its original
+    bool ok = PatchEntry(vt, kLevel_Kill, reinterpret_cast<void*>(hkKill)) &&
+              PatchEntry(vt, kLevel_Harm, reinterpret_cast<void*>(hkHarm)) &&
+              PatchEntry(vt, kLevel_Failed, reinterpret_cast<void*>(hkFailed)) &&
+              PatchEntry(vt, kLevel_Completed, reinterpret_cast<void*>(hkCompleted));
+    Log("game events: level routine vtable %p %s", static_cast<void*>(vt), ok ? "watched" : "not writable");
+}
+
+std::vector<GameEvent> TakeGameEvents()
+{
+    if (!SceneDataValid()) {  // between scenes: the objects are going
+        g_queue.clear();
+        return {};
+    }
+    if (g_watchAll || !g_watch.empty())
+        Remap(false);  // scripts' classes register their messages while they load
+    if (g_dropped) {
+        Log("game events: %zu events of one frame dropped (more than %zu)", g_dropped, kMaxQueue);
+        g_dropped = 0;
+    }
+    std::vector<GameEvent> out;
+    out.swap(g_queue);
+    return out;
+}
+
+std::vector<std::string> MessageNames()
+{
+    std::vector<std::string> out;
+    void* engine = Engine();
+    uint32_t count = MessageCount(engine);
+    for (uint32_t id = 1; id <= count; ++id) {
+        std::string n = MessageName(engine, id);
+        if (!n.empty())
+            out.push_back(Lower(n));
+    }
+    return out;
+}
+
+} // namespace h2::engine

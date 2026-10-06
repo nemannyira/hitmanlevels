@@ -105,17 +105,21 @@ Now: scene, frame, death (polled 4 times a second), objective.
   ProjectileHit, HitObject, MSG_DRAGSTART / DRAGEND, MSG_CHANGECLOTHES,
   Hitman_ChangedClothes natively, the rest goes on to their script.
 
-Plan: hook 0x43CBE0; a message is queued only when Lua has a handler for its
-id (a bit set: one test per message), with receiver and sender as refs;
-the queue is fired after the frame (no Lua inside the engine's dispatch, no
-re-entrancy, deleted objects are just not found). Lua: `h2.on("message",
-fn(name, to, from))`, `h2.on("msg:hitmanspotted", fn(to, from))`, and
-decoded events: kill (victim, enemy / innocent, from 0x505530), harm,
-unconscious, spotted, alarm (on / off), disguise, pickup / use / drop,
-damage (Hitman: 0x519390), shot / noise, door, explosion, body dragged,
-mission completed / failed, laptop / map / menu, cut scene. Not messages:
-zones, timers, keys, save / load. To check in the game: how many messages
-a second, and what each decoded event's param is (ref or pointer).
+Done (src/engine/game_events.cpp, Lua names in src/script/events.h): the
+hook on 0x43CBE0 keeps only the messages Lua has handlers for (a flag per
+id, the names mapped again when the engine registers more), the level
+routine's vtable entries 0xB4 / 0xB8 / 0xC0 / 0xC4 are routed through the
+editor (per level class, patched at its init 0x504410), Hitman's damage
+0x519390 is hooked. Everything is queued and fired after the frame (no Lua
+inside the engine's dispatch; at most 4096 a frame). Lua: "message",
+"msg:<name>", "kill" / "harm" (victim, enemy / innocent), "mission",
+"hitman_damage", and names of their own for messages ("spotted", "alarm",
+"disguise", "pickup", "shot", "door", "drag", "laptop", ...); h2.messages()
+lists the names. Objects in a message: the param itself or the dword it
+points to, as a pointer or a geom ref, when it is an object of the scene.
+To check in the game: how many messages a second, which messages each
+action really sends (the aliases are by name), what the params carry.
+Next: zones, timers, keys, save / load.
 
 ## 3. Maps of their own
 

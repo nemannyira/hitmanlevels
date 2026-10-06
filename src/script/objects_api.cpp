@@ -41,6 +41,7 @@
 #include <windows.h>
 #include <cmath>
 #include <map>
+#include <unordered_map>
 #include <string>
 #include <vector>
 
@@ -58,8 +59,10 @@ extern "C" {
 #include "../engine/lists.h"
 #include "../engine/messages.h"
 #include "../engine/npc.h"
+#include "../engine/scene_data.h"
 #include "../engine/spawn.h"
 #include "../engine/imports.h"
+#include "../log.h"
 #include "lua_vm.h"
 
 namespace h2::script {
@@ -948,5 +951,70 @@ void DestroyScriptObjects()
 void ForgetScriptObjects() { g_scriptObjects.clear(); }
 
 void PushObjectPath(lua_State* L, const std::string& path) { PushObject(L, path); }
+
+namespace {
+
+// geom -> snapshot index of the scene model, rebuilt with it (events can carry many objects)
+const engine::SceneSnapshot* g_indexOf;
+const engine::GeomInfo* g_indexData;
+size_t g_indexSize;
+std::unordered_map<const engine::ZGEOM*, int> g_index;
+double g_refreshed;
+
+bool LooksLikeGeom(engine::ZGEOM* g)
+{
+    __try {
+        return g->node && g->node->geom == g;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+int IndexOf(engine::ZGEOM* g)
+{
+    const engine::SceneSnapshot* snap = &editor::SceneModel();
+    for (int pass = 0; pass < 2; ++pass) {
+        if (snap != g_indexOf || snap->geoms.data() != g_indexData || snap->geoms.size() != g_indexSize) {
+            g_index.clear();
+            for (int i = 0; i < int(snap->geoms.size()); ++i)
+                g_index.emplace(snap->geoms[i].geom, i);
+            g_indexOf = snap;
+            g_indexData = snap->geoms.data();
+            g_indexSize = snap->geoms.size();
+        }
+        if (auto it = g_index.find(g); it != g_index.end())
+            return it->second;
+        // made since the snapshot: a new one (at most every 100 ms)
+        if (pass || NowMs() - g_refreshed < 100.0 || !LooksLikeGeom(g))
+            break;
+        g_refreshed = NowMs();
+        snap = &editor::SceneModel(0);
+    }
+    return -1;
+}
+
+} // namespace
+
+bool PushGeom(lua_State* L, engine::ZGEOM* g)
+{
+    int i = g && reinterpret_cast<uintptr_t>(g) >= 0x10000 ? IndexOf(g) : -1;
+    if (i < 0) {
+        lua_pushnil(L);
+        return false;
+    }
+    PushObject(L, editor::SceneModel().geoms[i].path);
+    return true;
+}
+
+bool PushCarriedGeom(lua_State* L, uint32_t value)
+{
+    if (value >= 0x10000 && PushGeom(L, reinterpret_cast<engine::ZGEOM*>(uintptr_t(value))))
+        return true;
+    lua_pop(L, 1);
+    // a geom reference: dynamic ones are looked up in a table, static ones are
+    // offsets of 0x70 byte nodes
+    bool ref = value && !(value & 0x80000000) && (!(value & 0x40000000) || (value & 0x3FFFFFFF) % 0x70 == 0);
+    return PushGeom(L, ref ? engine::GeomOfRef(value) : nullptr);
+}
 
 } // namespace h2::script

@@ -27,6 +27,7 @@
 #include "editor/placement.h"
 #include "editor/scene_panel.h"
 #include "editor/viewport.h"
+#include "engine/game_events.h"
 #include "engine/imports.h"
 #include "engine/npc.h"
 #include "engine/script_files.h"
@@ -102,6 +103,7 @@ void Init()
     h2::OnFrameEnd([] {
         static double last = h2::NowMs();
         double now = h2::NowMs();
+        h2::script::FireGameEvents();
         h2::script::FireFrame((now - last) / 1000.0);
         last = now;
     });
@@ -124,6 +126,7 @@ void Init()
     h2::engine::InstallImports();
     h2::engine::InstallNpc();
     h2::engine::InstallScriptFiles();
+    h2::engine::InstallGameEvents();
     h2::editor::InstallPlacement();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {

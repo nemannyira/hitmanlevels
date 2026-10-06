@@ -69,6 +69,7 @@ add_library(h2fix SHARED
     src/engine/npc.cpp
     src/engine/lists.cpp
     src/engine/messages.cpp
+    src/engine/game_events.cpp
     src/engine/scene_data.cpp
     src/engine/script_files.cpp
     src/engine/imports.cpp

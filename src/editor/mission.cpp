@@ -11,6 +11,7 @@
 
 #include "imgui.h"
 
+#include "../engine/game_events.h"
 #include "../engine/messages.h"
 #include "../engine/scene_data.h"
 #include "../hook.h"
@@ -195,6 +196,7 @@ void __fastcall hkLevelInit(void* self, void* edx)
 {
     g_level = self;
     oLevelInit(self, edx);
+    engine::WatchLevel(self);
 }
 
 bool CallLevel(int index)

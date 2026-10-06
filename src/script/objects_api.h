@@ -1,5 +1,8 @@
 #pragma once
+#include <cstdint>
 #include <string>
+
+#include "../engine/geoms.h"
 
 struct lua_State;
 
@@ -15,5 +18,10 @@ void DestroyScriptObjects();
 void ForgetScriptObjects();
 // Pushes the object handle of a scene path (for events).
 void PushObjectPath(::lua_State* L, const std::string& path);
+// Pushes the object of a scene object pointer, or nil (false) when it is not
+// one of the loaded scene's objects (the pointer is only compared).
+bool PushGeom(::lua_State* L, engine::ZGEOM* geom);
+// The same for a value an engine message carries: a pointer or a geom ref.
+bool PushCarriedGeom(::lua_State* L, uint32_t value);
 
 } // namespace h2::script

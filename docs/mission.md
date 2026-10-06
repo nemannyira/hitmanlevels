@@ -36,8 +36,13 @@ Addresses are hitman2.exe (Steam build).
   * SetObjectiveCompleted 0x52E350 (this, {slot, done}): bit `slot` of
     +0x610, check mark `AllLevels/Symbols` Complete / Incomplete, info
     "Objective status changed".
-  * Lines are laid out by the level's GUI file: a level shows only its own
-    number of lines (C1-1: 4).
+  * The window (AllLevels/LaptopBriefing) always has `Objectives/1..6`
+    (ZWINGROUP with `Check` and `Text`) and `Objectives/SavesLeft`; a level
+    hides the lines it does not use with node flag 0x400 and has SavesLeft
+    where its next line is (C1-1: 4 lines, SavesLeft at line 5). The editor
+    clears 0x400 (SetFlags 0x5BAC80) and unhides (vfunc 0xC0 = SetHidden,
+    flag 0x800: 0 shows) the lines it uses, and moves SavesLeft below the
+    last one (local y + one line height). The laptop opens with B.
 * LOC tree lookup 0x428FF0 (**stdcall** path, root) -> node `{flags, text}`
   (flag 1: text follows). The editor answers its own keys there.
 * The completion bits are display only; the mission's logic is in the level

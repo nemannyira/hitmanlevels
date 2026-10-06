@@ -17,6 +17,7 @@
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
+#include "../game.h"
 #include "../scene.h"
 #include "../script/events.h"
 #include "freecam.h"
@@ -261,15 +262,60 @@ void* Element(const char* name)
     }
 }
 
+// An element shown: the window file hides the lines a level does not use
+// with node flag 0x400; vfunc 0xC0 (0x5BAEF0) is SetHidden(bool), flag 0x800.
+constexpr uintptr_t kNode_SetFlags = 0x5BAC80;  // ZBaseGeom::(set, clear)
+
 bool SetVisible(void* element, bool visible)
 {
     if (!element)
         return false;
     __try {
-        VFunc<void(__thiscall*)(void*, int)>(element, 0xC0 / 4)(element, visible ? 1 : 0);
+        void* node = static_cast<engine::ZGEOM*>(element)->node;
+        if (visible)
+            reinterpret_cast<void(__thiscall*)(void*, uint32_t, uint32_t)>(kNode_SetFlags)(node, 0, 0x400);
+        VFunc<void(__thiscall*)(void*, int)>(element, 0xC0 / 4)(element, visible ? 0 : 1);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
+    }
+}
+
+int g_shownLines;          // the last line shown beyond the level's own (0: none)
+float g_savesY = -1e30f;   // the "saves left" line's own place (local y); -1e30: not known
+
+// The "saves left" line goes below the last line shown (in a level with 4
+// lines it is where line 5 is). Lines are siblings in "Objectives", one
+// line height apart.
+engine::ZGEOM* LocalY(const char* name, float& y)
+{
+    auto* e = static_cast<engine::ZGEOM*>(Element(name));
+    if (!e || !engine::IsReadable(e->node, sizeof(engine::ZBaseGeom)))
+        return nullptr;
+    y = e->node->pos[1];
+    return e;
+}
+
+void PlaceSavesLeft(int lastLine)
+{
+    char name[64];
+    snprintf(name, sizeof(name), "Objectives\\%d", lastLine);
+    float y1, y2, yLast, ySaves;
+    engine::ZGEOM* saves = LocalY("Objectives\\SavesLeft", ySaves);
+    if (!saves || !LocalY("Objectives\\1", y1) || !LocalY("Objectives\\2", y2) || !LocalY(name, yLast))
+        return;
+    if (g_savesY < -1e29f)
+        g_savesY = ySaves;
+    float want = std::max(g_savesY, yLast + (y2 - y1));
+    if (want == ySaves)
+        return;
+    engine::ZBaseGeom* n = saves->node;
+    float pos[3] = {n->pos[0], want, n->pos[2]};
+    float mat[9];
+    memcpy(mat, n->mat, sizeof(mat));
+    __try {
+        game::SetLocalTransform(saves, mat, pos);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
 }
 
@@ -281,6 +327,8 @@ void ShowLineElements(int slot)
         snprintf(name, sizeof(name), "Objectives\\%d%s", slot, part);
         SetVisible(Element(name), true);
     }
+    g_shownLines = std::max(g_shownLines, slot);
+    PlaceSavesLeft(g_shownLines);
 }
 
 bool CallSetCompleted(int slot, bool done)
@@ -492,6 +540,8 @@ void Check()
 
 void OnScene(const std::string&)
 {
+    g_shownLines = 0;
+    g_savesY = -1e30f;
     g_briefing = nullptr;
     g_level = nullptr;
     g_folder.clear();
@@ -957,7 +1007,12 @@ bool SetObjectiveText(int slot, const std::string& text)
         RestoreLine(slot);
         return g_briefing != nullptr;
     }
-    return CallSetObjective(slot, key.c_str());
+    bool ok = CallSetObjective(slot, key.c_str());
+    if (ok && OwnText(slot).empty()) {  // a line the level's laptop does not show
+        ShowLineElements(slot);
+        CallSetCompleted(slot, g_done[slot]);
+    }
+    return ok;
 }
 
 bool SetObjectiveDone(int slot, bool done)

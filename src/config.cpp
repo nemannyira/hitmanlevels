@@ -43,6 +43,12 @@ void LoadConfig()
     GetPrivateProfileStringA("Editor", "ToggleKey", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.editorKey = int(strtol(buf, nullptr, 0));
+    GetPrivateProfileStringA("Editor", "FreezeKey", "", buf, sizeof(buf), ini.c_str());
+    if (*buf)
+        g_config.freezeKey = int(strtol(buf, nullptr, 0));
+    GetPrivateProfileStringA("Editor", "SpeedKey", "", buf, sizeof(buf), ini.c_str());
+    if (*buf)
+        g_config.speedKey = int(strtol(buf, nullptr, 0));
     g_config.diagnostics = get("Debug", "Diagnostics", g_config.diagnostics) != 0;
     g_config.logFiles = get("Debug", "LogFiles", g_config.logFiles) != 0;
     g_config.stallWatchdog = get("Debug", "StallWatchdog", g_config.stallWatchdog) != 0;

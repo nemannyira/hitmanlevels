@@ -20,6 +20,9 @@ void SetOpen(bool open);
 // Asked when the editor key would close the editor: false keeps it open
 // (e.g. the guard asks the user first).
 void SetCloseGuard(bool (*guard)());
+// Keys pressed while the editor is closed (not repeats): true takes the key
+// from the game.
+void SetKeyHandler(bool (*handler)(int vk));
 
 // Fixed editor layout:
 //   main menu bar (File / Edit / View / Help)

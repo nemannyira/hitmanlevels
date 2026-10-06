@@ -19,5 +19,8 @@ void DrawPlayTestControl();
 void TestLevel();
 // Whether the editor holds the world still now.
 bool WorldFrozen();
+// The world also stands still with the editor closed (testtools.h).
+bool WorldFrozenWhilePlaying();
+void SetWorldFrozenWhilePlaying(bool on);
 
 } // namespace h2::editor

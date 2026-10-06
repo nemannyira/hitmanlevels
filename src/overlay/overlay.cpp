@@ -45,6 +45,7 @@ bool g_showDemo = false;
 bool g_panelsHidden = false;  // Tab: game view only (toolbar stays)
 std::string g_selectTab;      // left tab to select on the next frame
 bool (*g_closeGuard)();       // SetCloseGuard
+bool (*g_keyHandler)(int);    // SetKeyHandler
 
 constexpr ImGuiWindowFlags kDockedFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
                                           ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus;
@@ -61,6 +62,8 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             SetOpen(!g_open);
         return 0;
     }
+    if (!g_open && g_keyHandler && msg == WM_KEYDOWN && !(lp & (1 << 30)) && g_keyHandler(int(wp)))
+        return 0;
     if (g_ready && g_open) {
         if (msg == WM_CHAR && g_config.logRender)
             Log("WM_CHAR %04X", unsigned(wp));
@@ -428,6 +431,7 @@ ImFont* MenuFont() { return g_menuFont; }
 void SetExclusive(void (*draw)()) { g_exclusive = draw; }
 
 void SetCloseGuard(bool (*guard)()) { g_closeGuard = guard; }
+void SetKeyHandler(bool (*handler)(int vk)) { g_keyHandler = handler; }
 
 void SetOpen(bool open)
 {

@@ -55,6 +55,7 @@ add_library(h2fix SHARED
     src/editor/models_panel.cpp
     src/editor/npc_docs.cpp
     src/editor/playtest.cpp
+    src/editor/testtools.cpp
     src/editor/npc_panel.cpp
     src/editor/npcs.cpp
     src/editor/mission.cpp

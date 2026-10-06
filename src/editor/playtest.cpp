@@ -31,6 +31,7 @@ enum StartAt { kAtHitman, kAtCamera, kAtLevelStart };
 const char* const kStartNames[] = {"where Hitman is", "where the camera looks", "at the level's start"};
 
 bool g_freeze = true;     // the world stands still while the editor is open
+bool g_playFrozen;        // ... and while playing (Testing)
 int g_startAt = kAtHitman;
 bool g_wePaused;          // the pause is the editor's (not the game's own)
 bool g_askClose;          // the close question is to be opened
@@ -63,7 +64,7 @@ bool OnMap()
 
 void OnFrame()
 {
-    bool want = g_freeze && overlay::IsOpen() && OnMap();
+    bool want = OnMap() && ((g_freeze && overlay::IsOpen()) || g_playFrozen);
     if (want && !g_wePaused) {
         if (!EnginePaused()) {  // the game's own pause stays the game's
             PauseScene(true);
@@ -85,6 +86,7 @@ void OnLeaving(const std::string&)
 
 void Reload()
 {
+    g_playFrozen = false;  // testing plays
     std::string err;
     if (!ReloadLevelMap(&err)) {
         g_message = "not tested: " + err;
@@ -186,6 +188,8 @@ void DrawClosePrompt()
 } // namespace
 
 bool WorldFrozen() { return g_wePaused; }
+bool WorldFrozenWhilePlaying() { return g_playFrozen; }
+void SetWorldFrozenWhilePlaying(bool on) { g_playFrozen = on; }
 
 void TestLevel() { Test(); }
 

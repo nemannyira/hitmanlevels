@@ -11,6 +11,8 @@ extern "C" {
 
 #include "../display.h"
 #include "../editor/freecam.h"
+#include "../editor/playtest.h"
+#include "../editor/testtools.h"
 #include "../log.h"
 #include "../scene.h"
 #include "../ui.h"
@@ -55,6 +57,42 @@ int FreeCam(lua_State* L)
     if (lua_gettop(L) >= 1)
         editor::SetFreeCamEnabled(lua_toboolean(L, 1));
     lua_pushboolean(L, editor::FreeCamEnabled());
+    return 1;
+}
+
+// h2.speed([factor]) -> factor: game speed while a map is loaded (1 normal, 0.1 .. 8)
+int Speed(lua_State* L)
+{
+    if (lua_gettop(L) >= 1)
+        editor::SetGameSpeed(float(luaL_checknumber(L, 1)));
+    lua_pushnumber(L, editor::GameSpeed());
+    return 1;
+}
+
+// h2.god([on]) -> on: Hitman cannot be hurt
+int God(lua_State* L)
+{
+    if (lua_gettop(L) >= 1)
+        editor::SetGodMode(lua_toboolean(L, 1));
+    lua_pushboolean(L, editor::GodMode());
+    return 1;
+}
+
+// h2.invisible([on]) -> on: no one sees Hitman (characters do not see anyone)
+int Invisible(lua_State* L)
+{
+    if (lua_gettop(L) >= 1)
+        editor::SetHitmanInvisible(lua_toboolean(L, 1));
+    lua_pushboolean(L, editor::HitmanInvisible());
+    return 1;
+}
+
+// h2.freeze([on]) -> on: the world stands still (also with the editor closed)
+int Freeze(lua_State* L)
+{
+    if (lua_gettop(L) >= 1)
+        editor::SetWorldFrozenWhilePlaying(lua_toboolean(L, 1));
+    lua_pushboolean(L, editor::WorldFrozenWhilePlaying());
     return 1;
 }
 
@@ -128,6 +166,10 @@ void RegisterApi()
     Register("setcamrot", SetCamRot);
     Register("camrot", CamRot);
     Register("camlookat", CamLookAt);
+    Register("speed", Speed);
+    Register("god", God);
+    Register("invisible", Invisible);
+    Register("freeze", Freeze);
 }
 
 } // namespace h2::script

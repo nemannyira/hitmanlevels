@@ -1414,10 +1414,38 @@ const std::vector<std::string>& GameLevels()
 
 void SetModelImports(const std::vector<ModelImport>& list) { g_requests = list; }
 
+// Whether a value is a record of the loaded PRM (its table: header +8 offset,
+// +12 count; imported records come after, chained from their first).
+bool IsPrimRecord(uint32_t mesh)
+{
+    static const uint8_t* builtFor;
+    static std::set<uint32_t> records;
+    if (!g_prims || g_primsSize < 16)
+        return false;
+    if (builtFor != g_prims) {
+        builtFor = g_prims;
+        records.clear();
+        uint32_t table, count;
+        memcpy(&table, g_prims + 8, 4);
+        memcpy(&count, g_prims + 12, 4);
+        for (uint32_t i = 0; i < count && table + i * 4 + 4 <= g_primsSize; ++i) {
+            uint32_t r;
+            memcpy(&r, g_prims + table + i * 4, 4);
+            records.insert(r);
+        }
+    }
+    if (records.count(mesh))
+        return true;
+    for (const auto& [key, made] : g_recordMap)  // a model of another level imported here
+        if (made == mesh)
+            return true;
+    return false;
+}
+
 bool IsPlainModel(uint32_t mesh)
 {
     uint32_t type;
-    if (!g_prims || !mesh || mesh + kRecord > g_primsSize)
+    if (!g_prims || !mesh || mesh + kRecord > g_primsSize || !IsPrimRecord(mesh))
         return false;
     memcpy(&type, g_prims + mesh, 4);
     return type == 0;

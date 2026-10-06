@@ -39,6 +39,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <windows.h>
+#include <cmath>
 #include <map>
 #include <string>
 #include <vector>
@@ -64,6 +65,15 @@ extern "C" {
 namespace h2::script {
 
 namespace {
+
+// a number of a position or angle from a script: finite and in the world
+float Coordinate(lua_State* L, int arg)
+{
+    double v = luaL_checknumber(L, arg);
+    if (!std::isfinite(v) || std::fabs(v) > 1e7)
+        luaL_argerror(L, arg, "not a usable coordinate");
+    return float(v);
+}
 
 constexpr const char* kMeta = "h2.object";
 
@@ -141,9 +151,9 @@ int SpawnFrom(lua_State* L, engine::ZGEOM* source, int arg)
     editor::Transform t = editor::GetTransform(source);
     if (lua_gettop(L) >= arg + 2) {
         for (int i = 0; i < 3; ++i)
-            t.pos[i] = float(luaL_checknumber(L, arg + i));
+            t.pos[i] = Coordinate(L, arg + i);
         if (!lua_isnoneornil(L, arg + 3))
-            editor::EulerToMatrix(float(luaL_checknumber(L, arg + 3)), 0.0f, 0.0f, t.mat);
+            editor::EulerToMatrix(Coordinate(L, arg + 3), 0.0f, 0.0f, t.mat);
     } else {
         float c[3], r = 100.0f;
         if (!editor::GetBounds(source, c, r))
@@ -177,9 +187,9 @@ int Item(lua_State* L)
     g_scriptObjects.push_back(item);
     editor::Transform t = editor::GetTransform(item);
     for (int i = 0; i < 3; ++i)
-        t.pos[i] = float(luaL_checknumber(L, 2 + i));
+        t.pos[i] = Coordinate(L, 2 + i);
     if (!lua_isnoneornil(L, 5))
-        editor::EulerToMatrix(float(luaL_checknumber(L, 5)), 0.0f, 0.0f, t.mat);
+        editor::EulerToMatrix(Coordinate(L, 5), 0.0f, 0.0f, t.mat);
     editor::SetTransform(item, t);
     PushObject(L, editor::PathOf(item));
     return 1;
@@ -400,7 +410,7 @@ int Point(lua_State* L)
 {
     editor::Transform t = {{0, 0, 1, 0, 1, 0, 1, 0, 0}, {0, 0, 0}};
     for (int i = 0; i < 3; ++i)
-        t.pos[i] = float(luaL_checknumber(L, i + 1));
+        t.pos[i] = Coordinate(L, i + 1);
     engine::ZGEOM* room = nullptr;
     if (lua_istable(L, 4)) {
         lua_getfield(L, 4, "_path");
@@ -459,9 +469,9 @@ int Npc(lua_State* L)
         return luaL_error(L, "npc: no such character (see h2.npcs())");
     editor::NpcSpec spec;
     spec.record = record;
-    editor::EulerToMatrix(float(luaL_optnumber(L, 5, 0.0)), 0.0f, 0.0f, spec.transform.mat);
+    editor::EulerToMatrix(lua_isnoneornil(L, 5) ? 0.0f : Coordinate(L, 5), 0.0f, 0.0f, spec.transform.mat);
     for (int i = 0; i < 3; ++i)
-        spec.transform.pos[i] = float(luaL_checknumber(L, 2 + i));
+        spec.transform.pos[i] = Coordinate(L, 2 + i);
     if (lua_isboolean(L, 6) && !lua_toboolean(L, 6)) {
         spec.hasBehaviour = false;
     } else if (lua_isnoneornil(L, 6)) {
@@ -569,14 +579,16 @@ int ImportedMesh(lua_State* L)
 int MeshObject(lua_State* L)
 {
     uint32_t mesh = uint32_t(luaL_checkinteger(L, 1));
-    float pos[3] = {float(luaL_checknumber(L, 2)), float(luaL_checknumber(L, 3)), float(luaL_checknumber(L, 4))};
+    float pos[3] = {Coordinate(L, 2), Coordinate(L, 3), Coordinate(L, 4)};
+    if (!engine::IsPlainModel(mesh))  // the renderer reads it as a model record: only real ones
+        return luaL_error(L, "mesh_object: %d is not a model of this map (h2.imported_mesh)", int(mesh));
     engine::ZGEOM* parent = lua_isstring(L, 5) ? editor::Resolve(lua_tostring(L, 5)) : nullptr;
     if (!parent)
         if (engine::ZGEOM* hitman = engine::Player())
             parent = editor::RoomOf(hitman);
     if (!parent)
         return luaL_error(L, "mesh_object: no parent");
-    uint32_t flags = uint32_t(luaL_optinteger(L, 6, 0x200F3));
+    uint32_t flags = uint32_t(luaL_optinteger(L, 6, 0x200F3)) & 0xFFFFF;  // a record's node flags only
     const float mat[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};  // rows forward, up, right
     std::string name = "Imported_" + std::to_string(++g_spawnCounter), err;
     engine::ZGEOM* g = engine::CreateObject(name, parent, "ZSTDOBJ", mesh, flags, mat, pos, {}, &err);
@@ -803,7 +815,7 @@ int SetPos(lua_State* L)
     engine::ZGEOM* g = Geom(L);
     editor::Transform t = editor::GetTransform(g);
     for (int i = 0; i < 3; ++i)
-        t.pos[i] = float(luaL_checknumber(L, 2 + i));
+        t.pos[i] = Coordinate(L, 2 + i);
     editor::SetTransform(g, t);
     return 0;
 }
@@ -823,8 +835,9 @@ int SetRot(lua_State* L)
 {
     engine::ZGEOM* g = Geom(L);
     editor::Transform t = editor::GetTransform(g);
-    editor::EulerToMatrix(float(luaL_checknumber(L, 2)), float(luaL_optnumber(L, 3, 0)), float(luaL_optnumber(L, 4, 0)),
-                          t.mat);
+    float y = Coordinate(L, 2), p = lua_isnoneornil(L, 3) ? 0.0f : Coordinate(L, 3),
+          r = lua_isnoneornil(L, 4) ? 0.0f : Coordinate(L, 4);
+    editor::EulerToMatrix(y, p, r, t.mat);
     editor::SetTransform(g, t);
     return 0;
 }

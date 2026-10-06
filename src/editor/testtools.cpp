@@ -1,6 +1,7 @@
 #include "testtools.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -177,7 +178,7 @@ void DrawPanel()
 } // namespace
 
 float GameSpeed() { return g_speed; }
-void SetGameSpeed(float factor) { g_speed = std::clamp(factor, 0.1f, 8.0f); }
+void SetGameSpeed(float factor) { g_speed = std::isfinite(factor) ? std::clamp(factor, 0.1f, 8.0f) : 1.0f; }
 bool GodMode() { return g_god; }
 void SetGodMode(bool on) { g_god = on; }
 bool HitmanInvisible() { return g_invisible; }

@@ -106,10 +106,19 @@ int CamPos(lua_State* L)
     return 3;
 }
 
+// a finite number in the world's range (a NaN camera breaks the renderer's culling)
+float Finite(lua_State* L, int arg)
+{
+    double v = luaL_checknumber(L, arg);
+    if (!std::isfinite(v) || std::fabs(v) > 1e7)
+        luaL_argerror(L, arg, "not a usable number");
+    return float(v);
+}
+
 // h2.setcampos(x, y, z): moves the free camera
 int SetCamPos(lua_State* L)
 {
-    float p[3] = {float(luaL_checknumber(L, 1)), float(luaL_checknumber(L, 2)), float(luaL_checknumber(L, 3))};
+    float p[3] = {Finite(L, 1), Finite(L, 2), Finite(L, 3)};
     editor::SetFreeCamPosition(p);
     return 0;
 }
@@ -117,7 +126,7 @@ int SetCamPos(lua_State* L)
 // h2.setcamrot(yaw, pitch): free camera direction in degrees (yaw 0 = +Z, 90 = +X; pitch > 0 up)
 int SetCamRot(lua_State* L)
 {
-    editor::SetFreeCamAngles(float(luaL_checknumber(L, 1)), float(luaL_optnumber(L, 2, 0.0)));
+    editor::SetFreeCamAngles(Finite(L, 1), lua_isnoneornil(L, 2) ? 0.0f : Finite(L, 2));
     return 0;
 }
 
@@ -136,8 +145,7 @@ int CamLookAt(lua_State* L)
 {
     float p[3];
     editor::FreeCamPosition(p);
-    float d[3] = {float(luaL_checknumber(L, 1)) - p[0], float(luaL_checknumber(L, 2)) - p[1],
-                  float(luaL_checknumber(L, 3)) - p[2]};
+    float d[3] = {Finite(L, 1) - p[0], Finite(L, 2) - p[1], Finite(L, 3) - p[2]};
     float yaw = std::atan2(d[0], d[2]) * 57.29578f;
     float pitch = std::atan2(d[1], std::sqrt(d[0] * d[0] + d[2] * d[2])) * 57.29578f;
     editor::SetFreeCamAngles(yaw, pitch);

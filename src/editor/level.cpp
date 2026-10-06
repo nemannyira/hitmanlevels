@@ -110,9 +110,13 @@ void BlankScene()
         uint32_t mesh = engine::MeshOf(geom);
         if (!mesh || !engine::IsPlainModel(mesh) || InActor(geom) || InItem(geom))
             continue;
-        if (g.name.rfind("SkyDome", 0) == 0 || g.path.find("HitmanAs") != std::string::npos ||
-            g.path.find("GuiSetup") != std::string::npos || g.path.find("HeroSetup") != std::string::npos)
-            continue;  // the sky stays; clothes Hitman can wear, the interface and Hitman's setup too
+        std::string lowPath = g.path;
+        for (char& c : lowPath)
+            c = char(tolower(static_cast<unsigned char>(c)));
+        if (g.name.rfind("SkyDome", 0) == 0 || lowPath.find("backdrop") != std::string::npos ||
+            g.path.find("HitmanAs") != std::string::npos || g.path.find("GuiSetup") != std::string::npos ||
+            g.path.find("HeroSetup") != std::string::npos)
+            continue;  // the sky (its dome and clouds) stays; clothes Hitman can wear, the interface and Hitman's setup too
         g_blanked.push_back({geom, mesh});
         SetHidden(geom, true);
         engine::SetModelSolid(mesh, false);

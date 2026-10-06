@@ -860,6 +860,23 @@ void __fastcall hkTexData(void* self, void* edx, void* buf, uint32_t size)
 uint8_t* g_prims;
 uint32_t g_primsSize;
 std::map<uint32_t, uint32_t> g_masks;  // record -> its query mask before it was cleared
+std::set<uint32_t> g_primRecords;      // the PRM's records (its table, read as loaded)
+
+// the PRM's table (header +8 offset, +12 count), before the renderer uses the buffer
+void ReadPrimTable(const uint8_t* b, uint32_t size)
+{
+    g_primRecords.clear();
+    if (!b || size < 16)
+        return;
+    uint32_t table, count;
+    memcpy(&table, b + 8, 4);
+    memcpy(&count, b + 12, 4);
+    for (uint32_t i = 0; i < count && table + i * 4 + 4 <= size; ++i) {
+        uint32_t r;
+        memcpy(&r, b + table + i * 4, 4);
+        g_primRecords.insert(r);
+    }
+}
 
 void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
 {
@@ -868,9 +885,11 @@ void __fastcall hkPrimsData(void* self, void* edx, void* buf, uint32_t size)
     g_masks.clear();
     if (!g_active) {
         oPrimsData(self, edx, buf, size);
+        ReadPrimTable(static_cast<uint8_t*>(buf), size);
         return;
     }
     oPrimsData(self, edx, buf, g_primReal);
+    ReadPrimTable(static_cast<uint8_t*>(buf), g_primReal);
     for (const TexUse& u : g_texUses) {
         auto it = g_texMap.find({u.level, u.id});
         uint32_t id = it != g_texMap.end() ? it->second : 0;
@@ -1418,23 +1437,7 @@ void SetModelImports(const std::vector<ModelImport>& list) { g_requests = list; 
 // +12 count; imported records come after, chained from their first).
 bool IsPrimRecord(uint32_t mesh)
 {
-    static const uint8_t* builtFor;
-    static std::set<uint32_t> records;
-    if (!g_prims || g_primsSize < 16)
-        return false;
-    if (builtFor != g_prims) {
-        builtFor = g_prims;
-        records.clear();
-        uint32_t table, count;
-        memcpy(&table, g_prims + 8, 4);
-        memcpy(&count, g_prims + 12, 4);
-        for (uint32_t i = 0; i < count && table + i * 4 + 4 <= g_primsSize; ++i) {
-            uint32_t r;
-            memcpy(&r, g_prims + table + i * 4, 4);
-            records.insert(r);
-        }
-    }
-    if (records.count(mesh))
+    if (g_primRecords.count(mesh))
         return true;
     for (const auto& [key, made] : g_recordMap)  // a model of another level imported here
         if (made == mesh)

@@ -161,6 +161,8 @@ void DrawPanel()
     char keys[96] = "";
     auto keyName = [](int vk) {
         static char n[32];
+        if (vk == VK_PAUSE)
+            return std::string("Pause");  // no scan code name for it
         UINT sc = MapVirtualKeyA(UINT(vk), MAPVK_VK_TO_VSC);
         if (!sc || !GetKeyNameTextA(LONG(sc << 16), n, sizeof(n)))
             snprintf(n, sizeof(n), "key 0x%02X", vk);

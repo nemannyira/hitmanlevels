@@ -38,6 +38,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <windows.h>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -596,6 +598,20 @@ int Objects(lua_State* L)
     return 1;
 }
 
+// obj:event(name) -> sent: a script event for the character's behaviour (as the game's
+// own: "Msg_InstantDeath", "HITMAN_DEAD", "Msg_ChangeMusicToActionMode", ...)
+int Event(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    static std::map<std::string, std::string> names;  // the event names stay alive
+    std::string& name = names[luaL_checkstring(L, 2)];
+    if (name.empty())
+        name = luaL_checkstring(L, 2);
+    const char* param = name.c_str();
+    lua_pushboolean(L, engine::SendMessage(g, g, engine::RegisterMessage("ScriptEvent"), &param));
+    return 1;
+}
+
 // obj:state() -> name of the state the character's behaviour is in
 int State(lua_State* L)
 {
@@ -857,7 +873,7 @@ void RegisterObjectsApi()
         {"name", Name},   {"class", Class},   {"path", Path}, {"isa", IsA},   {"valid", Valid},
         {"pos", Pos},     {"setpos", SetPos}, {"rot", Rot},   {"setrot", SetRot},
         {"hide", Hide},   {"show", Show},     {"hidden", Hidden},
-        {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State},
+        {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State}, {"event", Event},
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
         {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"kill", Kill},
         {nullptr, nullptr},

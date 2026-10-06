@@ -154,12 +154,22 @@ void SetFreeCamEnabled(bool enabled)
     SetViewDistance(g_enabled ? g_viewDistance : 1.0f);
 }
 
+bool CameraTransform(game::ZCAMERA* cam, float m[9], float pos[3])
+{
+    __try {
+        game::GetWorldTransform(cam, m, pos);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;  // gone with a scene being loaded
+    }
+}
+
 void FreeCamPosition(float out[3])
 {
     if (!g_enabled) {
-        float m[9];
-        if (game::ZCAMERA* cam = game::MainCamera())
-            game::GetWorldTransform(cam, m, g_pos);
+        float m[9], p[3];
+        if (game::ZCAMERA* cam = game::MainCamera(); cam && CameraTransform(cam, m, p))
+            memcpy(g_pos, p, sizeof(p));
     }
     for (int i = 0; i < 3; ++i)
         out[i] = g_pos[i];

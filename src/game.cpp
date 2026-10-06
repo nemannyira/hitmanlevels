@@ -24,6 +24,12 @@ ZCAMERA* MainCamera()
     __try {
         if (!IsCameraVtable(*reinterpret_cast<uintptr_t*>(cam)))
             return nullptr;
+        // a camera freed while a scene loads keeps its vtable for a while: its
+        // node (ZGEOM +8) must still be its own (node +0x54 back to it)
+        uintptr_t node = *reinterpret_cast<uintptr_t*>(reinterpret_cast<char*>(cam) + 8);
+        if (node < 0x10000 || node == 0x55555555 ||
+            *reinterpret_cast<ZCAMERA**>(node + 0x54) != cam)
+            return nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }

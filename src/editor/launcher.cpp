@@ -89,7 +89,7 @@ const Floor kFloors[] = {
 };
 int g_floor = 1;
 struct Saved {
-    std::string folder, name, scene;
+    std::string folder, name, scene, modified;
 };
 std::vector<Saved> g_saved;
 int g_pick = -1;
@@ -244,6 +244,7 @@ void LoadSavedList()
             nlohmann::json j = nlohmann::json::parse(f);
             s.name = j.value("name", folder);
             s.scene = j.value("base_scene", "");
+            s.modified = LevelModified(folder);
         } catch (...) {
             continue;
         }
@@ -344,17 +345,33 @@ void DrawLauncher()
                     ImGui::TextDisabled("no levels in Mods\\ yet");
                 }
                 bool go = false;
-                if (!g_saved.empty() && ImGui::BeginListBox("##saved", ImVec2(-1, ImGui::GetFontSize() * 14))) {
-                    for (size_t i = 0; i < g_saved.size(); ++i) {
-                        char label[256];
-                        snprintf(label, sizeof(label), "%s  -  %s##%d", g_saved[i].name.c_str(),
-                                 MapName(g_saved[i].scene), int(i));
-                        if (ImGui::Selectable(label, int(i) == g_pick, ImGuiSelectableFlags_AllowDoubleClick)) {
+                constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+                                                   ImGuiTableFlags_BordersInnerV;
+                if (!g_saved.empty() &&
+                    ImGui::BeginTable("##saved", 3, kFlags, ImVec2(-1, ImGui::GetFontSize() * 14))) {
+                    ImGui::TableSetupScrollFreeze(0, 1);
+                    ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Map", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Last saved", ImGuiTableColumnFlags_WidthFixed,
+                                            ImGui::CalcTextSize("0000-00-00 00:00").x);
+                    ImGui::TableHeadersRow();
+                    for (size_t i = 0; i < g_saved.size(); ++i) {  // the last saved first (ListLevels)
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        char label[160];
+                        snprintf(label, sizeof(label), "%s##%d", g_saved[i].name.c_str(), int(i));
+                        if (ImGui::Selectable(label, int(i) == g_pick,
+                                              ImGuiSelectableFlags_SpanAllColumns |
+                                                  ImGuiSelectableFlags_AllowDoubleClick)) {
                             g_pick = int(i);
                             go = ImGui::IsMouseDoubleClicked(0);
                         }
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted(MapName(g_saved[i].scene));
+                        ImGui::TableNextColumn();
+                        ImGui::TextDisabled("%s", g_saved[i].modified.c_str());
                     }
-                    ImGui::EndListBox();
+                    ImGui::EndTable();
                 }
                 ImGui::BeginDisabled(g_pick < 0);
                 if ((ImGui::Button("Open", ImVec2(-1, 0)) || go) && g_pick >= 0) {

@@ -663,7 +663,7 @@ void FileMenu()
         if (levels.empty())
             ImGui::TextDisabled("no levels in Mods\\");
         for (const std::string& folder : levels) {
-            if (ImGui::MenuItem(folder.c_str())) {
+            if (ImGui::MenuItem(folder.c_str(), LevelModified(folder).c_str())) {
                 std::string err;
                 g_status = LoadLevel(folder, &err) ? "loaded " + folder : "load failed: " + err;
             }
@@ -1902,6 +1902,30 @@ void RevertLevel()
     }
 }
 
+namespace {
+
+uint64_t LevelFileTime(const std::string& folder)
+{
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    if (!GetFileAttributesExA((ModsDir() + folder + "\\level.json").c_str(), GetFileExInfoStandard, &a))
+        return 0;
+    return (uint64_t(a.ftLastWriteTime.dwHighDateTime) << 32) | a.ftLastWriteTime.dwLowDateTime;
+}
+
+} // namespace
+
+std::string LevelModified(const std::string& folder)
+{
+    uint64_t t = LevelFileTime(folder);
+    FILETIME utc{DWORD(t), DWORD(t >> 32)}, local;
+    SYSTEMTIME st;
+    if (!t || !FileTimeToLocalFileTime(&utc, &local) || !FileTimeToSystemTime(&local, &st))
+        return "";
+    char out[32];
+    snprintf(out, sizeof(out), "%04u-%02u-%02u %02u:%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute);
+    return out;
+}
+
 std::vector<std::string> ListLevels()
 {
     std::vector<std::string> out;
@@ -1917,6 +1941,12 @@ std::vector<std::string> ListLevels()
         }
     } while (FindNextFileA(h, &fd));
     FindClose(h);
+    std::vector<std::pair<uint64_t, std::string>> byTime;
+    for (const std::string& folder : out)
+        byTime.emplace_back(LevelFileTime(folder), folder);
+    std::stable_sort(byTime.begin(), byTime.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    for (size_t i = 0; i < out.size(); ++i)
+        out[i] = byTime[i].second;
     return out;
 }
 

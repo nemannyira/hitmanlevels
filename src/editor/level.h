@@ -206,7 +206,10 @@ void SetFloor(const std::string& level, uint32_t mesh, const std::string& name);
 int ApplyLevel();
 // Undoes every edit of the level in the loaded scene (restores originals).
 void RevertLevel();
+// The levels in Mods (folders), the last saved first.
 std::vector<std::string> ListLevels();
+// When a level was last saved: its level.json's time, local ("2026-10-06 14:32"; "" unknown).
+std::string LevelModified(const std::string& folder);
 
 // "Level" panel and automatic application when the base scene loads.
 void InstallLevelPanel();

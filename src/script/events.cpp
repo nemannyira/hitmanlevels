@@ -52,8 +52,7 @@ const Alias kAliases[] = {
     {"alarm", "leavealarmstate", "on", 0, false},
     {"alarm", "alarmend", "on", 0, false},
     {"unconscious", "characterunconscious", nullptr, 0, false},
-    {"disguise", "hitman_changedclothes", nullptr, 0, true},
-    {"disguise", "levelcontrolnotifychangeclothes", nullptr, 0, true},
+    {"disguise", "levelcontrolnotifychangeclothes", nullptr, 0, true},  // (Hitman_ChangedClothes comes with it)
     {"pickup", "levelcontrolnotifypickupitem", nullptr, 0, false},
     {"useitem", "levelcontrolnotifyuseitem", nullptr, 0, false},
     {"drop", "msg_dropitem", nullptr, 0, false},

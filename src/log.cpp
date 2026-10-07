@@ -35,6 +35,8 @@ void LogInit()
     QueryPerformanceFrequency(&g_freq);
     QueryPerformanceCounter(&g_start);
     InitializeCriticalSection(&g_lock);
+    // the last run's log (with its Lua console lines) stays as H2Fix.prev.log
+    MoveFileExA((GameDir() + "H2Fix.log").c_str(), (GameDir() + "H2Fix.prev.log").c_str(), MOVEFILE_REPLACE_EXISTING);
     g_file = fopen((GameDir() + "H2Fix.log").c_str(), "w");
 }
 

@@ -24,7 +24,11 @@ namespace h2::script {
 //   "hitman_damage"  e.amount, e.health, e.dead
 //   "drag"      a body dragged: e.body, e.by (who drags), e.started
 //   messages under names of their own (the message table plus a field):
-//   "spotted", "alarm" (e.on), "unconscious", "disguise", "pickup",
+//   a guard's reaction (e.to: the guard; once a second each):
+//   "suspicious", "recognized" (sees through the disguise), "hostile",
+//   "spotted" (takes Hitman as his target), "help" (calls the others),
+//   "alarm" (e.on; levels whose scripts have an alarm state);
+//   "unconscious", "disguise", "pickup",
 //   "useitem", "drop", "damage", "hit", "shot" (e.silent; once a second per
 //   place: everyone near hears it), "door" (e.open),
 //   "explosion", "laptop" / "map" / "menu" /

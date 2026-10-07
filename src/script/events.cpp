@@ -33,43 +33,54 @@ std::string Lower(std::string s)
 
 // The game's messages under names of their own (the same table as
 // "msg:<name>", with a field: `flag` 1 / 0 sets it to true / false, -1 to
-// whether the message's param is not 0). `once`: a message many objects get
-// (a noise everyone near hears, over half a second: its words are where it
-// was; a change of clothes): the same one comes once a second.
+// whether the message's param is not 0). `once`:
+//   Shared: a message many objects get (a noise everyone near hears, over
+//           half a second: its words are where it was): once a second;
+//   Each:   a state a character gets again and again (a guard's threads:
+//           Thread_Recognized many times): once a second per character.
+// A C1-1 guard (seen in the game): Thread_ExamineHitman / ActingStrange
+// (suspicious), Thread_Recognized, Thread_Angry, ReportNewTarget (takes
+// Hitman as his target), HelpRequest (calls the others).
+enum Once { Always, Shared, Each };
 struct Alias {
     const char* event;
     const char* message;  // lower case
     const char* field;
     int flag;
-    bool once;
+    Once once;
 };
 const Alias kAliases[] = {
-    {"spotted", "hitmanspotted", nullptr, 0, false},
-    {"spotted", "hitmandetected", nullptr, 0, false},
-    {"spotted", "reportnewtarget", nullptr, 0, false},  // a guard takes Hitman as his target
-    {"alarm", "enteralarmstate", "on", 1, false},
-    {"alarm", "alarmraised", "on", 1, false},
-    {"alarm", "leavealarmstate", "on", 0, false},
-    {"alarm", "alarmend", "on", 0, false},
-    {"unconscious", "characterunconscious", nullptr, 0, false},
-    {"disguise", "levelcontrolnotifychangeclothes", nullptr, 0, true},  // (Hitman_ChangedClothes comes with it)
-    {"pickup", "levelcontrolnotifypickupitem", nullptr, 0, false},
-    {"useitem", "levelcontrolnotifyuseitem", nullptr, 0, false},
-    {"drop", "msg_dropitem", nullptr, 0, false},
-    {"damage", "msg_damage", nullptr, 0, false},
-    {"hit", "projectilehit", nullptr, 0, false},
-    {"shot", "msg_sound_shot", "silent", 0, true},
-    {"shot", "msg_sound_silentshot", "silent", 1, true},
-    {"door", "dooropen", "open", 1, false},
-    {"door", "doorclose", "open", 0, false},
-    {"explosion", "msg_explode", nullptr, 0, true},
-    {"laptop", "briefingmenuopened", "open", -1, true},
-    {"map", "ingamemapopened", "open", -1, true},
-    {"menu", "ingamemenuopened", "open", -1, true},
-    {"inventory", "ingameinventoryopened", "open", -1, true},
-    {"cutscene", "cutsequence_start", "started", 1, true},
-    {"cutscene", "cutsequence_end", "started", 0, true},
-    {"restart", "restartlevel", nullptr, 0, true},
+    {"suspicious", "thread_examinehitman", nullptr, 0, Each},
+    {"suspicious", "thread_actingstrange", nullptr, 0, Each},
+    {"recognized", "thread_recognized", nullptr, 0, Each},
+    {"hostile", "thread_angry", nullptr, 0, Each},
+    {"spotted", "hitmanspotted", nullptr, 0, Each},
+    {"spotted", "hitmandetected", nullptr, 0, Each},
+    {"spotted", "reportnewtarget", nullptr, 0, Each},
+    {"help", "helprequest", nullptr, 0, Each},
+    {"alarm", "enteralarmstate", "on", 1, Each},  // levels whose scripts have an alarm state
+    {"alarm", "alarmraised", "on", 1, Always},
+    {"alarm", "leavealarmstate", "on", 0, Each},
+    {"alarm", "alarmend", "on", 0, Always},
+    {"unconscious", "characterunconscious", nullptr, 0, Always},
+    {"disguise", "levelcontrolnotifychangeclothes", nullptr, 0, Shared},  // (Hitman_ChangedClothes comes with it)
+    {"pickup", "levelcontrolnotifypickupitem", nullptr, 0, Always},
+    {"useitem", "levelcontrolnotifyuseitem", nullptr, 0, Always},
+    {"drop", "msg_dropitem", nullptr, 0, Always},
+    {"damage", "msg_damage", nullptr, 0, Always},
+    {"hit", "projectilehit", nullptr, 0, Always},
+    {"shot", "msg_sound_shot", "silent", 0, Shared},
+    {"shot", "msg_sound_silentshot", "silent", 1, Shared},
+    {"door", "dooropen", "open", 1, Always},
+    {"door", "doorclose", "open", 0, Always},
+    {"explosion", "msg_explode", nullptr, 0, Shared},
+    {"laptop", "briefingmenuopened", "open", -1, Shared},
+    {"map", "ingamemapopened", "open", -1, Shared},
+    {"menu", "ingamemenuopened", "open", -1, Shared},
+    {"inventory", "ingameinventoryopened", "open", -1, Shared},
+    {"cutscene", "cutsequence_start", "started", 1, Shared},
+    {"cutscene", "cutsequence_end", "started", 0, Shared},
+    {"restart", "restartlevel", nullptr, 0, Shared},
 };
 
 // "msg:HitmanSpotted" and "msg:hitmanspotted" are one event
@@ -288,10 +299,13 @@ void FireGameMessage(const engine::GameEvent& e)
         if (name != a.message || !HasHandlers(a.event))
             continue;
         bool flag = a.flag < 0 ? e.param != 0 : a.flag != 0;
-        if (a.once) {
+        if (a.once != Always) {
             std::string key = std::string(a.event) + (flag ? "1" : "0");
-            for (int i = 0; i < e.wordCount && i < 3; ++i)
-                key += ":" + std::to_string(e.words[i]);
+            if (a.once == Each)
+                key += ":" + std::to_string(e.script ? uintptr_t(e.instance) : uintptr_t(e.to));
+            else
+                for (int i = 0; i < e.wordCount && i < 3; ++i)
+                    key += ":" + std::to_string(e.words[i]);
             double now = NowMs();
             auto it = g_recent.find(key);
             if (it != g_recent.end() && now - it->second < 1000.0)

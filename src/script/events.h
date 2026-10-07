@@ -22,11 +22,12 @@ namespace h2::script {
 //               rating counts it; "other": not counted, e.g. not by Hitman)
 //   "mission"   e.result ("completed" / "failed")
 //   "hitman_damage"  e.amount, e.health, e.dead
+//   "drag"      a body dragged: e.body, e.by (who drags), e.started
 //   messages under names of their own (the message table plus a field):
 //   "spotted", "alarm" (e.on), "unconscious", "disguise", "pickup",
 //   "useitem", "drop", "damage", "hit", "shot" (e.silent; once a second per
 //   place: everyone near hears it), "door" (e.open),
-//   "explosion", "drag" (e.started), "laptop" / "map" / "menu" /
+//   "explosion", "laptop" / "map" / "menu" /
 //   "inventory" (e.open), "cutscene" (e.started), "restart"
 void RegisterEvents();
 

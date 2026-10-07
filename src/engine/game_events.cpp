@@ -17,6 +17,9 @@ namespace {
 
 constexpr uintptr_t kGeom_SendMessage = 0x43CBE0;  // ZGEOM vfunc 0x120 (this = sender; receiver, msg, param*)
 constexpr uintptr_t kHitman_Damage = 0x519390;     // ZHITMAN2 (float amount)
+constexpr uintptr_t kDragStart = 0x50A750;         // ZTRACKLNKHM2 vfunc 0x658 (dragger ref)
+constexpr uintptr_t kDragEnd = 0x50A820;           // vfunc 0x65C ()
+constexpr uint32_t kDragger = 0x762;               // the dragger's ref while dragged
 constexpr uintptr_t kScript_Deliver = 0x5E13A0;    // script engine: (instance, name, param*) to a script, by name
 constexpr uint32_t kMsgNames = 0xC37;              // engine: char* name[id]
 constexpr uint32_t kMsgCount = 0x1C43;             // engine: the last id
@@ -245,6 +248,33 @@ void __fastcall hkDamage(void* hitman, void* edx, float amount)
     Queue(std::move(e));
 }
 
+using DragStart_t = void(__fastcall*)(void* body, void* edx, uint32_t dragger);
+DragStart_t oDragStart;
+void __fastcall hkDragStart(void* body, void* edx, uint32_t dragger)
+{
+    oDragStart(body, edx, dragger);
+    GameEvent e;
+    e.kind = GameEvent::Drag;
+    e.to = static_cast<ZGEOM*>(body);
+    e.hasValue = true;
+    e.value = dragger;
+    e.type = 1;
+    Queue(std::move(e));
+}
+
+using DragEnd_t = void(__fastcall*)(void* body, void* edx);
+DragEnd_t oDragEnd;
+void __fastcall hkDragEnd(void* body, void* edx)
+{
+    GameEvent e;
+    e.kind = GameEvent::Drag;
+    e.to = static_cast<ZGEOM*>(body);
+    e.hasValue = CopyMem(&e.value, static_cast<char*>(body) + kDragger, 4);
+    e.type = 0;
+    oDragEnd(body, edx);
+    Queue(std::move(e));
+}
+
 // The level routine's entries, per vtable (each level has its own class).
 struct LevelEntries {
     void* kill = nullptr;
@@ -360,6 +390,8 @@ void InstallGameEvents()
     Hook("ZGEOM::SendMessage", kGeom_SendMessage, hkSend, &oSend);
     Hook("ZHITMAN2::Damage", kHitman_Damage, hkDamage, &oDamage);
     Hook("Script::Deliver", kScript_Deliver, hkDeliver, &oDeliver);
+    Hook("ZTRACKLNKHM2::DragStart", kDragStart, hkDragStart, &oDragStart);
+    Hook("ZTRACKLNKHM2::DragEnd", kDragEnd, hkDragEnd, &oDragEnd);
     OnSceneLeaving([](const std::string&) {
         g_queue.clear();
         g_any = false;  // ids may be given again with the next scene

@@ -14,7 +14,9 @@
 // from vfunc 0xB0); the end of a mission vfunc 0xC4 (completed) / 0xC0
 // (failed).
 // Hitman's damage: ZHITMAN2 0x519390 (hitman, float amount), hit points at
-// +0xD72.
+// +0xD72. A body dragged: ZTRACKLNKHM2 vfunc 0x658 = 0x50A750 (dragger ref,
+// kept at +0x762) and 0x65C = 0x50A820 (let go), as MSG_DRAGSTART / DRAGEND
+// call them.
 //
 // Scripts also message each other by name (the script engine's delivery
 // 0x5E13A0 (instance, name, param*), ScriptEvent unpacked: the alarm, Hitman
@@ -33,9 +35,9 @@
 namespace h2::engine {
 
 struct GameEvent {
-    enum Kind { Message, Kill, Harm, MissionCompleted, MissionFailed, HitmanDamage } kind = Message;
+    enum Kind { Message, Kill, Harm, MissionCompleted, MissionFailed, HitmanDamage, Drag } kind = Message;
     std::string name;        // Message: the message's name
-    ZGEOM* to = nullptr;     // Message: receiver; Kill / Harm: the level object
+    ZGEOM* to = nullptr;     // Message: receiver; Kill / Harm: the level object; Drag: the body
     ZGEOM* from = nullptr;   // Message: sender
     uintptr_t param = 0;     // Message: the param pointer itself (some messages pass a value: 0 / 1)
     bool hasValue = false;   // the dword the param points to was readable
@@ -43,7 +45,8 @@ struct GameEvent {
     uint32_t words[4] = {};  // the first dwords the param points to (words[0] = value)
     int wordCount = 0;
     std::string text;        // a text the param (or what it points to) is
-    int type = 0;            // Kill / Harm: the kind (2 enemy, 1 innocent, 0 not counted)
+    int type = 0;            // Kill / Harm: the kind (2 enemy, 1 innocent, 0 not counted); Drag: 1 started, 0 ended
+                             //   (Drag: value = the dragger's geom ref)
     float amount = 0.0f;     // HitmanDamage: damage, health after it
     float health = 0.0f;
     bool script = false;     // Message: one script sent to another (to: ScriptGeom(instance))

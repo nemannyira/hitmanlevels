@@ -63,8 +63,6 @@ const Alias kAliases[] = {
     {"door", "dooropen", "open", 1, false},
     {"door", "doorclose", "open", 0, false},
     {"explosion", "msg_explode", nullptr, 0, true},
-    {"drag", "msg_dragstart", "started", 1, false},
-    {"drag", "msg_dragend", "started", 0, false},
     {"laptop", "briefingmenuopened", "open", -1, true},
     {"map", "ingamemapopened", "open", -1, true},
     {"menu", "ingamemenuopened", "open", -1, true},
@@ -336,6 +334,20 @@ void FireGameEvents()
                 lua_createtable(L, 0, 1);
                 lua_pushstring(L, e.kind == engine::GameEvent::MissionCompleted ? "completed" : "failed");
                 lua_setfield(L, -2, "result");
+                return 1;
+            });
+            break;
+        case engine::GameEvent::Drag:
+            Fire("drag", [&](lua_State* L) {
+                lua_createtable(L, 0, 3);
+                PushGeom(L, e.to);
+                lua_setfield(L, -2, "body");
+                if (e.hasValue && e.value)
+                    PushCarriedGeom(L, e.value);
+                else
+                    lua_pushnil(L);
+                lua_setfield(L, -2, "by");
+                SetBool(L, "started", e.type != 0);
                 return 1;
             });
             break;

@@ -190,7 +190,7 @@ void InstallTestTools()
 {
     overlay::AddPanel({"Testing", &g_visible, DrawPanel, overlay::Dock::Right});
     overlay::AddAlwaysDraw(DrawIndicator);
-    overlay::SetKeyHandler(OnKey);
+    overlay::AddKeyHandler(OnKey);
     OnFrameEnd(OnFrame);
 }
 

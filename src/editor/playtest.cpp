@@ -231,4 +231,6 @@ void InstallPlayTest()
     overlay::AddAlwaysDraw(DrawClosePrompt);
 }
 
+bool ScenePaused() { return EnginePaused(); }
+
 } // namespace h2::editor

@@ -8,6 +8,7 @@
 #include "../engine/game_events.h"
 #include "../log.h"
 #include "objects_api.h"
+#include "triggers.h"
 
 extern "C" {
 #include "lauxlib.h"
@@ -390,7 +391,11 @@ void RegisterEvents()
     Register("messages", Messages);
 }
 
-void SetHandlerOwner(const std::string& owner) { g_owner = owner; }
+void SetHandlerOwner(const std::string& owner)
+{
+    g_owner = owner;
+    SetTriggerOwner(owner);
+}
 
 void ClearHandlers(const std::string& owner)
 {
@@ -417,6 +422,18 @@ void ClearHandlers(const std::string& owner)
     }
     lua_pop(L, 1);
     UpdateWatch();
+    ClearTriggers(owner);
+}
+
+void FireKey(int vk, const std::string& name)
+{
+    Fire("key", [&](lua_State* L) {
+        lua_createtable(L, 0, 2);
+        lua_pushstring(L, name.c_str());
+        lua_setfield(L, -2, "key");
+        SetInteger(L, "vk", vk);
+        return 1;
+    });
 }
 
 void FireScene(const std::string& scene)

@@ -44,5 +44,7 @@ void FireFrame(double dt);
 void FireDeath(const std::string& path);
 void FireObjective(int slot);
 void FireGameEvents();
+// "key" (triggers.h)
+void FireKey(int vk, const std::string& name);
 
 } // namespace h2::script

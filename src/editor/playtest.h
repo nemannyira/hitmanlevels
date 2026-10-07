@@ -21,6 +21,8 @@ void TestLevel();
 bool WorldFrozen();
 // The world also stands still with the editor closed (testtools.h).
 bool WorldFrozenWhilePlaying();
+// The engine's pause is on (the editor's, the Freeze toggle's, the game's own).
+bool ScenePaused();
 void SetWorldFrozenWhilePlaying(bool on);
 
 } // namespace h2::editor

@@ -283,7 +283,9 @@ at anything yet). Seen in the game: walkto walks a level's character (with
 or without a behaviour) and a character placed in the level (made with the
 scene) to a point of the level's path network (pathrequest, pathfinished;
 a point off it: patherror, e.g. Hitman's start hill on C1-1); characters
-made while playing (h2.npc on a loaded map) do not walk. moveset("Run"):
+made while playing (h2.npc) walk as well (Actor_MoveTo 0x463DA0 asks the
+scene's rEnemyPathFinder3 at actor +0x513, set in PostInit 0x462E80 for
+every actor). moveset("Run"):
 about 3 times the walking speed. lookat turns the head. npc:animation(name
 [, loop]) plays an animation of the character's sets (e.g. Stand_Scared_Alt01
 looping); npc:faceto turns it at once (a character's face is opposite its

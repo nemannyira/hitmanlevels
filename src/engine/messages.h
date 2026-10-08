@@ -22,7 +22,9 @@ bool KillActor(ZGEOM* actor);
 // Commands, as the scripts' Actor_If methods do them (call the actor's
 // virtual functions the same way; the actor's own behaviour may give it
 // other orders): MoveToPosition (Actor_If 8, 0x5842C0) walks to a point
-// (on the level's path network; characters made while playing do not walk),
+// (of the level's path network: Actor_MoveTo 0x463DA0 asks the scene's
+// rEnemyPathFinder3 (+0x513, set in PostInit 0x462E80); a point off it is
+// not reached),
 // LookAt (26, 0x584E20) keeps a target for the head, which turns to it at
 // once (0x46F630) unless it is looking at something already (null: stops),
 // UseMoveSet (7, 0x583F70) chooses how it moves ("Walk", "Run", ...).

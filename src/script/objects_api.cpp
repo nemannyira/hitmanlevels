@@ -28,9 +28,8 @@
 //   npc:walkto(x, y, z) / npc:walkto(obj), npc:lookat(obj | nil), npc:moveset("Run"),
 //   npc:animation("Stand_Relaxed_Alt01" [, loop]), npc:faceto(obj | x, y, z)
 //     (as the scripts' MoveToPosition / LookAt / UseMoveSet; a character's
-//     own behaviour may give it other orders: place it without one; walking
-//     needs the level's path network and a character placed in the level,
-//     not one made while playing)
+//     own behaviour may give it other orders: place it without one; it
+//     walks only to points of the level's path network)
 //   h2.player()                            -- Hitman
 //   h2.objective(slot [, text [, done]])   -- a laptop objective line; returns the level's own text
 //   h2.briefing(text)                      -- the laptop's mission briefing ("" = the level's own)

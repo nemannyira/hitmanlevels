@@ -15,6 +15,15 @@ namespace {
 constexpr uintptr_t kRegisterZMsg = 0x41EED0;  // ZEngineDataBase::RegisterZMsg(name, 0, file, line) -> ushort
 constexpr int kGeom_SendMessage = 0x120 / 4;   // (ZGEOM* from, int msg, void* param)
 constexpr int kActor_IsAlive = 0x544 / 4;
+// Actor_If's commands (docs/npc.md): MoveToPosition 0x5B4(1.0), 0x5C0(&path),
+// 0x594(0), 0x58C(&path, pos); LookAt 0x610(ref); UseMoveSet 0x564(0x574(name))
+constexpr int kActor_MoveFactor = 0x5B4 / 4;
+constexpr int kActor_NewPath = 0x5C0 / 4;
+constexpr int kActor_594 = 0x594 / 4;
+constexpr int kActor_MoveTo = 0x58C / 4;
+constexpr int kActor_LookAt = 0x610 / 4;
+constexpr int kActor_MoveSetId = 0x574 / 4;
+constexpr int kActor_UseMoveSet = 0x564 / 4;
 constexpr uint32_t kHitmanClass = 0x2003E8;
 constexpr uint32_t kLevelControlClass = 0x2000E1;
 const char* const kInstantDeath = "Msg_InstantDeath";
@@ -57,6 +66,42 @@ int SafeIsAlive(ZGEOM* actor)
         return VFunc<int(__thiscall*)(ZGEOM*)>(actor, kActor_IsAlive)(actor) != 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
+    }
+}
+
+bool SafeWalkTo(ZGEOM* actor, const float pos[3])
+{
+    __try {
+        char path[64] = {};  // MoveToPosition: 12 bytes of its frame
+        float p[3] = {pos[0], pos[1], pos[2]};
+        VFunc<void(__thiscall*)(ZGEOM*, float)>(actor, kActor_MoveFactor)(actor, 1.0f);
+        VFunc<void(__thiscall*)(ZGEOM*, void*)>(actor, kActor_NewPath)(actor, path);
+        VFunc<void(__thiscall*)(ZGEOM*, int)>(actor, kActor_594)(actor, 0);
+        VFunc<void(__thiscall*)(ZGEOM*, void*, float*)>(actor, kActor_MoveTo)(actor, path, p);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool SafeLookAt(ZGEOM* actor, uint32_t ref)
+{
+    __try {
+        VFunc<void(__thiscall*)(ZGEOM*, uint32_t)>(actor, kActor_LookAt)(actor, ref);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool SafeUseMoveSet(ZGEOM* actor, const char* name)
+{
+    __try {
+        int id = VFunc<int(__thiscall*)(ZGEOM*, const char*)>(actor, kActor_MoveSetId)(actor, name);
+        VFunc<void(__thiscall*)(ZGEOM*, int)>(actor, kActor_UseMoveSet)(actor, id);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
 }
 
@@ -109,6 +154,22 @@ bool KillActor(ZGEOM* actor)
         return false;
     static const char* param = kInstantDeath;
     return SendMessage(actor, actor, RegisterMessage("ScriptEvent"), &param);
+}
+
+bool ActorWalkTo(ZGEOM* actor, const float pos[3])
+{
+    return IsAlive(actor) && SafeWalkTo(actor, pos);
+}
+
+bool ActorLookAt(ZGEOM* actor, ZGEOM* target)
+{
+    uint32_t ref = Usable(target) ? RefOf(target) : 0;
+    return ref && IsAlive(actor) && SafeLookAt(actor, ref);
+}
+
+bool ActorUseMoveSet(ZGEOM* actor, const char* name)
+{
+    return name && *name && IsAlive(actor) && SafeUseMoveSet(actor, name);
 }
 
 ZGEOM* Player()

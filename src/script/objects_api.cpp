@@ -25,6 +25,9 @@
 //
 // Characters and the mission:
 //   npc:alive(), npc:kill()
+//   npc:walkto(x, y, z) / npc:walkto(obj), npc:lookat(obj), npc:moveset("Run")
+//     (as the scripts' MoveToPosition / LookAt / UseMoveSet; a character's
+//     own behaviour may give it other orders: place it without one)
 //   h2.player()                            -- Hitman
 //   h2.objective(slot [, text [, done]])   -- a laptop objective line; returns the level's own text
 //   h2.briefing(text)                      -- the laptop's mission briefing ("" = the level's own)
@@ -692,6 +695,60 @@ int Alive(lua_State* L)
     return 1;
 }
 
+// npc:walkto(x, y, z) / npc:walkto(object) -> bool: walks there (its
+// behaviour may send it elsewhere: a character without one keeps it)
+int WalkTo(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    if (!engine::IsA(g, "ZActor"))
+        return luaL_error(L, "walkto: %s is not a character", engine::SafeString(g->name).c_str());
+    float pos[3];
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "_path");
+        engine::ZGEOM* t = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+        if (!t || !editor::IsLive(t))
+            return luaL_error(L, "walkto: the target is not in the loaded scene");
+        engine::WorldPosition(t, pos);
+    } else {
+        for (int i = 0; i < 3; ++i)
+            pos[i] = Coordinate(L, 2 + i);
+    }
+    lua_pushboolean(L, engine::ActorWalkTo(g, pos));
+    return 1;
+}
+
+// npc:lookat(object) -> bool: turns its head to the object
+int LookAt(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    lua_getfield(L, 2, "_path");
+    engine::ZGEOM* t = editor::Resolve(luaL_checkstring(L, -1));
+    lua_pop(L, 1);
+    if (!engine::IsA(g, "ZActor"))
+        return luaL_error(L, "lookat: %s is not a character", engine::SafeString(g->name).c_str());
+    lua_pushboolean(L, t && editor::IsLive(t) && engine::ActorLookAt(g, t));
+    return 1;
+}
+
+// npc:moveset(name) -> bool: how it moves from now on ("Walk", "Run", ...)
+int MoveSet(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    size_t n;
+    const char* name = luaL_checklstring(L, 2, &n);
+    if (n == 0 || n > 63)
+        return luaL_argerror(L, 2, "a move set name");
+    for (size_t i = 0; i < n; ++i)
+        if (name[i] < 0x20 || name[i] > 0x7E)
+            return luaL_argerror(L, 2, "a move set name");
+    if (!engine::IsA(g, "ZActor"))
+        return luaL_error(L, "moveset: %s is not a character", engine::SafeString(g->name).c_str());
+    lua_pushboolean(L, engine::ActorUseMoveSet(g, name));
+    return 1;
+}
+
 // npc:kill() -> bool (killed now)
 int Kill(lua_State* L)
 {
@@ -921,6 +978,7 @@ void RegisterObjectsApi()
         {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State}, {"event", Event},
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
         {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"kill", Kill},
+        {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);

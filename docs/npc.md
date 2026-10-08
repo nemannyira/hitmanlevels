@@ -235,3 +235,44 @@ script engine 2 s later, a call on a null reference in 0x5D67A0). Behaviours
 tied to their level's furniture without a reference (sitting, sleeping,
 patients...) are not offered: C6-3's DoctorSitting on C1-1 made the game free
 a room twice when the map was left.
+
+## Interface methods (calling them from the editor)
+
+Script interfaces are registered with the script engine by name (0x5781E0:
+Engine_If, Dialog_If, Item_If, Scene_If, Sound_If, Geom_If, Link_If,
+Actor_If, List_If, ConditionList_If; 0x568850: LevelControl_if, GUI_if,
+TrackLnk_HM2_if, GuardArbiter_if, Boid_If, Vehicle_If, Car_If,
+MoveOnSpline_if). Their methods have **no names in the exe**: each
+interface keeps a table of functions in registration order and a dispatcher
+that gets a call context (`+0x04` argument list `{slots**, first, count}`,
+slots of 8 bytes `{value, type byte}`, `+0x08` the result list, `+0x10`
+the method number u16; ECX = the interface object, `+0x18` the actor). A
+number past the interface's own goes on to its base, minus its count:
+
+| interface | table | count | registered in | dispatcher | base |
+|---|---|---|---|---|---|
+| TrackLnk_HM2_if | 0x6B3990 | 88 | 0x56F2A0 | 0x56FA90 | Actor_If |
+| Actor_If | 0x6B3F60 | 37 | 0x583A20 | 0x583D70 | Link_If |
+| Link_If | 0x6B41D0 | 12 (thunks to the interface object's vtable) | 0x587920 | 0x587A30 | 0x589710 |
+
+The **names are in the .ppo**: a symbol table (u32 offsets of identifier
+strings, relative to the table's end, the sorted string pool right after
+it); byte code calls a method as `97 14 00 <symbol u16> <number u16>`
+(tools/ppo_methods.py lists them). Calls on `this` (`2f ff ff 97 14 00`) in
+Being2 (its `this` is Actor_If): UseMoveSet 7, MoveToPosition 8,
+MoveToLocation 12, MoveToLocationForced 13, LookAt 26, PlayAnim 43,
+PlayAnimSegment 44, CanPlayAnim 45, PlayAnimLoop 46, FaceObject 53 (43 and
+up: past Actor_If's 37).
+
+What the Actor_If methods do with the actor (its vtable):
+
+| method | Actor_If | the actor's calls |
+|---|---|---|
+| UseMoveSet(name) | 7: 0x583F70 | id = 0x574(name), 0x564(id) |
+| MoveToPosition(x, y, z) | 8: 0x5842C0 | 0x5B4(1.0), 0x5C0(&path), 0x594(0), 0x58C(&path, pos) |
+| MoveToLocation(ref) | 12: 0x5849A0 | the object's world mat / pos (0x84), 0x5B4(1.0), 0x5C4(&pos, &mat) |
+| LookAt(ref) | 26: 0x584E20 | 0x610(ref) |
+| (19) | 0x584E00 | 0x5B8(1) |
+
+The editor's Lua npc:walkto / lookat / moveset make the same calls
+(engine/messages.cpp).

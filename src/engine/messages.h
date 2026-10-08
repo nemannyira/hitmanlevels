@@ -19,6 +19,14 @@ bool SendMessage(ZGEOM* to, ZGEOM* from, uint16_t msg, void* param);
 // Characters (ZActor): alive (vfunc 0x544), killing one (instant death).
 bool IsAlive(ZGEOM* actor);
 bool KillActor(ZGEOM* actor);
+// Commands, as the scripts' Actor_If methods do them (call the actor's
+// virtual functions the same way; the actor's own behaviour may give it
+// other orders): MoveToPosition (Actor_If 8, 0x5842C0) walks to a point,
+// LookAt (26, 0x584E20) turns the head to an object, UseMoveSet (7,
+// 0x583F70) chooses how it moves ("Walk", "Run", ...).
+bool ActorWalkTo(ZGEOM* actor, const float pos[3]);
+bool ActorLookAt(ZGEOM* actor, ZGEOM* target);
+bool ActorUseMoveSet(ZGEOM* actor, const char* name);
 // Hitman (the player's character, class 0x2003E8), the level control object.
 ZGEOM* Player();
 ZGEOM* LevelControl();

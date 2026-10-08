@@ -26,6 +26,12 @@ void RevertMission();
 // Runtime (also for Lua): a line's text (UTF-8; "" = the level's own), its check mark.
 bool SetObjectiveText(int slot, const std::string& text);
 bool SetObjectiveDone(int slot, bool done);
+// Hides a line (a level's own too) until a script gives it a text again.
+bool HideObjectiveLine(int slot);
+// A subtitle at the bottom of the screen (UTF-8; "" takes it away), as the
+// game's speech shows them: MSG_WRITESUBTITLE to the GUI's OSD window, the
+// param being the text (GUI main 0x534130 -> 0x561D50).
+bool ShowSubtitle(const std::string& text);
 // The laptop's mission briefing (UTF-8, "\n" new line; "" = as the level has
 // it): a script's text, over the level document's until the map loads again.
 bool SetBriefingText(const std::string& text);

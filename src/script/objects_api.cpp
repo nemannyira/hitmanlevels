@@ -32,8 +32,10 @@
 //     walks only to points of the level's path network)
 //   h2.player()                            -- Hitman
 //   h2.objective(slot [, text [, done]])   -- a laptop objective line; returns the level's own text
+//   h2.objective(slot, false)              -- hides a line (the level's own too)
 //   h2.briefing(text)                      -- the laptop's mission briefing ("" = the level's own)
 //   h2.mission("complete" | "fail")
+//   h2.subtitle(text [, seconds])          -- a subtitle line (triggers.cpp)
 //
 // Music:
 //   h2.music() -> { {object=, zone=, mood="Location"|"PreAction"|"Action", track=, level=}, ... }, { "RussiaSlow", ... }
@@ -352,13 +354,19 @@ int Briefing(lua_State* L)
     return 1;
 }
 
-// h2.objective(slot [, text [, done]]) -> the level's own text of the line
+// h2.objective(slot [, text [, done]]) -> the level's own text of the line;
+// h2.objective(slot, false) hides the line (a level's own too)
 int Objective(lua_State* L)
 {
     int slot = int(luaL_checkinteger(L, 1));
     if (slot < 1 || slot > 6)
         return luaL_error(L, "objective: slot 1..6");
     std::string own = editor::LevelObjectiveText(slot);
+    if (lua_isboolean(L, 2) && !lua_toboolean(L, 2)) {  // h2.objective(slot, false): hidden
+        editor::HideObjectiveLine(slot);
+        lua_pushstring(L, own.c_str());
+        return 1;
+    }
     if (lua_isstring(L, 2))
         editor::SetObjectiveText(slot, lua_tostring(L, 2));
     if (lua_isboolean(L, 3))
@@ -401,6 +409,14 @@ int Music(lua_State* L)
         lua_rawseti(L, -2, ++n);
     }
     return 2;
+}
+
+// h2._subtitle(text): the subtitle line now (h2.subtitle in triggers.cpp
+// takes it away after some seconds)
+int Subtitle(lua_State* L)
+{
+    lua_pushboolean(L, editor::ShowSubtitle(luaL_optstring(L, 1, "")));
+    return 1;
 }
 
 // h2.mission("complete" | "fail")
@@ -1064,6 +1080,7 @@ void RegisterObjectsApi()
     Register("briefing", Briefing);
     Register("sky", Sky);
     Register("mission", Mission);
+    Register("_subtitle", Subtitle);
     Register("music", Music);
 }
 

@@ -296,6 +296,7 @@ bool SetVisible(void* element, bool visible)
 }
 
 int g_shownLines;          // the last line shown beyond the level's own (0: none)
+bool g_hiddenLines[8];     // hidden by scripts (h2.objective(slot, false))
 float g_savesY = -1e30f;   // the "saves left" line's own place (local y); -1e30: not known
 
 // The "saves left" line goes below the last line shown (in a level with 4
@@ -334,6 +335,15 @@ void PlaceSavesLeft(int lastLine)
 }
 
 // lines the level does not use are hidden in its laptop
+void HideLineElements(int slot)
+{
+    char name[64];
+    for (const char* part : {"", "\\Text", "\\Check"}) {
+        snprintf(name, sizeof(name), "Objectives\\%d%s", slot, part);
+        SetVisible(Element(name), false);
+    }
+}
+
 void ShowLineElements(int slot)
 {
     char name[64];
@@ -459,7 +469,7 @@ void ShowLines(const std::vector<int>& removed = {})
     for (int slot : removed)
         RestoreLine(slot);
     for (int slot = 1; slot <= kSlots; ++slot)  // the level's lines (taken out on an empty map)
-        if (!InDocument(slot) && !g_lineKeys[slot].empty())
+        if (!InDocument(slot) && !g_lineKeys[slot].empty() && !g_hiddenLines[slot])
             RestoreLine(slot);
     for (const MissionObjective& o : Doc().objectives) {
         bool own = !OwnText(o.slot).empty();
@@ -472,6 +482,9 @@ void ShowLines(const std::vector<int>& removed = {})
             CallSetCompleted(o.slot, g_done[o.slot]);
         }
     }
+    for (int slot = 1; slot <= kSlots; ++slot)
+        if (g_hiddenLines[slot])
+            HideLineElements(slot);
 }
 
 bool CallSetFolder(void* briefing, const char* folder)
@@ -630,6 +643,7 @@ void OnScene(const std::string&)
         k.clear();
     g_scriptTexts.clear();
     g_scriptBriefing.clear();
+    memset(g_hiddenLines, 0, sizeof(g_hiddenLines));
     BuildTexts();
 }
 
@@ -1082,15 +1096,55 @@ bool SetObjectiveText(int slot, const std::string& text)
     std::string key = Lower("H2Editor/Script/" + std::to_string(slot));
     g_scriptTexts[key] = Node(text);
     BuildTexts();
+    bool wasHidden = g_hiddenLines[slot];
+    g_hiddenLines[slot] = false;
     if (text.empty()) {
         RestoreLine(slot);
+        if (wasHidden && !OwnText(slot).empty())
+            ShowLineElements(slot);
         return g_briefing != nullptr;
     }
     bool ok = CallSetObjective(slot, key.c_str());
-    if (ok && OwnText(slot).empty()) {  // a line the level's laptop does not show
+    if (ok && (OwnText(slot).empty() || wasHidden)) {  // a line the level's laptop does not show
         ShowLineElements(slot);
         CallSetCompleted(slot, g_done[slot]);
     }
+    return ok;
+}
+
+bool ShowSubtitle(const std::string& text)
+{
+    static std::string shown;  // the GUI keeps the pointer: alive until the next one
+    const engine::SceneSnapshot& snap = SceneModel();
+    engine::ZGEOM* osd = nullptr;
+    const std::string tail = "ZWINDOWS/MainWindow/OSD";
+    for (int i : snap.FindName("OSD")) {
+        const std::string& p = snap.geoms[i].path;
+        if (p.size() >= tail.size() && p.compare(p.size() - tail.size(), tail.size(), tail) == 0) {
+            osd = snap.geoms[i].geom;
+            break;
+        }
+    }
+    if (!osd)
+        return false;
+    std::string next = ToGameText(text);
+    for (char& c : next)
+        if (c == '\n')
+            c = ' ';  // one line
+    if (next.size() > 200)
+        next.resize(200);
+    shown = next;
+    return engine::SendMessage(osd, osd, engine::RegisterMessage("MSG_WRITESUBTITLE"),
+                               const_cast<char*>(shown.c_str()));
+}
+
+bool HideObjectiveLine(int slot)
+{
+    if (slot < 1 || slot > kSlots)
+        return false;
+    g_hiddenLines[slot] = true;
+    bool ok = CallSetObjective(slot, kEmptyKey);
+    HideLineElements(slot);
     return ok;
 }
 

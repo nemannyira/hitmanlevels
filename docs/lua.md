@@ -73,6 +73,8 @@ place it without one (`h2.npc(..., false)` or in the editor).
 | call | |
 |---|---|
 | `h2.objective(slot [, text [, done]])` | a laptop objective line (1..6); returns the level's own text |
+| `h2.objective(slot, false)` | hides a line (the level's own too) until it gets a text again |
+| `h2.subtitle(text [, seconds])` | a subtitle line at the bottom of the screen (default 5 game seconds; nil / `""` takes it away) |
 | `h2.briefing(text)` | the laptop's briefing (`""`: the level's own) |
 | `h2.mission("complete" | "fail")` | ends the mission (statistics, saved progress) |
 | `h2.music()`, `h2.music(zone, track)` | music zones and tracks |
@@ -147,6 +149,8 @@ z)`, `h2.camrot()`, `h2.setcamrot(yaw, pitch)`, `h2.camlookat(x, y, z)`;
 `h2.scene()`, `h2.fps()`, `h2.resolution()`, `h2.log(...)`.
 
 ## Example: a small story
+
+A whole mission: `examples/missions/Courier` (copy the folder into `Mods`).
 
 ```lua
 -- main.lua (C1-1): a guard must reach the front gate; if Hitman is spotted

@@ -236,6 +236,21 @@ function T.clear(who)
   if who == nil then now, lastCheck = 0, -1 end
 end
 
+-- a subtitle line, away after `seconds` (default 5) unless another came
+local subtitleTimer
+function h2.subtitle(text, seconds)
+  if text ~= nil and type(text) ~= "string" then error("h2.subtitle: a text expected", 2) end
+  if subtitleTimer then subtitleTimer:cancel() subtitleTimer = nil end
+  local ok = h2._subtitle(text or "")
+  if text and text ~= "" then
+    seconds = seconds and number(seconds, "h2.subtitle") or 5
+    if seconds > 0 then
+      subtitleTimer = newTimer(seconds, function() subtitleTimer = nil h2._subtitle("") end)
+    end
+  end
+  return ok
+end
+
 function T.setowner(o) owner = o end
 
 return T

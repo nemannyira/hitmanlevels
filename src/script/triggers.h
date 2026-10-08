@@ -21,6 +21,9 @@
 //   z:inside(obj), z:contains(x, y, z), z:remove()
 //   (checked 10 times a game second; who: the object that came / went)
 //
+//   h2.subtitle(text [, seconds])    a subtitle line (default 5 game seconds;
+//                                    nil / "" takes it away)
+//
 //   h2.on("key", function(e) ... end)   a key pressed while playing (editor
 //                                       closed, the game in front; the game
 //                                       gets it too): e.key ("K", "F5",

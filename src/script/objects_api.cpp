@@ -25,9 +25,11 @@
 //
 // Characters and the mission:
 //   npc:alive(), npc:kill()
-//   npc:walkto(x, y, z) / npc:walkto(obj), npc:lookat(obj), npc:moveset("Run")
+//   npc:walkto(x, y, z) / npc:walkto(obj), npc:lookat(obj | nil), npc:moveset("Run")
 //     (as the scripts' MoveToPosition / LookAt / UseMoveSet; a character's
-//     own behaviour may give it other orders: place it without one)
+//     own behaviour may give it other orders: place it without one; walking
+//     needs the level's path network and a character placed in the level,
+//     not one made while playing)
 //   h2.player()                            -- Hitman
 //   h2.objective(slot [, text [, done]])   -- a laptop objective line; returns the level's own text
 //   h2.briefing(text)                      -- the laptop's mission briefing ("" = the level's own)
@@ -718,17 +720,22 @@ int WalkTo(lua_State* L)
     return 1;
 }
 
-// npc:lookat(object) -> bool: turns its head to the object
+// npc:lookat(object) -> bool: turns its head to the object; npc:lookat(nil) stops
 int LookAt(lua_State* L)
 {
     engine::ZGEOM* g = Geom(L);
-    luaL_checktype(L, 2, LUA_TTABLE);
-    lua_getfield(L, 2, "_path");
-    engine::ZGEOM* t = editor::Resolve(luaL_checkstring(L, -1));
-    lua_pop(L, 1);
+    engine::ZGEOM* t = nullptr;
+    if (!lua_isnoneornil(L, 2)) {
+        luaL_checktype(L, 2, LUA_TTABLE);
+        lua_getfield(L, 2, "_path");
+        t = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+        if (!t || !editor::IsLive(t))
+            return luaL_error(L, "lookat: the target is not in the loaded scene");
+    }
     if (!engine::IsA(g, "ZActor"))
         return luaL_error(L, "lookat: %s is not a character", engine::SafeString(g->name).c_str());
-    lua_pushboolean(L, t && editor::IsLive(t) && engine::ActorLookAt(g, t));
+    lua_pushboolean(L, engine::ActorLookAt(g, t));
     return 1;
 }
 

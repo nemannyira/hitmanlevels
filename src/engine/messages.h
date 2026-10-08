@@ -21,9 +21,11 @@ bool IsAlive(ZGEOM* actor);
 bool KillActor(ZGEOM* actor);
 // Commands, as the scripts' Actor_If methods do them (call the actor's
 // virtual functions the same way; the actor's own behaviour may give it
-// other orders): MoveToPosition (Actor_If 8, 0x5842C0) walks to a point,
-// LookAt (26, 0x584E20) turns the head to an object, UseMoveSet (7,
-// 0x583F70) chooses how it moves ("Walk", "Run", ...).
+// other orders): MoveToPosition (Actor_If 8, 0x5842C0) walks to a point
+// (on the level's path network; characters made while playing do not walk),
+// LookAt (26, 0x584E20) keeps a target for the head, which turns to it at
+// once (0x46F630) unless it is looking at something already (null: stops),
+// UseMoveSet (7, 0x583F70) chooses how it moves ("Walk", "Run", ...).
 bool ActorWalkTo(ZGEOM* actor, const float pos[3]);
 bool ActorLookAt(ZGEOM* actor, ZGEOM* target);
 bool ActorUseMoveSet(ZGEOM* actor, const char* name);

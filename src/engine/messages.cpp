@@ -21,7 +21,9 @@ constexpr int kActor_MoveFactor = 0x5B4 / 4;
 constexpr int kActor_NewPath = 0x5C0 / 4;
 constexpr int kActor_594 = 0x594 / 4;
 constexpr int kActor_MoveTo = 0x58C / 4;
-constexpr int kActor_LookAt = 0x610 / 4;
+constexpr int kActor_LookAt = 0x610 / 4;      // (ref) keeps the target (+0x564); turns now only while looking
+constexpr int kActor_StartLook = 0x37C / 4;   // 0x46F630 (ref): the head turns to it (0: stops), +0x105 bit 0 set
+constexpr size_t kActor_Looking = 0x105;
 constexpr int kActor_MoveSetId = 0x574 / 4;
 constexpr int kActor_UseMoveSet = 0x564 / 4;
 constexpr uint32_t kHitmanClass = 0x2003E8;
@@ -88,6 +90,9 @@ bool SafeLookAt(ZGEOM* actor, uint32_t ref)
 {
     __try {
         VFunc<void(__thiscall*)(ZGEOM*, uint32_t)>(actor, kActor_LookAt)(actor, ref);
+        bool looking = (reinterpret_cast<const uint8_t*>(actor)[kActor_Looking] & 1) != 0;
+        if (!looking || !ref)
+            VFunc<void(__thiscall*)(ZGEOM*, uint32_t)>(actor, kActor_StartLook)(actor, ref);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -163,8 +168,10 @@ bool ActorWalkTo(ZGEOM* actor, const float pos[3])
 
 bool ActorLookAt(ZGEOM* actor, ZGEOM* target)
 {
-    uint32_t ref = Usable(target) ? RefOf(target) : 0;
-    return ref && IsAlive(actor) && SafeLookAt(actor, ref);
+    uint32_t ref = target && Usable(target) ? RefOf(target) : 0;
+    if (target && !ref)
+        return false;
+    return IsAlive(actor) && SafeLookAt(actor, ref);  // no target: stops looking
 }
 
 bool ActorUseMoveSet(ZGEOM* actor, const char* name)

@@ -271,8 +271,14 @@ What the Actor_If methods do with the actor (its vtable):
 | UseMoveSet(name) | 7: 0x583F70 | id = 0x574(name), 0x564(id) |
 | MoveToPosition(x, y, z) | 8: 0x5842C0 | 0x5B4(1.0), 0x5C0(&path), 0x594(0), 0x58C(&path, pos) |
 | MoveToLocation(ref) | 12: 0x5849A0 | the object's world mat / pos (0x84), 0x5B4(1.0), 0x5C4(&pos, &mat) |
-| LookAt(ref) | 26: 0x584E20 | 0x610(ref) |
+| LookAt(ref) | 26: 0x584E20 | 0x610(ref) = 0x4687C0: keeps the target (+0x564), turns at once only while looking (+0x105 bit 0); 0x37C = 0x46F630 starts the head turn (0: stops) |
 | (19) | 0x584E00 | 0x5B8(1) |
 
 The editor's Lua npc:walkto / lookat / moveset make the same calls
-(engine/messages.cpp).
+(engine/messages.cpp; lookat also 0x37C when the character is not looking
+at anything yet). Seen in the game: walkto walks a level's character (with
+or without a behaviour) and a character placed in the level (made with the
+scene) to a point of the level's path network (pathrequest, pathfinished;
+a point off it: patherror, e.g. Hitman's start hill on C1-1); characters
+made while playing (h2.npc on a loaded map) do not walk. moveset("Run"):
+about 3 times the walking speed. lookat turns the head.

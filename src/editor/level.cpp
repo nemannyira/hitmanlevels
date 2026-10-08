@@ -24,6 +24,7 @@
 #include "../script/events.h"
 #include "../script/lua_vm.h"
 #include "../script/objects_api.h"
+#include "../script/state.h"
 #include "history.h"
 #include "mission.h"
 #include "music.h"
@@ -566,6 +567,7 @@ void RunLevelScripts()
             script::ConsolePrint(script::LineKind::Error, "level script failed or missing: " + path);
         script::SetHandlerOwner("");
     }
+    script::OnLevelScriptsRan();  // a saved game's "load" event (state.h)
 }
 
 void OnScene(const std::string& scene)

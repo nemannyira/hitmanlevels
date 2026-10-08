@@ -42,6 +42,7 @@
 #include "script/events.h"
 #include "script/memapi.h"
 #include "script/objects_api.h"
+#include "script/state.h"
 #include "script/triggers.h"
 #include "script/lua_vm.h"
 #include "ui.h"
@@ -98,6 +99,7 @@ void Init()
     h2::script::RegisterEvents();
     h2::script::RegisterObjectsApi();
     h2::script::InstallTriggers();
+    h2::script::InstallState();
     h2::InstallDevCommands();
     if (h2::g_config.luaMemory)
         h2::script::RegisterMemApi();
@@ -107,6 +109,7 @@ void Init()
         double now = h2::NowMs();
         h2::script::FireGameEvents();
         h2::script::UpdateTriggers();
+        h2::script::UpdateState();
         h2::script::FireFrame((now - last) / 1000.0);
         last = now;
     });

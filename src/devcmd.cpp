@@ -107,6 +107,33 @@ void Poll()
     RunCommandFile();
 }
 
+// h2.dev_savegame(slot) / h2.dev_loadgame(slot): ZEngineDataBase::SaveGame
+// 0x41AAD0 / LoadGame 0x41AF70 (Save\<slot>.1 .. .3; testing the saved state)
+bool CallSlot(uintptr_t fn, unsigned slot)
+{
+    auto sys = reinterpret_cast<char*>(game::SysInterface());
+    void* engine = sys ? *reinterpret_cast<void**>(sys + 0x98) : nullptr;
+    if (!engine)
+        return false;
+    __try {
+        return reinterpret_cast<bool(__thiscall*)(void*, unsigned)>(fn)(engine, slot);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+int SaveGameCmd(lua_State* L)
+{
+    lua_pushboolean(L, CallSlot(0x41AAD0, unsigned(luaL_checkinteger(L, 1))));
+    return 1;
+}
+
+int LoadGameCmd(lua_State* L)
+{
+    lua_pushboolean(L, CallSlot(0x41AF70, unsigned(luaL_checkinteger(L, 1))));
+    return 1;
+}
+
 // h2.dev_loadscene(name): asks the engine to switch scenes (as the menus do)
 int LoadScene(lua_State* L)
 {
@@ -525,6 +552,8 @@ void InstallDevCommands()
         return;
     InstallBackgroundSound();
     script::Register("dev_loadscene", LoadScene);
+    script::Register("dev_savegame", SaveGameCmd);
+    script::Register("dev_loadgame", LoadGameCmd);
     script::Register("dev_key", Key);
     script::Register("dev_mouse", Mouse);
     script::Register("dev_look", Look);

@@ -122,7 +122,9 @@ points to, as a pointer or a geom ref, when it is an object of the scene.
 To check in the game: how many messages a second, which messages each
 action really sends (the aliases are by name), what the params carry.
 Zones, timers and keys: src/script/triggers.h (game time that stands with
-the world, h2.after / every, h2.zone, the "key" event). Next: save / load.
+the world, h2.after / every, h2.zone, the "key" event). Story state kept
+with the saves: src/script/state.h (h2.state, "save" / "load" events,
+Save\<slot>.h2lua next to the game's files).
 
 ## 3. Maps of their own
 

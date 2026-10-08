@@ -86,6 +86,7 @@ add_library(h2fix SHARED
     src/script/objects_api.cpp
     src/script/lua_vm.cpp
     src/script/triggers.cpp
+    src/script/state.cpp
     src/display.cpp
     src/fov.cpp
     src/loader.cpp

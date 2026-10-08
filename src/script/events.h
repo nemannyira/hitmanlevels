@@ -46,5 +46,7 @@ void FireObjective(int slot);
 void FireGameEvents();
 // "key" (triggers.h)
 void FireKey(int vk, const std::string& name);
+// "save" / "load" (state.h): {slot}
+void FireSlotEvent(const char* name, int slot);
 
 } // namespace h2::script

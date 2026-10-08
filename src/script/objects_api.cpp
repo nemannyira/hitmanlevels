@@ -36,6 +36,7 @@
 //   h2.briefing(text)                      -- the laptop's mission briefing ("" = the level's own)
 //   h2.mission("complete" | "fail")
 //   h2.subtitle(text [, seconds])          -- a subtitle line (triggers.cpp)
+//   h2.basemission(false)                  -- the base level's own logic no longer ends the mission
 //
 // Music:
 //   h2.music() -> { {object=, zone=, mood="Location"|"PreAction"|"Action", track=, level=}, ... }, { "RussiaSlow", ... }
@@ -409,6 +410,16 @@ int Music(lua_State* L)
         lua_rawseti(L, -2, ++n);
     }
     return 2;
+}
+
+// h2.basemission([on]) -> on: whether the base level's own logic may end the
+// mission (the level's setting until the map is left)
+int BaseMission(lua_State* L)
+{
+    if (!lua_isnoneornil(L, 1))
+        engine::SetLevelEndsAllowed(lua_toboolean(L, 1) != 0);
+    lua_pushboolean(L, engine::LevelEndsAllowed());
+    return 1;
 }
 
 // h2._subtitle(text): the subtitle line now (h2.subtitle in triggers.cpp
@@ -1081,6 +1092,7 @@ void RegisterObjectsApi()
     Register("sky", Sky);
     Register("mission", Mission);
     Register("_subtitle", Subtitle);
+    Register("basemission", BaseMission);
     Register("music", Music);
 }
 

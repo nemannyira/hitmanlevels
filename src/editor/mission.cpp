@@ -1016,6 +1016,14 @@ void DrawObjectives()
 void DrawEnd()
 {
     MissionDoc& m = Doc();
+    if (ImGui::Checkbox("The base level can end the mission", &m.baseEnds)) {
+        Changed();
+        if (ForThisScene())
+            engine::SetLevelEndsAllowed(m.baseEnds);
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Off: the base level's own scripts (its target killed, ...) no longer complete or fail\n"
+                          "the mission; your goals and scripts (h2.mission) do. Hitman's death still fails it.");
     if (ImGui::Checkbox("Completed when every objective is done", &m.endWhenDone))
         Changed();
     if (ImGui::IsItemHovered())
@@ -1166,12 +1174,14 @@ bool SetObjectiveDone(int slot, bool done)
 bool CompleteMission()
 {
     Log("mission: completed by the editor");
+    engine::AllowLevelEnd();
     return CallLevel(kLevel_MissionCompleted);
 }
 
 bool FailMission()
 {
     Log("mission: failed by the editor");
+    engine::AllowLevelEnd();
     return CallLevel(kLevel_MissionFailed);
 }
 
@@ -1180,11 +1190,13 @@ std::string LevelObjectiveText(int slot) { return OwnText(slot); }
 void ApplyMission()
 {
     g_applied = true;
+    engine::SetLevelEndsAllowed(Doc().baseEnds);
     ShowLines();
 }
 
 void RevertMission()
 {
+    engine::SetLevelEndsAllowed(true);
     std::vector<int> slots;
     for (const MissionObjective& o : Doc().objectives)
         slots.push_back(o.slot);

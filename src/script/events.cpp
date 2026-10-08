@@ -346,9 +346,10 @@ void FireGameEvents()
         case engine::GameEvent::MissionCompleted:
         case engine::GameEvent::MissionFailed:
             Fire("mission", [&](lua_State* L) {
-                lua_createtable(L, 0, 1);
+                lua_createtable(L, 0, 2);
                 lua_pushstring(L, e.kind == engine::GameEvent::MissionCompleted ? "completed" : "failed");
                 lua_setfield(L, -2, "result");
+                SetBool(L, "stopped", e.type == 1);  // the base level's, not let through
                 return 1;
             });
             break;

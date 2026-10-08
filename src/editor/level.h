@@ -27,7 +27,8 @@
 //   "mission": {                                // objectives (the laptop's lines) and the mission's end
 //     "objectives": [ { "slot": 1, "text": "Kill the lawyer", "goal": "kill",
 //                       "target": "ROOT/.../MafiaLawyer/Ground", "replaces_original": true } ],
-//     "end_when_done": true, "exit": "ROOT/.../Point+3", "exit_radius": 300 },
+//     "end_when_done": true, "exit": "ROOT/.../Point+3", "exit_radius": 300,
+//     "base_ends": false },                    // the base level's own logic does not end it
 //   "music": { "ROOT/.../MusicControl/InsideAndOutside/Location_01": "RussiaSlow" },
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
@@ -97,6 +98,7 @@ struct MissionDoc {
     std::string exitPath;          // ... and Hitman reaches this place ("" = at once)
     float exitRadius = 300.0f;
     std::string briefing;          // the laptop's mission briefing ("" = the level's own)
+    bool baseEnds = true;          // the base level's own logic may end the mission
 };
 
 struct ImportedModel {        // a model of another level the map is loaded with

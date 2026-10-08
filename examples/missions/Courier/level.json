@@ -8,9 +8,28 @@
       "id": "Courier",
       "record": 2350,
       "model": "BodyguardMafia_01",
-      "pos": [-4176.0, -20.0, -6682.0],
-      "matrix": [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0]
+      "pos": [
+        -4176.0,
+        -20.0,
+        -6682.0
+      ],
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ]
     }
   ],
-  "scripts": ["main.lua"]
+  "mission": {
+    "base_ends": false
+  },
+  "scripts": [
+    "main.lua"
+  ]
 }

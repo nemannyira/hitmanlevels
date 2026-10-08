@@ -9,6 +9,7 @@
 #include "../game.h"
 #include "../hook.h"
 #include "../scene.h"
+#include "messages.h"
 #include "scene_data.h"
 
 namespace h2::engine {
@@ -318,11 +319,31 @@ void __fastcall hkHarm(void* level, void* edx, uint32_t victim, int type)
         reinterpret_cast<Victim_t>(o->harm)(level, edx, victim, type);
 }
 
+bool g_endsAllowed = true;  // SetLevelEndsAllowed
+bool g_allowNext;           // AllowLevelEnd
+
+// may this end of the mission go through? (one AllowLevelEnd lets one through)
+bool EndGoesThrough(bool failed)
+{
+    bool editors = g_allowNext;
+    g_allowNext = false;
+    if (g_endsAllowed || editors)
+        return true;
+    ZGEOM* hitman = Player();
+    return failed && hitman && !IsAlive(hitman);  // Hitman's death ends it as always
+}
+
 void __fastcall hkFailed(void* level, void* edx)
 {
     GameEvent e;
     e.kind = GameEvent::MissionFailed;
+    bool through = EndGoesThrough(true);
+    e.type = through ? 0 : 1;
     Queue(std::move(e));
+    if (!through) {
+        Log("game events: the base level's mission failure stopped");
+        return;
+    }
     if (const LevelEntries* o = EntriesOf(level))
         reinterpret_cast<End_t>(o->failed)(level, edx);
 }
@@ -331,7 +352,13 @@ void __fastcall hkCompleted(void* level, void* edx)
 {
     GameEvent e;
     e.kind = GameEvent::MissionCompleted;
+    bool through = EndGoesThrough(false);
+    e.type = through ? 0 : 1;
     Queue(std::move(e));
+    if (!through) {
+        Log("game events: the base level's mission completion stopped");
+        return;
+    }
     if (const LevelEntries* o = EntriesOf(level))
         reinterpret_cast<End_t>(o->completed)(level, edx);
 }
@@ -393,12 +420,18 @@ void InstallGameEvents()
     Hook("ZTRACKLNKHM2::DragStart", kDragStart, hkDragStart, &oDragStart);
     Hook("ZTRACKLNKHM2::DragEnd", kDragEnd, hkDragEnd, &oDragEnd);
     OnSceneLeaving([](const std::string&) {
+        g_endsAllowed = true;
+        g_allowNext = false;
         g_queue.clear();
         g_any = false;  // ids may be given again with the next scene
         g_mappedCount = ~0u;
     });
     OnScenePushed([](const std::string&) { Remap(true); });
 }
+
+void SetLevelEndsAllowed(bool allowed) { g_endsAllowed = allowed; }
+bool LevelEndsAllowed() { return g_endsAllowed; }
+void AllowLevelEnd() { g_allowNext = true; }
 
 void WatchMessages(const std::set<std::string>& names, bool all)
 {

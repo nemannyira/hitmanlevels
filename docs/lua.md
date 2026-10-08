@@ -77,6 +77,7 @@ place it without one (`h2.npc(..., false)` or in the editor).
 | `h2.subtitle(text [, seconds])` | a subtitle line at the bottom of the screen (default 5 game seconds; nil / `""` takes it away) |
 | `h2.briefing(text)` | the laptop's briefing (`""`: the level's own) |
 | `h2.mission("complete" | "fail")` | ends the mission (statistics, saved progress) |
+| `h2.basemission([on])` | whether the base level's own logic (its targets, its exit) may end the mission; the level's setting: `"mission": { "base_ends": false }` or the Mission panel. Off: such an end is only reported (`"mission"` event, `e.stopped`); Hitman's death still fails it |
 | `h2.music()`, `h2.music(zone, track)` | music zones and tracks |
 | `h2.sky([level])` | the sky of another level (`"C3-3"`; `""`: the map's own) |
 
@@ -109,7 +110,7 @@ fails prints its error and the others still run.
 | `"kill"`, `"harm"` | `{victim, kind = "enemy" / "innocent" / "other", type}`: as the rating counts it; `"other"`: not counted (not by Hitman) |
 | `"death"` | a character (checked 4 times a second, any cause) |
 | `"hitman_damage"` | `{amount, health, dead}` |
-| `"mission"` | `{result = "completed" / "failed"}` |
+| `"mission"` | `{result = "completed" / "failed", stopped}`: `stopped`, the base level's own end not let through |
 | `"objective"` | the slot of an objective the editor's mission marked done |
 | `"suspicious"`, `"recognized"`, `"hostile"`, `"spotted"`, `"help"` | a guard's reaction; `e.to`: the guard (once a second each) |
 | `"alarm"` | `e.on`; levels whose scripts have an alarm state (not C1-1) |

@@ -20,7 +20,8 @@ namespace h2::script {
 //               table. h2.messages() lists the names the engine knows.
 //   "kill" / "harm"  e.victim, e.kind ("enemy", "innocent", "other": as the
 //               rating counts it; "other": not counted, e.g. not by Hitman)
-//   "mission"   e.result ("completed" / "failed")
+//   "mission"   e.result ("completed" / "failed"), e.stopped (the base
+//               level's own end, not let through: h2.basemission(false))
 //   "hitman_damage"  e.amount, e.health, e.dead
 //   "drag"      a body dragged: e.body, e.by (who drags), e.started
 //   messages under names of their own (the message table plus a field):

@@ -45,7 +45,8 @@ struct GameEvent {
     uint32_t words[4] = {};  // the first dwords the param points to (words[0] = value)
     int wordCount = 0;
     std::string text;        // a text the param (or what it points to) is
-    int type = 0;            // Kill / Harm: the kind (2 enemy, 1 innocent, 0 not counted); Drag: 1 started, 0 ended
+    int type = 0;            // Kill / Harm: the kind (2 enemy, 1 innocent, 0 not counted); Drag: 1 started, 0 ended;
+                             //   MissionCompleted / Failed: 1 the base level's, stopped
                              //   (Drag: value = the dragger's geom ref)
     float amount = 0.0f;     // HitmanDamage: damage, health after it
     float health = 0.0f;
@@ -62,6 +63,15 @@ void WatchMessages(const std::set<std::string>& names, bool all);
 // The level routine of the loaded scene (its vtable's kill / harm / mission
 // entries are routed through the editor).
 void WatchLevel(void* level);
+// Whether the base level's own logic may end the mission (its level routine's
+// MissionCompleted / MissionFailed): when not, such an end is only reported
+// (GameEvent type 1); the editor's own end (AllowLevelEnd before it) and a
+// failure after Hitman died always go through. Back to allowed when a scene
+// is left.
+void SetLevelEndsAllowed(bool allowed);
+bool LevelEndsAllowed();
+void AllowLevelEnd();  // the next end is the editor's (h2.mission, its goals)
+
 // The events since the last call (at most a few thousand a frame).
 std::vector<GameEvent> TakeGameEvents();
 // Every message name the engine knows now (lower case: as WatchMessages).

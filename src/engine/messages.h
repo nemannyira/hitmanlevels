@@ -29,6 +29,12 @@ bool KillActor(ZGEOM* actor);
 bool ActorWalkTo(ZGEOM* actor, const float pos[3]);
 bool ActorLookAt(ZGEOM* actor, ZGEOM* target);
 bool ActorUseMoveSet(ZGEOM* actor, const char* name);
+// PlayAnim / PlayAnimLoop (Link_If 0x587CC0 / 0x588110 -> 0x588B80): the
+// animation by name from the character's sets (getAnimHandle 0x587A70 ->
+// 0x588DF0: vfunc 0x2A0's set, then 0x29C's, set vfunc 0x18(name)), played
+// with vfunc 0x214(anim, 1 | 5 looping, 0, -1.0, 1.0). False: no such
+// animation for it.
+bool ActorPlayAnimation(ZGEOM* actor, const char* name, bool loop);
 // Hitman (the player's character, class 0x2003E8), the level control object.
 ZGEOM* Player();
 ZGEOM* LevelControl();

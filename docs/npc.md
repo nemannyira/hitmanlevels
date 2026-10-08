@@ -273,6 +273,9 @@ What the Actor_If methods do with the actor (its vtable):
 | MoveToLocation(ref) | 12: 0x5849A0 | the object's world mat / pos (0x84), 0x5B4(1.0), 0x5C4(&pos, &mat) |
 | LookAt(ref) | 26: 0x584E20 | 0x610(ref) = 0x4687C0: keeps the target (+0x564), turns at once only while looking (+0x105 bit 0); 0x37C = 0x46F630 starts the head turn (0: stops) |
 | (19) | 0x584E00 | 0x5B8(1) |
+| PlayAnim(handle) / PlayAnimLoop | Link_If 6 / 9 (43 / 46 from Actor_If): interface vfunc 0x70 / 0x74 = 0x587CC0 / 0x588110 -> vfunc 0x58 = 0x588B80 | the actor's 0x214(anim, 1 (5: loop), 0, -1.0, 1.0) |
+| getAnimHandle(name) | Link_If 5 (130 from TrackLnk_HM2_if): 0x587A70 -> 0x588DF0 | anim = 0x2A0()->0x18(name), else 0x29C()->0x18(name); handle = anim - engine+0x40 |
+| FaceObject(ref) | base 4 (53 from Actor_If; table 0x6B42B0, registered 0x5892F0): 0x58AB10 | sets the world matrix towards the target, level (0x80) |
 
 The editor's Lua npc:walkto / lookat / moveset make the same calls
 (engine/messages.cpp; lookat also 0x37C when the character is not looking
@@ -281,4 +284,7 @@ or without a behaviour) and a character placed in the level (made with the
 scene) to a point of the level's path network (pathrequest, pathfinished;
 a point off it: patherror, e.g. Hitman's start hill on C1-1); characters
 made while playing (h2.npc on a loaded map) do not walk. moveset("Run"):
-about 3 times the walking speed. lookat turns the head.
+about 3 times the walking speed. lookat turns the head. npc:animation(name
+[, loop]) plays an animation of the character's sets (e.g. Stand_Scared_Alt01
+looping); npc:faceto turns it at once (a character's face is opposite its
+node's forward row).

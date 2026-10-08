@@ -26,6 +26,10 @@ constexpr int kActor_StartLook = 0x37C / 4;   // 0x46F630 (ref): the head turns 
 constexpr size_t kActor_Looking = 0x105;
 constexpr int kActor_MoveSetId = 0x574 / 4;
 constexpr int kActor_UseMoveSet = 0x564 / 4;
+constexpr int kActor_AnimSet = 0x29C / 4;     // the character's animation sets
+constexpr int kActor_AnimSet2 = 0x2A0 / 4;    //   (looked in first)
+constexpr int kAnimSet_Find = 0x18 / 4;       // (name) -> animation
+constexpr int kActor_PlayAnim = 0x214 / 4;    // (anim, mode, 0, -1.0, 1.0) -> playing animation
 constexpr uint32_t kHitmanClass = 0x2003E8;
 constexpr uint32_t kLevelControlClass = 0x2000E1;
 const char* const kInstantDeath = "Msg_InstantDeath";
@@ -110,6 +114,31 @@ bool SafeUseMoveSet(ZGEOM* actor, const char* name)
     }
 }
 
+void* SafeFindAnim(ZGEOM* actor, const char* name)
+{
+    __try {
+        void* set = VFunc<void*(__thiscall*)(ZGEOM*)>(actor, kActor_AnimSet)(actor);
+        if (!set)
+            return nullptr;
+        if (void* set2 = VFunc<void*(__thiscall*)(ZGEOM*)>(actor, kActor_AnimSet2)(actor))
+            if (void* a = VFunc<void*(__thiscall*)(void*, const char*)>(set2, kAnimSet_Find)(set2, name))
+                return a;
+        return VFunc<void*(__thiscall*)(void*, const char*)>(set, kAnimSet_Find)(set, name);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+bool SafePlayAnim(ZGEOM* actor, void* anim, int mode)
+{
+    __try {
+        using Play = void*(__thiscall*)(ZGEOM*, void*, int, int, float, float);
+        return VFunc<Play>(actor, kActor_PlayAnim)(actor, anim, mode, 0, -1.0f, 1.0f) != nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool Usable(ZGEOM* g)
 {
     return g && IsReadable(g, sizeof(ZGEOM)) && g->node && IsReadable(g->node, sizeof(ZBaseGeom)) &&
@@ -177,6 +206,14 @@ bool ActorLookAt(ZGEOM* actor, ZGEOM* target)
 bool ActorUseMoveSet(ZGEOM* actor, const char* name)
 {
     return name && *name && IsAlive(actor) && SafeUseMoveSet(actor, name);
+}
+
+bool ActorPlayAnimation(ZGEOM* actor, const char* name, bool loop)
+{
+    if (!name || !*name || !IsAlive(actor))
+        return false;
+    void* anim = SafeFindAnim(actor, name);
+    return anim && SafePlayAnim(actor, anim, loop ? 5 : 1);
 }
 
 ZGEOM* Player()

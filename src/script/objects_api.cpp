@@ -25,7 +25,8 @@
 //
 // Characters and the mission:
 //   npc:alive(), npc:kill()
-//   npc:walkto(x, y, z) / npc:walkto(obj), npc:lookat(obj | nil), npc:moveset("Run")
+//   npc:walkto(x, y, z) / npc:walkto(obj), npc:lookat(obj | nil), npc:moveset("Run"),
+//   npc:animation("Stand_Relaxed_Alt01" [, loop]), npc:faceto(obj | x, y, z)
 //     (as the scripts' MoveToPosition / LookAt / UseMoveSet; a character's
 //     own behaviour may give it other orders: place it without one; walking
 //     needs the level's path network and a character placed in the level,
@@ -697,6 +698,8 @@ int Alive(lua_State* L)
     return 1;
 }
 
+void Place(engine::ZGEOM* g, const editor::Transform& t);  // below
+
 // npc:walkto(x, y, z) / npc:walkto(object) -> bool: walks there (its
 // behaviour may send it elsewhere: a character without one keeps it)
 int WalkTo(lua_State* L)
@@ -753,6 +756,55 @@ int MoveSet(lua_State* L)
     if (!engine::IsA(g, "ZActor"))
         return luaL_error(L, "moveset: %s is not a character", engine::SafeString(g->name).c_str());
     lua_pushboolean(L, engine::ActorUseMoveSet(g, name));
+    return 1;
+}
+
+// npc:animation(name [, loop]) -> bool: plays one of its animations
+// ("Stand_Relaxed_Alt01", ...); false: it has none of that name
+int Animation(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    size_t n;
+    const char* name = luaL_checklstring(L, 2, &n);
+    if (n == 0 || n > 127)
+        return luaL_argerror(L, 2, "an animation name");
+    for (size_t i = 0; i < n; ++i)
+        if (name[i] < 0x20 || name[i] > 0x7E)
+            return luaL_argerror(L, 2, "an animation name");
+    if (!engine::IsA(g, "ZActor"))
+        return luaL_error(L, "animation: %s is not a character", engine::SafeString(g->name).c_str());
+    lua_pushboolean(L, engine::ActorPlayAnimation(g, name, lua_toboolean(L, 3)));
+    return 1;
+}
+
+// npc:faceto(object) / npc:faceto(x, y, z): turns it (at once, as the
+// scripts' FaceObject 0x58AB10) towards the point on the level
+int FaceTo(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    float to[3];
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "_path");
+        engine::ZGEOM* t = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+        if (!t || !editor::IsLive(t))
+            return luaL_error(L, "faceto: the target is not in the loaded scene");
+        engine::WorldPosition(t, to);
+    } else {
+        for (int i = 0; i < 3; ++i)
+            to[i] = Coordinate(L, 2 + i);
+    }
+    editor::Transform tr = editor::GetTransform(g);
+    float dx = to[0] - tr.pos[0], dz = to[2] - tr.pos[2];
+    if (dx * dx + dz * dz < 1.0f) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
+    // a character's face is opposite its node's forward row (seen in the game)
+    float yaw = std::atan2(dx, dz) / 0.017453292f + (engine::IsA(g, "ZActor") ? 180.0f : 0.0f);
+    editor::EulerToMatrix(yaw, 0.0f, 0.0f, tr.mat);
+    Place(g, tr);
+    lua_pushboolean(L, true);
     return 1;
 }
 
@@ -985,7 +1037,7 @@ void RegisterObjectsApi()
         {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State}, {"event", Event},
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
         {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"kill", Kill},
-        {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet},
+        {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet}, {"animation", Animation}, {"faceto", FaceTo},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);

@@ -37,6 +37,24 @@ bool ActorUseMoveSet(ZGEOM* actor, const char* name);
 // with vfunc 0x214(anim, 1 | 5 looping, 0, -1.0, 1.0). False: no such
 // animation for it.
 bool ActorPlayAnimation(ZGEOM* actor, const char* name, bool loop);
+// Whether a point (where a character stands) is on the level's path network,
+// as the pathfinder (ZPathfinder3, class 0x200075; its network at +0x64)
+// takes it: a cell of it near the point (0x59A8E0 with the point twice; y
+// lifted as RequestPath 0x599930 does). 1 yes, 0 no, -1 no network.
+int OnPathNetwork(const float pos[3]);
+// The network is a grid of cells over the map (world axes here; the nav
+// object keeps min / max corners at +5 / +0x11 and the cells along x, z, y
+// at +0x3B / +0x3F / +0x43). A character's point is looked up `lift` higher.
+struct PathGrid {
+    float min[3], max[3], size[3];
+    int cells[3];
+    float lift;
+};
+bool PathNetworkGrid(PathGrid& grid);
+// The walkable cell the pathfinder finds for a point: within one cell across
+// and 10 below it (0x59B610); `floor`: where a character on it stands (the
+// cell's centre, less the lift).
+bool PathCellBelow(const PathGrid& grid, const float pos[3], float floor[3]);
 // Hitman (the player's character, class 0x2003E8), the level control object.
 ZGEOM* Player();
 ZGEOM* LevelControl();

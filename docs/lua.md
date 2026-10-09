@@ -60,6 +60,7 @@ the room they are in: across rooms they are not drawn and Hitman falls).
 | `npc:event(name)` | a script event for its behaviour (`"Msg_InstantDeath"`, ...) |
 | `npc:alive()`, `npc:kill()` | |
 | `npc:walkto(x, y, z)`, `npc:walkto(obj)` | walks there: points of the map's path network only (else it stays) |
+| `h2.onpath(x, y, z)`, `h2.onpath(obj)` | whether a point is on the path network (a character standing there could walk); nil: the map has none. The editor shows the network: Testing panel > Path network |
 | `npc:moveset("Run")` | how it moves (`"Walk"`, `"Run"`) |
 | `npc:lookat(obj)`, `npc:lookat(nil)` | turns its head / stops |
 | `npc:faceto(obj)`, `npc:faceto(x, y, z)` | turns it at once |

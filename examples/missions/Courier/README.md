@@ -17,9 +17,10 @@ end it (`base_ends`).
 
 ## What writing it showed (missing or awkward)
 
-* **The path network cannot be seen**: the courier's round uses points found
-  by trial (a point off the network: the character stays). The editor
-  should show the network or tell whether a point is reachable.
+* **The path network could not be seen**: the courier's round uses points
+  found by trial (a point off the network: the character stays). Now the
+  editor shows it (Testing panel > Path network) and `h2.onpath(x, y, z)`
+  tells whether a point is on it.
 * **A character cannot be given an item**: the papers are an item dropped
   where the courier dies, not something he carries.
 * **The base level's own story still ran**: C1-1's level control could end

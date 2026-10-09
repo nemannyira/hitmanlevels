@@ -290,3 +290,26 @@ about 3 times the walking speed. lookat turns the head. npc:animation(name
 [, loop]) plays an animation of the character's sets (e.g. Stand_Scared_Alt01
 looping); npc:faceto turns it at once (a character's face is opposite its
 node's forward row).
+
+## The path network
+
+ZPathfinder3 (class 0x200075, ctor 0x5992B0, vtable 0x65C8C0; the scene's
+com value rEnemyPathFinder3) loads the network from its record's data block
+(tag 7, magic 0x1923483: 0x5995A0 -> 0x597C00 -> 0x59F0B0)
+into the object at pathfinder +0x64 ("nav"). It is a grid
+of cells over the map (0x59B530, world -> cell): min / max corners as
+float[3] at nav +5 / +0x11, the cells along x, z, y at +0x3B / +0x3F / +0x43;
+a cell is u16 [x, z, y] (y up).
+
+RequestPath (vfunc 0x200 = 0x599930 (ref, from, to); pathfinder +0x78 must
+be set) lifts both points by pathfinder +0x20 + 30.0 (0x639850) and looks up
+their cells: 0x59B4A0 takes the point's cell (0x59B4E0) and the nearest
+walkable one 0x59B610 (nav; out, in, 10, 1, 1.0) in the box one cell across
+and 10 down. A point with no such cell is off the network (patherror).
+0x59A8E0 (nav; from, to, char line) does it for two points: with the same
+point twice and line 0 it is true for a point on the network.
+
+The editor: engine::OnPathNetwork / PathNetworkGrid / PathCellBelow
+(engine/messages.cpp), Lua h2.onpath(x, y, z | obj), the Testing panel's
+"Path network" (the cells found column by column around the camera, drawn as
+dots).

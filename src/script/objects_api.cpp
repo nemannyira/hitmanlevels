@@ -422,6 +422,31 @@ int BaseMission(lua_State* L)
     return 1;
 }
 
+// h2.onpath(x, y, z) / h2.onpath(object) -> bool: whether a character can
+// walk to the point (the map's path network is near it); nil: the map has
+// no network
+int OnPath(lua_State* L)
+{
+    float pos[3];
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "_path");
+        engine::ZGEOM* t = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+        if (!t || !editor::IsLive(t))
+            return luaL_error(L, "onpath: the object is not in the loaded scene");
+        engine::WorldPosition(t, pos);
+    } else {
+        for (int i = 0; i < 3; ++i)
+            pos[i] = Coordinate(L, 1 + i);
+    }
+    int on = engine::OnPathNetwork(pos);
+    if (on < 0)
+        lua_pushnil(L);
+    else
+        lua_pushboolean(L, on);
+    return 1;
+}
+
 // h2._subtitle(text): the subtitle line now (h2.subtitle in triggers.cpp
 // takes it away after some seconds)
 int Subtitle(lua_State* L)
@@ -1093,6 +1118,7 @@ void RegisterObjectsApi()
     Register("mission", Mission);
     Register("_subtitle", Subtitle);
     Register("basemission", BaseMission);
+    Register("onpath", OnPath);
     Register("music", Music);
 }
 

@@ -1,20 +1,27 @@
 #include "testtools.h"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "imgui.h"
 
 #include "../config.h"
+#include "../engine/messages.h"
 #include "../engine/scene_data.h"
 #include "../game.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
+#include "freecam.h"
+#include "guides.h"
 #include "playtest.h"
 
 namespace h2::editor {
@@ -34,6 +41,173 @@ bool OnMap()
 {
     const std::string& s = CurrentScene();
     return s.size() > 6 && _stricmp(s.c_str() + s.size() - 6, "__MAIN") == 0 && engine::SceneDataValid();
+}
+
+// The path network around the camera: columns of the network's grid are
+// looked up from above the camera downwards (the pathfinder's own lookup:
+// the walkable cell within 10 below), a few milliseconds a frame; the cells
+// found are drawn as dots. A new scan starts when the camera has moved away.
+constexpr float kPathRadius = 2500.0f;   // cm around the camera
+constexpr float kPathSpacing = 50.0f;    // cm between the columns looked at, at least
+constexpr float kPathAbove = 300.0f;     // the height range (from the camera)
+constexpr float kPathBelow = 1500.0f;
+constexpr size_t kPathMaxPoints = 40000;
+constexpr double kPathBudgetMs = 2.0;
+
+using Point3 = std::array<float, 3>;
+
+struct PathScan {
+    bool active = false;
+    engine::PathGrid grid{};
+    float center[3] = {};          // the camera when it started
+    int cell[2] = {};              // its column (x, z)
+    int stride = 1;                // cells between the columns looked at
+    std::vector<std::array<int, 2>> columns;  // offsets, nearest first
+    size_t next = 0;               // the column looked at
+    float y = NAN;                 // the next height in it (NaN: from the top)
+    std::vector<Point3> points;
+    std::unordered_set<uint64_t> seen;
+};
+
+bool g_showPaths;
+PathScan g_scan;
+std::vector<Point3> g_pathPoints;  // the last whole scan
+float g_pathCenter[3];
+bool g_pathShown;                  // g_pathPoints is a scan of this map
+int g_pathState;                   // 0 nothing yet, 1 shown, -1 the map has no network
+std::string g_pathScene;           // the map and grid the points are of
+engine::PathGrid g_pathGrid;
+
+bool SameGrid(const engine::PathGrid& a, const engine::PathGrid& b)
+{
+    return memcmp(a.min, b.min, sizeof(a.min)) == 0 && memcmp(a.cells, b.cells, sizeof(a.cells)) == 0;
+}
+
+void StartPathScan(const engine::PathGrid& grid, const float cam[3])
+{
+    PathScan& s = g_scan;
+    s.active = true;
+    s.grid = grid;
+    memcpy(s.center, cam, sizeof(s.center));
+    s.cell[0] = int(std::floor((cam[0] - grid.min[0]) / grid.size[0]));
+    s.cell[1] = int(std::floor((cam[2] - grid.min[2]) / grid.size[2]));
+    float cellSize = std::min(grid.size[0], grid.size[2]);
+    s.stride = std::max(1, int(std::ceil(kPathSpacing / cellSize)));
+    int half = std::min(200, int(std::ceil(kPathRadius / (s.stride * cellSize))));
+    s.columns.clear();
+    for (int z = -half; z <= half; ++z)
+        for (int x = -half; x <= half; ++x)
+            if (x * x + z * z <= half * half)
+                s.columns.push_back({x, z});
+    std::sort(s.columns.begin(), s.columns.end(), [](const auto& a, const auto& b) {
+        return a[0] * a[0] + a[1] * a[1] < b[0] * b[0] + b[1] * b[1];
+    });
+    s.next = 0;
+    s.y = NAN;
+    s.points.clear();
+    s.seen.clear();
+}
+
+// Looks at columns until the frame's time is used up; true when done.
+bool ContinuePathScan()
+{
+    PathScan& s = g_scan;
+    auto start = std::chrono::steady_clock::now();
+    const engine::PathGrid& g = s.grid;
+    const float top = s.center[1] + kPathAbove, bottom = s.center[1] - kPathBelow;
+    int n = 0;
+    while (s.next < s.columns.size()) {
+        if ((++n & 15) == 0 &&
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() > kPathBudgetMs)
+            return false;
+        const auto& c = s.columns[s.next];
+        float p[3] = {g.min[0] + (float(s.cell[0] + c[0] * s.stride) + 0.5f) * g.size[0], std::isnan(s.y) ? top : s.y,
+                      g.min[2] + (float(s.cell[1] + c[1] * s.stride) + 0.5f) * g.size[2]};
+        float floor[3];
+        if (engine::PathCellBelow(g, p, floor)) {
+            uint64_t key = 0;
+            for (int i = 0; i < 3; ++i)
+                key = key << 16 | uint16_t((floor[i] + (i == 1 ? g.lift : 0.0f) - g.min[i]) / g.size[i]);
+            if (s.points.size() < kPathMaxPoints && s.seen.insert(key).second)
+                s.points.push_back({floor[0], floor[1], floor[2]});
+            s.y = std::min(p[1], floor[1]) - g.size[1];  // on below it (another floor)
+        } else {
+            s.y = p[1] - 11.0f * g.size[1];  // the lookup went 10 cells down
+        }
+        if (s.y < bottom) {
+            ++s.next;
+            s.y = NAN;
+        }
+    }
+    return true;
+}
+
+void UpdatePathView()
+{
+    if (!g_showPaths || !OnMap()) {
+        g_scan = PathScan();
+        g_pathPoints.clear();
+        g_pathShown = false;
+        g_pathState = 0;
+        return;
+    }
+    engine::PathGrid grid;
+    if (!engine::PathNetworkGrid(grid)) {
+        g_scan = PathScan();
+        g_pathPoints.clear();
+        g_pathShown = false;
+        g_pathState = -1;
+        return;
+    }
+    float cam[3];
+    FreeCamPosition(cam);
+    // another map: what was found is not of it
+    if (CurrentScene() != g_pathScene || !SameGrid(grid, g_pathGrid)) {
+        g_pathScene = CurrentScene();
+        g_pathGrid = grid;
+        g_pathPoints.clear();
+        g_pathShown = false;
+        g_scan = PathScan();
+    }
+    const float* from = g_scan.active ? g_scan.center : g_pathCenter;
+    float dx = cam[0] - from[0], dz = cam[2] - from[2], dy = cam[1] - from[1];
+    bool moved = dx * dx + dz * dz > (kPathRadius * 0.25f) * (kPathRadius * 0.25f) || std::fabs(dy) > 250.0f;
+    if ((!g_scan.active && (!g_pathShown || moved)) || (g_scan.active && moved))
+        StartPathScan(grid, cam);
+    if (g_scan.active && ContinuePathScan()) {
+        g_pathPoints.swap(g_scan.points);
+        memcpy(g_pathCenter, g_scan.center, sizeof(g_pathCenter));
+        g_pathShown = true;
+        g_pathState = 1;
+        g_scan = PathScan();
+    }
+}
+
+void DrawPathView()
+{
+    if (!g_showPaths || !OnMap())
+        return;
+    // the last whole scan; the first one while it goes
+    const std::vector<Point3>& points = g_pathShown ? g_pathPoints : g_scan.points;
+    if (points.empty())
+        return;
+    float cam[3];
+    FreeCamPosition(cam);
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    const float r2 = kPathRadius * kPathRadius * 1.5f;
+    for (const Point3& p : points) {
+        float dx = p[0] - cam[0], dy = p[1] - cam[1], dz = p[2] - cam[2];
+        float d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > r2)
+            continue;
+        ImVec2 s;
+        if (!WorldToScreen(p.data(), s))
+            continue;
+        float close = 1.0f - std::sqrt(d2 / r2);
+        int alpha = int(90 + 165 * close);
+        float h = 1.5f + 1.5f * close;
+        dl->AddRectFilled(ImVec2(s.x - h, s.y - h), ImVec2(s.x + h, s.y + h), IM_COL32(80, 230, 120, alpha));
+    }
 }
 
 void WriteFloat(uintptr_t at, float v)
@@ -67,6 +241,7 @@ void OnFrame()
     lastSpeed = speed;
     lastGod = god;
     lastInvisible = invisible;
+    UpdatePathView();
 }
 
 std::string ActiveText()
@@ -158,6 +333,23 @@ void DrawPanel()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Characters do not see anyone: they still hear shots and noise,\n"
                           "and bump into Hitman.");
+    ImGui::Checkbox("Path network", &g_showPaths);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Green dots where characters can walk (npc:walkto, h2.onpath):\n"
+                          "the map's path network, %.0f m around the camera,\n"
+                          "from %.0f m above it to %.0f m below.",
+                          kPathRadius / 100.0f, kPathAbove / 100.0f, kPathBelow / 100.0f);
+    if (g_showPaths) {
+        ImGui::SameLine();
+        if (!OnMap())
+            ImGui::TextDisabled("(on a map)");
+        else if (g_pathState < 0)
+            ImGui::TextDisabled("this map has none");
+        else if (g_scan.active && !g_pathShown)
+            ImGui::TextDisabled("looking %d%%", int(100 * g_scan.next / std::max<size_t>(1, g_scan.columns.size())));
+        else
+            ImGui::TextDisabled("%d cells, %.0f cm", int(g_pathPoints.size()), g_pathGrid.size[0]);
+    }
     char keys[96] = "";
     auto keyName = [](int vk) {
         static char n[32];
@@ -190,6 +382,7 @@ void InstallTestTools()
 {
     overlay::AddPanel({"Testing", &g_visible, DrawPanel, overlay::Dock::Right});
     overlay::AddAlwaysDraw(DrawIndicator);
+    overlay::AddAlwaysDraw(DrawPathView);
     overlay::AddKeyHandler(OnKey);
     OnFrameEnd(OnFrame);
 }

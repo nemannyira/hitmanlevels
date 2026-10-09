@@ -2,6 +2,8 @@
 
 #include <windows.h>
 #include <cctype>
+#include <cmath>
+#include <cstring>
 #include <set>
 #include <string>
 
@@ -32,6 +34,21 @@ constexpr int kAnimSet_Find = 0x18 / 4;       // (name) -> animation
 constexpr int kActor_PlayAnim = 0x214 / 4;    // (anim, mode, 0, -1.0, 1.0) -> playing animation
 constexpr uint32_t kHitmanClass = 0x2003E8;
 constexpr uint32_t kLevelControlClass = 0x2000E1;
+constexpr uint32_t kPathfinderClass = 0x200075;  // ZPathfinder3 (rEnemyPathFinder3)
+constexpr size_t kPathfinder_Nav = 0x64;         // the network (its data block, 0x5995A0)
+constexpr size_t kPathfinder_YOffset = 0x20;     // float: RequestPath 0x599930 adds it and 30 to y
+constexpr float kPathfinder_YLift = 30.0f;       // (0x639850)
+// nav (from*, to*, char line): false when either point has no cell of the
+// network near it (0x59B4A0: its cell, 0x59B4E0, then the nearest walkable one
+// 0x59B610 within one cell across and 10 down); line 0 and from == to: true
+// for a point on it
+constexpr uintptr_t kNav_Connected = 0x59A8E0;
+// nav (u16 out[3], const u16 in[3], int down, int across, float): the nearest
+// walkable cell in the box (in - (across, across, down) .. in + (across, across, 0))
+constexpr uintptr_t kNav_NearestCell = 0x59B610;
+// The grid (0x59B530: world -> cell): min / max corners (float[3]) and cells
+// along x, z, y (cell u16 [x, z, y], y up)
+constexpr size_t kNav_Min = 0x05, kNav_Max = 0x11, kNav_CellsX = 0x3B, kNav_CellsZ = 0x3F, kNav_CellsY = 0x43;
 const char* const kInstantDeath = "Msg_InstantDeath";
 
 template <typename T>
@@ -139,6 +156,29 @@ bool SafePlayAnim(ZGEOM* actor, void* anim, int mode)
     }
 }
 
+// 1: on the network, 0: not, -1: failed
+int SafeOnNav(void* nav, const float pos[3])
+{
+    __try {
+        float p[3] = {pos[0], pos[1], pos[2]};
+        float q[3] = {pos[0], pos[1], pos[2]};
+        int r = reinterpret_cast<int(__thiscall*)(void*, float*, float*, char)>(kNav_Connected)(nav, p, q, 0);
+        return (r & 0xFF) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+bool SafeNearestCell(void* nav, uint16_t out[3], const uint16_t in[3])
+{
+    __try {
+        using Nearest = int(__thiscall*)(void*, uint16_t*, const uint16_t*, int, int, float);
+        return (reinterpret_cast<Nearest>(kNav_NearestCell)(nav, out, in, 10, 1, 1.0f) & 0xFF) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool Usable(ZGEOM* g)
 {
     return g && IsReadable(g, sizeof(ZGEOM)) && g->node && IsReadable(g->node, sizeof(ZBaseGeom)) &&
@@ -219,6 +259,92 @@ bool ActorPlayAnimation(ZGEOM* actor, const char* name, bool loop)
 ZGEOM* Player()
 {
     return FirstRecord([](const SceneRecord& r) { return r.classId == kHitmanClass; });
+}
+
+// The loaded map's network (null: none) and how much the pathfinder lifts a
+// character's point before looking it up.
+static void* Network(float& lift)
+{
+    // looked up again when the scene's records change (another map, loaded again)
+    static ZGEOM* pf;
+    static const SceneRecord* records;
+    static size_t count;
+    static uint32_t ref;
+    if (!SceneDataValid())
+        return nullptr;
+    const std::vector<SceneRecord>& all = SceneRecords();
+    if (all.data() != records || all.size() != count || (pf && (!Usable(pf) || GeomOfRef(ref) != pf))) {
+        pf = FirstRecord([](const SceneRecord& r) { return r.classId == kPathfinderClass; });
+        ref = pf ? RefOf(pf) : 0;
+        records = all.data();
+        count = all.size();
+    }
+    const char* base = reinterpret_cast<const char*>(pf);
+    if (!pf || !IsReadable(base + kPathfinder_YOffset, kPathfinder_Nav + 4 - kPathfinder_YOffset))
+        return nullptr;
+    void* nav = *reinterpret_cast<void* const*>(base + kPathfinder_Nav);
+    if (!nav || !IsReadable(nav, kNav_CellsY + 4))
+        return nullptr;
+    lift = *reinterpret_cast<const float*>(base + kPathfinder_YOffset) + kPathfinder_YLift;
+    if (!std::isfinite(lift) || std::fabs(lift) > 1000.0f)
+        lift = kPathfinder_YLift;
+    return nav;
+}
+
+int OnPathNetwork(const float pos[3])
+{
+    float lift;
+    void* nav = Network(lift);
+    if (!nav)
+        return -1;
+    float p[3] = {pos[0], pos[1] + lift, pos[2]};
+    return SafeOnNav(nav, p);
+}
+
+bool PathNetworkGrid(PathGrid& grid)
+{
+    float lift;
+    const char* nav = static_cast<const char*>(Network(lift));
+    if (!nav)
+        return false;
+    memcpy(grid.min, nav + kNav_Min, sizeof(grid.min));
+    memcpy(grid.max, nav + kNav_Max, sizeof(grid.max));
+    memcpy(&grid.cells[0], nav + kNav_CellsX, 4);
+    memcpy(&grid.cells[1], nav + kNav_CellsY, 4);
+    memcpy(&grid.cells[2], nav + kNav_CellsZ, 4);
+    grid.lift = lift;
+    for (int i = 0; i < 3; ++i) {
+        if (grid.cells[i] <= 0 || grid.cells[i] > 0xFFFF || !std::isfinite(grid.min[i]) ||
+            !std::isfinite(grid.max[i]) || grid.max[i] <= grid.min[i])
+            return false;
+        grid.size[i] = (grid.max[i] - grid.min[i]) / float(grid.cells[i]);
+    }
+    return true;
+}
+
+bool PathCellBelow(const PathGrid& grid, const float pos[3], float floor[3])
+{
+    float lift;
+    void* nav = Network(lift);
+    if (!nav)
+        return false;
+    float p[3] = {pos[0], pos[1] + grid.lift, pos[2]};
+    int c[3];  // world axes
+    for (int i = 0; i < 3; ++i) {
+        float f = (p[i] - grid.min[i]) / grid.size[i];
+        if (!(f >= 0.0f) || f >= float(grid.cells[i]))
+            return false;
+        c[i] = int(f);
+    }
+    const uint16_t in[3] = {uint16_t(c[0]), uint16_t(c[2]), uint16_t(c[1])};  // the network's x, z, y
+    uint16_t out[3] = {};
+    if (!SafeNearestCell(nav, out, in))
+        return false;
+    const int found[3] = {out[0], out[2], out[1]};
+    for (int i = 0; i < 3; ++i)
+        floor[i] = grid.min[i] + (float(found[i]) + 0.5f) * grid.size[i];
+    floor[1] -= grid.lift;
+    return true;
 }
 
 ZGEOM* LevelControl()

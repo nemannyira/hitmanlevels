@@ -997,10 +997,7 @@ int Pos(lua_State* L)
 // frame): they are teleported.
 void Place(engine::ZGEOM* g, const editor::Transform& t)
 {
-    if (engine::IsA(g, "ZActor"))
-        engine::TeleportActor(g, t.pos, t.mat);
-    else
-        editor::SetTransform(g, t);
+    editor::SetTransform(g, t);  // characters teleported, Hitman by his group
 }
 
 int SetPos(lua_State* L)

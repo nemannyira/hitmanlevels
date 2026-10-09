@@ -1,5 +1,7 @@
 #include "playtest.h"
 
+#include <algorithm>
+
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -34,6 +36,7 @@ bool g_freeze = true;     // the world stands still while the editor is open
 bool g_playFrozen;        // ... and while playing (Testing)
 int g_startAt = kAtHitman;
 bool g_wePaused;          // the pause is the editor's (not the game's own)
+int g_stepFrames;         // frames the world runs although the editor holds it
 bool g_askClose;          // the close question is to be opened
 bool g_picking;           // waiting for the camera's point
 std::string g_message;
@@ -65,6 +68,10 @@ bool OnMap()
 void OnFrame()
 {
     bool want = OnMap() && ((g_freeze && overlay::IsOpen()) || g_playFrozen);
+    if (want && g_stepFrames > 0) {
+        --g_stepFrames;
+        want = false;
+    }
     if (want && !g_wePaused) {
         if (!EnginePaused()) {  // the game's own pause stays the game's
             PauseScene(true);
@@ -232,5 +239,6 @@ void InstallPlayTest()
 }
 
 bool ScenePaused() { return EnginePaused(); }
+void StepWorld(int frames) { g_stepFrames = std::max(g_stepFrames, std::min(frames, 30)); }
 
 } // namespace h2::editor

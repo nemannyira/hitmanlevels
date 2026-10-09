@@ -23,6 +23,10 @@ bool WorldFrozen();
 bool WorldFrozenWhilePlaying();
 // The engine's pause is on (the editor's, the Freeze toggle's, the game's own).
 bool ScenePaused();
+// While the editor holds the world still: let it run `frames` frames (a
+// character moved meanwhile is only drawn in its new room once its own
+// update has run; the paused engine does not run it).
+void StepWorld(int frames);
 void SetWorldFrozenWhilePlaying(bool on);
 
 } // namespace h2::editor

@@ -331,3 +331,22 @@ so setpos / setrot and the gizmo): tested on C1-1 from the start hill to the
 front gate, he stands, turns and walks. His object keeps the floor triangle
 he stands on (+0x45C, +0x468, +0x474 corners, +0x480 normal, ids at +0x44C /
 +0x490).
+
+## Characters and rooms
+
+A character is drawn with the room its own per-frame update finds it in:
+teleported (TeleportActor: +0x57C and the group's transform) it shows in
+the new room as soon as that update runs; the engine paused (PauseScene,
+the editor's Freeze) does not run it, so the editor lets the world run 3
+frames after moving one (editor::StepWorld). Checked on C1-1: the front
+gate guard into a first-floor bedroom and back, paused and running.
+Drawn this frame: its node's +0x58 high word is set (a render slot) and
+flag 0x02000000 is clear (0x1000 set).
+
+Not solved: a character made while playing (h2.npc / SpawnNpc) moved into
+another room is not drawn there, even with the world running (C1-1: made at
+the front gate, moved into the bedroom). Ruled out: actor +0x124 (the floor
+material's +0x30, footsteps, from 0x464B83), the rooms' +0x97 lists (their
+ZGATE portals, tested for visibility 0x432320 -> node flag 0x1000), node
+flag 0x08000000 (a node whose ref is not from the static pool:
+GeomPtrToRef 0x426AF0 / 0x4269E0; setting it crashes).

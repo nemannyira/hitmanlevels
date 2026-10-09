@@ -1,4 +1,5 @@
 #include "model.h"
+#include "playtest.h"
 
 #include <algorithm>
 #include <cmath>
@@ -317,6 +318,8 @@ void SetTransform(engine::ZGEOM* geom, const Transform& t)
 {
     if (engine::IsA(geom, "ZActor")) {  // characters keep their own position: teleported
         engine::TeleportActor(geom, t.pos, t.mat);
+        if (ScenePaused())
+            StepWorld(3);  // its room (what it is drawn with) follows in its own update
         return;
     }
     engine::ZBaseGeom* parent = geom->node->parent;

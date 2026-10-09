@@ -323,10 +323,11 @@ uses it for a character without a behaviour (Msg_InstantDeath only reaches
 a behaviour). IsAlive is vfunc 0x544 (+0x574). Hitman (ZHITMAN2) is not a
 ZActor: his hit points are the float at +0xD72.
 
-Moving Hitman (setpos: SetWorldTransform) drops him out of the world, even
-a few metres away. His object keeps the floor triangle he stands on
-(+0x45C, +0x468, +0x474 corners, +0x480 normal, ids at +0x44C / +0x490);
-after a move and clearing them the physics found a floor at the target's x
-and z negated (4300, -95, 6900 for -4300, 0, -6900): his own position is
-kept elsewhere (not as floats in the object near +0x57C as for characters).
-Open: the setter the game uses (loading a save, cut scenes).
+Moving Hitman: his "Ground" node (ZHITMAN2) sits at the origin of its group
+(HeroSetup.zip/Hitman2), and the group is where he is. Moving the node itself
+(SetWorldTransform) gave it an offset from the group and flung him out of
+the world, even 2 m away. The editor moves the group (editor::SetTransform,
+so setpos / setrot and the gizmo): tested on C1-1 from the start hill to the
+front gate, he stands, turns and walks. His object keeps the floor triangle
+he stands on (+0x45C, +0x468, +0x474 corners, +0x480 normal, ids at +0x44C /
++0x490).

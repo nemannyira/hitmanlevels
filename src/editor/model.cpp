@@ -319,9 +319,15 @@ void SetTransform(engine::ZGEOM* geom, const Transform& t)
         engine::TeleportActor(geom, t.pos, t.mat);
         return;
     }
-    EnsureDynamic(geom);
     engine::ZBaseGeom* parent = geom->node->parent;
     engine::ZGEOM* parentGeom = parent && engine::IsReadable(parent, sizeof(*parent)) ? parent->geom : nullptr;
+    // Hitman (ZHITMAN2, "Ground") stays at his group's origin: the group is
+    // where he is (moving the node itself flings him out of the world)
+    if (engine::IsA(geom, "ZHITMAN2") && parentGeom && IsLive(parentGeom) && engine::IsA(parentGeom, "ZGROUP")) {
+        SetTransform(parentGeom, t);
+        return;
+    }
+    EnsureDynamic(geom);
     if (!parentGeom || !IsLive(parentGeom)) {
         game::SetLocalTransform(geom, t.mat, t.pos);
         return;

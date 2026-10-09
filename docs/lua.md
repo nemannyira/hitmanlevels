@@ -45,7 +45,8 @@ the map is loaded (`obj:valid()`).
 | `h2.import_models{ {"C2-1", mesh}, ... }`, `h2.imported_mesh(level, mesh)` | models of other levels (docs/models.md) |
 
 Characters are moved with `setpos` / `setrot` (they are teleported; within
-the room they are in: across rooms they are not drawn and Hitman falls).
+the room they are in: across rooms they are not drawn). Hitman can be moved
+anywhere (`h2.player():setpos(x, y, z)`: his group is moved).
 
 ## Characters
 

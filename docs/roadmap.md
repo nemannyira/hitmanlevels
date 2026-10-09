@@ -65,9 +65,9 @@ Proposed, in order of value:
    until then: behaviours with route lists and events.
 4. **Hitman**: inventory (give / take items), disguise, teleport at load
    (done for the start), health, set the mission's rating counters.
-5. **Text**: subtitles / hints on screen (MSG_WRITESUBTITLE,
-   MSG_DISPLAYHINT, MSG_DISPLAYINFO are registered by the GUI 0x5333B0),
-   laptop pages (done: briefing, objectives).
+5. **Text** (done): subtitles (h2.subtitle: MSG_WRITESUBTITLE), the info
+   box (h2.info: MSG_DISPLAYINFO / WARNING / HINT with the editor's own LOC
+   keys), laptop pages (briefing, objectives).
 6. **Story flow**: states saved with the game (a Lua table written into the
    save game next to the level's state), checkpoints, cut-scene camera paths
    (the free camera's keyframes), fade in / out (ShowBlack).

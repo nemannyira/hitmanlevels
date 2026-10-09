@@ -38,6 +38,9 @@ h2.objective(4, false)  -- C1-1's own fourth line
 
 if h2.state.stage == 1 then
   h2.subtitle("The courier walks his round at the front gate.", 6)
+  h2.after(8, function()
+    h2.info("The courier keeps the papers on him: they fall where he does.", "hint")
+  end)
 end
 
 -- the round: on to the next point when he is there; again when he stands

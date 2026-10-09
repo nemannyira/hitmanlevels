@@ -455,6 +455,16 @@ int Subtitle(lua_State* L)
     return 1;
 }
 
+// h2.info(text [, "info" | "warning" | "hint"]) -> shown: the game's info box
+int Info(lua_State* L)
+{
+    const char* text = luaL_checkstring(L, 1);
+    static const char* const kinds[] = {"info", "warning", "hint", nullptr};
+    int kind = luaL_checkoption(L, 2, "info", kinds);
+    lua_pushboolean(L, editor::ShowInfo(static_cast<editor::InfoKind>(kind), text));
+    return 1;
+}
+
 // h2.mission("complete" | "fail")
 int Mission(lua_State* L)
 {
@@ -1117,6 +1127,7 @@ void RegisterObjectsApi()
     Register("sky", Sky);
     Register("mission", Mission);
     Register("_subtitle", Subtitle);
+    Register("info", Info);
     Register("basemission", BaseMission);
     Register("onpath", OnPath);
     Register("music", Music);

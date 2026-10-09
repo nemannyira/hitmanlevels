@@ -12,6 +12,7 @@ Made with: a character placed in the level (`level.json`, no behaviour: the
 script walks him), `npc:walkto` / `moveset` / `lookat`, `npc:carry` (the
 papers), the `death` and `pickup` events, a zone (the way out), timers, the
 laptop's lines (`h2.objective`, the level's own fourth hidden), subtitles,
+a hint (`h2.info`),
 `h2.state` with the `save` event; the base level's own mission logic cannot
 end it (`base_ends`).
 
@@ -28,7 +29,8 @@ end it (`base_ends`).
 * **The base level's own story still ran**: C1-1's level control could end
   the mission on its own (the Don killed, ...). Now off for this mission:
   `"mission": { "base_ends": false }` (h2.basemission).
-* **No on-screen info / hint box**: subtitles work for short lines; the
-  game's "INFO:" box takes text keys (LOC), not text.
+* **No on-screen info / hint box**: the game's box takes text keys (LOC),
+  not text. Now `h2.info(text [, "warning" | "hint"])` (the editor answers
+  its own keys).
 * **The map's own name and progress**: completing it counts as completing
   C1-1 in the profile (a map of its own: docs/roadmap.md section 3).

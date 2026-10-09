@@ -32,6 +32,14 @@ bool HideObjectiveLine(int slot);
 // game's speech shows them: MSG_WRITESUBTITLE to the GUI's OSD window, the
 // param being the text (GUI main 0x534130 -> 0x561D50).
 bool ShowSubtitle(const std::string& text);
+// The game's info box (UTF-8, one paragraph): MSG_DISPLAYINFO / WARNING /
+// HINT to the OSD (GUI main 0x534130 -> 0x561EA0.. -> its InfoDisplay
+// routine, ZWINGROUP_InfoDisplay vtable 0x658D08 +0xC0 / C4 / C8 = 0x53C3C0..).
+// The param is a LOC key (looked up by 0x53C8D0): the editor's own
+// "H2Editor/Info/<n>" with the text. Not shown while Hitman's vfunc 0x63C
+// says so (the GUI checks it).
+enum class InfoKind { Info, Warning, Hint };
+bool ShowInfo(InfoKind kind, const std::string& text);
 // The laptop's mission briefing (UTF-8, "\n" new line; "" = as the level has
 // it): a script's text, over the level document's until the map loads again.
 bool SetBriefingText(const std::string& text);

@@ -78,6 +78,7 @@ place it without one (`h2.npc(..., false)` or in the editor).
 | `h2.objective(slot [, text [, done]])` | a laptop objective line (1..6); returns the level's own text |
 | `h2.objective(slot, false)` | hides a line (the level's own too) until it gets a text again |
 | `h2.subtitle(text [, seconds])` | a subtitle line at the bottom of the screen (default 5 game seconds; nil / `""` takes it away) |
+| `h2.info(text [, kind])` | the game's own info box ("Information: ..."); `kind`: `"info"` (default), `"warning"`, `"hint"`; one paragraph |
 | `h2.briefing(text)` | the laptop's briefing (`""`: the level's own) |
 | `h2.mission("complete" | "fail")` | ends the mission (statistics, saved progress) |
 | `h2.basemission([on])` | whether the base level's own logic (its targets, its exit) may end the mission; the level's setting: `"mission": { "base_ends": false }` or the Mission panel. Off: such an end is only reported (`"mission"` event, `e.stopped`); Hitman's death still fails it |

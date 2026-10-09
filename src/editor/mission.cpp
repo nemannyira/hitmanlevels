@@ -1120,19 +1120,48 @@ bool SetObjectiveText(int slot, const std::string& text)
     return ok;
 }
 
-bool ShowSubtitle(const std::string& text)
+// the GUI's OSD window (its routine is the GUI main: 0x534130)
+static engine::ZGEOM* Osd()
 {
-    static std::string shown;  // the GUI keeps the pointer: alive until the next one
     const engine::SceneSnapshot& snap = SceneModel();
-    engine::ZGEOM* osd = nullptr;
     const std::string tail = "ZWINDOWS/MainWindow/OSD";
     for (int i : snap.FindName("OSD")) {
         const std::string& p = snap.geoms[i].path;
-        if (p.size() >= tail.size() && p.compare(p.size() - tail.size(), tail.size(), tail) == 0) {
-            osd = snap.geoms[i].geom;
-            break;
-        }
+        if (p.size() >= tail.size() && p.compare(p.size() - tail.size(), tail.size(), tail) == 0)
+            return snap.geoms[i].geom;
     }
+    return nullptr;
+}
+
+bool ShowInfo(InfoKind kind, const std::string& text)
+{
+    engine::ZGEOM* osd = Osd();
+    if (!osd || text.empty())
+        return false;
+    // a key of its own each time (the GUI looks the text up when it shows it)
+    static int next;
+    static std::string keys[8];
+    std::string& key = keys[next];
+    next = (next + 1) % 8;
+    key = "H2Editor/Info/" + std::to_string(&key - keys);
+    std::string shown = text;
+    for (char& c : shown)
+        if (c == '\n' || c == '\r')
+            c = ' ';
+    if (shown.size() > 300)
+        shown.resize(300);
+    g_scriptTexts[Lower(key)] = Node(shown);
+    BuildTexts();
+    const char* msg = kind == InfoKind::Warning ? "MSG_DISPLAYWARNING"
+                      : kind == InfoKind::Hint  ? "MSG_DISPLAYHINT"
+                                                : "MSG_DISPLAYINFO";
+    return engine::SendMessage(osd, osd, engine::RegisterMessage(msg), const_cast<char*>(key.c_str()));
+}
+
+bool ShowSubtitle(const std::string& text)
+{
+    static std::string shown;  // the GUI keeps the pointer: alive until the next one
+    engine::ZGEOM* osd = Osd();
     if (!osd)
         return false;
     std::string next = ToGameText(text);

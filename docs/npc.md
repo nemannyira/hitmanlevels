@@ -313,3 +313,20 @@ The editor: engine::OnPathNetwork / PathNetworkGrid / PathCellBelow
 (engine/messages.cpp), Lua h2.onpath(x, y, z | obj), the Testing panel's
 "Path network" (the cells found column by column around the camera, drawn as
 dots).
+
+## Death, Hitman's life, moving Hitman
+
+Actor_If 2 is Die (0x585000 -> the actor's vfunc 0x5F0 = 0x5092C0): it
+drops what the actor holds, then 0x468D80 kills it (vfunc 0x5DC(0), alive
++0x574 = 0 through vfunc 0x540, 0x5B8(1), 0x5BC, 0x3CC). The editor's kill
+uses it for a character without a behaviour (Msg_InstantDeath only reaches
+a behaviour). IsAlive is vfunc 0x544 (+0x574). Hitman (ZHITMAN2) is not a
+ZActor: his hit points are the float at +0xD72.
+
+Moving Hitman (setpos: SetWorldTransform) drops him out of the world, even
+a few metres away. His object keeps the floor triangle he stands on
+(+0x45C, +0x468, +0x474 corners, +0x480 normal, ids at +0x44C / +0x490);
+after a move and clearing them the physics found a floor at the target's x
+and z negated (4300, -95, 6900 for -4300, 0, -6900): his own position is
+kept elsewhere (not as floats in the object near +0x57C as for characters).
+Open: the setter the game uses (loading a save, cut scenes).

@@ -97,23 +97,22 @@ h2.every(1, function(t)
   end
 end)
 
--- the papers: dropped where he falls, again after a saved game
+-- the papers: he carries them (they fall by his body when he dies); after a
+-- saved game they are put back where they fell
 local papers
-local function dropPapers(x, y, z)
-  papers = h2.item(DOCUMENTS, x, y + 10, z)
-  h2.state.papers = { x, y, z }
-end
-
-if h2.state.stage == 2 and h2.state.papers then
+if h2.state.stage == 1 then
+  courier:carry(DOCUMENTS, function(item)
+    papers = item
+    h2.state.papers = { item:pos() }
+  end)
+elseif h2.state.stage == 2 and h2.state.papers then
   local p = h2.state.papers
-  dropPapers(p[1], p[2], p[3])
+  papers = h2.item(DOCUMENTS, p[1], p[2], p[3])
 end
 
 h2.on("death", function(who)
   if h2.state.stage == 1 and who:path() == courier:path() then
     h2.state.stage = 2
-    local x, y, z = courier:pos()
-    dropPapers(x, y, z)
     lines()
     h2.subtitle("The papers fell where he lies.", 5)
   end

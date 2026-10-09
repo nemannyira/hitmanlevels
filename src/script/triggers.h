@@ -29,8 +29,14 @@
 //                                       gets it too): e.key ("K", "F5",
 //                                       "Numpad1", "Space"...), e.vk
 //
-// Timers and zones of the level's scripts go when they run again; all go
-// when the map is left.
+//   npc:carry(template [, function(item, npc) ... end])   the character
+//       carries an item: when it dies, a working item of the template
+//       (h2.item) lands by its body (checked 10 times a game second); false:
+//       it is dead already. npc:carry(nil) takes them back,
+//       npc:carrying() lists the templates.
+//
+// Timers, zones and carried items of the level's scripts go when they run
+// again; all go when the map is left.
 namespace h2::script {
 
 void InstallTriggers();

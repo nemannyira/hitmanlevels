@@ -9,7 +9,7 @@ Play: copy this folder into the game's `Mods` folder and start "Courier" from
 the editor's launcher.
 
 Made with: a character placed in the level (`level.json`, no behaviour: the
-script walks him), `npc:walkto` / `moveset` / `lookat`, `h2.item` (the
+script walks him), `npc:walkto` / `moveset` / `lookat`, `npc:carry` (the
 papers), the `death` and `pickup` events, a zone (the way out), timers, the
 laptop's lines (`h2.objective`, the level's own fourth hidden), subtitles,
 `h2.state` with the `save` event; the base level's own mission logic cannot
@@ -21,8 +21,10 @@ end it (`base_ends`).
   found by trial (a point off the network: the character stays). Now the
   editor shows it (Testing panel > Path network) and `h2.onpath(x, y, z)`
   tells whether a point is on it.
-* **A character cannot be given an item**: the papers are an item dropped
-  where the courier dies, not something he carries.
+* **A character could not be given an item**: now `npc:carry(template)`
+  (the item falls by the body when he dies, as the game's guards drop their
+  weapons). Items made while playing are not in the game's saves: the
+  script puts the papers back after a load (`h2.state.papers`).
 * **The base level's own story still ran**: C1-1's level control could end
   the mission on its own (the Don killed, ...). Now off for this mission:
   `"mission": { "base_ends": false }` (h2.basemission).

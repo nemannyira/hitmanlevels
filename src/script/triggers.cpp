@@ -31,13 +31,13 @@ double g_gameTime;  // seconds the world ran on this map
 double g_last;      // NowMs of the last update
 std::vector<int> g_keys;
 
-// The Lua part: h2.time, h2.after / every, h2.zone; returns {update, clear,
-// setowner}. Runs in the sandbox like any script (its own functions only).
+// The Lua part: h2.time, h2.after / every, h2.zone, npc:carry; returns
+// {update, clear, setowner}. Runs in the sandbox like any script (its own functions only).
 const char* const kLua = R"lua(
-local report = ...
+local report, methods = ...
 local T = {}
 local now, owner, lastCheck = 0, "", -1
-local timers, zones = {}, {}
+local timers, zones, carried = {}, {}, {}
 
 local function call(what, fn, ...)
   if fn then
@@ -190,6 +190,67 @@ local function check(z)
   end
 end
 
+-- items characters carry: made by the body when it dies
+if methods then
+  function methods.carry(npc, template, fn)
+    if template == nil or template == false then
+      for _, c in ipairs(carried) do
+        if c.npc == npc then c._dead = true end
+      end
+      return true
+    end
+    if type(template) == "table" and template.name then template = template:name() end
+    if type(template) ~= "string" or template == "" then error("carry: an item template name expected", 2) end
+    if fn ~= nil and type(fn) ~= "function" then error("carry: the second argument is not a function", 2) end
+    if not npc:isa("ZActor") then error("carry: " .. tostring(npc) .. " is not a character", 2) end
+    if not npc:alive() then return false end
+    carried[#carried + 1] = {npc = npc, template = template, fn = fn, _owner = owner}
+    return true
+  end
+
+  function methods.carrying(npc)
+    local list = {}
+    for _, c in ipairs(carried) do
+      if not c._dead and c.npc == npc then list[#list + 1] = c.template end
+    end
+    return list
+  end
+end
+
+local function drop(c, n)
+  local ok, x, y, z = pcall(c.npc.pos, c.npc)
+  if not ok then return end
+  local a = n * 2.4  -- a few items around the body, not in one place
+  local ok2, item = pcall(h2.item, c.template, x + 35 * math.cos(a), y + 10, z + 35 * math.sin(a))
+  if not ok2 or not item then
+    report("carry: " .. c.template .. ": " .. tostring(item or "no item"))
+    return
+  end
+  call("carry", c.fn, item, c.npc)
+end
+
+local function checkCarried()
+  local keep, n = {}, {}
+  for _, c in ipairs(carried) do
+    if not c._dead then
+      local okValid, valid = pcall(c.npc.valid, c.npc)
+      if not okValid or not valid then
+        c._dead = true  -- gone from the scene
+      else
+        local okAlive, alive = pcall(c.npc.alive, c.npc)
+        if okAlive and not alive then
+          c._dead = true
+          local key = c.npc:path()
+          n[key] = (n[key] or 0) + 1
+          drop(c, n[key])
+        end
+      end
+    end
+    if not c._dead then keep[#keep + 1] = c end
+  end  -- (ones the callbacks add are appended to `carried`: this loop sees them)
+  carried = keep
+end
+
 function T.update(time)
   now = time
   local due = timers
@@ -223,6 +284,7 @@ function T.update(time)
     for i = 1, #list do
       if not list[i]._dead then check(list[i]) end
     end
+    checkCarried()
   end
 end
 
@@ -232,6 +294,9 @@ function T.clear(who)
   end
   for _, z in ipairs(zones) do
     if who == nil or z._owner == who then z._dead = true end
+  end
+  for _, c in ipairs(carried) do
+    if who == nil or c._owner == who then c._dead = true end
   end
   if who == nil then now, lastCheck = 0, -1 end
 end
@@ -356,7 +421,14 @@ void InstallTriggers()
         return;
     }
     lua_pushcfunction(L, Report);
-    if (PCall(L, 1, 1, 0) != LUA_OK || !lua_istable(L, -1)) {
+    // the objects' methods (objects_api.cpp, before this): npc:carry is added there
+    luaL_getmetatable(L, "h2.object");
+    if (lua_istable(L, -1))
+        lua_getfield(L, -1, "__index");
+    else
+        lua_pushnil(L);
+    lua_remove(L, -2);
+    if (PCall(L, 2, 1, 0) != LUA_OK || !lua_istable(L, -1)) {
         Log("triggers: %s", lua_tostring(L, -1) ? lua_tostring(L, -1) : "no table");
         lua_pop(L, 1);
         return;

@@ -44,13 +44,11 @@ the map is loaded (`obj:valid()`).
 | `h2.mesh_object(mesh, x, y, z [, parent [, flags]])` | a plain object showing a model of the map |
 | `h2.import_models{ {"C2-1", mesh}, ... }`, `h2.imported_mesh(level, mesh)` | models of other levels (docs/models.md) |
 
-Characters are moved with `setpos` / `setrot` (they are teleported). The
-map's own characters can be put anywhere, into other rooms too (they are
-drawn in the new room once their own update has run: at once while
-playing; with the editor holding the world still it runs a few frames for
-it). Characters made while playing (`h2.npc`) stay drawn in the room they
-were made in: move them within it, or let them walk. Hitman can be moved
-anywhere (`h2.player():setpos(x, y, z)`: his group is moved).
+Characters are moved with `setpos` / `setrot` (they are teleported),
+anywhere, into other rooms too: one without a behaviour is sent to its new
+spot (a walk of no length, which makes it find its room), so a walk it had
+been given stops. Hitman can be moved anywhere too
+(`h2.player():setpos(x, y, z)`: his group is moved).
 
 ## Characters
 

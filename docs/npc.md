@@ -334,19 +334,26 @@ he stands on (+0x45C, +0x468, +0x474 corners, +0x480 normal, ids at +0x44C /
 
 ## Characters and rooms
 
-A character is drawn with the room its own per-frame update finds it in:
-teleported (TeleportActor: +0x57C and the group's transform) it shows in
-the new room as soon as that update runs; the engine paused (PauseScene,
-the editor's Freeze) does not run it, so the editor lets the world run 3
-frames after moving one (editor::StepWorld). Checked on C1-1: the front
-gate guard into a first-floor bedroom and back, paused and running.
-Drawn this frame: its node's +0x58 high word is set (a render slot) and
-flag 0x02000000 is clear (0x1000 set).
+A character is drawn with its room: actor +0x67E (unaligned) is the room's
+ref (GetRoom vfunc 0x5EC = 0x4621B0, read by the renderer at 0x5FA466), and
+its node's dynamic entry (node +0x5C -> a proxy node's +0x5C -> engine+4
+object vfunc 0x5C: entry +0 the room geom, +0x1C valid; 0x5BDE70 reads it).
+Both change only when it moves: a gate passed (0x5082F0.. -> vfunc
+0x4BC / 0x4C0, then 0x463230 sets +0x67E) or a path started. A teleport
+(TeleportActor) passes no gate: a character with a behaviour soon walks and
+finds its room; one standing still (no behaviour, a character made while
+playing) stays in the old room and is not drawn in the new one. Writing the
+two fields is not enough (the room keeps its own list); calling 0x463230
+directly hung the game.
 
-Not solved: a character made while playing (h2.npc / SpawnNpc) moved into
-another room is not drawn there, even with the world running (C1-1: made at
-the front gate, moved into the bedroom). Ruled out: actor +0x124 (the floor
-material's +0x30, footsteps, from 0x464B83), the rooms' +0x97 lists (their
-ZGATE portals, tested for visibility 0x432320 -> node flag 0x1000), node
-flag 0x08000000 (a node whose ref is not from the static pool:
-GeomPtrToRef 0x426AF0 / 0x4269E0; setting it crashes).
+The editor (editor::SetTransform: gizmo, setpos) sends a character without
+a behaviour to its own spot after the teleport (ActorWalkTo, a walk of no
+length: the engine finds its room), and with the world held still
+(PauseScene, the editor's Freeze) lets it run 3 frames (StepWorld).
+Checked on C1-1: the front gate guard (BaseGuard) and characters made while
+playing (no behaviour) from the front gate into a first-floor bedroom and
+back, paused and running. Drawn this frame: the node's +0x58 high word is set
+(a render slot). Not the room: actor +0x124 (the floor material's +0x30,
+0x464B83), the rooms' +0x97 lists (their ZGATE portals, visibility test
+0x432320 -> node flag 0x1000), node flag 0x08000000 (a node whose ref is not
+from the static pool, GeomPtrToRef 0x426AF0; setting it crashes).

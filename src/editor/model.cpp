@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../config.h"
+#include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
 #include "../game.h"
@@ -318,8 +319,14 @@ void SetTransform(engine::ZGEOM* geom, const Transform& t)
 {
     if (engine::IsA(geom, "ZActor")) {  // characters keep their own position: teleported
         engine::TeleportActor(geom, t.pos, t.mat);
+        // The room it is drawn with (actor +0x67E) changes when it moves (its
+        // path started, a gate passed): one without a behaviour stands still,
+        // so it is sent to its own spot (which starts that); paused, the world
+        // runs a few frames for it.
+        if (!engine::ScriptInstance(geom))
+            engine::ActorWalkTo(geom, t.pos);
         if (ScenePaused())
-            StepWorld(3);  // its room (what it is drawn with) follows in its own update
+            StepWorld(3);
         return;
     }
     engine::ZBaseGeom* parent = geom->node->parent;

@@ -45,6 +45,9 @@ bool ShowInfo(InfoKind kind, const std::string& text);
 bool SetBriefingText(const std::string& text);
 bool CompleteMission();
 bool FailMission();
+// The level routine's own end, as the base level's scripts call it (testing
+// the "base_ends" setting: not let through when it is off).
+bool BaseLevelEnd(bool completed);
 // The level's own text of a line ("" when the level has none or it is not known yet).
 std::string LevelObjectiveText(int slot);
 

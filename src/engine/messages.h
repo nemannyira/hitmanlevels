@@ -16,7 +16,9 @@ namespace h2::engine {
 
 uint16_t RegisterMessage(const char* name);
 bool SendMessage(ZGEOM* to, ZGEOM* from, uint16_t msg, void* param);
-// Characters (ZActor): alive (vfunc 0x544), killing one (instant death).
+// Characters (ZActor): alive (vfunc 0x544; Hitman, ZHITMAN2: hit points
+// +0xD72 above 0), killing one (its behaviour gets
+// Msg_InstantDeath; without a behaviour: Actor_If's Die, vfunc 0x5F0).
 bool IsAlive(ZGEOM* actor);
 bool KillActor(ZGEOM* actor);
 // Commands, as the scripts' Actor_If methods do them (call the actor's

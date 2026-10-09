@@ -43,14 +43,14 @@ bool OnMap()
     return s.size() > 6 && _stricmp(s.c_str() + s.size() - 6, "__MAIN") == 0 && engine::SceneDataValid();
 }
 
-// The path network around the camera: columns of the network's grid are
+// The path network around where the camera looks: columns of the network's grid are
 // looked up from above the camera downwards (the pathfinder's own lookup:
 // the walkable cell within 10 below), a few milliseconds a frame; the cells
 // found are drawn as dots. A new scan starts when the camera has moved away.
-constexpr float kPathRadius = 2500.0f;   // cm around the camera
+constexpr float kPathRadius = 2500.0f;   // cm around the scan's centre
 constexpr float kPathSpacing = 50.0f;    // cm between the columns looked at, at least
-constexpr float kPathAbove = 300.0f;     // the height range (from the camera)
-constexpr float kPathBelow = 1500.0f;
+constexpr float kPathAbove = 300.0f;     // the height range (from the camera: one lookup
+constexpr float kPathBelow = 4000.0f;    //   covers 11 cells, ~2.75 m on C1-1, ~2 us)
 constexpr size_t kPathMaxPoints = 40000;
 constexpr double kPathBudgetMs = 2.0;
 
@@ -142,8 +142,34 @@ bool ContinuePathScan()
     return true;
 }
 
+// The point of the network the free camera looks at (along its view, at
+// most 60 m; the camera itself when it looks at none or is not free).
+void ViewFocus(const engine::PathGrid& grid, const float cam[3], float out[3])
+{
+    memcpy(out, cam, 3 * sizeof(float));
+    if (!FreeCamEnabled())
+        return;
+    float yaw, pitch;
+    FreeCamAngles(yaw, pitch);
+    if (pitch > -3.0f)
+        return;  // looking along the ground or up: around the camera
+    const float r = 3.14159265f / 180.0f;
+    float d[3] = {std::sin(yaw * r) * std::cos(pitch * r), std::sin(pitch * r), std::cos(yaw * r) * std::cos(pitch * r)};
+    for (float s = 100.0f; s <= 6000.0f; s += 100.0f) {
+        float p[3] = {cam[0] + d[0] * s, cam[1] + d[1] * s, cam[2] + d[2] * s};
+        float floor[3];
+        // a cell of the network at most 2.5 m under the ray
+        if (engine::PathCellBelow(grid, p, floor) && floor[1] <= p[1] + 1.0f && floor[1] >= p[1] - 250.0f) {
+            memcpy(out, floor, sizeof(floor));
+            return;
+        }
+    }
+}
+
 void UpdatePathView()
 {
+    if (g_showPaths && OnMap() && !overlay::IsOpen())
+        return;  // kept for when the editor opens again
     if (!g_showPaths || !OnMap()) {
         g_scan = PathScan();
         g_pathPoints.clear();
@@ -169,11 +195,15 @@ void UpdatePathView()
         g_pathShown = false;
         g_scan = PathScan();
     }
+    // around where the camera looks (x, z), heights from the camera's
+    float focus[3];
+    ViewFocus(grid, cam, focus);
+    focus[1] = cam[1];
     const float* from = g_scan.active ? g_scan.center : g_pathCenter;
-    float dx = cam[0] - from[0], dz = cam[2] - from[2], dy = cam[1] - from[1];
+    float dx = focus[0] - from[0], dz = focus[2] - from[2], dy = focus[1] - from[1];
     bool moved = dx * dx + dz * dz > (kPathRadius * 0.25f) * (kPathRadius * 0.25f) || std::fabs(dy) > 250.0f;
     if ((!g_scan.active && (!g_pathShown || moved)) || (g_scan.active && moved))
-        StartPathScan(grid, cam);
+        StartPathScan(grid, focus);
     if (g_scan.active && ContinuePathScan()) {
         g_pathPoints.swap(g_scan.points);
         memcpy(g_pathCenter, g_scan.center, sizeof(g_pathCenter));
@@ -185,26 +215,27 @@ void UpdatePathView()
 
 void DrawPathView()
 {
-    if (!g_showPaths || !OnMap())
+    // with the editor open only: drawn over the game, its menus and laptop too
+    if (!g_showPaths || !OnMap() || !overlay::IsOpen())
         return;
     // the last whole scan; the first one while it goes
     const std::vector<Point3>& points = g_pathShown ? g_pathPoints : g_scan.points;
     if (points.empty())
         return;
-    float cam[3];
-    FreeCamPosition(cam);
+    // fading out towards the edge of the scan (around where the camera looked)
+    const float* c = g_pathShown ? g_pathCenter : g_scan.center;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    const float r2 = kPathRadius * kPathRadius * 1.5f;
+    const float r2 = kPathRadius * kPathRadius * 1.1f;
     for (const Point3& p : points) {
-        float dx = p[0] - cam[0], dy = p[1] - cam[1], dz = p[2] - cam[2];
-        float d2 = dx * dx + dy * dy + dz * dz;
+        float dx = p[0] - c[0], dz = p[2] - c[2];
+        float d2 = dx * dx + dz * dz;
         if (d2 > r2)
             continue;
         ImVec2 s;
         if (!WorldToScreen(p.data(), s))
             continue;
         float close = 1.0f - std::sqrt(d2 / r2);
-        int alpha = int(90 + 165 * close);
+        int alpha = int(110 + 145 * close);
         float h = 1.5f + 1.5f * close;
         dl->AddRectFilled(ImVec2(s.x - h, s.y - h), ImVec2(s.x + h, s.y + h), IM_COL32(80, 230, 120, alpha));
     }
@@ -335,9 +366,9 @@ void DrawPanel()
                           "and bump into Hitman.");
     ImGui::Checkbox("Path network", &g_showPaths);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Green dots where characters can walk (npc:walkto, h2.onpath):\n"
-                          "the map's path network, %.0f m around the camera,\n"
-                          "from %.0f m above it to %.0f m below.",
+        ImGui::SetTooltip("Green dots (editor open) where characters can walk (npc:walkto, h2.onpath):\n"
+                          "the map's path network, %.0f m around where the camera looks,\n"
+                          "from %.0f m above the camera to %.0f m below.",
                           kPathRadius / 100.0f, kPathAbove / 100.0f, kPathBelow / 100.0f);
     if (g_showPaths) {
         ImGui::SameLine();

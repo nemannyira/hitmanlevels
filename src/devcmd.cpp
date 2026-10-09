@@ -18,6 +18,7 @@ extern "C" {
 #include "config.h"
 #include "editor/history.h"
 #include "editor/level.h"
+#include "editor/mission.h"
 #include "editor/model.h"
 #include "editor/npcs.h"
 #include "editor/playtest.h"
@@ -131,6 +132,13 @@ int SaveGameCmd(lua_State* L)
 int LoadGameCmd(lua_State* L)
 {
     lua_pushboolean(L, CallSlot(0x41AF70, unsigned(luaL_checkinteger(L, 1))));
+    return 1;
+}
+
+// h2.dev_levelend(completed): the base level's own mission end (as its scripts do)
+int LevelEnd(lua_State* L)
+{
+    lua_pushboolean(L, editor::BaseLevelEnd(lua_toboolean(L, 1) != 0));
     return 1;
 }
 
@@ -554,6 +562,7 @@ void InstallDevCommands()
     script::Register("dev_loadscene", LoadScene);
     script::Register("dev_savegame", SaveGameCmd);
     script::Register("dev_loadgame", LoadGameCmd);
+    script::Register("dev_levelend", LevelEnd);
     script::Register("dev_key", Key);
     script::Register("dev_mouse", Mouse);
     script::Register("dev_look", Look);

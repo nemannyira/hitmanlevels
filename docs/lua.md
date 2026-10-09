@@ -58,9 +58,9 @@ the room they are in: across rooms they are not drawn and Hitman falls).
 | `npc:behaviour()`, `npc:behaviour(name | false [, params])` | read / change |
 | `npc:state()` | the state its behaviour is in (`"Neutral2.normal"`) |
 | `npc:event(name)` | a script event for its behaviour (`"Msg_InstantDeath"`, ...) |
-| `npc:alive()`, `npc:kill()` | |
+| `npc:alive()`, `npc:kill()` | `kill`: a character's behaviour gets the instant death; one without a behaviour dies at once (Actor_If Die). `h2.player():alive()`: Hitman's hit points above 0 |
 | `npc:walkto(x, y, z)`, `npc:walkto(obj)` | walks there: points of the map's path network only (else it stays) |
-| `h2.onpath(x, y, z)`, `h2.onpath(obj)` | whether a point is on the path network (a character standing there could walk); nil: the map has none. The editor shows the network: Testing panel > Path network |
+| `h2.onpath(x, y, z)`, `h2.onpath(obj)` | whether a point is on the path network (a cell of it within 25 cm across, 2.5 m down on C1-1); nil: the map has none. A point just off it may still be walked towards (the character stops at the edge). The editor shows the network: Testing panel > Path network |
 | `npc:moveset("Run")` | how it moves (`"Walk"`, `"Run"`) |
 | `npc:lookat(obj)`, `npc:lookat(nil)` | turns its head / stops |
 | `npc:faceto(obj)`, `npc:faceto(x, y, z)` | turns it at once |
@@ -78,7 +78,7 @@ place it without one (`h2.npc(..., false)` or in the editor).
 | `h2.objective(slot [, text [, done]])` | a laptop objective line (1..6); returns the level's own text |
 | `h2.objective(slot, false)` | hides a line (the level's own too) until it gets a text again |
 | `h2.subtitle(text [, seconds])` | a subtitle line at the bottom of the screen (default 5 game seconds; nil / `""` takes it away) |
-| `h2.info(text [, kind])` | the game's own info box ("Information: ..."); `kind`: `"info"` (default), `"warning"`, `"hint"`; one paragraph |
+| `h2.info(text [, kind])` | the game's own info line ("Info: ...", "Warning:", "Hint:" in its colour, bottom left); `kind`: `"info"` (default), `"warning"`, `"hint"`; one paragraph. A subtitle takes the same place |
 | `h2.briefing(text)` | the laptop's briefing (`""`: the level's own) |
 | `h2.mission("complete" | "fail")` | ends the mission (statistics, saved progress) |
 | `h2.basemission([on])` | whether the base level's own logic (its targets, its exit) may end the mission; the level's setting: `"mission": { "base_ends": false }` or the Mission panel. Off: such an end is only reported (`"mission"` event, `e.stopped`); Hitman's death still fails it |

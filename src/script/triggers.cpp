@@ -193,6 +193,11 @@ end
 -- items characters carry: made by the body when it dies
 if methods then
   function methods.carry(npc, template, fn)
+    if not npc:isa("ZActor") then
+      for _, c in ipairs(npc:children()) do
+        if c:isa("ZActor") then npc = c break end
+      end
+    end
     if template == nil or template == false then
       for _, c in ipairs(carried) do
         if c.npc == npc then c._dead = true end
@@ -210,6 +215,11 @@ if methods then
 
   function methods.carrying(npc)
     local list = {}
+    if not npc:isa("ZActor") then
+      for _, c in ipairs(npc:children()) do
+        if c:isa("ZActor") then npc = c break end
+      end
+    end
     for _, c in ipairs(carried) do
       if not c._dead and c.npc == npc then list[#list + 1] = c.template end
     end

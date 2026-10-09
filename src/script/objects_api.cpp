@@ -873,6 +873,8 @@ int FaceTo(lua_State* L)
 int Kill(lua_State* L)
 {
     engine::ZGEOM* g = Geom(L);
+    if (engine::ZGEOM* a = editor::ActorOf(g))
+        g = a;  // its group
     if (!engine::IsA(g, "ZActor"))
         return luaL_error(L, "kill: %s is not a character", engine::SafeString(g->name).c_str());
     lua_pushboolean(L, engine::KillActor(g));

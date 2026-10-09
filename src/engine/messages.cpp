@@ -8,6 +8,7 @@
 #include <string>
 
 #include "../game.h"
+#include "npc.h"
 #include "scene_data.h"
 
 namespace h2::engine {
@@ -17,6 +18,10 @@ namespace {
 constexpr uintptr_t kRegisterZMsg = 0x41EED0;  // ZEngineDataBase::RegisterZMsg(name, 0, file, line) -> ushort
 constexpr int kGeom_SendMessage = 0x120 / 4;   // (ZGEOM* from, int msg, void* param)
 constexpr int kActor_IsAlive = 0x544 / 4;
+// Actor_If 2 (Die, 0x585000): drops what it holds, then dies (0x468D80: alive
+// +0x574 = 0 through vfunc 0x540, the death animation) - with or without a
+// behaviour
+constexpr int kActor_Die = 0x5F0 / 4;
 // Actor_If's commands (docs/npc.md): MoveToPosition 0x5B4(1.0), 0x5C0(&path),
 // 0x594(0), 0x58C(&path, pos); LookAt 0x610(ref); UseMoveSet 0x564(0x574(name))
 constexpr int kActor_MoveFactor = 0x5B4 / 4;
@@ -33,6 +38,7 @@ constexpr int kActor_AnimSet2 = 0x2A0 / 4;    //   (looked in first)
 constexpr int kAnimSet_Find = 0x18 / 4;       // (name) -> animation
 constexpr int kActor_PlayAnim = 0x214 / 4;    // (anim, mode, 0, -1.0, 1.0) -> playing animation
 constexpr uint32_t kHitmanClass = 0x2003E8;
+constexpr size_t kHitman_Health = 0xD72;         // float hit points (ZHITMAN2 is not a ZActor)
 constexpr uint32_t kLevelControlClass = 0x2000E1;
 constexpr uint32_t kPathfinderClass = 0x200075;  // ZPathfinder3 (rEnemyPathFinder3)
 constexpr size_t kPathfinder_Nav = 0x64;         // the network (its data block, 0x5995A0)
@@ -89,6 +95,16 @@ int SafeIsAlive(ZGEOM* actor)
         return VFunc<int(__thiscall*)(ZGEOM*)>(actor, kActor_IsAlive)(actor) != 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
+    }
+}
+
+bool SafeDie(ZGEOM* actor)
+{
+    __try {
+        VFunc<void(__thiscall*)(ZGEOM*)>(actor, kActor_Die)(actor);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
 }
 
@@ -215,24 +231,41 @@ bool SendMessage(ZGEOM* to, ZGEOM* from, uint16_t msg, void* param)
     return SafeSend(to, from ? from : to, msg, param);
 }
 
+// a living ZActor (the commands below call its virtual functions)
+static bool ActorAlive(ZGEOM* actor)
+{
+    return Usable(actor) && IsA(actor, "ZActor") && SafeIsAlive(actor) == 1;
+}
+
 bool IsAlive(ZGEOM* actor)
 {
-    if (!Usable(actor) || !IsA(actor, "ZActor"))
+    if (!Usable(actor))
+        return false;
+    if (IsA(actor, "ZHITMAN2")) {  // not a ZActor: its hit points
+        const char* hp = reinterpret_cast<const char*>(actor) + kHitman_Health;
+        return IsReadable(hp, 4) && *reinterpret_cast<const float*>(hp) > 0.0f;
+    }
+    if (!IsA(actor, "ZActor"))
         return false;
     return SafeIsAlive(actor) == 1;
 }
 
 bool KillActor(ZGEOM* actor)
 {
-    if (!IsAlive(actor))
+    if (!ActorAlive(actor))
         return false;
-    static const char* param = kInstantDeath;
-    return SendMessage(actor, actor, RegisterMessage("ScriptEvent"), &param);
+    // a behaviour dies its own way (as from an explosion); without one the
+    // message goes nowhere: Die itself
+    if (ScriptInstance(actor)) {
+        static const char* param = kInstantDeath;
+        return SendMessage(actor, actor, RegisterMessage("ScriptEvent"), &param);
+    }
+    return SafeDie(actor);
 }
 
 bool ActorWalkTo(ZGEOM* actor, const float pos[3])
 {
-    return IsAlive(actor) && SafeWalkTo(actor, pos);
+    return ActorAlive(actor) && SafeWalkTo(actor, pos);
 }
 
 bool ActorLookAt(ZGEOM* actor, ZGEOM* target)
@@ -240,17 +273,17 @@ bool ActorLookAt(ZGEOM* actor, ZGEOM* target)
     uint32_t ref = target && Usable(target) ? RefOf(target) : 0;
     if (target && !ref)
         return false;
-    return IsAlive(actor) && SafeLookAt(actor, ref);  // no target: stops looking
+    return ActorAlive(actor) && SafeLookAt(actor, ref);  // no target: stops looking
 }
 
 bool ActorUseMoveSet(ZGEOM* actor, const char* name)
 {
-    return name && *name && IsAlive(actor) && SafeUseMoveSet(actor, name);
+    return name && *name && ActorAlive(actor) && SafeUseMoveSet(actor, name);
 }
 
 bool ActorPlayAnimation(ZGEOM* actor, const char* name, bool loop)
 {
-    if (!name || !*name || !IsAlive(actor))
+    if (!name || !*name || !ActorAlive(actor))
         return false;
     void* anim = SafeFindAnim(actor, name);
     return anim && SafePlayAnim(actor, anim, loop ? 5 : 1);
@@ -314,7 +347,7 @@ bool PathNetworkGrid(PathGrid& grid)
     memcpy(&grid.cells[2], nav + kNav_CellsZ, 4);
     grid.lift = lift;
     for (int i = 0; i < 3; ++i) {
-        if (grid.cells[i] <= 0 || grid.cells[i] > 0xFFFF || !std::isfinite(grid.min[i]) ||
+        if (grid.cells[i] <= 0 || grid.cells[i] > 0x10000 || !std::isfinite(grid.min[i]) ||  // u16 cells (C1-1: 65536 x 8192 x 65536 of 25 cm)
             !std::isfinite(grid.max[i]) || grid.max[i] <= grid.min[i])
             return false;
         grid.size[i] = (grid.max[i] - grid.min[i]) / float(grid.cells[i]);

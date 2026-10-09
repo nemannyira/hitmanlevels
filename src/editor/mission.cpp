@@ -1214,6 +1214,11 @@ bool FailMission()
     return CallLevel(kLevel_MissionFailed);
 }
 
+bool BaseLevelEnd(bool completed)
+{
+    return CallLevel(completed ? kLevel_MissionCompleted : kLevel_MissionFailed);
+}
+
 std::string LevelObjectiveText(int slot) { return OwnText(slot); }
 
 void ApplyMission()

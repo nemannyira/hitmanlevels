@@ -586,13 +586,14 @@ int Point(lua_State* L)
 // (others: also those of the other levels, "Guard2_1 (C2-1)")
 int Behaviours(lua_State* L)
 {
+    bool others = lua_toboolean(L, 1);  // before the table: it would be index 1 without an argument
     lua_newtable(L);
     int n = 0;
     for (const std::string& b : editor::BehaviourNames()) {
         lua_pushstring(L, b.c_str());
         lua_rawseti(L, -2, ++n);
     }
-    if (lua_toboolean(L, 1))
+    if (others)
         for (const std::string& b : editor::ForeignBehaviourNames()) {
             lua_pushstring(L, b.c_str());
             lua_rawseti(L, -2, ++n);

@@ -46,6 +46,7 @@ constexpr uint32_t kFlagInitialized = 0x800000;
 // the list has then; vfunc 0x2C pushes apart the elements close to each other)
 constexpr uintptr_t kActorCollision_Init = 0x489900;
 constexpr uintptr_t kItem_SetOwner = 0x4723F0;        // ZITEM: (owner ref, its group, notify)
+constexpr uintptr_t kAllocRefTab = 0x5B2A30;          // a reference table's new entry (vfunc of the tables)
 constexpr uint32_t kActorCollisionRoom = 64;            // elements added at runtime it has room for
 const char* const kActorList = "TrackLinkObjects";
 
@@ -703,6 +704,23 @@ uint32_t __fastcall hkItemSetOwner(char* item, void* edx, uint32_t owner, void* 
     return oItemSetOwner(item, edx, owner, group, notify);
 }
 
+// A new entry of a reference table (AllocRefTab 0x5B2A30) asserts (int3 at
+// 0x5B2A5F: no handler in the released game, so it goes down) when the table
+// was made while loading (+0x18) and the engine has locked them (sys +0x7B4)
+// for the game logic. The entry itself is made as at loading. Objects made
+// while playing need them later too, from the game's own code: the weapon a
+// behaviour gave a character the editor made is dropped when it dies (its
+// owner, its pickup action ZGEOM_Action 0x472680...). Unlocked for the call,
+// as the editor does around its own creations (game::RefAllocUnlock).
+using AllocRefTabFn = void*(__fastcall*)(void* table, void* edx);
+AllocRefTabFn oAllocRefTab;
+
+void* __fastcall hkAllocRefTab(void* table, void* edx)
+{
+    game::RefAllocUnlock unlock;
+    return oAllocRefTab(table, edx);
+}
+
 // the scene's actor lists (one in each scene: AllLevels_AnimSound)
 std::vector<ZGEOM*> ActorLists()
 {
@@ -782,6 +800,7 @@ void InstallNpc()
 {
     Hook("ZLIST_ActorCollision init", kActorCollision_Init, &hkActorCollisionInit, &oActorCollisionInit);
     Hook("ZITEM::SetOwner", kItem_SetOwner, &hkItemSetOwner, &oItemSetOwner);
+    Hook("AllocRefTab (references made while playing)", kAllocRefTab, &hkAllocRefTab, &oAllocRefTab);
     OnFrameEnd(GuardFrame);
     OnSceneLeaving([](const std::string&) { g_guards.clear(); });
 }

@@ -780,6 +780,7 @@ int WalkTo(lua_State* L)
         for (int i = 0; i < 3; ++i)
             pos[i] = Coordinate(L, 2 + i);
     }
+    editor::CancelSettle(g);  // its own walk finds its room after a setpos
     lua_pushboolean(L, engine::ActorWalkTo(g, pos));
     return 1;
 }

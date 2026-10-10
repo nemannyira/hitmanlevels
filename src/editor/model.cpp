@@ -14,6 +14,7 @@
 #include "../engine/spawn.h"
 #include "../game.h"
 #include "../log.h"
+#include "../mainloop.h"
 #include "../scene.h"
 
 namespace h2::editor {
@@ -315,18 +316,73 @@ bool IsSpawned(engine::ZGEOM* geom)
 
 // The world setter of the engine does not reliably take rotations, so the
 // transform is expressed relative to the parent node and set as local.
+// A moved character finds the room it is drawn with (actor +0x67E) only
+// when it moves (its path started, a gate passed): once it is left where it
+// was put (the gizmo let go, a script's setpos), one without a behaviour
+// (standing still) is sent to its own spot, which starts that; with the world
+// held still it runs a few frames for it. A walk given meanwhile (npc:walkto)
+// does it instead.
+namespace {
+
+struct Settling {
+    engine::ZGEOM* actor;
+    float pos[3];
+    int frames;  // since it was last moved
+};
+std::vector<Settling> g_settling;
+
+void SettleFrame()
+{
+    for (size_t i = 0; i < g_settling.size();) {
+        Settling& s = g_settling[i];
+        if (++s.frames < 2) {
+            ++i;
+            continue;
+        }
+        if (IsLive(s.actor) && engine::IsAlive(s.actor)) {
+            if (!engine::ScriptInstance(s.actor))
+                engine::ActorWalkTo(s.actor, s.pos);
+            if (ScenePaused())
+                StepWorld(3);
+        }
+        g_settling.erase(g_settling.begin() + i);
+    }
+}
+
+} // namespace
+
+void SettleActor(engine::ZGEOM* actor, const float pos[3])
+{
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnFrameEnd(SettleFrame);
+        OnSceneLeaving([](const std::string&) { g_settling.clear(); });
+    }
+    for (Settling& s : g_settling)
+        if (s.actor == actor) {
+            memcpy(s.pos, pos, sizeof(s.pos));
+            s.frames = 0;
+            return;
+        }
+    Settling s{actor, {pos[0], pos[1], pos[2]}, 0};
+    g_settling.push_back(s);
+}
+
+void CancelSettle(engine::ZGEOM* actor)
+{
+    for (size_t i = 0; i < g_settling.size(); ++i)
+        if (g_settling[i].actor == actor) {
+            g_settling.erase(g_settling.begin() + i);
+            return;
+        }
+}
+
 void SetTransform(engine::ZGEOM* geom, const Transform& t)
 {
     if (engine::IsA(geom, "ZActor")) {  // characters keep their own position: teleported
         engine::TeleportActor(geom, t.pos, t.mat);
-        // The room it is drawn with (actor +0x67E) changes when it moves (its
-        // path started, a gate passed): one without a behaviour stands still,
-        // so it is sent to its own spot (which starts that); paused, the world
-        // runs a few frames for it.
-        if (!engine::ScriptInstance(geom))
-            engine::ActorWalkTo(geom, t.pos);
-        if (ScenePaused())
-            StepWorld(3);
+        SettleActor(geom, t.pos);
         return;
     }
     engine::ZBaseGeom* parent = geom->node->parent;

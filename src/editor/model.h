@@ -30,6 +30,10 @@ struct ObjectState {
 bool IsLive(engine::ZGEOM* geom);
 Transform GetTransform(engine::ZGEOM* geom);
 void SetTransform(engine::ZGEOM* geom, const Transform& t);  // makes the object dynamic first
+// A character moved (teleported): once it stays put it is made to find its
+// room (see model.cpp); a walk given to it meanwhile makes that unnecessary.
+void SettleActor(engine::ZGEOM* actor, const float pos[3]);
+void CancelSettle(engine::ZGEOM* actor);
 void EnsureDynamic(engine::ZGEOM* geom);
 // World bounding sphere of the node (as used by the renderer's culling).
 bool GetBounds(engine::ZGEOM* geom, float center[3], float& radius);

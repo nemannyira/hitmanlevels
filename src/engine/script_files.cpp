@@ -84,7 +84,7 @@ bool ReadZgf(const std::string& level, std::vector<uint8_t>& zgf)
         return false;
     std::vector<uint8_t> packed;
     std::string err;
-    if (!ReadZipEntry(GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP",
+    if (!ReadZipEntry(LevelZipPath(level),
                       "SCENES/" + level + "/" + level + "__MAIN.ZGF", packed, &err) ||
         packed.size() < 9) {
         Log("scripts: %s: no ZGF (%s)", level.c_str(), err.c_str());
@@ -181,7 +181,7 @@ bool ReadScene(const std::string& level, std::vector<uint8_t>& gms, std::vector<
 {
     if (!IsGameLevel(level))
         return false;
-    std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
+    std::string zip = LevelZipPath(level);
     std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
     std::vector<uint8_t> packed;
     return ReadZipEntry(zip, base + "GMS", packed) && ReadZipEntry(zip, base + "BUF", buf) && packed.size() > 9 &&

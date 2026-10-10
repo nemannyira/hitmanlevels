@@ -35,6 +35,13 @@ void ClearConsole();
 // running longer than the budget is stopped with an error (a level's script
 // must not hang the game). As lua_pcall.
 int PCall(lua_State* s, int nargs, int nresults, int errfunc);
+// Every PCall has a time budget of its own (3 s; a call made inside another
+// gets its own, the outer one's goes on when it returns). A call out of time
+// is stopped for good: every instruction fails until it returns.
+bool LastCallTimedOut();          // the last PCall that returned was stopped
+bool CallTimeLeft();              // the call under way has time left
+int TimeoutCount();               // calls stopped since the last reset
+void ResetTimeouts();
 
 // Register C functions into the global "h2" table.
 using CFunction = int (*)(lua_State*);

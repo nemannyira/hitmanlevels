@@ -162,7 +162,7 @@ std::string SceneScriptPath(const std::string& cls)
         std::string level = scene.substr(0, scene.find('\\'));
         std::vector<uint8_t> packed;
         std::string err;
-        if (engine::ReadZipEntry(GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP",
+        if (engine::ReadZipEntry(engine::LevelZipPath(level),
                                  "SCENES/" + level + "/" + level + "__MAIN.ZGF", packed, &err) &&
             packed.size() > 9) {
             uint32_t size;

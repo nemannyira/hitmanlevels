@@ -34,15 +34,22 @@ std::vector<int> g_keys;
 // The Lua part: h2.time, h2.after / every, h2.zone, npc:carry; returns
 // {update, clear, setowner}. Runs in the sandbox like any script (its own functions only).
 const char* const kLua = R"lua(
-local report, methods = ...
+local report, methods, guard = ...
 local T = {}
 local now, owner, lastCheck = 0, "", -1
 local timers, zones, carried = {}, {}, {}
 
+-- a callback in a call of its own (its own time; one that runs too long is
+-- stopped and its timer / zone removed). Returns "stopped" or "skipped" (the
+-- frame's time used up: tried again next frame).
 local function call(what, fn, ...)
   if fn then
-    local ok, err = pcall(fn, ...)
-    if not ok then report(what .. ": " .. tostring(err)) end
+    local ok, err, how = guard(fn, ...)
+    if how == "skipped" then return "skipped" end
+    if not ok then
+      report(what .. ": " .. tostring(err) .. (how == "stopped" and " (removed)" or ""))
+      return how
+    end
   end
 end
 
@@ -174,10 +181,10 @@ local function check(z)
       local inside = z:inside(o)
       if inside and not z._inside[path] then
         z._inside[path] = o
-        call("zone on_enter", z._enter, z, o)
+        if call("zone on_enter", z._enter, z, o) == "stopped" then z._dead = true end
       elseif not inside and z._inside[path] then
         z._inside[path] = nil
-        call("zone on_leave", z._leave, z, o)
+        if call("zone on_leave", z._leave, z, o) == "stopped" then z._dead = true end
       end
     end
     if z._dead then return end
@@ -185,7 +192,7 @@ local function check(z)
   for path, o in pairs(z._inside) do
     if not seen[path] then  -- gone from the scene or from the list
       z._inside[path] = nil
-      call("zone on_leave", z._leave, z, o)
+      if call("zone on_leave", z._leave, z, o) == "stopped" then z._dead = true end
     end
   end
 end
@@ -267,8 +274,11 @@ function T.update(time)
   timers = {}
   local keep = {}
   for _, t in ipairs(due) do
-    if not t._dead and now >= t._at then
-      call("timer", t._fn, t)
+    local how = (not t._dead and now >= t._at) and call("timer", t._fn, t) or nil
+    if how == "stopped" then t._dead = true end
+    if how == "skipped" then
+      -- left for the next frame
+    elseif not t._dead and now >= t._at then
       if t._every and not t._dead then
         if t._left then
           t._left = t._left - 1
@@ -335,6 +345,32 @@ int Report(lua_State* L)
 {
     ConsolePrint(LineKind::Error, luaL_tolstring(L, 1, nullptr));
     return 0;
+}
+
+// guard(fn, ...) -> true | false, error, "stopped" | false, nil, "skipped":
+// fn in a call of its own time (PCall); "skipped" when the frame's call has
+// none left (the callback is tried again next frame)
+int Guard(lua_State* L)
+{
+    if (!CallTimeLeft()) {
+        lua_pushboolean(L, 0);
+        lua_pushnil(L);
+        lua_pushliteral(L, "skipped");
+        return 3;
+    }
+    int status = PCall(L, lua_gettop(L) - 1, 0, 0);
+    if (status == LUA_OK) {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    bool stopped = LastCallTimedOut();
+    lua_pushboolean(L, 0);
+    lua_insert(L, -2);  // false, the error
+    if (stopped)
+        lua_pushliteral(L, "stopped");
+    else
+        lua_pushnil(L);
+    return 3;
 }
 
 bool OnMap()
@@ -438,7 +474,8 @@ void InstallTriggers()
     else
         lua_pushnil(L);
     lua_remove(L, -2);
-    if (PCall(L, 2, 1, 0) != LUA_OK || !lua_istable(L, -1)) {
+    lua_pushcfunction(L, Guard);
+    if (PCall(L, 3, 1, 0) != LUA_OK || !lua_istable(L, -1)) {
         Log("triggers: %s", lua_tostring(L, -1) ? lua_tostring(L, -1) : "no table");
         lua_pop(L, 1);
         return;

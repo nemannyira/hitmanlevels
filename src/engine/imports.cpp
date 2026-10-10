@@ -84,7 +84,7 @@ Source* LoadSource(const std::string& level)
     if (s.loaded)
         return s.prm.empty() ? nullptr : &s;
     s.loaded = true;
-    std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
+    std::string zip = LevelZipPath(level);
     std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
     std::string err;
     if (!ReadZipEntry(zip, base + "PRM", s.prm, &err) || !ReadZipEntry(zip, base + "TEX", s.tex, &err) ||
@@ -110,7 +110,7 @@ const std::vector<uint8_t>* SourceAnm(const std::string& level)
     if (!s->anmLoaded) {
         s->anmLoaded = true;
         std::string err;
-        if (!ReadZipEntry(GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP",
+        if (!ReadZipEntry(LevelZipPath(level),
                           "SCENES/" + level + "/" + level + "__MAIN.ANM", s->anm, &err)) {
             Log("imports: %s: %s", level.c_str(), err.c_str());
             s->anm.clear();
@@ -1101,7 +1101,7 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
     Source* src = LoadSource(level);
     if (!src)
         return;
-    std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
+    std::string zip = LevelZipPath(level);
     std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
     std::vector<uint8_t> packed, gms, buf;
     std::string err;
@@ -1327,7 +1327,7 @@ const std::vector<LevelSkyPart>& LevelSky(const std::string& level)
     std::vector<LevelSkyPart>& out = cache[level];
     if (!IsGameLevel(level))
         return out;
-    std::string zip = GameDir() + "Scenes\\" + level + "\\" + level + "__MAIN.ZIP";
+    std::string zip = LevelZipPath(level);
     std::string base = "SCENES/" + level + "/" + level + "__MAIN.";
     std::vector<uint8_t> packed, gms, buf;
     if (!ReadZipEntry(zip, base + "GMS", packed) || !ReadZipEntry(zip, base + "BUF", buf) || packed.size() <= 9 ||
@@ -1407,6 +1407,16 @@ bool IsGameLevel(const std::string& level)
         if (_stricmp(l.c_str(), level.c_str()) == 0)
             return true;
     return false;
+}
+
+std::string LevelZipPath(const std::string& level)
+{
+    // only a level of the game (a name from a level file or a script could
+    // otherwise lead out of Scenes: "..\..")
+    for (const std::string& l : GameLevels())
+        if (_stricmp(l.c_str(), level.c_str()) == 0)
+            return GameDir() + "Scenes\\" + l + "\\" + l + "__MAIN.ZIP";
+    return "";
 }
 
 const std::vector<std::string>& GameLevels()

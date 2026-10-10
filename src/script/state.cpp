@@ -277,7 +277,7 @@ void WriteState(unsigned slot)
     std::string text;
     lua_pushcfunction(L, SerializeState);
     lua_pushlightuserdata(L, &text);
-    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+    if (PCall(L, 1, 0, 0) != LUA_OK) {
         const char* err = lua_tostring(L, -1);
         ConsolePrint(LineKind::Error, err ? err : "h2.state not saved");
         lua_pop(L, 1);
@@ -328,7 +328,7 @@ void ReadState(unsigned slot)
     }
     lua_pushcfunction(L, RestoreState);
     lua_pushlightuserdata(L, &j);
-    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+    if (PCall(L, 1, 0, 0) != LUA_OK) {
         const char* err = lua_tostring(L, -1);
         ConsolePrint(LineKind::Error, std::string("h2.state: ") + (err ? err : "not restored"));
         lua_pop(L, 1);

@@ -923,11 +923,16 @@ bool SaveLevel(std::string* error)
 
 bool LoadLevel(const std::string& folder, std::string* error)
 {
-    std::ifstream f(ModsDir() + folder + "\\level.json", std::ios::binary);
+    std::ifstream f(ModsDir() + folder + "\\level.json", std::ios::binary | std::ios::ate);
     if (!f) {
         if (error) *error = "missing level.json";
         return false;
     }
+    if (f.tellg() > std::streamoff(16 << 20)) {  // a level file from elsewhere: not read whole when absurd
+        if (error) *error = "level.json is larger than 16 MB";
+        return false;
+    }
+    f.seekg(0);
     json j;
     try {
         j = json::parse(f);

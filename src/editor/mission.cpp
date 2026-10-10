@@ -379,7 +379,16 @@ bool LineChecked(int slot)
     return (bits >> slot) & 1;
 }
 
-std::string Node(const std::string& text) { return std::string("\x01", 1) + ToGameText(text) + std::string(1, '\0'); }
+// a LOC node (0x01, the text, NUL); at most 4096 characters (the briefing;
+// the game's own are under 2000): texts from scripts and level files are
+// not trusted to fit whatever the GUI copies them into
+std::string Node(const std::string& text, size_t max = 4096)
+{
+    std::string s = ToGameText(text);
+    if (s.size() > max)
+        s.resize(max);
+    return std::string("\x01", 1) + s + std::string(1, '\0');
+}
 
 // texts the editor answers in the LOC tree
 void BuildTexts()
@@ -401,7 +410,7 @@ void BuildTexts()
     }
     for (const MissionObjective& o : Doc().objectives)
         if (!o.text.empty())
-            g_texts[Lower(EditorKey(o.slot))] = Node(o.text);
+            g_texts[Lower(EditorKey(o.slot))] = Node(o.text, 256);
 }
 
 bool InDocument(int slot)
@@ -1102,7 +1111,7 @@ bool SetObjectiveText(int slot, const std::string& text)
     if (slot < 1 || slot > kSlots)
         return false;
     std::string key = Lower("H2Editor/Script/" + std::to_string(slot));
-    g_scriptTexts[key] = Node(text);
+    g_scriptTexts[key] = Node(text, 256);  // one line of the laptop
     BuildTexts();
     bool wasHidden = g_hiddenLines[slot];
     g_hiddenLines[slot] = false;

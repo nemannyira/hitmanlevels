@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -22,9 +23,13 @@ std::vector<ConsoleLine> g_console;
 
 constexpr size_t kMemoryLimit = 256u << 20;
 constexpr ULONGLONG kCallBudgetMs = 3000;
+constexpr int kHookCount = 100000;  // instructions between time checks
 size_t g_memory;          // bytes the state has
 int g_depth;              // calls into Lua under way (PCall)
 ULONGLONG g_callStart;    // when the outermost began
+bool g_stopping;          // its time is up: every instruction fails until it returns
+bool g_lastTimedOut;
+int g_timeouts;
 
 void* LimitedAlloc(void*, void* ptr, size_t osize, size_t nsize)
 {
@@ -51,8 +56,34 @@ int Panic(lua_State* s)
 
 void CountHook(lua_State* s, lua_Debug*)
 {
-    if (g_depth > 0 && GetTickCount64() - g_callStart > kCallBudgetMs)
+    if (g_depth > 0 && (g_stopping || GetTickCount64() - g_callStart > kCallBudgetMs)) {
+        // A script could catch the error (pcall in a loop) and go on: from now
+        // on every instruction of every thread fails until the call returns.
+        if (!g_stopping) {
+            g_stopping = true;
+            lua_sethook(L, CountHook, LUA_MASKCOUNT, 1);  // new coroutines take the main thread's
+        }
+        lua_sethook(s, CountHook, LUA_MASKCOUNT, 1);
         luaL_error(s, "script stopped: it ran longer than %d s", int(kCallBudgetMs / 1000));
+    }
+}
+
+// setmetatable without __gc: a finalizer runs whenever the collector does,
+// also outside the calls the time limit watches (an endless one would hang
+// the game)
+int SafeSetMetatable(lua_State* s)
+{
+    if (lua_istable(s, 2)) {
+        lua_pushliteral(s, "__gc");
+        int t = lua_rawget(s, 2);
+        lua_pop(s, 1);
+        if (t != LUA_TNIL)
+            return luaL_error(s, "setmetatable: __gc (finalizers) are not allowed");
+    }
+    lua_pushvalue(s, lua_upvalueindex(1));
+    lua_insert(s, 1);
+    lua_call(s, lua_gettop(s) - 1, 1);
+    return 1;
 }
 
 // load(chunk [, name [, mode [, env]]]) of the base library, source text only
@@ -136,6 +167,25 @@ void OpenSandboxedLibs()
         lua_pushnil(L);
         lua_setglobal(L, name);
     }
+    lua_getglobal(L, "setmetatable");
+    lua_pushcclosure(L, SafeSetMetatable, 1);
+    lua_setglobal(L, "setmetatable");
+    // xpcall: the handler runs after the call, as plain code. Run as Lua's
+    // message handler it is called again for the error the time limit
+    // raises inside it, with hooks off: an endless handler would never stop.
+    const char* xpcall = R"lua(
+local pcall, pack, unpack = pcall, table.pack, table.unpack
+return function(f, h, ...)
+  if type(h) ~= 'function' then error('bad argument #2 to xpcall (function expected)', 2) end
+  local r = pack(pcall(f, ...))
+  if r[1] then return unpack(r, 1, r.n) end
+  return false, h(r[2])
+end
+)lua";
+    if (luaL_loadbuffer(L, xpcall, strlen(xpcall), "=xpcall") == LUA_OK && lua_pcall(L, 0, 1, 0) == LUA_OK)
+        lua_setglobal(L, "xpcall");
+    else
+        lua_pop(L, 1);
     // load: source text only (a precompiled chunk can corrupt the VM)
     lua_getglobal(L, "load");
     lua_pushcclosure(L, LoadText, 1);
@@ -162,7 +212,7 @@ void Init()
         return;
     L = lua_newstate(LimitedAlloc, nullptr);
     lua_atpanic(L, Panic);
-    lua_sethook(L, CountHook, LUA_MASKCOUNT, 100000);
+    lua_sethook(L, CountHook, LUA_MASKCOUNT, kHookCount);
     OpenSandboxedLibs();
     lua_pushcfunction(L, Print);
     lua_setglobal(L, "print");
@@ -175,12 +225,33 @@ lua_State* State() { return L; }
 
 int PCall(lua_State* s, int nargs, int nresults, int errfunc)
 {
-    if (g_depth++ == 0)
-        g_callStart = GetTickCount64();
+    ULONGLONG outerStart = g_callStart;
+    bool outerStopping = g_stopping;
+    g_callStart = GetTickCount64();
+    g_stopping = false;
+    ++g_depth;
     int status = lua_pcall(s, nargs, nresults, errfunc);
     --g_depth;
+    g_lastTimedOut = g_stopping;
+    if (g_stopping) {  // stopped: back to the usual checks
+        ++g_timeouts;
+        lua_sethook(L, CountHook, LUA_MASKCOUNT, kHookCount);
+        if (s != L)
+            lua_sethook(s, CountHook, LUA_MASKCOUNT, kHookCount);
+    }
+    // the outer call's time does not count the inner one's (one stopped
+    // callback must not stop the code that called it)
+    g_callStart = outerStart + (GetTickCount64() - g_callStart);
+    g_stopping = outerStopping;
+    if (g_stopping)
+        lua_sethook(L, CountHook, LUA_MASKCOUNT, 1);
     return status;
 }
+
+bool LastCallTimedOut() { return g_lastTimedOut; }
+bool CallTimeLeft() { return g_depth == 0 || (!g_stopping && GetTickCount64() - g_callStart <= kCallBudgetMs); }
+int TimeoutCount() { return g_timeouts; }
+void ResetTimeouts() { g_timeouts = 0; }
 
 void ExecConsole(const std::string& code)
 {

@@ -239,7 +239,10 @@ void LoadSavedList()
         Saved s;
         s.folder = folder;
         s.name = folder;
-        std::ifstream f(GameDir() + "Mods\\" + folder + "\\level.json", std::ios::binary);
+        std::ifstream f(GameDir() + "Mods\\" + folder + "\\level.json", std::ios::binary | std::ios::ate);
+        if (!f || f.tellg() > std::streamoff(16 << 20))
+            continue;  // missing, or too large to be a level (LoadLevel refuses it too)
+        f.seekg(0);
         try {
             nlohmann::json j = nlohmann::json::parse(f);
             s.name = j.value("name", folder);

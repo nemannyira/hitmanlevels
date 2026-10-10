@@ -21,6 +21,8 @@ namespace h2::script {
 
 namespace {
 
+bool g_levelScripts;  // handlers of the level's scripts may be there
+
 // registry: name -> { {fn = f, owner = "level"}, ... }
 constexpr const char* kHandlers = "h2.handlers";
 std::string g_owner;
@@ -187,19 +189,29 @@ void Fire(const std::string& name, Push push)
         for (lua_Integer i = 1; i <= n; ++i) {
             int top = lua_gettop(L);
             lua_rawgeti(L, -1, i);
-            lua_getfield(L, -1, "fn");
-            lua_remove(L, -2);
+            if (lua_getfield(L, -1, "fn") != LUA_TFUNCTION) {  // one stopped for good
+                lua_settop(L, top);
+                continue;
+            }
             int nargs = (*c.push)(L);
+            // each handler has its time of its own (PCall): one that runs too
+            // long is stopped and removed, the others still run
             if (PCall(L, nargs, 0, 0) != LUA_OK) {
                 const char* err = lua_tostring(L, -1);
-                ConsolePrint(LineKind::Error, *c.name + " handler: " + (err ? err : "error"));
+                bool stopped = LastCallTimedOut();
+                ConsolePrint(LineKind::Error, *c.name + " handler: " + (err ? err : "error") +
+                                                  (stopped ? " (handler removed)" : ""));
+                if (stopped) {
+                    lua_pushnil(L);
+                    lua_setfield(L, top + 1, "fn");
+                }
             }
             lua_settop(L, top);
         }
         return 0;
     });
     lua_pushlightuserdata(L, &call);
-    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+    if (PCall(L, 1, 0, 0) != LUA_OK) {
         const char* err = lua_tostring(L, -1);
         ConsolePrint(LineKind::Error, name + " event: " + (err ? err : "error"));
         lua_pop(L, 1);
@@ -394,12 +406,17 @@ void RegisterEvents()
 
 void SetHandlerOwner(const std::string& owner)
 {
+    if (owner == "level")
+        g_levelScripts = true;  // the level's scripts have run (the kill switch has something to stop)
     g_owner = owner;
     SetTriggerOwner(owner);
 }
 
 void ClearHandlers(const std::string& owner)
 {
+    ResetTimeouts();  // a new start for the scripts that run again
+    if (owner == "level")
+        g_levelScripts = false;
     lua_State* L = State();
     lua_getfield(L, LUA_REGISTRYINDEX, kHandlers);
     lua_pushnil(L);
@@ -472,6 +489,16 @@ void FireObjective(int slot)
 
 void FireFrame(double dt)
 {
+    // A level whose scripts keep running out of time is stopped: it would
+    // hold the game three seconds again and again.
+    if (TimeoutCount() >= 3) {
+        ResetTimeouts();
+        if (g_levelScripts) {
+            ClearHandlers("level");
+            ConsolePrint(LineKind::Error, "the level's scripts ran too long three times: stopped (their handlers, "
+                                          "timers and zones removed until the level runs them again)");
+        }
+    }
     Fire("frame", [&](lua_State* L) {
         lua_pushnumber(L, dt);
         return 1;

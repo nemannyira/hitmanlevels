@@ -368,6 +368,8 @@ int Objective(lua_State* L)
         lua_pushstring(L, own.c_str());
         return 1;
     }
+    if (!lua_isnoneornil(L, 2) && !lua_isstring(L, 2))
+        return luaL_argerror(L, 2, "a text, nil or false");
     if (lua_isstring(L, 2))
         editor::SetObjectiveText(slot, lua_tostring(L, 2));
     if (lua_isboolean(L, 3))
@@ -785,10 +787,16 @@ int Objects(lua_State* L)
 int Event(lua_State* L)
 {
     engine::ZGEOM* g = Geom(L);
-    static std::map<std::string, std::string> names;  // the event names stay alive
-    std::string& name = names[luaL_checkstring(L, 2)];
+    static std::map<std::string, std::string> names;  // the event names stay alive (the engine may keep them)
+    size_t len;
+    const char* asked = luaL_checklstring(L, 2, &len);
+    if (len == 0 || len > 128)
+        return luaL_argerror(L, 2, "an event name of 1..128 characters");
+    if (!names.count(asked) && names.size() >= 1024)
+        return luaL_error(L, "event: too many different event names");
+    std::string& name = names[asked];
     if (name.empty())
-        name = luaL_checkstring(L, 2);
+        name = asked;
     const char* param = name.c_str();
     lua_pushboolean(L, engine::SendMessage(g, g, engine::RegisterMessage("ScriptEvent"), &param));
     return 1;

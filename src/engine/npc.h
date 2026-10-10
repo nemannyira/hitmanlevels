@@ -28,6 +28,10 @@ ZGEOM* SpawnNpc(const NpcSpawn& spawn, std::string* error = nullptr);
 // events ZLIST_ActorCollision, ZLIST_CheckVisible, ZLIST_SelectNotify): an
 // actor made at runtime is added to it (and gets its bounds), or taken out.
 bool SetActorCollides(ZGEOM* actor, bool on);
+// An item goes to a character (Hitman: into his inventory) as when it is
+// picked up: ZITEM::SetOwner 0x4723F0 (owner ref, the owner's group, notify 1),
+// the call Hitman's pickup makes (and that gives guards their weapons).
+bool GiveItem(ZGEOM* item, ZGEOM* owner);
 // Hooks: room for actors added at runtime in the lists' events.
 void InstallNpc();
 // Removes an NPC made by SpawnNpc (its script stopped, the actor, its group).

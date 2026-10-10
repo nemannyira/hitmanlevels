@@ -727,6 +727,31 @@ bool CalcActorBounds(ZGEOM* actor)
 
 } // namespace
 
+bool GiveItem(ZGEOM* item, ZGEOM* owner)
+{
+    if (!item || !owner || !IsReadable(item, sizeof(ZGEOM)) || !IsReadable(owner, sizeof(ZGEOM)) ||
+        !IsReadable(owner->node, sizeof(ZBaseGeom)))
+        return false;
+    ZBaseGeom* parent = owner->node->parent;
+    ZGEOM* group = parent && IsReadable(parent, sizeof(ZBaseGeom)) ? parent->geom : nullptr;
+    uint32_t ref = RefOf(owner);
+    if (!ref || !group)
+        return false;
+    uint32_t had = 0;
+    if (ItemHeld(reinterpret_cast<char*>(item), had) && had != ref)
+        return false;  // another one holds it (see hkItemSetOwner)
+    __try {
+        hkItemSetOwner(reinterpret_cast<char*>(item), nullptr, ref, group, 1);
+        // carried, not held (a key...): out of sight as after a pickup (node
+        // flag 0x400 through ZBaseGeom::SetFlags 0x5BAC80 (set, clear))
+        if (!(item->node->flags & 0x200000))
+            reinterpret_cast<void(__thiscall*)(ZBaseGeom*, uint32_t, uint32_t)>(0x5BAC80)(item->node, 0x400, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool SetActorCollides(ZGEOM* actor, bool on)
 {
     if (!actor)

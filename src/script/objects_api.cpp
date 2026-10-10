@@ -447,6 +447,86 @@ int OnPath(lua_State* L)
     return 1;
 }
 
+// h2.give(item | template [, character]) -> item: the item goes to the
+// character (default Hitman) as if picked up; a template name makes the item
+// first (where the character is)
+int Give(lua_State* L)
+{
+    engine::ZGEOM* owner = engine::Player();
+    if (!lua_isnoneornil(L, 2)) {
+        luaL_checktype(L, 2, LUA_TTABLE);
+        lua_getfield(L, 2, "_path");
+        owner = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+        if (owner && editor::ActorOf(owner))
+            owner = editor::ActorOf(owner);
+    }
+    if (!owner || !editor::IsLive(owner) || !(engine::IsA(owner, "ZActor") || engine::IsA(owner, "ZHITMAN2")))
+        return luaL_error(L, "give: no such character");
+    engine::ZGEOM* item = nullptr;
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "_path");
+        item = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+        if (!item || !editor::IsLive(item))
+            return luaL_error(L, "give: the item is not in the loaded scene");
+    } else {
+        int i = FindIndex(luaL_checkstring(L, 1));
+        engine::ZGEOM* tmpl = i >= 0 ? editor::SceneModel().geoms[i].geom : nullptr;
+        if (!tmpl || !editor::IsLive(tmpl) || !engine::IsA(tmpl, "ZItemTemplate"))
+            return luaL_error(L, "give: no such item template (see h2.objects(\"ZItemTemplate\"))");
+        std::string err;
+        item = editor::SpawnItem(tmpl, &err);
+        if (!item)
+            return luaL_error(L, "give: %s", err.c_str());
+        g_scriptObjects.push_back(item);
+        editor::Transform t = editor::GetTransform(item);
+        editor::Transform o = editor::GetTransform(owner);
+        memcpy(t.pos, o.pos, sizeof(t.pos));
+        editor::SetTransform(item, t);
+    }
+    if (!engine::GiveItem(item, owner))
+        return luaL_error(L, "give: the item could not be given");
+    PushObject(L, editor::PathOf(item));
+    return 1;
+}
+
+// h2.health([points]) -> Hitman's hit points (ZHITMAN2 +0xD72, float); a new
+// value above 0 (to kill him: h2.mission("fail") or the game's own ways)
+int Health(lua_State* L)
+{
+    engine::ZGEOM* hitman = engine::Player();
+    char* hp = hitman ? reinterpret_cast<char*>(hitman) + 0xD72 : nullptr;
+    if (!hp || !engine::IsReadable(hp, 4))
+        return 0;
+    if (!lua_isnoneornil(L, 1)) {
+        float v = Coordinate(L, 1);
+        if (!(v > 0.0f) || v > 10000.0f)
+            return luaL_error(L, "health: above 0 and at most 10000");
+        *reinterpret_cast<float*>(hp) = v;
+        float max = *reinterpret_cast<float*>(hp + 4);  // +0xD76
+        if (max > 0.0f)
+            editor::ShowHitPoints(int(std::min(100.0f, 100.0f / max * v)));
+    }
+    lua_pushnumber(L, *reinterpret_cast<float*>(hp));
+    return 1;
+}
+
+// h2.disguise(character | clothes item) -> sent: Hitman takes its clothes
+int Disguise(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "_path");
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, -1));
+    lua_pop(L, 1);
+    if (!g || !editor::IsLive(g))
+        return luaL_error(L, "disguise: the object is not in the loaded scene");
+    if (engine::ZGEOM* a = editor::ActorOf(g))
+        g = a;
+    lua_pushboolean(L, engine::HitmanChangeClothes(g));
+    return 1;
+}
+
 // h2._subtitle(text): the subtitle line now (h2.subtitle in triggers.cpp
 // takes it away after some seconds)
 int Subtitle(lua_State* L)
@@ -1130,6 +1210,9 @@ void RegisterObjectsApi()
     Register("info", Info);
     Register("basemission", BaseMission);
     Register("onpath", OnPath);
+    Register("disguise", Disguise);
+    Register("give", Give);
+    Register("health", Health);
     Register("music", Music);
 }
 

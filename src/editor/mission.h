@@ -32,6 +32,8 @@ bool HideObjectiveLine(int slot);
 // game's speech shows them: MSG_WRITESUBTITLE to the GUI's OSD window, the
 // param being the text (GUI main 0x534130 -> 0x561D50).
 bool ShowSubtitle(const std::string& text);
+// The health bar (0..100 percent): MSG_SETHITPOINTS to the OSD.
+bool ShowHitPoints(int percent);
 // The game's info box (UTF-8, one paragraph): MSG_DISPLAYINFO / WARNING /
 // HINT to the OSD (GUI main 0x534130 -> 0x561EA0.. -> its InfoDisplay
 // routine, ZWINGROUP_InfoDisplay vtable 0x658D08 +0xC0 / C4 / C8 = 0x53C3C0..).

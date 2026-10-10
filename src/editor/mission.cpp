@@ -1158,6 +1158,17 @@ bool ShowInfo(InfoKind kind, const std::string& text)
     return engine::SendMessage(osd, osd, engine::RegisterMessage(msg), const_cast<char*>(key.c_str()));
 }
 
+bool ShowHitPoints(int percent)
+{
+    engine::ZGEOM* osd = engine::SceneComGeom("rOSD");  // not the OSD window: the scene's rOSD
+    engine::ZGEOM* hitman = engine::Player();
+    if (!osd || !hitman)
+        return false;
+    // as Hitman's damage 0x519390 tells it: MSG_SETHITPOINTS, the param the value itself
+    return engine::SendMessage(osd, hitman, engine::RegisterMessage("MSG_SETHITPOINTS"),
+                               reinterpret_cast<void*>(static_cast<intptr_t>(percent)));
+}
+
 bool ShowSubtitle(const std::string& text)
 {
     static std::string shown;  // the GUI keeps the pointer: alive until the next one

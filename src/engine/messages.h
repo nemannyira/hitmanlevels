@@ -2,8 +2,8 @@
 // Engine messages and character life.
 //
 // Messages are registered by name (ZEngineDataBase::RegisterZMsg 0x41EED0,
-// the same name gives the same id) and sent to an object with ZGEOM vfunc
-// 0x120 (from, id, param*): windows pass them to their routines (the laptop's
+// the same name gives the same id) and sent with the sender's ZGEOM vfunc
+// 0x120 (receiver, id, param*): windows pass them to their routines (the laptop's
 // briefing menu: SetObjective {slot, LOC key}, SetObjectiveCompleted {slot,
 // done}), the level control object handles MissionCompleted / MissionFailed,
 // characters' scripts get ScriptEvent with a message name (Msg_InstantDeath
@@ -57,6 +57,13 @@ bool PathNetworkGrid(PathGrid& grid);
 // and 10 below it (0x59B610); `floor`: where a character on it stands (the
 // cell's centre, less the lift).
 bool PathCellBelow(const PathGrid& grid, const float pos[3], float floor[3]);
+// Hitman takes the clothes of a character (a body, as when he takes them from
+// one) or puts on a clothes item: MSG_CHANGECLOTHES to himself (ZHITMAN2
+// handler 0x5142BC, id at +0xF90), the param pointing at {geom, 0} as he
+// sends it himself (0x513E81).
+bool HitmanChangeClothes(ZGEOM* source);
+// An object the scene names (its com values: "rOSD", "rEnemyPathFinder3"...).
+ZGEOM* SceneComGeom(const char* name);
 // Hitman (the player's character, class 0x2003E8), the level control object.
 ZGEOM* Player();
 ZGEOM* LevelControl();

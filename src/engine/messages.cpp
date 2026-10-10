@@ -16,7 +16,7 @@ namespace h2::engine {
 namespace {
 
 constexpr uintptr_t kRegisterZMsg = 0x41EED0;  // ZEngineDataBase::RegisterZMsg(name, 0, file, line) -> ushort
-constexpr int kGeom_SendMessage = 0x120 / 4;   // (ZGEOM* from, int msg, void* param)
+constexpr int kGeom_SendMessage = 0x120 / 4;   // sender->(ZGEOM* receiver, int msg, void* param)
 constexpr int kActor_IsAlive = 0x544 / 4;
 // Actor_If 2 (Die, 0x585000): drops what it holds, then dies (0x468D80: alive
 // +0x574 = 0 through vfunc 0x540, the death animation) - with or without a
@@ -82,7 +82,8 @@ int SafeRegister(void* engine, const char* name)
 bool SafeSend(ZGEOM* to, ZGEOM* from, int msg, void* param)
 {
     __try {
-        VFunc<void(__thiscall*)(ZGEOM*, ZGEOM*, int, void*)>(to, kGeom_SendMessage)(to, from, msg, param);
+        // the sender is `this`, the receiver the first argument (0x43CC20)
+        VFunc<void(__thiscall*)(ZGEOM*, ZGEOM*, int, void*)>(from, kGeom_SendMessage)(from, to, msg, param);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -228,7 +229,7 @@ bool SendMessage(ZGEOM* to, ZGEOM* from, uint16_t msg, void* param)
 {
     if (!Usable(to) || !msg)
         return false;
-    return SafeSend(to, from ? from : to, msg, param);
+    return SafeSend(to, from && Usable(from) ? from : to, msg, param);  // the sender's vfunc is called
 }
 
 // a living ZActor (the commands below call its virtual functions)
@@ -378,6 +379,42 @@ bool PathCellBelow(const PathGrid& grid, const float pos[3], float floor[3])
         floor[i] = grid.min[i] + (float(found[i]) + 0.5f) * grid.size[i];
     floor[1] -= grid.lift;
     return true;
+}
+
+// ZEngineDataBase::GetSceneCom 0x420A60, then its vfunc 0x88 (name, &ref)
+static uint32_t SafeSceneComRef(void* engine, const char* name)
+{
+    __try {
+        void* com = reinterpret_cast<void*(__thiscall*)(void*)>(0x420A60)(engine);
+        if (!com)
+            return 0;
+        uint32_t ref = 0;
+        VFunc<void(__thiscall*)(void*, const char*, uint32_t*)>(com, 0x88 / 4)(com, name, &ref);
+        return ref;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+ZGEOM* SceneComGeom(const char* name)
+{
+    void* engine = Engine();
+    if (!engine || !name || !SceneDataValid())
+        return nullptr;
+    uint32_t ref = SafeSceneComRef(engine, name);
+    ZGEOM* g = ref ? GeomOfRef(ref) : nullptr;
+    return Usable(g) ? g : nullptr;
+}
+
+bool HitmanChangeClothes(ZGEOM* source)
+{
+    ZGEOM* hitman = Player();
+    if (!hitman || !Usable(source))
+        return false;
+    static ZGEOM* param[2];  // kept: the handler may look at it later in the frame
+    param[0] = source;
+    param[1] = nullptr;
+    return SendMessage(hitman, hitman, RegisterMessage("MSG_CHANGECLOTHES"), param);
 }
 
 ZGEOM* LevelControl()

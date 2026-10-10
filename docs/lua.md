@@ -55,6 +55,9 @@ been given stops. Hitman can be moved anywhere too
 | call | |
 |---|---|
 | `h2.player()` | Hitman |
+| `h2.give(item | template [, character])` | the item goes to the character (default Hitman: into his inventory, as if picked up; a weapon can be drawn, a key is carried out of sight); a template name makes the item first. A character keeps it (it is not dropped when it dies: for that `npc:carry`) |
+| `h2.disguise(character | clothes item)` | Hitman takes its clothes (as from a body: the character is left in underwear) |
+| `h2.health([points])` | Hitman's hit points (and the health bar); a new value above 0 (C1-1 on this difficulty: 60 at most) |
 | `h2.npcs()` | `{ {record, model, behaviour, object}, ... }` the map's characters |
 | `h2.npc(who, x, y, z [, yaw [, behaviour [, params]]])` | a character now (`who`: model `"BodyguardMafia_01"`, group name, record or a character; `behaviour`: `"BaseGuard"`, `false` none, nil its own; `params`: `{ GuardPoint = obj, IsSentry = 1 }`) |
 | `h2.behaviours([others])` | behaviour names (`others`: of other levels too, `"Guard2_1 (C2-1)"`) |

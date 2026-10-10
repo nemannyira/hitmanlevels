@@ -303,7 +303,8 @@ void DrawLayout()
     if (!g_panelsHidden && AnyVisible(Dock::Right)) {
         float w = W * 0.2f;
         ImGui::SetNextWindowSize(ImVec2(w, height), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(220, height), ImVec2(W * 0.45f, height));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(std::max(220.0f, ImGui::GetFontSize() * 19.0f), height),
+                                            ImVec2(W * 0.45f, height));  // its rows (camera, testing) fit
         ImGui::Begin("Right panel", nullptr, kDockedFlags);
         rightW = ImGui::GetWindowWidth();
         ImGui::SetWindowPos(ImVec2(W - rightW, top));

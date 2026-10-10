@@ -32,6 +32,13 @@ bool SetActorCollides(ZGEOM* actor, bool on);
 // picked up: ZITEM::SetOwner 0x4723F0 (owner ref, the owner's group, notify 1),
 // the call Hitman's pickup makes (and that gives guards their weapons).
 bool GiveItem(ZGEOM* item, ZGEOM* owner);
+// Room left in the engine's buffers for new objects (sized while the scene
+// loads; full, the game goes down): nodes (0x70 bytes each) and the objects'
+// own memory (bytes; the largest free block too). -1: not known.
+int FreeNodeSlots();
+long long FreeObjectBytes(uint32_t* largestBlock = nullptr);
+// Whether `bytes` and `nodes` more can be made (a reserve kept for the game).
+bool RoomForObjects(size_t bytes, int nodes, std::string* error = nullptr);
 // Hooks: room for actors added at runtime in the lists' events.
 void InstallNpc();
 // Removes an NPC made by SpawnNpc (its script stopped, the actor, its group).

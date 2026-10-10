@@ -4,6 +4,7 @@
 
 #include "../game.h"
 #include "../log.h"
+#include "npc.h"
 
 namespace h2::engine {
 
@@ -222,6 +223,8 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGE
         Log("clone '%s': %s", name.c_str(), why);
         return nullptr;
     };
+    if (std::string room; !RoomForObjects(512, 4, &room))
+        return fail(room.c_str());
     void* table = GeomTable();
     if (!table)
         return fail("no scene loaded");
@@ -287,6 +290,8 @@ ZGEOM* CreateObject(const std::string& name, ZGEOM* parent, const char* classNam
                     const float mat[9], const float pos[3], const std::vector<uint8_t>& data, std::string* error,
                     bool init)
 {
+    if (!RoomForObjects(512, 4, error))
+        return nullptr;
     void* table = GeomTable();
     if (!table) {
         if (error)
@@ -335,6 +340,8 @@ ZGEOM* CreateObject(const std::string& name, ZGEOM* parent, const char* classNam
 
 ZGEOM* CreateItem(ZGEOM* itemTemplate, std::string* error)
 {
+    if (!RoomForObjects(1024, 8, error))  // an item takes about 200 bytes and 3 nodes
+        return nullptr;
     auto sys = reinterpret_cast<char*>(game::SysInterface());
     char* engine = sys ? *reinterpret_cast<char**>(sys + 0x98) : nullptr;
     void* root = engine ? *reinterpret_cast<void**>(engine + kEngine_RootGroup) : nullptr;

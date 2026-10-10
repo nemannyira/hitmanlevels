@@ -514,6 +514,17 @@ int Health(lua_State* L)
     return 1;
 }
 
+// h2.capacity() -> how many more objects the map can take (nodes left in
+// the engine's buffer; a character takes about 15)
+int Capacity(lua_State* L)
+{
+    uint32_t largest = 0;
+    lua_pushinteger(L, engine::FreeNodeSlots());
+    lua_pushinteger(L, lua_Integer(engine::FreeObjectBytes(&largest)));
+    lua_pushinteger(L, largest);
+    return 3;
+}
+
 // h2.disguise(character | clothes item) -> sent: Hitman takes its clothes
 int Disguise(lua_State* L)
 {
@@ -1222,6 +1233,7 @@ void RegisterObjectsApi()
     Register("disguise", Disguise);
     Register("give", Give);
     Register("health", Health);
+    Register("capacity", Capacity);
     Register("music", Music);
 }
 

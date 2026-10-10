@@ -745,6 +745,68 @@ bool CalcActorBounds(ZGEOM* actor)
 
 } // namespace
 
+// The engine's geom table (engine +4, vtable 0x63D540) takes new objects
+// from two buffers sized while the scene loads: +0x14 nodes (0x70 bytes each,
+// vfunc 0xC 0x4266B0), +0x18 the objects themselves (vfunc 0x10 0x4267D0; a
+// character's are several kB). Each buffer starts with its allocator
+// (0x5B2E20: free blocks {offset, size} at +4, their count at +8). Full, it
+// asserts ("ZQElemsBuffer::Add: Out of memory", int3 0x426DAD) and the game
+// goes down: about 42 characters made on C1-1.
+static long long FreeBytes(size_t bufferField, uint32_t* largest)
+{
+    __try {
+        auto sys = reinterpret_cast<char*>(game::SysInterface());
+        char* engine = sys ? *reinterpret_cast<char**>(sys + 0x98) : nullptr;
+        char* table = engine ? *reinterpret_cast<char**>(engine + 4) : nullptr;
+        char* buffer = table ? *reinterpret_cast<char**>(table + bufferField) : nullptr;
+        char* alloc = buffer ? *reinterpret_cast<char**>(buffer) : nullptr;
+        if (!alloc)
+            return -1;
+        const uint32_t* blocks = *reinterpret_cast<uint32_t**>(alloc + 4);
+        uint32_t count = *reinterpret_cast<uint32_t*>(alloc + 8);
+        if (!blocks || count > 100000)
+            return -1;
+        long long total = 0;
+        uint32_t big = 0;
+        for (uint32_t i = 0; i < count; ++i) {
+            total += blocks[i * 2 + 1];
+            big = std::max(big, blocks[i * 2 + 1]);
+        }
+        if (largest)
+            *largest = big;
+        return total;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int FreeNodeSlots()
+{
+    long long b = FreeBytes(0x14, nullptr);
+    return b < 0 ? -1 : int(std::min<long long>(b / 0x70, 1 << 30));
+}
+
+long long FreeObjectBytes(uint32_t* largestBlock)
+{
+    return FreeBytes(0x18, largestBlock);
+}
+
+bool RoomForObjects(size_t bytes, int nodes, std::string* error)
+{
+    // what is kept for the game itself: it makes objects while playing too
+    // (a dropped weapon's pickup action...)
+    constexpr long long kKeepBytes = 24 * 1024;  // (35 armed characters dying took 14.6 kB: their weapons dropped)
+    constexpr int kKeepNodes = 64;
+    uint32_t largest = 0;
+    long long free = FreeObjectBytes(&largest);
+    int freeNodes = FreeNodeSlots();
+    bool ok = (free < 0 || (free >= kKeepBytes + static_cast<long long>(bytes) && largest >= bytes)) &&
+              (freeNodes < 0 || freeNodes >= kKeepNodes + nodes);
+    if (!ok && error)
+        *error = "the map has no room for more new objects (the engine's buffers for them are nearly full)";
+    return ok;
+}
+
 bool GiveItem(ZGEOM* item, ZGEOM* owner)
 {
     if (!item || !owner || !IsReadable(item, sizeof(ZGEOM)) || !IsReadable(owner, sizeof(ZGEOM)) ||
@@ -816,6 +878,8 @@ ZGEOM* SpawnNpc(const NpcSpawn& s, std::string* error)
     const auto& records = SceneRecords();
     if (s.record < 0 || size_t(s.record) >= records.size())
         return fail("no such actor record (scene data not captured?)");
+    if (std::string room; !RoomForObjects(4096, 16, &room))  // a character takes about 2.1 kB and 3 nodes
+        return fail(room);
     const SceneRecord& r = records[s.record];
     if (r.classId != kActorClass)
         return fail("record is not an actor");

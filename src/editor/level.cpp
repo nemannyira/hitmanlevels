@@ -950,11 +950,10 @@ bool LoadLevel(const std::string& folder, std::string* error)
         L.blankMap = j.value("blank_map", false);
         if (j.contains("place_floor") && j["place_floor"].is_object()) {
             L.floorLevel = j["place_floor"].value("level", "");
-        if (j.contains("sky") && j["sky"].is_object()) {
-            L.skyLevel = j["sky"].value("level", "");
-        }
             L.floorMesh = j["place_floor"].value("mesh", 0u);
         }
+        if (j.contains("sky") && j["sky"].is_object())
+            L.skyLevel = j["sky"].value("level", "");
         for (const json& o : j.value("objects", json::array())) {
             ObjectEdit e;
             e.className = o.value("class", "");

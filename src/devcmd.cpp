@@ -135,6 +135,74 @@ int LoadGameCmd(lua_State* L)
     return 1;
 }
 
+// h2.dev_edit(op, ...): the editor's own edits (with history), for tests
+//   "move", path, x, y, z      a recorded move (as the inspector)
+//   "hide", path, on           a recorded hide / show
+//   "dup", path, x, y, z       duplicate -> path
+//   "delete", path             delete an object the level made
+//   "item", template, x, y, z  place an item -> path
+//   "point", x, y, z           place a point -> path
+//   "removenpc", path          remove a placed character
+//   "sky", level               the sky of another level ("" its own)
+int EditCmd(lua_State* L)
+{
+    std::string op = luaL_checkstring(L, 1);
+    std::string err;
+    auto resolve = [&](int idx) {
+        engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, idx));
+        if (!g || !editor::IsLive(g))
+            luaL_error(L, "no such object");
+        return g;
+    };
+    auto at = [&](int idx) {
+        editor::Transform t{};
+        float m[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};
+        memcpy(t.mat, m, sizeof(m));
+        for (int i = 0; i < 3; ++i)
+            t.pos[i] = float(luaL_checknumber(L, idx + i));
+        return t;
+    };
+    if (op == "move" || op == "hide") {
+        engine::ZGEOM* g = resolve(2);
+        editor::ObjectState before = editor::GetState(g), after = before;
+        if (op == "move")
+            for (int i = 0; i < 3; ++i)
+                after.transform.pos[i] = float(luaL_checknumber(L, 3 + i));
+        else
+            after.hidden = lua_toboolean(L, 3) != 0;
+        editor::Change(g, before, after, op.c_str());
+        return 0;
+    }
+    engine::ZGEOM* made = nullptr;
+    if (op == "dup") {
+        editor::Transform t = at(3);
+        engine::ZGEOM* g = resolve(2);
+        memcpy(t.mat, editor::GetTransform(g).mat, sizeof(t.mat));
+        made = editor::DuplicateObject(g, &err, &t);
+    } else if (op == "delete") {
+        lua_pushboolean(L, editor::DeleteObject(resolve(2)));
+        return 1;
+    } else if (op == "item") {
+        engine::ZGEOM* tmpl = resolve(2);
+        made = editor::PlaceItem(tmpl, at(3), &err);
+    } else if (op == "point") {
+        editor::Transform t = at(2);
+        made = editor::PlacePoint(t, editor::RoomAt(t.pos), &err);
+    } else if (op == "removenpc") {
+        lua_pushboolean(L, editor::RemoveNpc(editor::ActorOf(resolve(2)), &err));
+        return 1;
+    } else if (op == "sky") {
+        editor::SetSky(luaL_checkstring(L, 2));
+        return 0;
+    } else {
+        return luaL_error(L, "unknown op %s", op.c_str());
+    }
+    if (!made)
+        return luaL_error(L, "%s: %s", op.c_str(), err.c_str());
+    lua_pushstring(L, editor::PathOf(made).c_str());
+    return 1;
+}
+
 // h2.dev_levelend(completed): the base level's own mission end (as its scripts do)
 int LevelEnd(lua_State* L)
 {
@@ -563,6 +631,7 @@ void InstallDevCommands()
     script::Register("dev_savegame", SaveGameCmd);
     script::Register("dev_loadgame", LoadGameCmd);
     script::Register("dev_levelend", LevelEnd);
+    script::Register("dev_edit", EditCmd);
     script::Register("dev_key", Key);
     script::Register("dev_mouse", Mouse);
     script::Register("dev_look", Look);

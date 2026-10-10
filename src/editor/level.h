@@ -200,6 +200,8 @@ const LevelNpc* FindLevelNpc(engine::ZGEOM* actor);
 
 // ---- route points and lists (undoable, kept in the level) ----
 // A new point (an invisible helper characters can be sent to) at `at`, in `room`.
+// The room of the map a point is in (the smallest map model around it).
+engine::ZGEOM* RoomAt(const float p[3]);
 engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string* error = nullptr);
 // New elements of a list (a route: the points in walking order).
 bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& points, std::string* error = nullptr);

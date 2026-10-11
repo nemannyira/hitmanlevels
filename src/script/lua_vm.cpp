@@ -1,6 +1,7 @@
 #include "lua_vm.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -294,9 +295,20 @@ bool ExecFile(const std::string& path)
 
 const std::vector<ConsoleLine>& Console() { return g_console; }
 
+std::deque<ScriptError> g_errors;
+unsigned g_errorSerial;
+
+const std::deque<ScriptError>& RecentErrors() { return g_errors; }
+unsigned ErrorSerial() { return g_errorSerial; }
+
 void ConsolePrint(LineKind kind, const std::string& text)
 {
     Log("lua%s %s", kind == LineKind::Error ? " error:" : ":", text.c_str());
+    if (kind == LineKind::Error) {
+        g_errors.push_back({++g_errorSerial, text.substr(0, std::min(text.find('\n'), size_t(1000)))});
+        if (g_errors.size() > 20)
+            g_errors.pop_front();
+    }
     // split multi-line output so the console can colour and wrap each line
     std::stringstream ss(text);
     std::string line;

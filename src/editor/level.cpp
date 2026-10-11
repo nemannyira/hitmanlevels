@@ -551,8 +551,24 @@ void RecordList(const std::string& path, engine::ZGEOM* list, const std::vector<
     g_level.dirty = true;
 }
 
+unsigned g_errorsFrom;  // script errors after this one: since the level's scripts last ran
+
+// an error of the level's scripts: one of its files named in it (Lua keeps the
+// end of a long chunk name: ".../Mods/Level/main.lua:12: ..."), or about them
+bool LevelScriptError(const std::string& text)
+{
+    if (text.rfind("level script", 0) == 0 || text.find("the level's scripts") != std::string::npos)
+        return true;
+    for (const std::string& s : g_level.scripts)
+        if (!s.empty() && (text.find("\\" + s + ":") != std::string::npos ||
+                           text.find("/" + s + ":") != std::string::npos || text.rfind(s + ":", 0) == 0))
+            return true;
+    return false;
+}
+
 void RunLevelScripts()
 {
+    g_errorsFrom = script::ErrorSerial();
     script::ClearHandlers("level");
     script::DestroyScriptObjects();
     for (const std::string& s : g_level.scripts) {
@@ -654,6 +670,15 @@ std::vector<Problem> FindProblems()
     }
     if (ImportsPending())
         out.push_back({"models of other levels come with the map when it loads again", ""});
+    // the level's scripts' errors since they last ran (the newest three)
+    std::vector<std::string> errors;
+    for (const script::ScriptError& e : script::RecentErrors())
+        if (e.serial > g_errorsFrom && LevelScriptError(e.text))
+            errors.push_back(e.text);
+    for (size_t i = errors.size() > 3 ? errors.size() - 3 : 0; i < errors.size(); ++i)
+        out.push_back({"script error: " + errors[i].substr(0, 300), ""});
+    if (errors.size() > 3)
+        out.push_back({std::to_string(errors.size() - 3) + " more script errors: Lua console (`)", ""});
     return out;
 }
 

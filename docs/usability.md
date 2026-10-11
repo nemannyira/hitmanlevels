@@ -28,7 +28,8 @@ proposed. Done items are marked.
 2. **Problems** (done, Level panel): the level checked as it is edited -
    characters and route points off the path network, objectives without a
    target, level scripts missing, models of other levels not loaded yet,
-   unsaved changes - each with a button that selects the object.
+   unsaved changes - each with a button that selects the object; and the
+   level scripts' errors since they last ran (the newest three).
 3. **Script templates** (done, Level panel > Scripts): "New script from a
    template" writes main.lua (while it is missing or still the two lines a new
    level gets; otherwise script2.lua, ...) with an objective line and its

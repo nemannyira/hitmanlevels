@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,14 @@ bool ExecFile(const std::string& path);
 
 const std::vector<ConsoleLine>& Console();
 void ConsolePrint(LineKind kind, const std::string& text);
+// The last errors printed (at most 20, their first line), oldest first;
+// `serial` counts every error ever printed (ErrorSerial: the last one's).
+struct ScriptError {
+    unsigned serial;
+    std::string text;
+};
+const std::deque<ScriptError>& RecentErrors();
+unsigned ErrorSerial();
 void ClearConsole();
 
 // Every call from the game into Lua (events, chunks, the console): a script

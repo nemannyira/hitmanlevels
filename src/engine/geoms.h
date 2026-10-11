@@ -16,6 +16,7 @@
 // dynamic nodes, both owned by the geom table at ZEngineDataBase+4.
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace h2::engine {
@@ -81,9 +82,17 @@ struct SceneSnapshot {
     std::vector<GeomInfo> geoms;
     std::vector<int> roots;
 
+    // (hashed: built at the first lookup; a snapshot does not change once made)
     int Find(const ZGEOM* geom) const;
     int FindPath(const std::string& path) const;
     std::vector<int> FindName(const std::string& name) const;
+
+private:
+    void Index() const;
+    mutable bool indexed_ = false;
+    mutable std::unordered_map<const ZGEOM*, int> byGeom_;
+    mutable std::unordered_map<std::string, int> byPath_;
+    mutable std::unordered_map<std::string, std::vector<int>> byName_;
 };
 // `extra`: nodes created at runtime (see spawn.h), included when live.
 SceneSnapshot TakeSnapshot(const std::vector<ZBaseGeom*>& extra = {});

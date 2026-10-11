@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -173,20 +174,46 @@ std::string ClassChain(const ZGEOM* geom)
     return chain;
 }
 
-bool IsA(const ZGEOM* geom, const char* className)
+// The names of a class and its bases (class infos are static: kept per
+// pointer, the map's entries do not move; a bad pointer's chain is not kept)
+static const std::vector<std::string>& ClassNames(ZClassInfo* key)
 {
-    ZClassInfo* ci = nullptr;
-    if (!geom || !ReadAt(geom, offsetof(ZGEOM, classInfo), ci))
-        return false;
+    static std::mutex lock;
+    static std::unordered_map<ZClassInfo*, std::vector<std::string>> cache;
+    {
+        std::lock_guard<std::mutex> hold(lock);
+        auto it = cache.find(key);
+        if (it != cache.end())
+            return it->second;
+    }
+    std::vector<std::string> chain;
+    ZClassInfo* ci = key;
     for (int depth = 0; ci && depth < 16; ++depth) {
         const char* name = nullptr;
-        if (ReadAt(ci, 0, name) && SafeString(name, 64) == className)
-            return true;
+        if (!ReadAt(ci, 0, name))
+            break;
+        chain.push_back(SafeString(name, 64));
         ZClassInfo* base = nullptr;
         if (!ReadAt(ci, offsetof(ZClassInfo, base), base) || base == ci)
             break;
         ci = base;
     }
+    std::lock_guard<std::mutex> hold(lock);
+    if (!chain.empty() && cache.size() < 4096)
+        return cache.emplace(key, std::move(chain)).first->second;
+    thread_local std::vector<std::string> unkept;
+    unkept = std::move(chain);
+    return unkept;
+}
+
+bool IsA(const ZGEOM* geom, const char* className)
+{
+    ZClassInfo* ci = nullptr;
+    if (!geom || !className || !ReadAt(geom, offsetof(ZGEOM, classInfo), ci) || !ci)
+        return false;
+    for (const std::string& n : ClassNames(ci))
+        if (n == className)
+            return true;
     return false;
 }
 
@@ -290,29 +317,39 @@ SceneSnapshot TakeSnapshot(const std::vector<ZBaseGeom*>& extra)
     return snap;
 }
 
+void SceneSnapshot::Index() const
+{
+    if (indexed_)
+        return;
+    indexed_ = true;
+    byGeom_.reserve(geoms.size());
+    byPath_.reserve(geoms.size());
+    for (int i = 0; i < int(geoms.size()); ++i) {
+        byGeom_.emplace(geoms[i].geom, i);  // the first one stays
+        byPath_.emplace(geoms[i].path, i);
+        byName_[geoms[i].name].push_back(i);
+    }
+}
+
 int SceneSnapshot::Find(const ZGEOM* geom) const
 {
-    for (int i = 0; i < int(geoms.size()); ++i)
-        if (geoms[i].geom == geom)
-            return i;
-    return -1;
+    Index();
+    auto it = byGeom_.find(geom);
+    return it == byGeom_.end() ? -1 : it->second;
 }
 
 int SceneSnapshot::FindPath(const std::string& path) const
 {
-    for (int i = 0; i < int(geoms.size()); ++i)
-        if (geoms[i].path == path)
-            return i;
-    return -1;
+    Index();
+    auto it = byPath_.find(path);
+    return it == byPath_.end() ? -1 : it->second;
 }
 
 std::vector<int> SceneSnapshot::FindName(const std::string& name) const
 {
-    std::vector<int> out;
-    for (int i = 0; i < int(geoms.size()); ++i)
-        if (geoms[i].name == name)
-            out.push_back(i);
-    return out;
+    Index();
+    auto it = byName_.find(name);
+    return it == byName_.end() ? std::vector<int>{} : it->second;
 }
 
 } // namespace h2::engine

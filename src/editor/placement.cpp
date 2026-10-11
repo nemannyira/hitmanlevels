@@ -376,7 +376,7 @@ std::vector<engine::ZGEOM*> Subtree(engine::ZGEOM* root)
     std::vector<engine::ZGEOM*> out;
     int start = SceneModel().Find(root);
     if (start < 0)
-        start = SceneModel(0).Find(root);
+        start = FresherSceneModel().Find(root);
     const engine::SceneSnapshot& snap = SceneModel();
     if (start < 0)
         return {root};

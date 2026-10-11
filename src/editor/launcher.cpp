@@ -104,12 +104,21 @@ bool InMainMenu() { return _stricmp(CurrentScene().c_str(), "MainMenu") == 0; }
 constexpr size_t kMouseWindow_Cursor = 0x11C;
 
 // an object of the main menu (several windows have objects of the same name)
+engine::ZGEOM* FindIn(const engine::SceneSnapshot& snap, const char* name, const char* within)
+{
+    for (int i : snap.FindName(name))
+        if (snap.geoms[i].path.find(within) != std::string::npos && IsLive(snap.geoms[i].geom))
+            return snap.geoms[i].geom;
+    return nullptr;
+}
+
+// (every frame in the main menu: the snapshot is taken again only when the object is not in it)
 engine::ZGEOM* Find(const char* name, const char* within = "MainMenu/")
 {
-    const auto& snap = SceneModel(0);
-    for (int i : snap.FindName(name))
-        if (snap.geoms[i].path.find(within) != std::string::npos)
-            return snap.geoms[i].geom;
+    if (engine::ZGEOM* g = FindIn(SceneModel(), name, within))
+        return g;
+    if (engine::ZGEOM* g = FindIn(FresherSceneModel(), name, within))
+        return g;
     return nullptr;
 }
 

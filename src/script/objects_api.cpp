@@ -861,7 +861,7 @@ int State(lua_State* L)
 int Children(lua_State* L)
 {
     engine::ZGEOM* g = Geom(L);
-    const auto& snap = editor::SceneModel(0);
+    const auto& snap = editor::FresherSceneModel();  // children made since: at most 50 ms old
     int i = snap.Find(g);
     lua_newtable(L);
     if (i < 0)

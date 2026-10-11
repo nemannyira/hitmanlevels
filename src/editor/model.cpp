@@ -60,6 +60,10 @@ const engine::SceneSnapshot& SceneModel(double maxAgeMs)
     return *g_snapshot;
 }
 
+// Not again within 50 ms: lookups of objects that are gone do not walk the
+// scene on every call (the editor's own changes invalidate it anyway).
+const engine::SceneSnapshot& FresherSceneModel() { return SceneModel(50.0); }
+
 void InvalidateSceneModel()
 {
     g_retired.push_back(g_snapshot);
@@ -491,10 +495,12 @@ void SetState(engine::ZGEOM* geom, const ObjectState& s)
 
 std::string PathOf(engine::ZGEOM* geom)
 {
+    if (!geom)
+        return {};
     const auto& snap = SceneModel();
     int i = snap.Find(geom);
     if (i < 0) {
-        i = SceneModel(0).Find(geom);  // maybe created since the last snapshot
+        i = FresherSceneModel().Find(geom);  // maybe created since the last snapshot
         if (i < 0)
             return {};
     }
@@ -566,7 +572,7 @@ std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root)
         return parts;
     int start = SceneModel().Find(root);
     if (start < 0)
-        start = SceneModel(0).Find(root);  // made since the last snapshot
+        start = FresherSceneModel().Find(root);  // made since the last snapshot
     if (start < 0)
         return parts;
     const engine::SceneSnapshot& snap = SceneModel();  // not refreshed while walking

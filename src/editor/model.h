@@ -11,6 +11,8 @@ namespace h2::editor {
 // Snapshot of the loaded scene, refreshed when older than maxAgeMs (or forced).
 const engine::SceneSnapshot& SceneModel(double maxAgeMs = 1000.0);
 void InvalidateSceneModel();
+// SceneModel for an object it lacks (maybe made since): new unless one was taken in the last 50 ms.
+const engine::SceneSnapshot& FresherSceneModel();
 // Frees snapshots replaced during the frame (called once per frame).
 void SceneModelFrameEnd();
 

@@ -198,26 +198,95 @@ void ViewMenu()
     ImGui::MenuItem("ImGui demo", nullptr, &g_showDemo);
 }
 
+// a virtual key's name as the keyboard shows it ("F8", "Pause", "Scroll Lock")
+std::string KeyName(int vk)
+{
+    if (!vk)
+        return "none";
+    if (vk == VK_PAUSE)
+        return "Pause";  // no scan code name for it
+    char n[32];
+    UINT sc = MapVirtualKeyA(UINT(vk), MAPVK_VK_TO_VSC);
+    if (!sc || !GetKeyNameTextA(LONG(sc << 16), n, sizeof(n)))
+        snprintf(n, sizeof(n), "key 0x%02X", vk);
+    return n;
+}
+
+// Every key of the editor, by what is being done (Help menu and the F1 sheet).
+void DrawKeys()
+{
+    std::string editor = KeyName(g_config.editorKey);
+    struct Row {
+        const char* key;
+        const char* what;
+    };
+    auto section = [](const char* title, std::initializer_list<Row> rows) {
+        ImGui::SeparatorText(title);
+        if (!ImGui::BeginTable(title, 2, ImGuiTableFlags_SizingFixedFit))
+            return;
+        for (const Row& r : rows) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(r.key);
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", r.what);
+        }
+        ImGui::EndTable();
+    };
+    std::string freeze = KeyName(g_config.freezeKey), speed = KeyName(g_config.speedKey);
+    section("Editor", {{editor.c_str(), "editor on / off, back to the game"},
+                       {"F1", "this sheet"},
+                       {"Tab", "hide / show the panels"},
+                       {"`", "Lua console"},
+                       {"Ctrl+S", "save the level"},
+                       {"Ctrl+Z / Ctrl+Y", "undo / redo"}});
+    section("Camera", {{"right mouse", "look around (free camera)"},
+                       {"  + W A S D", "forward, left, back, right"},
+                       {"  + Q / E", "down / up"},
+                       {"  + Shift / Ctrl", "fast / slow"},
+                       {"  + wheel", "camera speed"}});
+    section("Selection", {{"click", "select (an object, a character, a route point)"},
+                          {"Esc", "nothing selected"},
+                          {"W / E", "gizmo: move / rotate"},
+                          {"Q", "gizmo: world / local axes"},
+                          {"G", "grab: onto the surface under the mouse"},
+                          {"H", "hide / show"},
+                          {"F", "camera to it"},
+                          {"Ctrl+D", "duplicate"},
+                          {"Del", "delete"}});
+    section("Placing and grabbing", {{"click", "place (on a surface)"},
+                                     {"Shift+click", "place, and another one"},
+                                     {"wheel", "turn"},
+                                     {"Alt+wheel", "lift off the surface"},
+                                     {"Ctrl", "on the grid"},
+                                     {"N", "align to the surface / stand upright"},
+                                     {"Esc", "cancel (also picking on the map)"}});
+    section("While playing", {{freeze.c_str(), "world stands still / goes on (FreezeKey)"},
+                              {speed.c_str(), "next game speed (SpeedKey)"}});
+    ImGui::TextDisabled("Keys: H2Fix.ini [Editor]. Typing in a field: the keys go to the field.");
+}
+
+bool g_showKeys = false;
+
 void HelpMenu()
 {
-    ImGui::TextDisabled("F8           editor on / off");
-    ImGui::TextDisabled("Tab          hide / show the panels");
-    ImGui::TextDisabled("`            Lua console");
+    ImGui::MenuItem("Keys", "F1", &g_showKeys);
     ImGui::Separator();
-    ImGui::TextDisabled("click        select");
-    ImGui::TextDisabled("W / E / Q    move / rotate / local-world");
-    ImGui::TextDisabled("H  F         hide  focus camera");
-    ImGui::TextDisabled("Ctrl+D  Del  duplicate  delete");
-    ImGui::TextDisabled("G            grab: move onto the surface under the mouse");
-    ImGui::TextDisabled("Ctrl+Z / Y   undo / redo");
-    ImGui::Separator();
-    ImGui::TextDisabled("right mouse  look (free camera)");
-    ImGui::TextDisabled("  + WASD QE  move, Shift fast, wheel speed");
-    ImGui::Separator();
-    ImGui::TextDisabled("placing / grabbing:");
-    ImGui::TextDisabled("  click      place (only on a surface), Shift+click: more");
-    ImGui::TextDisabled("  wheel      turn       Alt+wheel  lift off the surface");
-    ImGui::TextDisabled("  Ctrl       grid       N  align to the surface   Esc  cancel");
+    DrawKeys();
+}
+
+void DrawKeysWindow()
+{
+    if (!g_showKeys)
+        return;
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(io.DisplaySize.x * 0.9f, io.DisplaySize.y * 0.9f));
+    if (ImGui::Begin("Keys (F1)", &g_showKeys,
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
+        DrawKeys();
+    ImGui::End();
 }
 
 void DrawMenuBar()
@@ -237,8 +306,9 @@ void DrawMenuBar()
     }
     ImGuiIO& io = ImGui::GetIO();
     char right[160];
-    snprintf(right, sizeof(right), "%s   %.0f fps   F8: back to game",
-             CurrentScene().empty() ? "no scene" : CurrentScene().c_str(), io.Framerate);
+    snprintf(right, sizeof(right), "%s   %.0f fps   F1: keys   %s: back to game",
+             CurrentScene().empty() ? "no scene" : CurrentScene().c_str(), io.Framerate,
+             KeyName(g_config.editorKey).c_str());
     ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(right).x - ImGui::GetStyle().ItemSpacing.x * 2);
     ImGui::TextDisabled("%s", right);
     ImGui::EndMainMenuBar();
@@ -339,6 +409,9 @@ void DrawLayout()
                 p.draw();
     if (g_showDemo)
         ImGui::ShowDemoWindow(&g_showDemo);
+    DrawKeysWindow();
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F1, false))
+        g_showKeys = !g_showKeys;
 
     if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !io.KeyCtrl)
         g_panelsHidden = !g_panelsHidden;

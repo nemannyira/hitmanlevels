@@ -34,8 +34,10 @@ proposed. Done items are marked.
    level gets; otherwise script2.lua, ...) with an objective line and its
    check, a subtitle, a timer, a zone, a key and an event handler and the
    saved story state, and lists it with the level's scripts.
-4. **Shortcuts sheet** (F1): the editor's keys (move / rotate / local /
-   grab / snap / undo / test / freeze / speed) in one overlay.
+4. **Shortcuts sheet** (done, F1 or Help > Keys): every key of the editor by
+   what is being done (editor, camera, selection, placing, playing), the
+   configured ToggleKey / FreezeKey / SpeedKey by their names; the menu bar
+   shows "F1: keys" and the real editor key.
 5. **One workflow line** at the top of the Level panel: Map > Place >
    Mission > Test > Save, each step's state shown (what is still missing).
 6. **Placing on the network**: an option that snaps route points and

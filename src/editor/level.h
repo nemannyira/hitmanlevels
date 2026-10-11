@@ -152,6 +152,8 @@ void DrawSaveControl();
 // The same as a row of a panel (full width button).
 void DrawSaveRow();
 void SaveShortcut();
+// What the Level panel's Problems list shows now.
+std::vector<std::string> LevelProblems();
 bool LoadLevel(const std::string& folder, std::string* error = nullptr);
 
 // ---- models of other levels ----

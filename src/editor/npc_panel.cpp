@@ -1210,6 +1210,9 @@ void DrawPanel()
         ImGui::SetTooltip("Where the characters will go: their routes (numbered, with arrows in walking order)\n"
                           "and the places in their behaviour (guard point, protect point, ...)");
     ImGui::SameLine();
+    if (ImGui::GetContentRegionAvail().x < ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x +
+                                               ImGui::CalcTextSize("Onto the paths").x)
+        ImGui::NewLine();  // no room: on the next line
     if (ImGui::Checkbox("Onto the paths", &g_snapNetwork))
         g_rawPoint[0] = NAN;  // the preview looks again
     if (ImGui::IsItemHovered())

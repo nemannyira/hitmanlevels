@@ -1361,6 +1361,9 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
             ImGui::SetTooltip(full ? "The laptop has 6 lines, all in use"
                                    : "A new objective: \"Reach ...\", done when Hitman gets near it");
         ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x <
+            ImGui::CalcTextSize("Make it the exit").x + ImGui::GetStyle().FramePadding.x * 2)
+            ImGui::NewLine();  // no room: on the next line
     }
     if (exit) {
         ImGui::TextDisabled("the mission's exit");

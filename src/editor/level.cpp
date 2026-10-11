@@ -581,7 +581,10 @@ void RunLevelScripts()
         std::string path = ModsDir() + g_level.folder + "\\" + s;
         script::SetHandlerOwner("level");
         if (!script::ExecFile(path))
-            script::ConsolePrint(script::LineKind::Error, "level script failed or missing: " + path);
+            script::ConsolePrint(script::LineKind::Error,
+                                 GetFileAttributesA(path.c_str()) == INVALID_FILE_ATTRIBUTES
+                                     ? "level script missing: " + s
+                                     : "level script " + s + " stopped by its error");
         script::SetHandlerOwner("");
     }
     script::OnLevelScriptsRan();  // a saved game's "load" event (state.h)
@@ -673,8 +676,24 @@ std::vector<Problem> FindProblems()
     // the level's scripts' errors since they last ran (the newest three)
     std::vector<std::string> errors;
     for (const script::ScriptError& e : script::RecentErrors())
-        if (e.serial > g_errorsFrom && LevelScriptError(e.text))
-            errors.push_back(e.text);
+        if (e.serial > g_errorsFrom && LevelScriptError(e.text)) {
+            // the chunk name (the level's folder, whole or its end after "...") goes: "main.lua:3: x"
+            std::string text = e.text, dir = ModsDir() + L.folder + "\\";
+            for (const std::string& s : L.scripts) {
+                size_t at = text.find("\\" + s + ":");
+                if (at == std::string::npos || L.folder.empty())
+                    continue;
+                size_t end = at + 1, start = std::string::npos, dots = text.rfind("...", at);
+                if (end >= dir.size() && text.compare(end - dir.size(), dir.size(), dir) == 0)
+                    start = end - dir.size();
+                else if (dots != std::string::npos && end - dots - 3 <= dir.size() &&
+                         dir.compare(dir.size() - (end - dots - 3), end - dots - 3, text, dots + 3, end - dots - 3) == 0)
+                    start = dots;
+                if (start != std::string::npos)
+                    text.erase(start, end - start);
+            }
+            errors.push_back(text);
+        }
     for (size_t i = errors.size() > 3 ? errors.size() - 3 : 0; i < errors.size(); ++i)
         out.push_back({"script error: " + errors[i].substr(0, 300), ""});
     if (errors.size() > 3)
@@ -792,7 +811,7 @@ void DrawWorkflow()
 }
 
 // A level script to start from (docs/lua.md has the whole API).
-const char* const kScriptTemplate = R"lua(-- A level script: it runs when the map is loaded (and again after Apply).
+const char* const kScriptTemplate = R"lua(-- A level script: it runs when the map is loaded (Test, or Level > Scripts > Run now).
 -- The whole API: docs/lua.md. Examples: examples/missions/Courier.
 
 -- the story's state, kept with the game's saves
@@ -864,13 +883,26 @@ void DrawScripts()
             if (std::find(L.scripts.begin(), L.scripts.end(), name) == L.scripts.end())
                 L.scripts.push_back(name);
             L.dirty = true;
-            g_status = "Mods\\" + L.folder + "\\" + name + " written: save, then Apply to run it";
+            g_status = "Mods\\" + L.folder + "\\" + name + " written: Run now (or Test) runs it";
         } else {
             g_status = "could not write " + name;
         }
     }
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered())
+    bool newHovered = ImGui::IsItemHovered();
+    ImGui::SameLine();
+    bool here = !L.folder.empty() && !L.scripts.empty() && L.baseScene == CurrentScene();
+    ImGui::BeginDisabled(!here);
+    if (ImGui::SmallButton("Run now")) {
+        RunLevelScripts();
+        g_status = "the level's scripts ran again (their handlers, timers, zones and objects made anew)";
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip(here ? "Runs the level's scripts again now, as when the map loads: what they set up\n"
+                                 "before (handlers, timers, zones, objects) goes first; h2.state stays"
+                               : "On the level's own map, with the level saved");
+    if (newHovered)
         ImGui::SetTooltip(L.folder.empty() ? "Save the level first (File > New level)"
                                            : "A script with the usual parts (objective, subtitle, timer, zone, "
                                              "event, saved state)\nin the level's folder, run when the map loads");
@@ -1064,6 +1096,14 @@ void FileMenu()
 } // namespace
 
 LevelDocument& CurrentLevel() { return g_level; }
+
+std::vector<std::string> LevelProblems()
+{
+    std::vector<std::string> out;
+    for (const Problem& p : FindProblems())
+        out.push_back(p.text);
+    return out;
+}
 
 void RecordEdit(engine::ZGEOM* geom, const ObjectState& before, const ObjectState& after)
 {

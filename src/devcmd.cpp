@@ -22,6 +22,7 @@ extern "C" {
 #include "editor/model.h"
 #include "editor/npcs.h"
 #include "editor/playtest.h"
+#include "editor/scene_panel.h"
 #include "engine/npc.h"
 #include "imgui.h"
 #include "hook.h"
@@ -349,6 +350,12 @@ int Level(lua_State* L)
         editor::Undo();
     } else if (op == "redo") {
         editor::Redo();
+    } else if (op == "problems") {
+        std::string all;
+        for (const std::string& p : editor::LevelProblems())
+            all += p + "\n";
+        lua_pushstring(L, all.c_str());
+        return 1;
     } else if (op != "info") {
         return luaL_error(L, "unknown op %s", op.c_str());
     }
@@ -357,6 +364,26 @@ int Level(lua_State* L)
              d.name.c_str(), d.folder.c_str(), d.baseScene.c_str(), int(d.objects.size()), int(d.spawned.size()),
              int(d.npcs.size()), int(d.npcEdits.size()), int(d.lists.size()), d.dirty ? " (unsaved)" : "");
     lua_pushstring(L, buf);
+    return 1;
+}
+
+// h2.dev_select(path | nil): the editor's selection
+int SelectCmd(lua_State* L)
+{
+    engine::ZGEOM* g = lua_isnoneornil(L, 1) ? nullptr : editor::Resolve(luaL_checkstring(L, 1));
+    if (!lua_isnoneornil(L, 1) && !g)
+        return luaL_error(L, "no such object");
+    editor::Select(g);
+    return 0;
+}
+
+// h2.dev_complete(path, partial, method) -> the console's Tab choices, joined by spaces
+int CompleteCmd(lua_State* L)
+{
+    std::string all;
+    for (const std::string& n : script::Complete(luaL_checkstring(L, 1), luaL_checkstring(L, 2), lua_toboolean(L, 3)))
+        all += (all.empty() ? "" : " ") + n;
+    lua_pushstring(L, all.c_str());
     return 1;
 }
 
@@ -644,6 +671,8 @@ void InstallDevCommands()
     script::Register("dev_test", TestCmd);
     script::Register("dev_setscript", SetScriptCmd);
     script::Register("dev_panel", Panel);
+    script::Register("dev_select", SelectCmd);
+    script::Register("dev_complete", CompleteCmd);
     script::Register("dev_level", Level);
     script::Register("dev_click", Click);
     script::Register("dev_hover", Hover);

@@ -55,3 +55,17 @@ proposed. Done items are marked.
    objective), "Hitman has to get here" (a new reach objective), "Make it
    the exit" (completed when every objective is done and Hitman gets there);
    an object already used says which line it is, with "edit".
+
+## Found while testing these in the game (2026-10-11)
+
+* Level scripts ran only when the map loaded: a script being written could
+  not be tried without reloading. (done: Level > Scripts > Run now)
+* Script errors named the whole chunk path (`...common\Hitman 2 Silent
+  Assassin\Mods\Level\main.lua:3:`); a failed script was reported as
+  "failed or missing". (done: `main.lua:3: ...`, missing and failed apart)
+* Buttons placed side by side ran off narrow panels (Make it the exit, Onto
+  the paths). (done: they go to the next line)
+* A long tab narrowed the left tab row with its scrollbar (Model...,
+  Missi...). (done: the tabs scroll their own content)
+* The Lua console stopped following new output after 2000 lines. (done)
+* A user's guide was missing: [editor.md](editor.md).

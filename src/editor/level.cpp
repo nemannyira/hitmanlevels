@@ -606,6 +606,82 @@ void OnFrame()
     RunLevelScripts();
 }
 
+// What would go wrong when the level is played, found while it is edited
+// (checked once a second): object paths to select the one meant ("" none).
+struct Problem {
+    std::string text;
+    std::string path;
+};
+
+std::vector<Problem> FindProblems()
+{
+    const LevelDocument& L = g_level;
+    std::vector<Problem> out;
+    bool here = !L.baseScene.empty() && L.baseScene == CurrentScene() && engine::SceneDataValid();
+    if (!L.baseScene.empty() && !CurrentScene().empty() && L.baseScene != CurrentScene())
+        out.push_back({"the level is for " + L.baseScene + ": this map is " + CurrentScene(), ""});
+    if (here) {
+        const auto& snap = SceneModel();
+        for (const LevelNpc& n : L.npcs)
+            if (engine::OnPathNetwork(n.transform.pos) == 0) {
+                std::vector<int> at = snap.FindName(n.id);
+                out.push_back({"character " + n.id + " stands off the path network: it cannot walk",
+                               at.empty() ? "" : snap.geoms[at[0]].path});
+            }
+        for (const SpawnedObject& s : L.spawned)
+            if (s.point && engine::OnPathNetwork(s.transform.pos) == 0) {
+                engine::ZGEOM* g = LiveSpawned(s.id);
+                out.push_back({"point " + s.id.substr(0, s.id.find('+')) +
+                                   " is off the path network: characters do not reach it",
+                               g ? PathOf(g) : ""});
+            }
+        for (const MissionObjective& o : L.mission.objectives)
+            if (o.goal != MissionObjective::Level && (o.target.empty() || !Resolve(o.target)))
+                out.push_back({"objective " + std::to_string(o.slot) + ": its " +
+                                   (o.goal == MissionObjective::Kill ? "target" : "place") + " is missing",
+                               ""});
+        if (!L.mission.exitPath.empty() && !Resolve(L.mission.exitPath))
+            out.push_back({"the mission's exit is missing", ""});
+    }
+    for (const std::string& s : L.scripts) {
+        if (L.folder.empty()) {
+            out.push_back({"scripts are listed but the level is not saved yet", ""});
+            break;
+        }
+        if (GetFileAttributesA((ModsDir() + L.folder + "\\" + s).c_str()) == INVALID_FILE_ATTRIBUTES)
+            out.push_back({"script " + s + " is not in Mods\\" + L.folder, ""});
+    }
+    if (ImportsPending())
+        out.push_back({"models of other levels come with the map when it loads again", ""});
+    return out;
+}
+
+void DrawProblems()
+{
+    static std::vector<Problem> problems;
+    static double next;
+    if (NowMs() >= next) {
+        next = NowMs() + 1000.0;
+        problems = FindProblems();
+    }
+    ImGui::SeparatorText(problems.empty() ? "No problems found" : "Problems");
+    for (size_t i = 0; i < problems.size(); ++i) {
+        ImGui::PushID(int(i));
+        if (!problems[i].path.empty()) {
+            engine::ZGEOM* g = Resolve(problems[i].path);
+            ImGui::BeginDisabled(!g);
+            if (ImGui::SmallButton("select") && g)
+                Select(g);
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+        }
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f), "%s", problems[i].text.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopID();
+    }
+}
+
 void DrawPanel()
 {
     LevelDocument& L = g_level;
@@ -628,6 +704,7 @@ void DrawPanel()
         ImGui::SameLine();
         ImGui::TextDisabled("%s", g_status.c_str());
     }
+    DrawProblems();
 
     bool empty = L.emptyMap;
     if (ImGui::Checkbox("Empty map", &empty))

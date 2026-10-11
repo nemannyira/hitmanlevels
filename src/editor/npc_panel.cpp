@@ -11,6 +11,7 @@
 #include "imgui.h"
 
 #include "../engine/lists.h"
+#include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
 #include "../engine/script_files.h"
@@ -429,6 +430,12 @@ void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool labe
             if (geoms[k] == sel)
                 DrawPoint3D(pts[k].pos, 8.0f, IM_COL32(255, 255, 255, 255));
             DrawPoint3D(pts[k].pos, r.list ? 4.0f : 5.0f, c);
+            // a route the character walks: a point the path network does not
+            // reach is never reached (the character stops)
+            if (r.list && engine::OnPathNetwork(pts[k].pos) == 0) {
+                DrawPoint3D(pts[k].pos, 9.0f, IM_COL32(255, 60, 50, 140));
+                DrawLabel3D(pts[k].pos, "off the path network", IM_COL32(255, 90, 80, 255));
+            }
             ImVec2 s;
             if (WorldToScreen(pts[k].pos, s))
                 g_markers.push_back({s, geoms[k]});

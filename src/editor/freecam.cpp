@@ -5,6 +5,8 @@
 
 #include "imgui.h"
 
+#include "../engine/geoms.h"
+#include "../engine/messages.h"
 #include "../fov.h"
 #include "../game.h"
 #include "../hook.h"
@@ -62,6 +64,20 @@ void CaptureFromCamera(game::ZCAMERA* cam)
     g_yaw = std::atan2(m[0], m[2]);
     float fy = m[1] < -1.0f ? -1.0f : (m[1] > 1.0f ? 1.0f : m[1]);
     g_pitch = std::asin(fy);
+    // Just after a map loads the game's camera can sit in Hitman's head: back
+    // off along the view (and up) so he is in sight, not around the lens.
+    if (engine::ZGEOM* hitman = engine::Player()) {
+        float h[3];
+        engine::WorldPosition(hitman, h);
+        float dx = g_pos[0] - h[0], dz = g_pos[2] - h[2], dy = g_pos[1] - h[1];
+        if (dx * dx + dz * dz < 60.0f * 60.0f && dy > -20.0f && dy < 220.0f) {
+            float f[3];
+            Forward(g_yaw, g_pitch, f);
+            for (int i = 0; i < 3; ++i)
+                g_pos[i] -= f[i] * 250.0f;
+            g_pos[1] += 80.0f;
+        }
+    }
     Log("free cam from %p: pos %.1f %.1f %.1f yaw %.1f pitch %.1f", cam, g_pos[0], g_pos[1], g_pos[2],
         g_yaw * 180 / kPi, g_pitch * 180 / kPi);
 }

@@ -666,6 +666,8 @@ void DrawPanel()
     }
 
     ImGui::SeparatorText("New objects");
+    if (L.spawned.empty())
+        ImGui::TextDisabled("none yet (Models tab, or duplicate a selected object)");
     std::string toDelete;
     for (auto& s : L.spawned) {
         ImGui::PushID(s.id.c_str());
@@ -678,11 +680,19 @@ void DrawPanel()
                 Select(g);
             ImGui::SameLine();
         }
-        ImGui::TextUnformatted(s.id.c_str());
+        // "KeyRoom_item+1" -> "KeyRoom", with what it is
+        std::string name = s.id.substr(0, s.id.find('+'));
+        if (s.item && name.size() > 5 && name.compare(name.size() - 5, 5, "_item") == 0)
+            name.resize(name.size() - 5);
+        ImGui::TextUnformatted(name.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled(s.item ? "item" : s.point ? "point" : "object");
         if (!g) {
             ImGui::SameLine();
             ImGui::TextDisabled("(not in this scene)");
         }
+        if (ImGui::IsItemHovered() && !s.sourcePath.empty())
+            ImGui::SetTooltip("%s\nfrom %s", s.id.c_str(), s.sourcePath.c_str());
         ImGui::PopID();
     }
     if (!toDelete.empty()) {
@@ -693,13 +703,40 @@ void DrawPanel()
     }
 
     ImGui::SeparatorText("Edited objects");
+    if (L.objects.empty())
+        ImGui::TextDisabled("none yet (select an object of the map and move or hide it)");
     std::string toRevert;
     for (auto& [path, e] : L.objects) {
         ImGui::PushID(path.c_str());
         if (ImGui::SmallButton("revert"))
             toRevert = path;
         ImGui::SameLine();
-        ImGui::TextUnformatted(path.c_str());
+        engine::ZGEOM* g = Resolve(path);
+        if (g && IsLive(g)) {
+            if (ImGui::SmallButton("select"))
+                Select(g);
+            ImGui::SameLine();
+        }
+        // the object's name (a character's part: its group's too), the path in the tooltip
+        size_t slash = path.rfind('/');
+        std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+        if (slash != std::string::npos && slash > 0 && (name == "Ground" || name.rfind('#', 0) == 0)) {
+            size_t up = path.rfind('/', slash - 1);
+            name = path.substr(up == std::string::npos ? 0 : up + 1, slash - (up == std::string::npos ? 0 : up + 1)) +
+                   "/" + name;
+        }
+        ImGui::TextUnformatted(name.c_str());
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", path.c_str());
+        ImGui::SameLine();
+        std::string what;
+        if (e.hasOriginal) {
+            if (e.state.hidden != e.original.hidden)
+                what = e.state.hidden ? "hidden" : "shown";
+            if (memcmp(&e.state.transform, &e.original.transform, sizeof(Transform)) != 0)
+                what += what.empty() ? "moved" : ", moved";
+        }
+        ImGui::TextDisabled("%s", what.empty() ? (e.state.hidden ? "hidden" : "moved") : what.c_str());
         ImGui::PopID();
     }
     if (!toRevert.empty()) {

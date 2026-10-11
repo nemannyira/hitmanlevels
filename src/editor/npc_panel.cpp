@@ -1051,7 +1051,10 @@ void Place()
 void DrawPlace()
 {
     ImGui::SeparatorText("Place a character");
-    float listH = ImGui::GetTextLineHeightWithSpacing() * 7;
+    // as many rows as the panel has room for (at least 7, at most every type)
+    float line = ImGui::GetTextLineHeightWithSpacing();
+    float listH = std::clamp(line * (float(g_types.size()) + 0.5f), line * 7.0f,
+                             std::max(line * 7.0f, ImGui::GetContentRegionAvail().y * 0.45f));
     if (ImGui::BeginChild("types", ImVec2(0, listH), ImGuiChildFlags_Borders)) {
         for (size_t i = 0; i < g_types.size(); ++i) {
             const NpcType& t = g_types[i];
@@ -1166,7 +1169,8 @@ void DrawPanel()
     if (engine::ZGEOM* a = ActorOf(Selected()))
         SetTarget(a);
 
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+    ImGui::SetNextItemWidth(ImGui::CalcTextSize("selected character").x + ImGui::GetFrameHeight() +
+                            ImGui::GetStyle().FramePadding.x * 2);  // the longest choice fits
     ImGui::Combo("Routes", &g_routes, "off\0selected character\0all characters\0");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Where the characters will go: their routes (numbered, with arrows in walking order)\n"

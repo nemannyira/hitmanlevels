@@ -38,6 +38,13 @@ struct ScriptError {
 };
 const std::deque<ScriptError>& RecentErrors();
 unsigned ErrorSerial();
+// Lines printed to the console ever (the console keeps the last 2000).
+size_t ConsoleSerial();
+// Names for the console's Tab: the fields of the table at `path` ("" the
+// globals, "h2", "string") or, `method`, an object's methods, that start
+// with `partial`; a table's name ends in ".", a function's in "(". Read
+// raw: no script code runs.
+std::vector<std::string> Complete(const std::string& path, const std::string& partial, bool method);
 void ClearConsole();
 
 // Every call from the game into Lua (events, chunks, the console): a script

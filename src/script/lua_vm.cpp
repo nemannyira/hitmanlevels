@@ -297,6 +297,9 @@ const std::vector<ConsoleLine>& Console() { return g_console; }
 
 std::deque<ScriptError> g_errors;
 unsigned g_errorSerial;
+size_t g_consoleSerial;
+
+size_t ConsoleSerial() { return g_consoleSerial; }
 
 const std::deque<ScriptError>& RecentErrors() { return g_errors; }
 unsigned ErrorSerial() { return g_errorSerial; }
@@ -312,13 +315,88 @@ void ConsolePrint(LineKind kind, const std::string& text)
     // split multi-line output so the console can colour and wrap each line
     std::stringstream ss(text);
     std::string line;
-    while (std::getline(ss, line))
+    while (std::getline(ss, line)) {
         g_console.push_back({kind, line});
+        ++g_consoleSerial;
+    }
     if (g_console.size() > kMaxConsoleLines)
         g_console.erase(g_console.begin(), g_console.begin() + (g_console.size() - kMaxConsoleLines));
 }
 
 void ClearConsole() { g_console.clear(); }
+
+namespace {
+
+struct Completion {
+    const std::string* path;
+    const std::string* partial;
+    bool method;
+    std::vector<std::string> out;
+};
+
+int CompleteIn(lua_State* s)
+{
+    Completion* c = static_cast<Completion*>(lua_touserdata(s, 1));
+    if (c->method) {
+        luaL_getmetatable(s, "h2.object");
+        if (!lua_istable(s, -1))
+            return 0;
+        lua_pushliteral(s, "__index");
+        lua_rawget(s, -2);
+    } else {
+        lua_pushglobaltable(s);
+        const std::string& path = *c->path;
+        for (size_t start = 0; start < path.size();) {
+            size_t dot = std::min(path.find('.', start), path.size());
+            if (!lua_istable(s, -1))
+                return 0;
+            lua_pushlstring(s, path.data() + start, dot - start);
+            lua_rawget(s, -2);
+            lua_remove(s, -2);
+            start = dot + 1;
+        }
+    }
+    if (!lua_istable(s, -1))
+        return 0;
+    const std::string& partial = *c->partial;
+    lua_pushnil(s);
+    while (lua_next(s, -2)) {
+        size_t n = 0;
+        const char* k = lua_type(s, -2) == LUA_TSTRING ? lua_tolstring(s, -2, &n) : nullptr;
+        if (k && c->out.size() < 1000 && n >= partial.size() && memcmp(k, partial.data(), partial.size()) == 0 &&
+            (k[0] != '_' || (!partial.empty() && partial[0] == '_'))) {  // _path and the like: only asked for
+            int t = lua_type(s, -1);
+            c->out.push_back(std::string(k, n) + (t == LUA_TTABLE ? "." : t == LUA_TFUNCTION ? "(" : ""));
+        }
+        lua_pop(s, 1);
+    }
+    return 0;
+}
+
+bool IsName(const std::string& s, bool dots)
+{
+    for (char ch : s)
+        if (!(isalnum(static_cast<unsigned char>(ch)) || ch == '_' || (dots && ch == '.')))
+            return false;
+    return true;
+}
+
+} // namespace
+
+std::vector<std::string> Complete(const std::string& path, const std::string& partial, bool method)
+{
+    if (!L || path.size() > 200 || partial.size() > 100 || !IsName(path, true) || !IsName(partial, false))
+        return {};
+    Completion c{&path, &partial, method, {}};
+    int top = lua_gettop(L);
+    lua_pushcfunction(L, CompleteIn);
+    lua_pushlightuserdata(L, &c);
+    if (PCall(L, 1, 0, 0) != LUA_OK)
+        c.out.clear();
+    lua_settop(L, top);
+    std::sort(c.out.begin(), c.out.end());
+    return c.out;
+}
 
 void Register(const char* name, CFunction fn)
 {

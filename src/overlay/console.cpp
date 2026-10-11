@@ -1,5 +1,6 @@
 #include "console.h"
 
+#include <cctype>
 #include <string>
 #include <vector>
 
@@ -15,11 +16,57 @@ bool g_visible = false;
 char g_input[1024];
 std::vector<std::string> g_history;
 int g_historyPos = -1;  // -1: editing a new line
-size_t g_lastLineCount;
+size_t g_lastLineCount;  // ConsoleSerial when the output was last followed
 bool g_focusInput;
 
-int HistoryCallback(ImGuiInputTextCallbackData* data)
+// Tab: the name before the cursor completed ("h2.pl" -> "h2.player(", "obj:po" -> "obj:pos("); several: as far as
+// they agree, and the choices printed
+void Complete(ImGuiInputTextCallbackData* data)
 {
+    int end = data->CursorPos, start = end;
+    auto nameChar = [](char ch) { return isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '.'; };
+    while (start > 0 && nameChar(data->Buf[start - 1]))
+        --start;
+    std::string word(data->Buf + start, data->Buf + end);
+    bool method = start > 0 && data->Buf[start - 1] == ':';
+    size_t dot = word.rfind('.');
+    if (method && dot != std::string::npos)
+        return;
+    std::string path = dot == std::string::npos ? "" : word.substr(0, dot);
+    std::string partial = dot == std::string::npos ? word : word.substr(dot + 1);
+    if (!path.empty() && !isalpha(static_cast<unsigned char>(path[0])) && path[0] != '_')
+        return;  // a number ("1.5")
+    std::vector<std::string> names = script::Complete(path, partial, method);
+    if (names.empty())
+        return;
+    std::string common = names[0];
+    for (const std::string& n : names) {
+        size_t i = 0;
+        while (i < common.size() && i < n.size() && common[i] == n[i])
+            ++i;
+        common.resize(i);
+    }
+    if (common.size() > partial.size()) {
+        int at = end - int(partial.size());
+        data->DeleteChars(at, int(partial.size()));
+        data->InsertChars(at, common.c_str());
+    }
+    if (names.size() > 1) {
+        std::string list;
+        for (size_t i = 0; i < names.size() && i < 60; ++i)
+            list += (i ? "  " : "") + names[i];
+        if (names.size() > 60)
+            list += "  ... (" + std::to_string(names.size()) + ")";
+        script::ConsolePrint(script::LineKind::Output, list);
+    }
+}
+
+int InputCallback(ImGuiInputTextCallbackData* data)
+{
+    if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
+        Complete(data);
+        return 0;
+    }
     if (data->EventFlag != ImGuiInputTextFlags_CallbackHistory || g_history.empty())
         return 0;
     int prev = g_historyPos;
@@ -54,6 +101,8 @@ void DrawConsole()
     float footer = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
     if (ImGui::BeginChild("output", ImVec2(0, -footer), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar)) {
         const auto& lines = script::Console();
+        if (lines.empty())
+            ImGui::TextDisabled("Lua: h2.* calls (docs/lua.md). Tab completes a name, Up / Down the earlier lines.");
         for (const auto& l : lines) {
             ImVec4 col = l.kind == script::LineKind::Error   ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f)
                          : l.kind == script::LineKind::Input ? ImVec4(0.6f, 0.8f, 1.0f, 1.0f)
@@ -62,8 +111,8 @@ void DrawConsole()
             ImGui::TextUnformatted(l.text.c_str());
             ImGui::PopStyleColor();
         }
-        if (lines.size() != g_lastLineCount) {  // follow new output
-            g_lastLineCount = lines.size();
+        if (script::ConsoleSerial() != g_lastLineCount) {  // follow new output
+            g_lastLineCount = script::ConsoleSerial();
             ImGui::SetScrollHereY(1.0f);
         }
     }
@@ -71,9 +120,9 @@ void DrawConsole()
     ImGui::Separator();
 
     ImGuiInputTextFlags flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_EscapeClearsAll |
-                                ImGuiInputTextFlags_CallbackHistory;
+                                ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_CallbackCompletion;
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputText("##input", g_input, sizeof(g_input), flags, HistoryCallback)) {
+    if (ImGui::InputText("##input", g_input, sizeof(g_input), flags, InputCallback)) {
         std::string code = g_input;
         if (!code.empty()) {
             g_history.push_back(code);

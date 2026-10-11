@@ -8,8 +8,14 @@ A level runs its scripts when its map is loaded: list them in the level's
 ```
 
 The editor's Lua console (`` ` `` / View > Lua console) runs lines in the
-same state. Everything printed also goes to `H2Fix.log` (the run before:
-`H2Fix.prev.log`).
+same state: Tab completes a name (`h2.pl` -> `h2.player(`, `obj:po` ->
+`obj:pos(`; several: they are listed), Up / Down bring back earlier lines.
+Everything printed also goes to `H2Fix.log` (the run before:
+`H2Fix.prev.log`). The level scripts' errors also show in the Level panel's
+Problems list (since they last ran).
+
+A new level's script can start from a template: Level panel > Scripts >
+New script from a template.
 
 **Sandbox**: Lua 5.4 with base, table, string, math, utf8, coroutine and
 `os.clock` / `time` / `date`; no `io`, no loading native code, `load` takes

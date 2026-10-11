@@ -55,6 +55,8 @@ CASES = {
     "mission bogus": case(mission={"objectives": [{"slot": s, "text": "t" * 1000000, "kind": "kill", "target": "ROOT"}
                                                   for s in (0, 1, 99, -5)],
                                    "briefing": "b" * 2000000, "exit": "ROOT", "exit_radius": -1e30, "base_ends": "no"}),
+    "scene bogus": case(base_scene=r"MainMenu\MainMenu"),
+    "scene outside": case(base_scene=r"..\..\..\Windows\win"),
     "behaviour bogus": case(npcs=[{"id": "A", "record": 2350, "pos": [-4176, -20, -6682], "matrix": M,
                                    "behaviour": {"name": n, "level": lv, "params": [{"name": "WayPoints", "type": t,
                                                                                     "value": v}]}}
@@ -92,6 +94,8 @@ def run_case(name, text, script="h2.log('fuzz main ran')"):
     return alive
 
 
+# a scene the game does not have is not loaded (the engine crashes on one)
+print("dev_loadscene of no scene:", dev.run(r'return h2.dev_loadscene([[MainMenu\MainMenu]])', 10))
 results = {}
 for name, d in CASES.items():
     if not dev.running():

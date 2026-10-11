@@ -1,5 +1,6 @@
 #include "scene.h"
 
+#include <windows.h>
 #include <vector>
 
 #include "fov.h"
@@ -44,8 +45,23 @@ const std::string& CurrentScene() { return g_scene; }
 void OnScenePushed(SceneCallback cb) { g_callbacks.push_back(cb); }
 void OnSceneLeaving(SceneCallback cb) { g_leaving.push_back(cb); }
 
+bool SceneExists(const std::string& name)
+{
+    // a scene archive of the game (Scenes\<name>.ZIP): the engine crashes on one it cannot open
+    if (name.empty() || name.size() > 200 || name.find("..") != std::string::npos ||
+        name.find(':') != std::string::npos || name[0] == '\\' || name[0] == '/')
+        return false;
+    std::string zip = GameDir() + "Scenes\\" + name + ".ZIP";
+    DWORD a = GetFileAttributesA(zip.c_str());
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
 bool RequestScene(const std::string& name)
 {
+    if (!SceneExists(name)) {
+        Log("RequestScene(\"%s\"): no such scene, not loaded", name.c_str());
+        return false;
+    }
     auto sys = reinterpret_cast<char*>(game::SysInterface());
     void* engine = sys ? *reinterpret_cast<void**>(sys + 0x98) : nullptr;
     if (!engine)

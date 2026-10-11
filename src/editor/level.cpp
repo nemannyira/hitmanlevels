@@ -1301,6 +1301,11 @@ bool LoadLevel(const std::string& folder, std::string* error)
         L.folder = folder;
         L.name = j.value("name", folder);
         L.baseScene = j.value("base_scene", "");
+        if (!L.baseScene.empty() && !SceneExists(L.baseScene)) {  // loading it would take the game down
+            if (error)
+                *error = "base_scene \"" + L.baseScene.substr(0, 100) + "\" is not a scene of the game";
+            return false;
+        }
         L.emptyMap = j.value("empty_map", false);
         L.blankMap = j.value("blank_map", false);
         if (j.contains("place_floor") && j["place_floor"].is_object()) {

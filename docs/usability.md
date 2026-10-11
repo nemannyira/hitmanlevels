@@ -40,8 +40,12 @@ proposed. Done items are marked.
    shows "F1: keys" and the real editor key.
 5. **One workflow line** at the top of the Level panel: Map > Place >
    Mission > Test > Save, each step's state shown (what is still missing).
-6. **Placing on the network**: an option that snaps route points and
-   characters to the nearest walkable cell (engine::PathCellBelow).
+6. **Placing on the network** (done, NPCs panel > "Onto the paths", on by
+   default): a placed character, a new route point and a new point for a
+   behaviour's setting go to the nearest walkable place (engine::
+   NearestWalkable, 2 m across at most, on about the clicked floor); the
+   preview shows where it was pulled from, red when nothing walkable is near.
+   Scripts: h2.walkable(x, y, z [, radius]).
 7. **Mission goals from the selection** (done): the inspector (and the NPC
    panel for a character) has a Mission row: "Make it a target" (a new kill
    objective), "Hitman has to get here" (a new reach objective), "Make it

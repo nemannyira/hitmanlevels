@@ -57,6 +57,10 @@ bool PathNetworkGrid(PathGrid& grid);
 // and 10 below it (0x59B610); `floor`: where a character on it stands (the
 // cell's centre, less the lift).
 bool PathCellBelow(const PathGrid& grid, const float pos[3], float floor[3]);
+// The nearest point of the network to `pos` on about its floor (1.5 m below
+// to 0.6 m above), at most `radius` away across; `pos` itself (its height
+// kept) when it is on the network. False: none that near, or no network.
+bool NearestWalkable(const float pos[3], float radius, float out[3]);
 // Hitman takes the clothes of a character (a body, as when he takes them from
 // one) or puts on a clothes item: MSG_CHANGECLOTHES to himself (ZHITMAN2
 // handler 0x5142BC, id at +0xF90), the param pointing at {geom, 0} as he

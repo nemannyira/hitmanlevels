@@ -1,6 +1,7 @@
 #include "messages.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -390,6 +391,44 @@ bool PathCellBelow(const PathGrid& grid, const float pos[3], float floor[3])
         floor[i] = grid.min[i] + (float(found[i]) + 0.5f) * grid.size[i];
     floor[1] -= grid.lift;
     return true;
+}
+
+bool NearestWalkable(const float pos[3], float radius, float out[3])
+{
+    if (!std::isfinite(pos[0]) || !std::isfinite(pos[1]) || !std::isfinite(pos[2]) || !(radius > 0.0f))
+        return false;
+    if (OnPathNetwork(pos) == 1) {
+        memcpy(out, pos, 3 * sizeof(float));
+        return true;
+    }
+    PathGrid g;
+    if (!PathNetworkGrid(g))
+        return false;
+    // a lookup finds a cell within one cell across: every second column is enough
+    const float step[2] = {g.size[0] * 2.0f, g.size[2] * 2.0f};
+    const int n[2] = {std::min(32, int(radius / step[0]) + 1), std::min(32, int(radius / step[1]) + 1)};
+    float best = radius * radius;
+    bool found = false;
+    for (int i = -n[0]; i <= n[0]; ++i) {
+        for (int k = -n[1]; k <= n[1]; ++k) {
+            float p[3] = {pos[0] + float(i) * step[0], pos[1] + 60.0f, pos[2] + float(k) * step[1]};
+            float f[3];
+            if (!PathCellBelow(g, p, f) || f[1] > pos[1] + 60.0f || f[1] < pos[1] - 150.0f)
+                continue;
+            float dx = f[0] - pos[0], dz = f[2] - pos[2];
+            float d = dx * dx + dz * dz;
+            if (d >= best)
+                continue;
+            if (std::fabs(f[1] - pos[1]) < 30.0f)
+                f[1] = pos[1];  // the same surface: where it was clicked, not the cell's middle
+            if (OnPathNetwork(f) != 1)
+                continue;
+            best = d;
+            memcpy(out, f, sizeof(f));
+            found = true;
+        }
+    }
+    return found;
 }
 
 // ZEngineDataBase::GetSceneCom 0x420A60, then its vfunc 0x88 (name, &ref)

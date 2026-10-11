@@ -449,6 +449,39 @@ int OnPath(lua_State* L)
     return 1;
 }
 
+// h2.walkable(x, y, z [, radius]) / h2.walkable(object [, radius]) -> x, y, z:
+// the nearest point of the path network on about that floor (radius: across,
+// default 2 m, at most 8 m); nil when there is none that near (or no network)
+int Walkable(lua_State* L)
+{
+    float pos[3];
+    int next;
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "_path");
+        engine::ZGEOM* t = editor::Resolve(luaL_checkstring(L, -1));
+        lua_pop(L, 1);
+        if (!t || !editor::IsLive(t))
+            return luaL_error(L, "walkable: the object is not in the loaded scene");
+        engine::WorldPosition(t, pos);
+        next = 2;
+    } else {
+        for (int i = 0; i < 3; ++i)
+            pos[i] = Coordinate(L, 1 + i);
+        next = 4;
+    }
+    lua_Number radius = luaL_optnumber(L, next, 200.0);
+    if (!(radius > 0.0) || radius > 800.0)
+        return luaL_error(L, "walkable: radius between 0 and 800 cm");
+    float out[3];
+    if (!engine::NearestWalkable(pos, float(radius), out)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    for (float v : out)
+        lua_pushnumber(L, v);
+    return 3;
+}
+
 // h2.give(item | template [, character]) -> item: the item goes to the
 // character (default Hitman) as if picked up; a template name makes the item
 // first (where the character is)
@@ -1230,6 +1263,7 @@ void RegisterObjectsApi()
     Register("info", Info);
     Register("basemission", BaseMission);
     Register("onpath", OnPath);
+    Register("walkable", Walkable);
     Register("disguise", Disguise);
     Register("give", Give);
     Register("health", Health);

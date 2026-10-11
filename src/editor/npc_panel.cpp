@@ -113,6 +113,24 @@ int g_placePickFrame;
 bool g_haveHit;
 float g_point[3];
 engine::ZGEOM* g_hitRoom;
+// characters and new points go onto the path network (the nearest walkable place, 2 m at most)
+bool g_snapNetwork = true;
+constexpr float kSnapRadius = 200.0f;
+float g_rawPoint[3] = {NAN, NAN, NAN};  // the last point snapped for the preview, and where it went
+float g_snappedPoint[3];
+bool g_pointOff;  // the preview's point has no walkable place near it
+
+// the point moved onto the network when snapping is on; false: off the network (point unchanged)
+bool SnapToNetwork(float p[3])
+{
+    if (!g_snapNetwork)
+        return engine::OnPathNetwork(p) != 0;
+    float out[3];
+    if (!engine::NearestWalkable(p, kSnapRadius, out))
+        return engine::OnPathNetwork(p) == -1;  // a map without a network: nothing to say
+    memcpy(p, out, sizeof(out));
+    return true;
+}
 
 std::string Lower(std::string s)
 {
@@ -986,8 +1004,15 @@ void OnPlacePick(engine::ZGEOM* hit, const float* point, const float*)
 {
     g_placePickPending = false;
     g_haveHit = point != nullptr;
-    if (point)
-        memcpy(g_point, point, sizeof(g_point));
+    if (point) {
+        float dx = point[0] - g_rawPoint[0], dy = point[1] - g_rawPoint[1], dz = point[2] - g_rawPoint[2];
+        if (!(dx * dx + dy * dy + dz * dz < 5.0f * 5.0f)) {  // moved (also NaN: the first): look again
+            memcpy(g_rawPoint, point, sizeof(g_rawPoint));
+            memcpy(g_snappedPoint, point, sizeof(g_snappedPoint));
+            g_pointOff = !SnapToNetwork(g_snappedPoint);
+        }
+        memcpy(g_point, g_snappedPoint, sizeof(g_point));
+    }
     if (hit)
         if (engine::ZGEOM* room = RoomOf(hit))
             g_hitRoom = room;
@@ -1130,6 +1155,7 @@ void DrawPlace()
         g_placing = true;
         g_placePickPending = false;
         g_haveHit = false;
+        g_rawPoint[0] = NAN;
         g_message.clear();
     }
 }
@@ -1183,6 +1209,14 @@ void DrawPanel()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Where the characters will go: their routes (numbered, with arrows in walking order)\n"
                           "and the places in their behaviour (guard point, protect point, ...)");
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Onto the paths", &g_snapNetwork))
+        g_rawPoint[0] = NAN;  // the preview looks again
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Placed characters and new route points go to the nearest place characters can walk\n"
+                          "(the map's path network, %.0f m at most); off it they do not walk, the point is red.\n"
+                          "Testing > Path network shows it.",
+                          kSnapRadius / 100.0f);
     if (!g_message.empty())
         ImGui::TextWrapped("%s", g_message.c_str());
     if (int pending = PendingNpcCount()) {
@@ -1254,12 +1288,15 @@ void OnAddPoint(engine::ZGEOM* hit, const float* point, const float*)
         parent = hit ? RoomOf(hit) : nullptr;
     if (!parent)
         parent = Resolve("ROOT");
+    float at[3] = {point[0], point[1], point[2]};
+    bool on = SnapToNetwork(at);
     std::string err;
-    engine::ZGEOM* np = PlacePoint(PointAt(point), parent, &err);
+    engine::ZGEOM* np = PlacePoint(PointAt(at), parent, &err);
     if (!np) {
         g_message = "no point made: " + err;
         return;
     }
+    g_message = on ? "" : "the point is off the path network: the character will not get there";
     auto it = std::find(pts.begin(), pts.end(), Selected());
     pts.insert(it == pts.end() ? pts.end() : it + 1, np);
     SetPoints(list, pts, "point added");
@@ -1281,8 +1318,10 @@ void OnNewPoint(engine::ZGEOM* hit, const float* point, const float*)
     engine::ZGEOM* room = hit ? RoomOf(hit) : nullptr;
     if (!room)
         room = Resolve("ROOT");
+    float at[3] = {point[0], point[1], point[2]};
+    bool on = SnapToNetwork(at);
     std::string err;
-    engine::ZGEOM* np = PlacePoint(PointAt(point), room, &err);
+    engine::ZGEOM* np = PlacePoint(PointAt(at), room, &err);
     if (!np) {
         g_message = "no point made: " + err;
         return;
@@ -1291,7 +1330,8 @@ void OnNewPoint(engine::ZGEOM* hit, const float* point, const float*)
     for (engine::ScriptParam& p : s.params)
         if (p.name == param && p.type == engine::ParamType::Ref)
             p.bits = engine::RefOf(np);
-    g_message = param + " = new point " + engine::SafeString(np->name);
+    g_message = param + " = new point " + engine::SafeString(np->name) +
+                (on ? "" : " (off the path network: the character will not get there)");
     if (table == "target" && g_target)
         ApplyTarget();
 }
@@ -1394,7 +1434,9 @@ void UpdateNpcPlacement()
             float from[3] = {g_point[0], g_point[1] + 100.0f, g_point[2]};
             DrawRoutes(from, RoutesOf(g_new), true);
         }
-        DrawSnapTarget(g_point, IM_COL32(64, 224, 255, 255));
+        DrawSnapTarget(g_point, g_pointOff ? IM_COL32(255, 80, 64, 255) : IM_COL32(64, 224, 255, 255));
+        if (!g_pointOff && (g_point[0] != g_rawPoint[0] || g_point[2] != g_rawPoint[2]))
+            DrawLine3D(g_rawPoint, g_point, IM_COL32(64, 224, 255, 140), 1.5f);  // where it was pulled from
         // the character itself where it will stand
         std::string err;
         if (engine::ZGEOM* preview =
@@ -1408,7 +1450,9 @@ void UpdateNpcPlacement()
     char text[256];
     snprintf(text, sizeof(text), "%s (%s)\nclick: place   Shift+click: place more   Esc: cancel%s",
              g_types[g_type].model.c_str(), BehaviourLabel(g_newBehaviour).c_str(),
-             g_haveHit ? "" : "\nno surface under the mouse");
+             !g_haveHit  ? "\nno surface under the mouse"
+             : g_pointOff ? "\noff the path network: it will not walk from there"
+                          : "");
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
     ImVec2 size = ImGui::CalcTextSize(text);

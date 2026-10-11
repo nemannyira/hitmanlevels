@@ -66,6 +66,7 @@ been given stops. Hitman can be moved anywhere too
 | `npc:event(name)` | a script event for its behaviour (`"Msg_InstantDeath"`, ...) |
 | `npc:alive()`, `npc:kill()` | `kill`: a character's behaviour gets the instant death; one without a behaviour dies at once (Actor_If Die). `h2.player():alive()`: Hitman's hit points above 0 |
 | `npc:walkto(x, y, z)`, `npc:walkto(obj)` | walks there: points of the map's path network only (else it stays) |
+| `h2.walkable(x, y, z [, radius])`, `h2.walkable(obj [, radius])` | the nearest point of the path network on about that floor (1.5 m below to 0.6 m above), at most `radius` across (default 200 cm, up to 800): `x, y, z`, or nil. E.g. a walk target: `npc:walkto(h2.walkable(x, y, z))` |
 | `h2.onpath(x, y, z)`, `h2.onpath(obj)` | whether a point is on the path network (a cell of it within 25 cm across, 2.5 m down on C1-1); nil: the map has none. A point just off it may still be walked towards (the character stops at the edge). The editor shows the network: Testing panel > Path network |
 | `npc:moveset("Run")` | how it moves (`"Walk"`, `"Run"`) |
 | `npc:lookat(obj)`, `npc:lookat(nil)` | turns its head / stops |

@@ -230,6 +230,14 @@ check("sky", function() return h2.sky() ~= nil or true end)
 check("onpath", function()
   return h2.onpath(-4176, -20, -6682) == true and h2.onpath(7285, 974, -7584) == false
 end)
+check("walkable", function()
+  local x, y, z = h2.walkable(-4176, -20, -6682)  -- on the network: itself
+  if not (near(x, -4176, 0.01) and near(z, -6682, 0.01)) then return false end
+  local a, b, c = h2.walkable(-4176 + 60, -20, -6682)  -- found near, and walkable
+  return a ~= nil and h2.onpath(a, b, c) == true
+end)
+rejects("walkable radius", function() h2.walkable(0, 0, 0, 5000) end)
+rejects("walkable nan", function() h2.walkable(0 / 0, 0, 0) end)
 check("messages", function() return #h2.messages() > 100 end)
 
 -- ---------------------------------------------------------------- Hitman

@@ -292,7 +292,18 @@ bool ActorPlayAnimation(ZGEOM* actor, const char* name, bool loop)
 
 ZGEOM* Player()
 {
-    return FirstRecord([](const SceneRecord& r) { return r.classId == kHitmanClass; });
+    // asked for often (zones, events, every frame): kept while the scene's
+    // records and the object stay the same
+    static ZGEOM* hitman;
+    static const SceneRecord* records;
+    static size_t count;
+    const std::vector<SceneRecord>& all = SceneRecords();
+    if (hitman && all.data() == records && all.size() == count && Usable(hitman) && IsA(hitman, "ZHITMAN2"))
+        return hitman;
+    hitman = FirstRecord([](const SceneRecord& r) { return r.classId == kHitmanClass; });
+    records = all.data();
+    count = all.size();
+    return hitman;
 }
 
 // The loaded map's network (null: none) and how much the pathfinder lifts a

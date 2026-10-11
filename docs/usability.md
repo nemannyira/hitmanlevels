@@ -18,7 +18,7 @@ proposed. Done items are marked.
   speeds). (done: the right column is at least 19 font sizes wide)
 * **The camera started inside Hitman** after a map loaded. (done)
 * **Scripts start from nothing.** A level's story is written in Lua with
-  docs/lua.md beside it.
+  docs/lua.md beside it. (done: a template)
 
 ## Proposals, by value
 
@@ -29,9 +29,11 @@ proposed. Done items are marked.
    characters and route points off the path network, objectives without a
    target, level scripts missing, models of other levels not loaded yet,
    unsaved changes - each with a button that selects the object.
-3. **Script templates**: "New script" in the Level panel writes main.lua from
-   a template (an objective and its check, a timed event, a character that
-   walks a round and drops an item), so a story starts from working code.
+3. **Script templates** (done, Level panel > Scripts): "New script from a
+   template" writes main.lua (while it is missing or still the two lines a new
+   level gets; otherwise script2.lua, ...) with an objective line and its
+   check, a subtitle, a timer, a zone, a key and an event handler and the
+   saved story state, and lists it with the level's scripts.
 4. **Shortcuts sheet** (F1): the editor's keys (move / rotate / local /
    grab / snap / undo / test / freeze / speed) in one overlay.
 5. **One workflow line** at the top of the Level panel: Map > Place >

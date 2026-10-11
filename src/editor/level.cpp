@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iterator>
 
 #include "imgui.h"
 #include "json.hpp"
@@ -682,6 +683,91 @@ void DrawProblems()
     }
 }
 
+// A level script to start from (docs/lua.md has the whole API).
+const char* const kScriptTemplate = R"lua(-- A level script: it runs when the map is loaded (and again after Apply).
+-- The whole API: docs/lua.md. Examples: examples/missions/Courier.
+
+-- the story's state, kept with the game's saves
+h2.state.stage = h2.state.stage or 1
+
+-- the laptop's lines (1..6), a line done: h2.objective(1, nil, true)
+h2.objective(1, "Find the target")
+
+h2.subtitle("The mission begins.", 5)
+
+-- something after some game seconds
+h2.after(10, function()
+  h2.info("Ten seconds in.", "hint")
+end)
+
+-- a place around Hitman's start: leaving it marks the line done
+local x, y, z = h2.player():pos()
+h2.zone{ x = x, y = y, z = z, radius = 300,
+  on_leave = function(zone, who)
+    if h2.state.stage == 1 then
+      h2.state.stage = 2
+      h2.objective(1, nil, true)
+    end
+  end }
+
+-- a key while playing
+h2.on("key", function(e)
+  if e.key == "K" then h2.subtitle("Stage " .. h2.state.stage, 3) end
+end)
+
+-- a character dies (any cause)
+h2.on("death", function(who)
+  print("died: " .. who:name())
+end)
+)lua";
+
+// the main.lua a new level gets (WriteMainScript, NewLevel): nothing of the user's in it yet
+bool IsStubScript(const std::string& path)
+{
+    std::ifstream f(path, std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    return f.is_open() && text.size() < 400 && text.find(": runs every time the level is applied") != std::string::npos &&
+           std::count(text.begin(), text.end(), '\n') <= 2;
+}
+
+void DrawScripts()
+{
+    LevelDocument& L = g_level;
+    ImGui::SeparatorText("Scripts");
+    for (const std::string& s : L.scripts) {
+        bool there = !L.folder.empty() &&
+                     GetFileAttributesA((ModsDir() + L.folder + "\\" + s).c_str()) != INVALID_FILE_ATTRIBUTES;
+        ImGui::TextUnformatted(s.c_str());
+        if (!there) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(missing)");
+        }
+    }
+    ImGui::BeginDisabled(L.folder.empty());
+    if (ImGui::SmallButton("New script from a template")) {
+        // main.lua while it is missing or still the two lines a new level gets, then script2.lua, ...
+        std::string dir = ModsDir() + L.folder + "\\";
+        std::string name = "main.lua";
+        for (int i = 2; GetFileAttributesA((dir + name).c_str()) != INVALID_FILE_ATTRIBUTES && !IsStubScript(dir + name);
+             ++i)
+            name = "script" + std::to_string(i) + ".lua";
+        std::ofstream f(dir + name, std::ios::binary | std::ios::trunc);
+        if (f << kScriptTemplate) {
+            if (std::find(L.scripts.begin(), L.scripts.end(), name) == L.scripts.end())
+                L.scripts.push_back(name);
+            L.dirty = true;
+            g_status = "Mods\\" + L.folder + "\\" + name + " written: save, then Apply to run it";
+        } else {
+            g_status = "could not write " + name;
+        }
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(L.folder.empty() ? "Save the level first (File > New level)"
+                                           : "A script with the usual parts (objective, subtitle, timer, zone, "
+                                             "event, saved state)\nin the level's folder, run when the map loads");
+}
+
 void DrawPanel()
 {
     LevelDocument& L = g_level;
@@ -705,6 +791,7 @@ void DrawPanel()
         ImGui::TextDisabled("%s", g_status.c_str());
     }
     DrawProblems();
+    DrawScripts();
 
     bool empty = L.emptyMap;
     if (ImGui::Checkbox("Empty map", &empty))

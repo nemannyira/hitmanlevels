@@ -237,7 +237,7 @@ void DrawKeys()
     section("Editor", {{editor.c_str(), "editor on / off, back to the game"},
                        {"F1", "this sheet"},
                        {"Tab", "hide / show the panels"},
-                       {"`", "Lua console"},
+                       {"`", "Lua console (in it: Tab completes a name, Up / Down earlier lines)"},
                        {"Ctrl+S", "save the level"},
                        {"Ctrl+Z / Ctrl+Y", "undo / redo"}});
     section("Camera", {{"right mouse", "look around (free camera)"},

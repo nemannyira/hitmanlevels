@@ -18,6 +18,7 @@
 #include "freecam.h"
 #include "history.h"
 #include "level.h"
+#include "mission.h"
 #include "model.h"
 #include "placement.h"
 #include "viewport.h"
@@ -230,6 +231,7 @@ void DrawInspector()
         else
             ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());
     }
+    DrawMissionForSelection(geom);
 }
 
 void DrawSelectionMarker()

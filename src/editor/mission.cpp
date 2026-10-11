@@ -1267,6 +1267,114 @@ void RevertMission()
     g_applied = false;
 }
 
+// ---- goals from the selection (the inspector) ----
+
+namespace {
+
+// the character (as the objectives keep it) the object belongs to; null: not a character, or Hitman
+engine::ZGEOM* CharacterOf(engine::ZGEOM* geom)
+{
+    engine::ZGEOM* actor = geom ? ActorOf(geom) : nullptr;
+    if (!actor || actor == engine::Player())
+        return nullptr;
+    for (engine::ZGEOM* c : Characters())
+        if (c == geom || c == actor || ActorOf(c) == actor)
+            return c;
+    return nullptr;
+}
+
+// the line already having this target with this goal, 0 if none
+int LineWith(MissionObjective::Goal goal, const std::string& path)
+{
+    for (const MissionObjective& o : Doc().objectives)
+        if (o.goal == goal && o.target == path)
+            return o.slot;
+    return 0;
+}
+
+void NewGoal(MissionObjective::Goal goal, const std::string& path)
+{
+    int slot = FreeSlot();
+    if (!slot) {
+        g_status = "the laptop has 6 lines, all in use";
+        return;
+    }
+    MissionObjective o;
+    o.slot = slot;
+    o.goal = goal;
+    Doc().objectives.push_back(o);
+    SetTarget(Doc().objectives.back(), path);
+    g_selSlot = slot;
+    g_status = "objective " + std::to_string(slot) + ": " + Summary(&Doc().objectives.back());
+    overlay::ShowPanel("Mission");
+}
+
+} // namespace
+
+void DrawMissionForSelection(engine::ZGEOM* geom)
+{
+    if (!geom || !IsLive(geom) || CurrentScene().empty() ||
+        (!CurrentLevel().baseScene.empty() && CurrentLevel().baseScene != CurrentScene()))
+        return;
+    ImGui::SeparatorText("Mission");
+    bool full = FreeSlot() == 0;
+    if (engine::ZGEOM* c = CharacterOf(geom)) {
+        std::string path = PathOf(c);
+        if (int slot = LineWith(MissionObjective::Kill, path)) {
+            ImGui::TextDisabled("the target of objective %d", slot);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("edit")) {
+                g_selSlot = slot;
+                overlay::ShowPanel("Mission");
+            }
+            return;
+        }
+        ImGui::BeginDisabled(full);
+        if (ImGui::Button("Make it a target"))
+            NewGoal(MissionObjective::Kill, path);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip(full ? "The laptop has 6 lines, all in use"
+                                   : "A new objective: \"Kill ...\", done when this character dies");
+        return;
+    }
+    if (ActorOf(geom))  // Hitman
+        return;
+    std::string path = PathOf(geom);
+    if (path.empty())
+        return;
+    int line = LineWith(MissionObjective::Reach, path);
+    bool exit = Doc().endWhenDone && Doc().exitPath == path;
+    if (line) {
+        ImGui::TextDisabled("the place of objective %d", line);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("edit")) {
+            g_selSlot = line;
+            overlay::ShowPanel("Mission");
+        }
+    } else {
+        ImGui::BeginDisabled(full);
+        if (ImGui::Button("Hitman has to get here"))
+            NewGoal(MissionObjective::Reach, path);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip(full ? "The laptop has 6 lines, all in use"
+                                   : "A new objective: \"Reach ...\", done when Hitman gets near it");
+        ImGui::SameLine();
+    }
+    if (exit) {
+        ImGui::TextDisabled("the mission's exit");
+    } else if (ImGui::Button("Make it the exit")) {
+        Doc().endWhenDone = true;
+        Doc().exitPath = path;
+        Changed();
+        g_status = "the mission ends when every objective is done and Hitman reaches " + Label(path);
+        overlay::ShowPanel("Mission");
+    }
+    if (!exit && ImGui::IsItemHovered())
+        ImGui::SetTooltip("The mission is completed when every objective is done and Hitman gets here");
+}
+
 bool MissionPicking() { return g_pick != PickKind::None && engine::SceneDataValid(); }
 
 void UpdateMissionPick()

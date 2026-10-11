@@ -24,6 +24,7 @@
 #include "highlight.h"
 #include "history.h"
 #include "level.h"
+#include "mission.h"
 #include "model.h"
 #include "npc_docs.h"
 #include "npcs.h"
@@ -1198,9 +1199,11 @@ void DrawPanel()
         }
     }
 
-    if (g_target)
+    if (g_target) {
         DrawTarget();
-    else
+        if (g_target)
+            DrawMissionForSelection(g_target);
+    } else
         ImGui::TextDisabled("Select a character (click it, or in the list below) to see and change its behaviour.");
     DrawList();
     DrawPlace();

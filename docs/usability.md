@@ -42,5 +42,8 @@ proposed. Done items are marked.
    Mission > Test > Save, each step's state shown (what is still missing).
 6. **Placing on the network**: an option that snaps route points and
    characters to the nearest walkable cell (engine::PathCellBelow).
-7. **Mission goals from the selection**: "make this the target" / "make this
-   the exit" on the selected object (the Mission panel asks for a pick now).
+7. **Mission goals from the selection** (done): the inspector (and the NPC
+   panel for a character) has a Mission row: "Make it a target" (a new kill
+   objective), "Hitman has to get here" (a new reach objective), "Make it
+   the exit" (completed when every objective is done and Hitman gets there);
+   an object already used says which line it is, with "edit".

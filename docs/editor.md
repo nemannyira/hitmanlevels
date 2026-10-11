@@ -1,0 +1,71 @@
+# Making a level
+
+A level is a folder in the game's `Mods\` directory: `level.json` (what is
+changed on one map of the game) and its Lua scripts. It is played by loading
+its map; the editor applies the changes when the map has loaded.
+
+F8 opens and closes the editor (H2Fix.ini `[Editor] ToggleKey`), F1 lists
+every key.
+
+## The steps
+
+The top of the Level tab shows them, green when done, amber when something
+is missing; a click goes where the step is done.
+
+**Map**: in the main menu, *Level Editor > New level*: a map, a name, and whether
+the map is emptied (*Empty map*: its characters, items and objectives go;
+*No buildings either*: only the sky stays, with a floor to stand on). Or, on
+a map already loaded: *File > New level on this scene*. *Open a
+level* / *File > Open level* loads a saved one.
+
+**Place**:
+
+* *Models* tab: the map's models (and *Other levels...*: models of the other
+  maps, they come with the map when it loads again). Click a model, then
+  click in the world: Shift+click places more, the wheel turns it, Ctrl puts
+  it on the grid, N stands it upright or along the surface.
+* Click an object in the world to select it (the *Scene* tab lists them all):
+  the gizmo moves (W) or rotates (E) it, G puts it onto the surface under the
+  mouse, H hides it, Ctrl+D copies it, Del removes a copy. Ctrl+Z / Ctrl+Y
+  undo / redo.
+* *NPCs* tab: choose a character and a behaviour, *Place character*, click in
+  the world. *Onto the paths* (on by default) puts it, and new route points,
+  on the nearest place characters can walk (2 m at most); a red ring means
+  none is near: it would stand there and not walk. *Testing > Path network*
+  shows where they can walk. A selected character shows its routes; *Add
+  points...* adds points to one.
+* A placed character is real (behaviour, collision, can be shot) only after
+  the map loads again: *Test now (save and reload)*.
+
+**Mission**:
+
+* *Mission* tab: the laptop's briefing and objective lines, what completes
+  each (the level's own logic, a character's death, Hitman reaching a place),
+  the mission's end and the music.
+* Quicker from a selection: the Inspector's *Mission* row: *Make it a
+  target* (a character), *Hitman has to get here*, *Make it the exit*.
+* A story of your own: Lua scripts. *Level > Scripts > New script from a
+  template* writes one with the usual parts; *Run now* runs the scripts again
+  without loading the map. The whole API: [lua.md](lua.md). The console
+  (`` ` ``) runs Lua lines; Tab completes names.
+
+**Test**: the toolbar's *Test* saves, loads the map again and starts it
+with Hitman where he is, where the camera looks or at the level's start. The
+*Testing* panel: game speed, freeze, god mode, invisible Hitman, the path
+network. The Level tab's *Problems* list shows what would go wrong: characters
+and route points off the path network, objectives whose target is gone,
+missing script files, the scripts' errors since they last ran.
+
+**Save**: Ctrl+S or *Save* in the toolbar.
+
+## Where things are
+
+| | |
+|---|---|
+| left | tabs: Scene (every object), Models, NPCs, Level, Mission |
+| right | Camera (free camera, speed, view distance), Inspector (the selection), Testing |
+| bottom | Lua console (`` ` ``) |
+| toolbar | Objects / NPCs picking, Move / Rotate, World / Local, Grab, Snap, Undo / Redo, Save, Test, Freeze |
+
+Tab hides the panels (the game's view only). The free camera: hold the right
+mouse button and use W A S D, Q / E, Shift faster, the wheel for its speed.

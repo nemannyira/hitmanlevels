@@ -361,7 +361,10 @@ void DrawLayout()
                     continue;
                 ImGuiTabItemFlags flags = g_selectTab == p.name ? ImGuiTabItemFlags_SetSelected : 0;
                 if (ImGui::BeginTabItem(p.name, nullptr, flags)) {
-                    p.draw();
+                    // the tab's own scroll region: the tabs stay at the top, whole (not narrowed by a scrollbar)
+                    if (ImGui::BeginChild("content"))
+                        p.draw();
+                    ImGui::EndChild();
                     ImGui::EndTabItem();
                 }
             }

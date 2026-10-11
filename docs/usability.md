@@ -38,8 +38,11 @@ proposed. Done items are marked.
    what is being done (editor, camera, selection, placing, playing), the
    configured ToggleKey / FreezeKey / SpeedKey by their names; the menu bar
    shows "F1: keys" and the real editor key.
-5. **One workflow line** at the top of the Level panel: Map > Place >
-   Mission > Test > Save, each step's state shown (what is still missing).
+5. **One workflow line** (done) at the top of the Level panel: Map > Place >
+   Mission > Test > Save, green when the step is done, amber when something
+   is missing (the map not loaded, nothing placed, an emptied map without
+   objectives, problems, unsaved changes); the tooltip says what, a click
+   goes there (loads the map, opens the tab, saves).
 6. **Placing on the network** (done, NPCs panel > "Onto the paths", on by
    default): a placed character, a new route point and a new point for a
    behaviour's setting go to the nearest walkable place (engine::

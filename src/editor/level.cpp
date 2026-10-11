@@ -657,14 +657,21 @@ std::vector<Problem> FindProblems()
     return out;
 }
 
-void DrawProblems()
+std::vector<Problem> g_problems;  // FindProblems, once a second
+
+const std::vector<Problem>& Problems()
 {
-    static std::vector<Problem> problems;
     static double next;
     if (NowMs() >= next) {
         next = NowMs() + 1000.0;
-        problems = FindProblems();
+        g_problems = FindProblems();
     }
+    return g_problems;
+}
+
+void DrawProblems()
+{
+    const std::vector<Problem>& problems = Problems();
     ImGui::SeparatorText(problems.empty() ? "No problems found" : "Problems");
     for (size_t i = 0; i < problems.size(); ++i) {
         ImGui::PushID(int(i));
@@ -680,6 +687,82 @@ void DrawProblems()
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f), "%s", problems[i].text.c_str());
         ImGui::PopTextWrapPos();
         ImGui::PopID();
+    }
+}
+
+// The steps of making a level, each with its state; a click goes where the step is done.
+void DrawWorkflow()
+{
+    const LevelDocument& L = g_level;
+    bool onMap = !CurrentScene().empty() && (L.baseScene.empty() || L.baseScene == CurrentScene());
+    int placed = int(L.objects.size() + L.spawned.size() + L.npcs.size() + L.lists.size());
+    int goals = int(L.mission.objectives.size());
+    bool mission = goals > 0 || !L.emptyMap;  // the base level's own stays when not emptied
+    int problems = int(Problems().size());
+    bool saved = !L.folder.empty() && !L.dirty;
+
+    struct Step {
+        std::string label;
+        bool ok;
+        std::string tip;
+    };
+    Step steps[] = {
+        {"Map", onMap,
+         onMap ? "The level's map is loaded (" + CurrentScene() + ")"
+               : "The level is for " + L.baseScene + ": click to load it"},
+        {placed ? "Place " + std::to_string(placed) : "Place", placed > 0,
+         placed ? std::to_string(placed) + " changes (objects, characters, routes): Models / NPCs / Scene tabs"
+                : "Nothing changed on the map yet: Models tab places objects, NPCs tab characters"},
+        {goals ? "Mission " + std::to_string(goals) : "Mission", mission,
+         goals ? std::to_string(goals) + " objectives of the level's own: Mission tab"
+               : (L.emptyMap ? "The map was emptied: the mission needs objectives (Mission tab) or a script"
+                             : "The base level's own mission (Mission tab changes it)")},
+        {problems ? "Test " + std::to_string(problems) + "!" : "Test", problems == 0,
+         problems ? std::to_string(problems) + " problems below: fix them, then test (Testing tab)"
+                  : "No problems found: try it (Testing tab: test from here, freeze, game speed)"},
+        {L.dirty ? "Save *" : "Save", saved,
+         L.folder.empty() ? "Not saved yet: click to give it a name"
+                          : (L.dirty ? "Unsaved changes: click (or Ctrl+S) to save" : "Saved in Mods\\" + L.folder)},
+    };
+    float avail = ImGui::GetContentRegionAvail().x, x = 0.0f;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    for (int i = 0; i < 5; ++i) {
+        const Step& s = steps[i];
+        float w = ImGui::CalcTextSize(s.label.c_str()).x + style.FramePadding.x * 2;
+        float arrow = i ? ImGui::CalcTextSize(">").x + style.ItemSpacing.x * 2 : 0.0f;
+        if (i && x + arrow + w <= avail) {
+            ImGui::SameLine();
+            ImGui::TextDisabled(">");
+            ImGui::SameLine();
+            x += arrow;
+        } else {
+            x = 0.0f;
+        }
+        x += w;
+        ImVec4 color = s.ok ? ImVec4(0.25f, 0.55f, 0.3f, 1.0f) : ImVec4(0.7f, 0.5f, 0.15f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Button, color);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(color.x + 0.1f, color.y + 0.1f, color.z + 0.1f, 1.0f));
+        ImGui::PushID(i);
+        bool clicked = ImGui::SmallButton(s.label.c_str());
+        ImGui::PopID();
+        ImGui::PopStyleColor(2);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", s.tip.c_str());
+        if (!clicked)
+            continue;
+        switch (i) {
+        case 0:
+            if (!onMap && !L.baseScene.empty()) {
+                std::string err;
+                if (!ReloadLevelMap(&err))
+                    g_status = "the map was not loaded: " + err;
+            }
+            break;
+        case 1: overlay::ShowPanel("Models"); break;
+        case 2: overlay::ShowPanel("Mission"); break;
+        case 3: overlay::ShowPanel("Testing"); break;
+        default: SaveShortcut(); break;
+        }
     }
 }
 
@@ -771,6 +854,7 @@ void DrawScripts()
 void DrawPanel()
 {
     LevelDocument& L = g_level;
+    DrawWorkflow();
     ImGui::Text("%s%s", L.name.c_str(), L.dirty ? " *" : "");
     if (L.folder.empty())
         ImGui::TextWrapped("Not saved anywhere yet: File > New level creates a level for this scene, "

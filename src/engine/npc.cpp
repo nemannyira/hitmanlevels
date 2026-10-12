@@ -6,6 +6,7 @@
 
 #include "../game.h"
 #include "../hook.h"
+#include "../loader.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../scene.h"
@@ -867,8 +868,45 @@ bool SetActorCollides(ZGEOM* actor, bool on)
     return changed;
 }
 
+// A weapon's attached parts are placed each frame by a loop over a list of
+// references (the item at +0xBB, vfuncs 0x48 first / 0x50 next; 0x474E70):
+// each is looked up (0x422B00) and used without a check. A weapon given with
+// h2.give while copies of it lay on the map had a reference that no longer
+// leads anywhere: drawing it read address 8 (0x474E82) and the game went down
+// (2026-10-12, P5). The lookup's caller is sent on to the next element when the
+// reference is dead (0x474F8F, the loop's "next": the stack as at its own skip).
+constexpr uintptr_t kPartsLookupCall = 0x474E7D;  // call 0x422B00 (ref -> its entry)
+constexpr uintptr_t kRefLookup = 0x422B00;
+constexpr uintptr_t kPartsNext = 0x474F8F;
+volatile long g_deadPartRefs;
+
+__declspec(naked) void PartsLookupThunk()
+{
+    __asm {
+        push dword ptr [esp + 4]  // the reference (ecx: the engine, as the caller set it)
+        mov eax, kRefLookup
+        call eax                  // __thiscall, pops its argument
+        test eax, eax
+        jnz found
+        lock inc g_deadPartRefs
+        mov eax, kPartsNext     // (eax and ecx are loaded anew there)
+        mov dword ptr [esp], eax  // back into the loop at its next element
+    found:
+        ret 4
+    }
+}
+
 void InstallNpc()
 {
+    {
+        uint8_t original[5] = {0xE8}, call[5] = {0xE8};
+        int32_t rel = int32_t(kRefLookup - (kPartsLookupCall + 5));
+        memcpy(original + 1, &rel, 4);
+        rel = int32_t(reinterpret_cast<uintptr_t>(&PartsLookupThunk) - (kPartsLookupCall + 5));
+        memcpy(call + 1, &rel, 4);
+        PatchBytes(reinterpret_cast<void*>(kPartsLookupCall), original, call, 5,
+                   "weapon parts: a dead reference skipped");
+    }
     Hook("ZLIST_ActorCollision init", kActorCollision_Init, &hkActorCollisionInit, &oActorCollisionInit);
     Hook("ZITEM::SetOwner", kItem_SetOwner, &hkItemSetOwner, &oItemSetOwner);
     Hook("AllocRefTab (references made while playing)", kAllocRefTab, &hkAllocRefTab, &oAllocRefTab);

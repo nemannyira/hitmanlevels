@@ -947,10 +947,23 @@ void DrawLineEditor(int slot)
     // remove / back to the level's
     ImGui::Spacing();
     if (o) {
-        if (ImGui::SmallButton(own.empty() ? "Remove this objective" : "Back to the level's own")) {
-            Doc().objectives.erase(Doc().objectives.begin() + (o - Doc().objectives.data()));
-            CurrentLevel().dirty = true;
-            ShowLines({slot});
+        // not in the undo history: asked first
+        if (ImGui::SmallButton(own.empty() ? "Remove this objective..." : "Back to the level's own..."))
+            ImGui::OpenPopup("remove objective");
+        if (ImGui::BeginPopup("remove objective")) {
+            ImGui::Text(own.empty() ? "Remove objective %d? (Undo does not bring it back)"
+                                    : "Objective %d back to the level's own line and goal?",
+                        slot);
+            if (ImGui::Button(own.empty() ? "Remove" : "Back to the level's own")) {
+                Doc().objectives.erase(Doc().objectives.begin() + (o - Doc().objectives.data()));
+                CurrentLevel().dirty = true;
+                ShowLines({slot});
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
         }
     }
     ImGui::EndChild();

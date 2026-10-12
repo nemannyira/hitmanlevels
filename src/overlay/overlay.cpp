@@ -195,7 +195,8 @@ void ViewMenu()
                 ImGui::MenuItem(p.name, nullptr, p.visible);
     ImGui::Separator();
     ImGui::MenuItem("Hide panels", "Tab", &g_panelsHidden);
-    ImGui::MenuItem("ImGui demo", nullptr, &g_showDemo);
+    if (g_config.devCommands)  // a developer's tool
+        ImGui::MenuItem("ImGui demo", nullptr, &g_showDemo);
 }
 
 // a virtual key's name as the keyboard shows it ("F8", "Pause", "Scroll Lock")

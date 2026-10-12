@@ -297,8 +297,12 @@ void Shortcuts()
 void DrawToolbar()
 {
     if (ImGui::RadioButton("Objects", !g_npcMode)) g_npcMode = false;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("A click in the world selects an object (a model, an item, a point)");
     ImGui::SameLine();
     if (ImGui::RadioButton("NPCs", g_npcMode)) g_npcMode = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("A click in the world selects a character (also through walls and models)");
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
@@ -307,8 +311,12 @@ void DrawToolbar()
     if (ImGui::RadioButton("Rotate (E)", g_op == ImGuizmo::ROTATE)) g_op = ImGuizmo::ROTATE;
     ImGui::SameLine();
     if (ImGui::RadioButton("World", g_mode == ImGuizmo::WORLD)) g_mode = ImGuizmo::WORLD;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The gizmo's arrows follow the map's axes (Q switches)");
     ImGui::SameLine();
     if (ImGui::RadioButton("Local (Q)", g_mode == ImGuizmo::LOCAL)) g_mode = ImGuizmo::LOCAL;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The gizmo's arrows follow the object's own axes (Q switches)");
     ImGui::SameLine();
     {
         engine::ZGEOM* sel = Selected();
@@ -321,9 +329,11 @@ void DrawToolbar()
     }
     ImGui::SameLine();
     ImGui::Checkbox("Snap", &g_snap);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Moving and turning with the gizmo goes in steps (set beside it)");
     if (g_snap) {
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(70);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4.5f);
         if (g_op == ImGuizmo::ROTATE)
             ImGui::DragFloat("##snap", &g_snapAngle, 1.0f, 1.0f, 90.0f, "%.0f deg");
         else
@@ -331,16 +341,23 @@ void DrawToolbar()
     }
     ImGui::SameLine();
     ImGui::Checkbox("Pick invisible", &g_pickInvisible);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("A click can select what the game does not draw too: points, hidden objects,\n"
+                          "collision boxes (the Scene tab lists everything)");
     ImGui::SameLine();
     ImGui::BeginDisabled(!CanUndo());
     if (ImGui::Button("Undo"))
         Undo();
     ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip(CanUndo() ? "Undo %s (Ctrl+Z)" : "Nothing to undo", UndoLabel().c_str());
     ImGui::SameLine();
     ImGui::BeginDisabled(!CanRedo());
     if (ImGui::Button("Redo"))
         Redo();
     ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip(CanRedo() ? "Redo %s (Ctrl+Y)" : "Nothing to redo", RedoLabel().c_str());
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();

@@ -198,6 +198,7 @@ std::string g_status;
 
 std::string ModsDir() { return GameDir() + "Mods\\"; }
 bool g_openSaveAs;           // Ctrl+S without a level: the name is asked
+bool g_askRevert;            // File > Show the map without the level: asked first
 char g_saveAsName[64] = "My level";
 std::string g_saveStatus;
 double g_saveStatusTime;
@@ -976,15 +977,12 @@ void DrawPanel()
     std::string toDelete;
     for (auto& s : L.spawned) {
         ImGui::PushID(s.id.c_str());
-        if (ImGui::SmallButton("delete"))
-            toDelete = s.id;
-        ImGui::SameLine();
         engine::ZGEOM* g = LiveSpawned(s.id);
-        if (g) {
-            if (ImGui::SmallButton("select"))
-                Select(g);
-            ImGui::SameLine();
-        }
+        ImGui::BeginDisabled(!g);
+        if (ImGui::SmallButton("select") && g)
+            Select(g);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
         // "KeyRoom_item+1" -> "KeyRoom", with what it is
         std::string name = s.id.substr(0, s.id.find('+'));
         if (s.item && name.size() > 5 && name.compare(name.size() - 5, 5, "_item") == 0)
@@ -998,6 +996,11 @@ void DrawPanel()
         }
         if (ImGui::IsItemHovered() && !s.sourcePath.empty())
             ImGui::SetTooltip("%s\nfrom %s", s.id.c_str(), s.sourcePath.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("delete"))
+            toDelete = s.id;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(g ? "Takes it out of the level (Ctrl+Z undoes)" : "Takes it out of the level");
         ImGui::PopID();
     }
     if (!toDelete.empty()) {
@@ -1013,15 +1016,13 @@ void DrawPanel()
     std::string toRevert;
     for (auto& [path, e] : L.objects) {
         ImGui::PushID(path.c_str());
-        if (ImGui::SmallButton("revert"))
-            toRevert = path;
-        ImGui::SameLine();
         engine::ZGEOM* g = Resolve(path);
-        if (g && IsLive(g)) {
-            if (ImGui::SmallButton("select"))
-                Select(g);
-            ImGui::SameLine();
-        }
+        bool live = g && IsLive(g);
+        ImGui::BeginDisabled(!live);
+        if (ImGui::SmallButton("select") && live)
+            Select(g);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
         // the object's name (a character's part: its group's too), the path in the tooltip
         size_t slash = path.rfind('/');
         std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
@@ -1042,6 +1043,11 @@ void DrawPanel()
                 what += what.empty() ? "moved" : ", moved";
         }
         ImGui::TextDisabled("%s", what.empty() ? (e.state.hidden ? "hidden" : "moved") : what.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("revert"))
+            toRevert = path;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Back as the map has it (Ctrl+Z undoes)");
         ImGui::PopID();
     }
     if (!toRevert.empty()) {
@@ -1086,11 +1092,16 @@ void FileMenu()
         g_status = SaveLevel(&err) ? "saved" : "save failed: " + err;
     }
     ImGui::Separator();
-    if (ImGui::MenuItem("Apply to the scene"))
+    if (ImGui::MenuItem("Put the level on this map"))
         g_status = "applied " + std::to_string(ApplyLevel()) + " objects and edits";
-    if (ImGui::MenuItem("Revert the scene"))
-        RevertLevel(), g_status = "reverted";
-    ImGui::MenuItem("Apply automatically", nullptr, &g_autoApply);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Makes the level's objects and changes on the loaded map again (as when it loads)");
+    if (ImGui::MenuItem("Show the map without the level..."))
+        g_askRevert = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The map as the game has it: the level's objects go, moved objects go back.\n"
+                          "The level itself stays (Put the level on this map brings it back).");
+    ImGui::MenuItem("Put the level on the map when it loads", nullptr, &g_autoApply);
 }
 
 } // namespace
@@ -1536,6 +1547,24 @@ void DrawSaveControl()
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    if (g_askRevert) {
+        g_askRevert = false;
+        ImGui::OpenPopup("Show the map without the level?");
+    }
+    if (ImGui::BeginPopupModal("Show the map without the level?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("The level's objects and characters go from the map, moved objects go back.\n"
+                               "The level is kept: File > Put the level on this map brings it back.\n"
+                               "Undo does not.");
+        if (ImGui::Button("Show the map without it")) {
+            RevertLevel();
+            g_status = "the map without the level (File > Put the level on this map brings it back)";
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }

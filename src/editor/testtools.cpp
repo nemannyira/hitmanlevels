@@ -348,7 +348,7 @@ void DrawPanel()
     }
     ImGui::NewLine();
     bool frozen = WorldFrozenWhilePlaying();
-    if (ImGui::Checkbox("Frozen", &frozen))
+    if (ImGui::Checkbox("Freeze while playing", &frozen))
         SetWorldFrozenWhilePlaying(frozen);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The world stands still also with the editor closed (Hitman too).%s",

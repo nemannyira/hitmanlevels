@@ -163,10 +163,17 @@ void DrawInspector()
     }
     engine::ZGEOM* geom = info->geom;
     ImGui::Text("%s", info->name.empty() ? "<unnamed>" : info->name.c_str());
-    ImGui::TextWrapped("class: %s", engine::ClassChain(geom).c_str());
-    ImGui::TextDisabled("path: %s", info->path.c_str());
-    ImGui::TextDisabled("geom %p  node %p  flags %08X", static_cast<void*>(geom), static_cast<void*>(info->node),
-                        info->node->flags);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%s)", info->className.c_str());
+    if (ImGui::TreeNode("details")) {  // the engine's view: for scripts (h2.find) and debugging
+        ImGui::TextWrapped("class: %s", engine::ClassChain(geom).c_str());
+        ImGui::TextWrapped("path: %s", info->path.c_str());
+        if (ImGui::SmallButton("copy path"))
+            ImGui::SetClipboardText(info->path.c_str());
+        ImGui::TextDisabled("geom %p  node %p  flags %08X", static_cast<void*>(geom), static_cast<void*>(info->node),
+                            info->node->flags);
+        ImGui::TreePop();
+    }
     if (info->parent) {
         const engine::GeomInfo* parent = FindInfo(info->parent->geom);
         ImGui::Text("parent: %s", parent ? parent->name.c_str() : "?");

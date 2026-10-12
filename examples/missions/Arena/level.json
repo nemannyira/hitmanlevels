@@ -1,0 +1,443 @@
+{
+  "base_scene": "C1-1\\C1-1__MAIN",
+  "blank_map": true,
+  "empty_map": true,
+  "format": "h2level",
+  "imports": [
+    {
+      "level": "C3-3",
+      "mesh": 6341746,
+      "name": "Yard_06-7-8"
+    }
+  ],
+  "lists": [],
+  "mission": {
+    "end_when_done": true,
+    "exit": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01/Point+1",
+    "exit_radius": 300.0,
+    "objectives": [
+      {
+        "goal": "kill",
+        "replaces_original": true,
+        "slot": 1,
+        "target": "ROOT/NPC_BodyguardMafia_01_1_Group/NPC_BodyguardMafia_01_1",
+        "text": "Eliminate the bodyguard on the left"
+      },
+      {
+        "goal": "kill",
+        "replaces_original": true,
+        "slot": 2,
+        "target": "ROOT/NPC_BodyguardMafia_01_2_Group/NPC_BodyguardMafia_01_2",
+        "text": "Eliminate the bodyguard in the middle"
+      },
+      {
+        "goal": "kill",
+        "replaces_original": true,
+        "slot": 3,
+        "target": "ROOT/NPC_BodyguardMafia_01_3_Group/NPC_BodyguardMafia_01_3",
+        "text": "Eliminate the bodyguard on the right"
+      }
+    ],
+    "base_ends": false
+  },
+  "name": "Arena",
+  "npc_edits": [],
+  "npcs": [
+    {
+      "behaviour": "scripts\\C1\\C1_1\\BaseGuard.sdl",
+      "id": "NPC_BodyguardMafia_01_1",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "BodyguardMafia_01",
+      "params": [
+        {
+          "name": "m_iHitpoints",
+          "type": "LONG",
+          "value": "20"
+        },
+        {
+          "name": "Mute",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "WeaponTemplate",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/AllLevels/Equipment.zip/AllLevels/Weapons.zip/Weapons/GunBeretta92"
+        },
+        {
+          "name": "MayHolsterWeapon",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "ReactionTime",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "GuardPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_Arbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/2ndFloor_Arbiter"
+        },
+        {
+          "name": "IsSentry",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "SentryRadius",
+          "type": "FLOAT",
+          "value": "500"
+        },
+        {
+          "name": "RunAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "SneakAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "TrespassAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "Xenophobia",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "PostManAllowed",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "AtKitchenGate",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "ProtectPoint",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/Bedrooms/ProtectPoint1#1"
+        },
+        {
+          "name": "m_rDistractPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_PanicArbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/PanicArbiter"
+        }
+      ],
+      "pos": [
+        7300.0,
+        973.0,
+        -5200.0
+      ],
+      "record": 2350
+    },
+    {
+      "behaviour": "scripts\\C1\\C1_1\\BaseGuard.sdl",
+      "id": "NPC_BodyguardMafia_01_2",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "BodyguardMafia_01",
+      "params": [
+        {
+          "name": "m_iHitpoints",
+          "type": "LONG",
+          "value": "20"
+        },
+        {
+          "name": "Mute",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "WeaponTemplate",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/AllLevels/Equipment.zip/AllLevels/Weapons.zip/Weapons/GunBeretta92"
+        },
+        {
+          "name": "MayHolsterWeapon",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "ReactionTime",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "GuardPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_Arbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/2ndFloor_Arbiter"
+        },
+        {
+          "name": "IsSentry",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "SentryRadius",
+          "type": "FLOAT",
+          "value": "500"
+        },
+        {
+          "name": "RunAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "SneakAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "TrespassAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "Xenophobia",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "PostManAllowed",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "AtKitchenGate",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "ProtectPoint",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/Bedrooms/ProtectPoint1#1"
+        },
+        {
+          "name": "m_rDistractPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_PanicArbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/PanicArbiter"
+        }
+      ],
+      "pos": [
+        8100.0,
+        973.0,
+        -5400.0
+      ],
+      "record": 2350
+    },
+    {
+      "behaviour": "scripts\\C1\\C1_1\\BaseGuard.sdl",
+      "id": "NPC_BodyguardMafia_01_3",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "BodyguardMafia_01",
+      "params": [
+        {
+          "name": "m_iHitpoints",
+          "type": "LONG",
+          "value": "20"
+        },
+        {
+          "name": "Mute",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "WeaponTemplate",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/AllLevels/Equipment.zip/AllLevels/Weapons.zip/Weapons/GunBeretta92"
+        },
+        {
+          "name": "MayHolsterWeapon",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "ReactionTime",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "GuardPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_Arbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/2ndFloor_Arbiter"
+        },
+        {
+          "name": "IsSentry",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "SentryRadius",
+          "type": "FLOAT",
+          "value": "500"
+        },
+        {
+          "name": "RunAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "SneakAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "TrespassAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "Xenophobia",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "PostManAllowed",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "AtKitchenGate",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "ProtectPoint",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/Bedrooms/ProtectPoint1#1"
+        },
+        {
+          "name": "m_rDistractPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_PanicArbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/PanicArbiter"
+        }
+      ],
+      "pos": [
+        8900.0,
+        973.0,
+        -5500.0
+      ],
+      "record": 2350
+    }
+  ],
+  "objects": [],
+  "scripts": [
+    "main.lua"
+  ],
+  "spawned": [
+    {
+      "hidden": false,
+      "id": "Yard_06-7-8.C3-3.60C472+1",
+      "matrix": [
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01",
+      "pos": [
+        8391.4248046875,
+        972.589599609375,
+        -7935.36865234375
+      ],
+      "source_path": "ROOT/EditorImports/Yard_06-7-8.C3-3.60C472",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    },
+    {
+      "hidden": false,
+      "id": "Point+1",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01",
+      "pos": [
+        9100.0,
+        973.0,
+        -4950.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    }
+  ],
+  "version": 1
+}

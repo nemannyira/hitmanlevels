@@ -335,6 +335,13 @@ int Level(lua_State* L)
     editor::LevelDocument& d = editor::CurrentLevel();
     if (op == "new") {
         editor::NewLevel(arg.empty() ? "Test" : arg, CurrentScene());
+    } else if (op == "newblank") {  // the launcher's New level: emptied, no buildings, the C3-3 yard to stand on
+        editor::NewLevel(arg.empty() ? "Test" : arg, CurrentScene());
+        editor::SetEmptyMap(true);
+        editor::SetBlankMap(true);
+        editor::SetFloor("C3-3", 0x60C472, "Yard_06-7-8");
+        if (!editor::SaveLevel(&err))
+            return luaL_error(L, "save: %s", err.c_str());
     } else if (op == "save") {
         if (!editor::SaveLevel(&err))
             return luaL_error(L, "save: %s", err.c_str());

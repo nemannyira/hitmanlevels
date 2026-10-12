@@ -206,7 +206,7 @@ bool CallLevel(int index)
     __try {
         VFunc<void(__thiscall*)(void*)>(g_level, index)(g_level);
         return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (Log("mission: level routine %d raised %08X", index, GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
 }
@@ -640,7 +640,11 @@ void Check()
         if (!exit || DistanceToPlayer(exit) > Doc().exitRadius)
             return;
     }
-    g_ended = CompleteMission();
+    // once: on a blank map the level's MissionCompleted got the end screen up but stopped with an
+    // exception (caught: false), and the check called it again every quarter second (Arena, 2026-10-12)
+    g_ended = true;
+    if (!CompleteMission())
+        Log("mission: the level's end did not return (its end screen may still have come)");
 }
 
 void OnScene(const std::string&)
@@ -753,8 +757,15 @@ bool AutoText(const std::string& text)
 void SetTarget(MissionObjective& o, const std::string& path)
 {
     o.target = path;
-    if (AutoText(o.text) && !path.empty())  // the laptop's text follows the new target
-        o.text = (o.goal == MissionObjective::Kill ? "Kill " : "Reach ") + Label(path);
+    if (AutoText(o.text) && !path.empty()) {  // the laptop's text follows the new target
+        std::string text = (o.goal == MissionObjective::Kill ? "Kill " : "Reach ") + Label(path);
+        // three bodyguards of one model are three lines of one text: numbered
+        int same = 1;
+        for (const MissionObjective& other : Doc().objectives)
+            if (&other != &o && other.text.rfind(text, 0) == 0)
+                ++same;
+        o.text = same > 1 ? text + " (" + std::to_string(same) + ")" : text;
+    }
     Changed();
 }
 

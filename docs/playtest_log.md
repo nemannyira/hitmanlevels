@@ -42,6 +42,11 @@ users are guided around it), **open**.
 | P14 | Estate Run | After `setpos` across the map Hitman sometimes fell through the ground (y -39009) and died; the game's pause menu then stops the clock | open: seen with the test player's long moves only; a story script should move him to a spot near him, or test it |
 | P15 | Estate Run | Completing a level counts as completing its base map in the profile (here C1-1's Silent Assassin bonus weapon was awarded) | open (known: docs/roadmap.md section 3, a map of its own) |
 | P16 | Estate Run | A subtitle and an info line share one place on the screen: the first "seconds left" info hid the start subtitle | a script's care (docs/lua.md says so); the example fixed |
+| P17 | Arena | On a map with *No buildings*, copies of the map's own models (Models tab, Ctrl+D, `h2.spawn`) are not drawn, though placed, not hidden, in the right room; the same copies on the normal map are | open; partly: such a copy gets its model's collision back (taking a model out is one setting for all its objects: the map's own ones that stay out are moved under the map until it is restored). Build blank maps with models of other levels (as the floor) |
+| P18 | Arena | A copy placed at a position (`h2.dev_edit("dup")`, the editor's duplicate at a place) went into its source's room: far from it, unseen | fixed: the room of its place, as points |
+| P19 | Arena | Three targets of one model got the same laptop text ("Kill BodyguardMafia_01 (placed)" three times) | fixed: numbered (2), (3) |
+| P20 | Arena | A guard standing on the floor from another level fell through it (it is made a moment after the level's characters) and stood 2 m below | fixed: shortly after the level is applied, its characters far below their place are put back |
+| P21 | Arena | On the blank map the level's *MissionCompleted* stops on an assert (int3, caught) after the end screen came up; the editor's goal check then called it again every quarter second (49 times) | fixed: once per map; the exception is logged |
 
 ## How the levels were played
 

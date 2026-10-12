@@ -170,6 +170,7 @@ int SpawnFrom(lua_State* L, engine::ZGEOM* source, int arg)
     engine::ZGEOM* g = editor::SpawnClone(source, name, &err, placed ? editor::RoomAt(t.pos) : nullptr);
     if (!g)
         return luaL_error(L, "spawn failed: %s", err.c_str());
+    editor::UseBlankedMesh(engine::MeshOf(g));
     g_scriptObjects.push_back(g);
     if (!placed) {
         float c[3], r = 100.0f;

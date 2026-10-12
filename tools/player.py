@@ -82,8 +82,27 @@ def shoot(times=1):
         time.sleep(0.6)
 
 
-def look_at(x, y, z):
-    """Turns him (the camera) towards a point: a shot then goes there."""
-    p = pos()
-    lua('local p = h2.player() p:setrot(%f) return 1' % _angle(x - p[0], z - p[2]))
-    time.sleep(0.3)
+def heading():
+    """Where the camera (and a step forward) points: a short step measures it."""
+    a = pos()
+    lua('h2.dev_key(%d, 0.25) return 1' % DIK_W)
+    time.sleep(0.45)
+    b = pos()
+    if math.hypot(b[0] - a[0], b[2] - a[2]) < 5:
+        return None
+    return _angle(b[0] - a[0], b[2] - a[2])
+
+
+def aim_at(x, z, tries=4):
+    """Turns the view (the crosshair) towards (x, z)."""
+    for _ in range(tries):
+        h = heading()
+        if h is None:
+            return False
+        p = pos()
+        err = _diff(_angle(x - p[0], z - p[2]), h)
+        if abs(err) < 3:
+            return True
+        lua('h2.dev_look(%d, 0) return 1' % int(err * MICKEYS_PER_DEGREE))
+        time.sleep(0.5)
+    return True

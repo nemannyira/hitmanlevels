@@ -212,6 +212,8 @@ bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& point
 void SetEmptyMap(bool empty);
 // Takes the scene's buildings out too (blank map) or puts them back.
 void SetBlankMap(bool blank);
+// A copy of one of the map's models was made (shown also when the blank map took the model out).
+void UseBlankedMesh(uint32_t mesh);
 // The level gets a model of another level as its floor: under Hitman, once
 // the map is loaded with it.
 void SetFloor(const std::string& level, uint32_t mesh, const std::string& name);

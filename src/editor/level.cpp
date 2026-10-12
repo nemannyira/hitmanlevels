@@ -89,6 +89,8 @@ void ClearScene()
 struct Blanked {
     engine::ZGEOM* geom;
     uint32_t mesh;
+    bool moved = false;   // under the map: a copy of its model is used (UseBlankedMesh)
+    Transform original{};
 };
 std::vector<Blanked> g_blanked;
 
@@ -132,6 +134,8 @@ void RestoreBlank()
     for (const Blanked& b : g_blanked) {
         if (!IsLive(b.geom))
             continue;
+        if (b.moved)
+            SetTransform(b.geom, b.original);
         SetHidden(b.geom, false);
         engine::SetModelSolid(b.mesh, true);
     }
@@ -151,9 +155,37 @@ void SyncBlanked(engine::ZGEOM* geom)
         return;
     bool shown = false;
     for (const Blanked& b : g_blanked)
-        if (b.mesh == mesh && IsLive(b.geom) && !IsHidden(b.geom))
+        if (b.mesh == mesh && IsLive(b.geom) && (!IsHidden(b.geom) || b.moved))
             shown = true;
     engine::SetModelSolid(mesh, shown);
+}
+
+// A copy of a model the blank map took out (Models tab, Ctrl+D, h2.spawn) was not drawn: taking a
+// model out is one setting of the model, for all its objects (engine::SetModelSolid). It is drawn
+// and stops things again then, so the map's own objects of it that stay out go far under the map
+// (their collision out of the way) until the map is restored (RestoreBlank).
+void ShowBlankedMesh(uint32_t mesh)
+{
+    if (!mesh)
+        return;
+    int n = 0;
+    for (const Blanked& b : g_blanked)
+        n += b.mesh == mesh && !b.moved;
+    if (!n)
+        return;
+    if (n > 400) {  // a model of half the map: moving them all would take long
+        Log("level: model %08X of the blank map has %d objects: its copies stay unseen", mesh, n);
+        return;
+    }
+    for (Blanked& b : g_blanked)
+        if (b.mesh == mesh && !b.moved && IsLive(b.geom) && IsHidden(b.geom)) {
+            b.original = GetTransform(b.geom);
+            Transform t = b.original;
+            t.pos[1] -= 100000.0f;
+            SetTransform(b.geom, t);
+            b.moved = true;
+        }
+    engine::SetModelSolid(mesh, true);
 }
 
 // characters whose scripts move them back (a van's driver, a cook going to her place) go again
@@ -303,6 +335,8 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
     engine::ZGEOM* g = s.item ? SpawnItem(source, error) : SpawnClone(source, s.id, error, parent);
     if (!g)
         return nullptr;
+    if (!s.item)
+        ShowBlankedMesh(engine::MeshOf(g));
     g_live[s.id] = g;
     ObjectState st;
     st.transform = s.transform;
@@ -606,6 +640,31 @@ void OnScene(const std::string& scene)
         e.hasOriginal = false;  // originals belong to the previous load
 }
 
+// The level's characters are made with the map, its objects (a floor from another level too) a
+// moment later: one standing on such a floor had fallen through it by then (Arena, 2026-10-12).
+// Shortly after the level is applied, a character of the level far below its place but not
+// gone from it (its behaviour did not walk it off) is put back.
+std::vector<double> g_fallChecks;
+
+void PutBackFallen()
+{
+    if (g_fallChecks.empty() || NowMs() < g_fallChecks.front())
+        return;
+    g_fallChecks.erase(g_fallChecks.begin());
+    for (const LevelNpc& n : g_level.npcs) {
+        engine::ZGEOM* g = LiveNpc(n.id);
+        if (!g || !IsLive(g))
+            continue;
+        Transform t = GetTransform(g);
+        float dx = t.pos[0] - n.transform.pos[0], dz = t.pos[2] - n.transform.pos[2];
+        if (t.pos[1] < n.transform.pos[1] - 50.0f && dx * dx + dz * dz < 100.0f * 100.0f) {
+            Log("level: character %s fell %.0f cm below its place: put back", n.id.c_str(),
+                n.transform.pos[1] - t.pos[1]);
+            SetTransform(g, n.transform);
+        }
+    }
+}
+
 void OnFrame()
 {
     KeepCleared();
@@ -617,6 +676,7 @@ void OnFrame()
             engine::ClassChainOfId(0, root);
             classesKnown = true;
         }
+    PutBackFallen();
     if (!g_applyPending || --g_applyWaitFrames > 0)
         return;
     g_applyPending = false;
@@ -624,6 +684,7 @@ void OnFrame()
     int n = ApplyLevel();
     Log("level '%s': applied %d/%d objects and edits", g_level.name.c_str(), n,
         int(g_level.objects.size() + g_level.spawned.size()));
+    g_fallChecks = {NowMs() + 500.0, NowMs() + 2000.0};
     RunLevelScripts();
 }
 
@@ -1676,6 +1737,11 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         s.transform.pos[0] += r < 50.0f ? 50.0f : (r > 500.0f ? 500.0f : r);
     }
     s.hidden = false;
+    // in the room of its place: the game draws a room's objects only where that room is seen
+    // (a copy left in its source's room stayed unseen far from it)
+    if (s.parentPath.empty())
+        if (engine::ZGEOM* room = RoomAt(s.transform.pos))
+            s.parentPath = PathOf(room);
     std::string err;
     engine::ZGEOM* g = Materialize(s, &err);
     if (!g)
@@ -2572,5 +2638,7 @@ void InstallLevelPanel()
     engine::SetImportProvider(ImportsFor);
     engine::SetSceneNpcProvider(NpcsFor);
 }
+
+void UseBlankedMesh(uint32_t mesh) { ShowBlankedMesh(mesh); }
 
 } // namespace h2::editor

@@ -1,0 +1,61 @@
+{
+  "base_scene": "C1-1\\C1-1__MAIN",
+  "format": "h2level",
+  "lists": [],
+  "name": "The Informant",
+  "npc_edits": [],
+  "npcs": [
+    {
+      "id": "NPC_DeliveryBoy_2",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "DeliveryBoy",
+      "pos": [
+        5460.0,
+        3.0,
+        -2224.0
+      ],
+      "record": 2366
+    }
+  ],
+  "objects": [],
+  "scripts": [
+    "main.lua"
+  ],
+  "spawned": [
+    {
+      "hidden": false,
+      "id": "Point+1",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01",
+      "pos": [
+        3547.0,
+        5.0,
+        -10797.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    }
+  ],
+  "version": 1
+}

@@ -601,11 +601,24 @@ bool LevelScriptError(const std::string& text)
     return false;
 }
 
+// Hitman in the clothes of a model of the map (the level's start_outfit): a character of it made
+// under the map gives him its clothes (h2.outfit) and stays out of sight.
+void DressHitman()
+{
+    if (g_level.startOutfit.empty())
+        return;
+    for (char c : g_level.startOutfit)
+        if (!(isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-'))
+            return;  // a model name only
+    script::ExecChunk("h2.outfit(\"" + g_level.startOutfit + "\")", "start_outfit");
+}
+
 void RunLevelScripts()
 {
     g_errorsFrom = script::ErrorSerial();
     script::ClearHandlers("level");
     script::DestroyScriptObjects();
+    DressHitman();
     for (const std::string& s : g_level.scripts) {
         // a file of the level's folder (a level from elsewhere names no other)
         if (s.empty() || s.find("..") != std::string::npos || s.find(':') != std::string::npos || s[0] == '\\' ||
@@ -976,6 +989,40 @@ void DrawScripts()
                                              "event, saved state)\nin the level's folder, run when the map loads");
 }
 
+// Level panel: the clothes Hitman starts the level in
+void DrawStartOutfit()
+{
+    LevelDocument& L = g_level;
+    static std::vector<std::string> models;
+    static std::string builtFor;
+    if (builtFor != CurrentScene()) {
+        builtFor = CurrentScene();
+        models.clear();
+        for (int r : NpcRecords()) {
+            std::string m = NpcModel(r);
+            if (!m.empty() && std::find(models.begin(), models.end(), m) == models.end())
+                models.push_back(m);
+        }
+        std::sort(models.begin(), models.end());
+    }
+    ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Hitman starts in").x - ImGui::GetStyle().ItemSpacing.x * 2);
+    if (ImGui::BeginCombo("Hitman starts in", L.startOutfit.empty() ? "his own suit" : L.startOutfit.c_str())) {
+        if (ImGui::Selectable("his own suit", L.startOutfit.empty())) {
+            L.startOutfit.clear();
+            L.dirty = true;
+        }
+        for (const std::string& m : models)
+            if (ImGui::Selectable(m.c_str(), L.startOutfit == m)) {
+                L.startOutfit = m;
+                L.dirty = true;
+            }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The disguise Hitman has when the level starts (the clothes of a character model of the map).\n"
+                          "Scripts: h2.outfit(model). It takes effect when the map loads (Test) or with Scripts > Run now.");
+}
+
 void DrawPanel()
 {
     LevelDocument& L = g_level;
@@ -1001,6 +1048,7 @@ void DrawPanel()
     }
     DrawProblems();
     DrawScripts();
+    DrawStartOutfit();
 
     bool empty = L.emptyMap;
     if (ImGui::Checkbox("Empty map", &empty))
@@ -1236,6 +1284,8 @@ bool SaveLevel(std::string* error)
         j["empty_map"] = true;
     if (g_level.blankMap)
         j["blank_map"] = true;
+    if (!g_level.startOutfit.empty())
+        j["start_outfit"] = g_level.startOutfit;
     if (!g_level.floorLevel.empty())
         j["place_floor"] = {{"level", g_level.floorLevel}, {"mesh", g_level.floorMesh}};
     if (!g_level.skyLevel.empty())
@@ -1386,6 +1436,9 @@ bool LoadLevel(const std::string& folder, std::string* error)
         }
         L.emptyMap = j.value("empty_map", false);
         L.blankMap = j.value("blank_map", false);
+        L.startOutfit = j.value("start_outfit", "");
+        if (L.startOutfit.size() > 64)
+            L.startOutfit.clear();
         if (j.contains("place_floor") && j["place_floor"].is_object()) {
             L.floorLevel = j["place_floor"].value("level", "");
             L.floorMesh = j["place_floor"].value("mesh", 0u);

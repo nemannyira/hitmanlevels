@@ -116,6 +116,7 @@ struct LevelDocument {
     std::string folder;  // Mods\<folder>
     std::string baseScene;
     bool emptyMap = false;  // the base scene's characters, items and objective lines are taken out
+    std::string startOutfit;  // Hitman starts in the clothes of this model ("" his own suit)
     bool blankMap = false;  // its buildings too: every model of the map but the sky (hidden, stopping nothing)
     // an imported model to put under Hitman when the map is next loaded (a new
     // blank map's floor); then it is an object of the level like the others

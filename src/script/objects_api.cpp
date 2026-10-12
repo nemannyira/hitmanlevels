@@ -1300,6 +1300,18 @@ void RegisterObjectsApi()
     Register("health", Health);
     Register("capacity", Capacity);
     Register("music", Music);
+    // h2.outfit(model): Hitman in the clothes of a character model of the map (as a level's
+    // start_outfit): one of it is made under the map, gives its clothes and stays out of sight
+    if (luaL_dostring(L, R"lua(
+      h2.outfit = function(model)
+        assert(type(model) == "string", "outfit: a character model name (h2.npcs() lists them)")
+        local x, y, z = h2.player():pos()
+        local n = h2.npc(model, x, y - 3000, z, 0, false)
+        h2.disguise(n)
+        n:hide()
+        return n
+      end)lua") != LUA_OK)
+        lua_pop(L, 1);
 }
 
 void DestroyScriptObjects()

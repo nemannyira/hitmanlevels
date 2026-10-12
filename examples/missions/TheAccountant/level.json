@@ -1,0 +1,75 @@
+{
+  "base_scene": "C1-1\\C1-1__MAIN",
+  "format": "h2level",
+  "lists": [],
+  "mission": {
+    "end_when_done": true,
+    "exit": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01/Point+1",
+    "exit_radius": 300.0,
+    "objectives": [
+      {
+        "goal": "kill",
+        "replaces_original": true,
+        "slot": 5,
+        "target": "ROOT/NPC_MafiaLawyer_1_Group/NPC_MafiaLawyer_1",
+        "text": "Eliminate the accountant"
+      }
+    ]
+  },
+  "name": "The Accountant",
+  "npc_edits": [],
+  "npcs": [
+    {
+      "id": "NPC_MafiaLawyer_1",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "MafiaLawyer",
+      "pos": [
+        2641.0,
+        10.0,
+        -5309.0
+      ],
+      "record": 2998
+    }
+  ],
+  "objects": [],
+  "scripts": [
+    "main.lua"
+  ],
+  "spawned": [
+    {
+      "hidden": false,
+      "id": "Point+1",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01",
+      "pos": [
+        7285.0,
+        974.0,
+        -7584.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    }
+  ],
+  "version": 1
+}

@@ -213,16 +213,23 @@ bool CallLevel(int index)
 
 // a line gets a text: the level's keys are noted; lines the editor gives a
 // text keep the editor's key
+void HideLineElements(int slot);
+
 void __fastcall hkSetObjective(void* self, void* edx, int slot, const char* key)
 {
     g_briefing = self;
     if (slot >= 1 && slot <= kSlots) {
-        if (key && _strnicmp(key, "H2Editor/", 9) != 0)
+        bool editors = key && _strnicmp(key, "H2Editor/", 9) == 0;  // the editor's own (a script's line too)
+        if (key && !editors)
             g_lineKeys[slot] = key;
         if (!g_restoring && !EditorText(slot).empty())
             key = EditorKey(slot);
-        else if (!g_restoring && EmptyMap() && !InDocument(slot))
-            key = kEmptyKey;  // an empty map has no objectives of the level
+        else if (!g_restoring && EmptyMap() && !InDocument(slot) && !editors) {
+            key = kEmptyKey;  // an empty map has no objectives of the level (a script's lines it has)
+            oSetObjective(self, edx, slot, key);
+            HideLineElements(slot);  // no empty bullet either
+            return;
+        }
     }
     oSetObjective(self, edx, slot, key);
 }

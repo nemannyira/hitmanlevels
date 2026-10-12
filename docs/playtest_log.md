@@ -34,3 +34,19 @@ users are guided around it), **open**.
 | P6 | The Accountant | `h2.give("AmmoSniper")` added no ammunition (the clip stays empty): the game counts ammo only when it is picked up | worked around: `h2.give` refuses ammo with an explanation; docs/lua.md |
 | P7 | The Accountant | The editor's *exit* goal reported the previous status message | fixed |
 | P8 | The Accountant | Hiding the base level's laptop lines (h2.objective(n, false)) leaves their space empty above the level's own line; the base level's *Target Photo* stays in the laptop | open (cosmetic) |
+| P9 | Dead Drop | On an emptied map the laptop lines a script gives (`h2.objective(1, "...")`) stayed empty: the editor replaced every line it did not own with an empty text, the script's own too | fixed: the editor's and scripts' lines are kept |
+| P10 | Dead Drop | An emptied map showed empty bullets for the base level's own lines | fixed: those lines are hidden |
+| P11 | Dead Drop | Placed BaseGuard guards shoot Hitman on sight in his suit: a level with them is hard (died twice) | as designed (the game's guards); README says how to approach |
+
+## How the levels were played
+
+The test player (tools/player.py) uses the game's own input: W / Shift to
+walk and run, the mouse to steer and aim, E to pick up, the number keys for
+weapons, the left button to fire, B for the laptop. Its steering cannot find
+its way around slopes and walls, so long ways were travelled by moving
+Hitman (`setpos`): the last metres, picking up, entering zones and shooting
+were done with the keys. Its aim was not good enough to hit a walking target:
+those shots were stood in for with `npc:kill` (any death completes a kill
+objective, as the player's shot does). Levels whose guards shoot on sight
+were played once as they are (the guards won) and then with *Invisible
+Hitman* to follow the story to its end.

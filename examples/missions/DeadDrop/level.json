@@ -1,0 +1,271 @@
+{
+  "base_scene": "C1-1\\C1-1__MAIN",
+  "format": "h2level",
+  "lists": [],
+  "name": "Dead Drop",
+  "npc_edits": [],
+  "npcs": [
+    {
+      "behaviour": "scripts\\C1\\C1_1\\BaseGuard.sdl",
+      "id": "NPC_BodyguardMafia_01_1",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "BodyguardMafia_01",
+      "params": [
+        {
+          "name": "m_iHitpoints",
+          "type": "LONG",
+          "value": "20"
+        },
+        {
+          "name": "Mute",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "WeaponTemplate",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/AllLevels/Equipment.zip/AllLevels/Weapons.zip/Weapons/GunBeretta92"
+        },
+        {
+          "name": "MayHolsterWeapon",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "ReactionTime",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "GuardPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_Arbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/2ndFloor_Arbiter"
+        },
+        {
+          "name": "IsSentry",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "SentryRadius",
+          "type": "FLOAT",
+          "value": "500"
+        },
+        {
+          "name": "RunAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "SneakAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "TrespassAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "Xenophobia",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "PostManAllowed",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "AtKitchenGate",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "ProtectPoint",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/Bedrooms/ProtectPoint1#1"
+        },
+        {
+          "name": "m_rDistractPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_PanicArbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/PanicArbiter"
+        }
+      ],
+      "pos": [
+        2891.0,
+        10.0,
+        -5309.0
+      ],
+      "record": 2350
+    },
+    {
+      "behaviour": "scripts\\C1\\C1_1\\BaseGuard.sdl",
+      "id": "NPC_BodyguardMafia_01_2",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "BodyguardMafia_01",
+      "params": [
+        {
+          "name": "m_iHitpoints",
+          "type": "LONG",
+          "value": "20"
+        },
+        {
+          "name": "Mute",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "WeaponTemplate",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/AllLevels/Equipment.zip/AllLevels/Weapons.zip/Weapons/GunBeretta92"
+        },
+        {
+          "name": "MayHolsterWeapon",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "ReactionTime",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "GuardPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_Arbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/2ndFloor_Arbiter"
+        },
+        {
+          "name": "IsSentry",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "SentryRadius",
+          "type": "FLOAT",
+          "value": "500"
+        },
+        {
+          "name": "RunAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "SneakAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "TrespassAnnoyance",
+          "type": "FLOAT",
+          "value": "1"
+        },
+        {
+          "name": "Xenophobia",
+          "type": "FLOAT",
+          "value": "0"
+        },
+        {
+          "name": "PostManAllowed",
+          "type": "LONG",
+          "value": "1"
+        },
+        {
+          "name": "AtKitchenGate",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "ProtectPoint",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/Bedrooms/ProtectPoint1#1"
+        },
+        {
+          "name": "m_rDistractPoint",
+          "type": "ZGEOMREF",
+          "value": ""
+        },
+        {
+          "name": "m_PanicArbiter",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/PanicArbiter"
+        }
+      ],
+      "pos": [
+        3100.0,
+        10.0,
+        -5700.0
+      ],
+      "record": 2350
+    }
+  ],
+  "objects": [],
+  "scripts": [
+    "main.lua"
+  ],
+  "spawned": [
+    {
+      "hidden": false,
+      "id": "KeyRoom_item+1",
+      "kind": "item",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "pos": [
+        2700.0,
+        12.0,
+        -5500.0
+      ],
+      "source_path": "ROOT/C1-1/C1-1_CHARACTERS.zip/AllLevels/Equipment.zip/AllLevels/Items.zip/Items/KeyRoom",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    }
+  ],
+  "version": 1,
+  "empty_map": true,
+  "mission": {
+    "base_ends": false
+  }
+}

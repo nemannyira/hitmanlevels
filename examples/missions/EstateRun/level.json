@@ -1,0 +1,115 @@
+{
+  "base_scene": "C1-1\\C1-1__MAIN",
+  "format": "h2level",
+  "lists": [],
+  "name": "Estate Run",
+  "npc_edits": [],
+  "npcs": [],
+  "objects": [],
+  "scripts": [
+    "main.lua"
+  ],
+  "spawned": [
+    {
+      "hidden": false,
+      "id": "Point+1",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01",
+      "pos": [
+        4200.0,
+        10.0,
+        -6200.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    },
+    {
+      "hidden": false,
+      "id": "Point+2",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Mansion_South",
+      "pos": [
+        2641.0,
+        10.0,
+        -5309.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    },
+    {
+      "hidden": false,
+      "id": "Point+3",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01",
+      "pos": [
+        -4176.0,
+        -20.0,
+        -6682.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    },
+    {
+      "hidden": false,
+      "id": "Point+4",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01",
+      "pos": [
+        3547.0,
+        5.0,
+        -10797.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    }
+  ],
+  "version": 1,
+  "empty_map": true,
+  "mission": {
+    "base_ends": false
+  }
+}

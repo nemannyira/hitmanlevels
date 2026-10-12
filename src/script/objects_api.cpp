@@ -47,6 +47,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <windows.h>
+#include <cctype>
 #include <cmath>
 #include <map>
 #include <unordered_map>
@@ -155,18 +156,22 @@ int SpawnFrom(lua_State* L, engine::ZGEOM* source, int arg)
         return luaL_error(L, "only objects with their own model can be copied (not characters or groups)");
     std::string base = engine::SafeString(source->name);
     std::string name = "Lua_" + (base.empty() ? std::string("Object") : base) + "_" + std::to_string(++g_spawnCounter);
-    std::string err;
-    engine::ZGEOM* g = editor::SpawnClone(source, name, &err);
-    if (!g)
-        return luaL_error(L, "spawn failed: %s", err.c_str());
-    g_scriptObjects.push_back(g);
     editor::Transform t = editor::GetTransform(source);
-    if (lua_gettop(L) >= arg + 2) {
+    bool placed = lua_gettop(L) >= arg + 2;
+    if (placed) {
         for (int i = 0; i < 3; ++i)
             t.pos[i] = Coordinate(L, arg + i);
         if (!lua_isnoneornil(L, arg + 3))
             editor::EulerToMatrix(Coordinate(L, arg + 3), 0.0f, 0.0f, t.mat);
-    } else {
+    }
+    // in the room of the place it goes to: the game draws a room's objects only where that room
+    // is seen (a copy of a garage lamp left in the garage room stayed unseen on the road)
+    std::string err;
+    engine::ZGEOM* g = editor::SpawnClone(source, name, &err, placed ? editor::RoomAt(t.pos) : nullptr);
+    if (!g)
+        return luaL_error(L, "spawn failed: %s", err.c_str());
+    g_scriptObjects.push_back(g);
+    if (!placed) {
         float c[3], r = 100.0f;
         if (!editor::GetBounds(source, c, r))
             r = 100.0f;
@@ -1106,11 +1111,16 @@ int Mesh(lua_State* L)
     return 1;
 }
 
+// the last part of the path ("Crate#2" -> "Crate"): also for an object gone meanwhile (a sound
+// the game made for a moment), so a loop over h2.objects() does not stop on it
 int Name(lua_State* L)
 {
-    const auto& snap = editor::SceneModel();
-    int i = snap.Find(Geom(L));
-    lua_pushstring(L, i >= 0 ? snap.geoms[i].name.c_str() : "");
+    std::string path = PathArg(L);
+    std::string name = path.substr(path.rfind('/') == std::string::npos ? 0 : path.rfind('/') + 1);
+    if (size_t hash = name.rfind('#'); hash != std::string::npos && hash + 1 < name.size() &&
+                                       std::isdigit(static_cast<unsigned char>(name[hash + 1])))
+        name.resize(hash);
+    lua_pushstring(L, name.c_str());
     return 1;
 }
 

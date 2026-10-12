@@ -97,6 +97,7 @@ std::string g_message;
 
 // after the map is loaded: open the editor
 std::string g_startScene;
+bool g_editAfterStart = true;  // the editor opens when the map has started (Edit), not for Play
 
 bool InMainMenu() { return _stricmp(CurrentScene().c_str(), "MainMenu") == 0; }
 
@@ -386,13 +387,24 @@ void DrawLauncher()
                     ImGui::EndTable();
                 }
                 ImGui::BeginDisabled(g_pick < 0);
-                if ((ImGui::Button("Open", ImVec2(-1, 0)) || go) && g_pick >= 0) {
+                float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+                bool play = ImGui::Button("Play", ImVec2(half, 0)) || go;
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("Plays the level (double click too): the editor stays closed (%s opens it)",
+                                      overlay::EditorKeyName().c_str());
+                ImGui::SameLine();
+                bool edit = ImGui::Button("Edit", ImVec2(-1, 0));
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("Opens the level in the editor on its map");
+                if ((play || edit) && g_pick >= 0) {
                     std::string err;
                     const Saved& s = g_saved[g_pick];
-                    if (LoadLevel(s.folder, &err) && !s.scene.empty())
+                    if (LoadLevel(s.folder, &err) && !s.scene.empty()) {
                         StartOn(s.scene);
-                    else
+                        g_editAfterStart = edit;
+                    } else {
                         g_message = "not opened: " + err;
+                    }
                 }
                 ImGui::EndDisabled();
                 ImGui::EndTabItem();
@@ -490,6 +502,10 @@ void AfterStart()
         return;
     frames = 0;
     g_startScene.clear();
+    if (!g_editAfterStart) {  // Play
+        g_editAfterStart = true;
+        return;
+    }
     overlay::SetOpen(true);
     overlay::ShowPanel("Level");
 }

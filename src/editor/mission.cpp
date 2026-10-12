@@ -841,11 +841,7 @@ bool PlaceButtons(int slot, const std::string& current)
         ImGui::SameLine();
         if (ImGui::SmallButton("Fly to")) {
             if (engine::ZGEOM* g = Resolve(current)) {
-                Transform t = GetTransform(g);
-                float cam[3] = {t.pos[0] - 300.0f, t.pos[1] + 250.0f, t.pos[2] - 300.0f};
-                SetFreeCamEnabled(true);
-                SetFreeCamPosition(cam);
-                SetFreeCamAngles(45.0f, -30.0f);
+                FlyCameraTo(GetTransform(g).pos);
             }
         }
     }
@@ -1323,6 +1319,33 @@ void NewGoal(MissionObjective::Goal goal, const std::string& path)
 }
 
 } // namespace
+
+std::string MissionGoalFor(engine::ZGEOM* geom, const std::string& goal)
+{
+    if (!geom || !IsLive(geom))
+        return "no such object";
+    if (goal == "target") {
+        engine::ZGEOM* c = CharacterOf(geom);
+        if (!c)
+            return "not a character";
+        NewGoal(MissionObjective::Kill, PathOf(c));
+    } else if (goal == "reach" || goal == "exit") {
+        std::string path = PathOf(geom);
+        if (path.empty() || ActorOf(geom))
+            return "not a place";
+        if (goal == "reach") {
+            NewGoal(MissionObjective::Reach, path);
+        } else {
+            Doc().endWhenDone = true;
+            Doc().exitPath = path;
+            Changed();
+            g_status = "the mission ends when every objective is done and Hitman reaches " + Label(path);
+        }
+    } else {
+        return "goal: target, reach or exit";
+    }
+    return g_status.empty() ? "ok" : g_status;
+}
 
 void DrawMissionForSelection(engine::ZGEOM* geom)
 {

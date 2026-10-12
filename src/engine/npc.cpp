@@ -807,6 +807,15 @@ bool RoomForObjects(size_t bytes, int nodes, std::string* error)
     return ok;
 }
 
+bool ItemHolder(ZGEOM* item, uint32_t& owner)
+{
+    owner = 0;
+    if (!item || !IsReadable(item, 0x68))
+        return false;
+    ItemHeld(reinterpret_cast<char*>(item), owner);
+    return owner != 0;
+}
+
 bool GiveItem(ZGEOM* item, ZGEOM* owner)
 {
     if (!item || !owner || !IsReadable(item, sizeof(ZGEOM)) || !IsReadable(owner, sizeof(ZGEOM)) ||

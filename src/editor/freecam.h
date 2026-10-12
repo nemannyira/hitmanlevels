@@ -17,6 +17,9 @@ void FreeCamPosition(float out[3]);
 void SetFreeCamPosition(const float pos[3]);
 // yaw 0 looks along +Z (degrees, +90 = +X), pitch > 0 looks up
 void SetFreeCamAngles(float yawDeg, float pitchDeg);
+// The free camera on, looking down at a point from `distance` away (the way it
+// faced now kept): the object there in the middle of the view.
+void FlyCameraTo(const float target[3], float distance = 400.0f);
 void FreeCamAngles(float& yawDeg, float& pitchDeg);
 
 // Camera panel for the overlay.

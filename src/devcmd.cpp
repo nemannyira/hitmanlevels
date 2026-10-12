@@ -350,6 +350,9 @@ int Level(lua_State* L)
         editor::Undo();
     } else if (op == "redo") {
         editor::Redo();
+    } else if (op == "target" || op == "reach" || op == "exit") {  // the Inspector's Mission row
+        lua_pushstring(L, editor::MissionGoalFor(editor::Resolve(arg), op).c_str());
+        return 1;
     } else if (op == "problems") {
         std::string all;
         for (const std::string& p : editor::LevelProblems())

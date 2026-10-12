@@ -634,11 +634,7 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
                 if (ImGui::MenuItem("Select it", nullptr, false, target && IsLive(target)))
                     Select(target);
                 if (ImGui::MenuItem("Fly to it", nullptr, false, target && IsLive(target))) {
-                    Transform t = GetTransform(target);
-                    float cam[3] = {t.pos[0] - 300.0f, t.pos[1] + 200.0f, t.pos[2] - 300.0f};
-                    SetFreeCamEnabled(true);
-                    SetFreeCamPosition(cam);
-                    SetFreeCamAngles(45.0f, -25.0f);
+                    FlyCameraTo(GetTransform(target).pos);
                 }
                 ImGui::EndPopup();
             }
@@ -907,10 +903,7 @@ void DrawTarget()
         Select(actor);
     ImGui::SameLine();
     if (ImGui::SmallButton("Fly to")) {
-        Transform t = GetTransform(actor);
-        float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 180.0f, t.pos[2] - t.mat[2] * 300.0f};
-        SetFreeCamEnabled(true);
-        SetFreeCamPosition(cam);
+        FlyCameraTo(GetTransform(actor).pos);
     }
     if (placed) {
         ImGui::SameLine();

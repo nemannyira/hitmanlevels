@@ -283,10 +283,7 @@ void FindInScene(const ModelEntry& e)
 {
     if (engine::ZGEOM* g = Resolve(e.sourcePath)) {
         Select(g);
-        Transform t = GetTransform(g);
-        float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 150.0f, t.pos[2] - t.mat[2] * 300.0f};
-        SetFreeCamEnabled(true);
-        SetFreeCamPosition(cam);
+        FlyCameraTo(GetTransform(g).pos);
     }
 }
 

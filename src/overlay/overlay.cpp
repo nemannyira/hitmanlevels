@@ -430,6 +430,8 @@ void DrawLayout()
 
 } // namespace
 
+std::string EditorKeyName() { return KeyName(g_config.editorKey); }
+
 void OnDeviceCreated(void* device, HWND window)
 {
     if (!window)

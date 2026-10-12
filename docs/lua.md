@@ -61,7 +61,7 @@ been given stops. Hitman can be moved anywhere too
 | call | |
 |---|---|
 | `h2.player()` | Hitman |
-| `h2.give(item | template [, character])` | the item goes to the character (default Hitman: into his inventory, as if picked up; a weapon can be drawn, a key is carried out of sight); a template name makes the item first. A character keeps it (it is not dropped when it dies: for that `npc:carry`) |
+| `h2.give(item | template [, character])` | the item goes to the character (default Hitman: into his inventory, as if picked up; a weapon can be drawn, a key is carried out of sight); a template name makes the item first. A character keeps it (it is not dropped when it dies: for that `npc:carry`). Not ammunition (it counts only when picked up: lay it down with `h2.item`); not a weapon of which a copy lies on the map (drawing the given one crashed the game: let Hitman pick that one up). A given weapon has an empty clip |
 | `h2.disguise(character | clothes item)` | Hitman takes its clothes (as from a body: the character is left in underwear) |
 | `h2.health([points])` | Hitman's hit points (and the health bar); a new value above 0 (C1-1 on this difficulty: 60 at most) |
 | `h2.npcs()` | `{ {record, model, behaviour, object}, ... }` the map's characters |

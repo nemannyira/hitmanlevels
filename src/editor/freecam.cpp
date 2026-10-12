@@ -205,6 +205,17 @@ void SetFreeCamAngles(float yawDeg, float pitchDeg)
     g_pitch = g_pitch < -limit ? -limit : (g_pitch > limit ? limit : g_pitch);
 }
 
+void FlyCameraTo(const float target[3], float distance)
+{
+    SetFreeCamEnabled(true);
+    g_pitch = -25.0f * kPi / 180.0f;
+    float f[3];
+    Forward(g_yaw, g_pitch, f);
+    for (int i = 0; i < 3; ++i)
+        g_pos[i] = target[i] - f[i] * distance;
+    g_pos[1] += 60.0f;  // a person's middle rather than the feet
+}
+
 void FreeCamAngles(float& yawDeg, float& pitchDeg)
 {
     yawDeg = g_yaw * 180.0f / kPi;

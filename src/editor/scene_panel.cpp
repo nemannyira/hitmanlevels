@@ -214,9 +214,7 @@ void DrawInspector()
     }
     ImGui::SameLine();
     if (ImGui::Button("Fly camera here (F)")) {
-        float cam[3] = {t.pos[0] - t.mat[0] * 300.0f, t.pos[1] + 150.0f, t.pos[2] - t.mat[2] * 300.0f};
-        SetFreeCamEnabled(true);
-        SetFreeCamPosition(cam);
+        FlyCameraTo(t.pos);
     }
     ImGui::BeginDisabled(actor || !engine::MeshOf(geom));
     if (ImGui::Button("Duplicate (Ctrl+D)"))

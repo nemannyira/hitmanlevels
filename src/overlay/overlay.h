@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <windows.h>
 
 struct ImFont;
@@ -44,6 +45,8 @@ void AddPanel(const Panel& panel);
 
 // Brings a panel forward (its left tab selected, made visible).
 void ShowPanel(const char* name);
+// The key that opens and closes the editor, by its name ("F8").
+std::string EditorKeyName();
 
 // Items of a main menu ("File", "Edit", "View", "Help"): `items` is called
 // inside the open menu. Menus appear in the order of their first registration.

@@ -652,6 +652,12 @@ std::vector<Problem> FindProblems()
         for (const SpawnedObject& s : L.spawned)
             if (s.point && engine::OnPathNetwork(s.transform.pos) == 0) {
                 engine::ZGEOM* g = LiveSpawned(s.id);
+                std::string path = g ? PathOf(g) : "";
+                bool missionPlace = !path.empty() && path == L.mission.exitPath;  // Hitman goes there, not characters
+                for (const MissionObjective& o : L.mission.objectives)
+                    missionPlace |= !path.empty() && o.goal == MissionObjective::Reach && o.target == path;
+                if (missionPlace)
+                    continue;
                 out.push_back({"point " + s.id.substr(0, s.id.find('+')) +
                                    " is off the path network: characters do not reach it",
                                g ? PathOf(g) : ""});

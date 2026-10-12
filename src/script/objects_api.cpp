@@ -510,6 +510,26 @@ int Give(lua_State* L)
         engine::ZGEOM* tmpl = i >= 0 ? editor::SceneModel().geoms[i].geom : nullptr;
         if (!tmpl || !editor::IsLive(tmpl) || !engine::IsA(tmpl, "ZItemTemplate"))
             return luaL_error(L, "give: no such item template (see h2.objects(\"ZItemTemplate\"))");
+        // ammunition counts only when picked up (the item handed over adds nothing)
+        if (engine::SafeString(tmpl->name).rfind("Ammo", 0) == 0)
+            return luaL_error(L, "give: ammunition is added only when Hitman picks it up: lay it down "
+                                 "with h2.item(\"%s\", x, y, z)",
+                              engine::SafeString(tmpl->name).c_str());
+        // A weapon given while copies of it lie on the map takes the game down when it is
+        // drawn (RenderD3D, found playing levels 2026-10-12): those are for picking up.
+        if (engine::IsA(tmpl, "ZItemTemplateWeapon") || engine::SafeString(tmpl->name).rfind("Rifle", 0) == 0 ||
+            engine::SafeString(tmpl->name).rfind("Gun", 0) == 0 || engine::SafeString(tmpl->name).rfind("Smg", 0) == 0) {
+            std::string name = engine::SafeString(tmpl->name);
+            for (int k : editor::SceneModel().FindName(name)) {
+                engine::ZGEOM* other = editor::SceneModel().geoms[k].geom;
+                uint32_t holder = 0;
+                if (other != tmpl && editor::IsLive(other) && engine::IsA(other, "ZItem") &&
+                    !engine::ItemHolder(other, holder))
+                    return luaL_error(L, "give: a %s lies on the map: a given copy of it would crash the game "
+                                         "when drawn; let Hitman pick that one up",
+                                      name.c_str());
+            }
+        }
         std::string err;
         item = editor::SpawnItem(tmpl, &err);
         if (!item)

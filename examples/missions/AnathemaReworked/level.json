@@ -1,0 +1,108 @@
+{
+  "base_scene": "C1-1\\C1-1__MAIN",
+  "format": "h2level",
+  "lists": [],
+  "mission": {
+    "end_when_done": false,
+    "exit": "",
+    "exit_radius": 300.0,
+    "objectives": [
+      {
+        "goal": "kill",
+        "replaces_original": true,
+        "slot": 5,
+        "target": "ROOT/NPC_MafiaLawyer_2_Group/NPC_MafiaLawyer_2",
+        "text": "Eliminate the new consigliere"
+      },
+      {
+        "goal": "reach",
+        "radius": 250.0,
+        "replaces_original": true,
+        "slot": 6,
+        "target": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Plains_01/Point+1",
+        "text": "Check the garage for the Don's car"
+      }
+    ],
+    "base_ends": false
+  },
+  "name": "Anathema Reworked",
+  "npc_edits": [],
+  "npcs": [
+    {
+      "id": "NPC_MafiaLawyer_2",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "model": "MafiaLawyer",
+      "pos": [
+        2641.0,
+        10.0,
+        -5309.0
+      ],
+      "record": 2998
+    }
+  ],
+  "objects": [],
+  "scripts": [
+    "main.lua"
+  ],
+  "spawned": [
+    {
+      "hidden": false,
+      "id": "KeyRoom_item+1",
+      "kind": "item",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "pos": [
+        4200.0,
+        12.0,
+        -6200.0
+      ],
+      "source_path": "ROOT/C1-1/C1-1_CHARACTERS.zip/AllLevels/Equipment.zip/AllLevels/Items.zip/Items/KeyRoom",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    },
+    {
+      "hidden": false,
+      "id": "Point+1",
+      "kind": "point",
+      "matrix": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent": "ROOT/C1-1/C1-1_LOCATIONS.zip/C1-1/C1-1_LOC_Outside.zip/C1-1/C1-1_LOC_Mansion__Outside.zip/C1-1_Mansion_South",
+      "pos": [
+        3100.0,
+        10.0,
+        -5700.0
+      ],
+      "source_path": "",
+      "source_scene": "C1-1\\C1-1__MAIN"
+    }
+  ],
+  "version": 1,
+  "start_outfit": "Postman"
+}

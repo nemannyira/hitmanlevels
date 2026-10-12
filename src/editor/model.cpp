@@ -511,7 +511,16 @@ engine::ZGEOM* Resolve(const std::string& path)
 {
     const auto& snap = SceneModel();
     int i = snap.FindPath(path);
-    return i >= 0 ? snap.geoms[i].geom : nullptr;
+    if (i >= 0)
+        return snap.geoms[i].geom;
+    // An object the level made ("Point+1": its name is its own) may be in another room after the
+    // map loads again than when a goal took its path (a garage point, 2026-10-13): found by name.
+    size_t slash = path.rfind('/');
+    std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+    if (name.find('+') == std::string::npos)
+        return nullptr;
+    std::vector<int> same = snap.FindName(name);
+    return same.size() == 1 ? snap.geoms[same[0]].geom : nullptr;
 }
 
 void MatrixToEuler(const float m[9], float& yaw, float& pitch, float& roll)

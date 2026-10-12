@@ -47,6 +47,9 @@ users are guided around it), **open**.
 | P19 | Arena | Three targets of one model got the same laptop text ("Kill BodyguardMafia_01 (placed)" three times) | fixed: numbered (2), (3) |
 | P20 | Arena | A guard standing on the floor from another level fell through it (it is made a moment after the level's characters) and stood 2 m below | fixed: shortly after the level is applied, its characters far below their place are put back |
 | P21 | Arena | On the blank map the level's *MissionCompleted* stops on an assert (int3, caught) after the end screen came up; the editor's goal check then called it again every quarter second (49 times) | fixed: once per map; the exception is logged |
+| P22 | Anathema Reworked | The ledger (an item placed on the road) sank 30 cm into the ground when the level loaded and was never offered to pick up, also after lifting it (the same as P4: items the level makes while the map loads) | open: test pickups of placed items; the pickup was marked from the console to finish the run |
+| P23 | Anathema Reworked | A goal's place (a point) was in another room after the map loaded again than when the goal took its path: "its place is missing", the goal could not be done | fixed: an object the level made is found by its own name ("Point+1") when its path changed |
+| P24 | Anathema Reworked | The editor's own mission end counts only its goals, not a script's lines | by design: a level mixing both ends from its script (the `objective` event reports the editor's goals); the example shows how |
 
 ## How the levels were played
 
@@ -77,3 +80,11 @@ menu to start The Informant: the editor stayed closed, the level ran.
 | Estate Run | C1-1 emptied | checkpoints in order, markers, a clock | completed with 20 s to spare |
 | The Informant | C1-1 as it is | an escort who follows Hitman | completed; failed (he died); failed (left behind) |
 | Arena | C1-1, no buildings, C3-3 yard | a level built in the sky, three armed targets, an exit | completed (Silent Assassin) |
+| Anathema Reworked | C1-1 reworked | six objectives of six kinds (item, disguise, rule, time, kill, place), start outfit, exit | completed (the ledger pickup stood in, P22) |
+
+## 2026-10-13
+
+P5 fixed in the engine (the weapon parts loop); the start outfit (Level tab >
+*Hitman starts in*, `h2.outfit`) added and tested (postman, bodyguard); the
+big level made and played through. API 74/74, security 41/41 on the last
+build.

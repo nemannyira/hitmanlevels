@@ -60,3 +60,20 @@ those shots were stood in for with `npc:kill` (any death completes a kill
 objective, as the player's shot does). Levels whose guards shoot on sight
 were played once as they are (the guards won) and then with *Invisible
 Hitman* to follow the story to its end.
+
+## Regression after the fixes
+
+All on the last build: API suite 74/74, security 41/41, stress 6/6, editor
+test 34/34, kill switch 5/5, save / load 11/11, hostile level files 14/14
+(the game survived every one). The launcher's *Play* was used from the main
+menu to start The Informant: the editor stayed closed, the level ran.
+
+## The levels
+
+| Level | Map | What it tries | Played |
+|---|---|---|---|
+| The Accountant | C1-1 as it is | a walking target, editor goals (target, exit), the base level's guards | completed (Professional) |
+| Dead Drop | C1-1 emptied | an item to deliver, guards, a time limit, being seen | completed; failed by time; killed by the guards |
+| Estate Run | C1-1 emptied | checkpoints in order, markers, a clock | completed with 20 s to spare |
+| The Informant | C1-1 as it is | an escort who follows Hitman | completed; failed (he died); failed (left behind) |
+| Arena | C1-1, no buildings, C3-3 yard | a level built in the sky, three armed targets, an exit | completed (Silent Assassin) |

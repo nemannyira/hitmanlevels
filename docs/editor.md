@@ -58,6 +58,23 @@ missing script files, the scripts' errors since they last ran.
 
 **Save**: Ctrl+S or *Save* in the toolbar.
 
+**Play**: main menu > *Level Editor* > *Open a level* > *Play* (the editor
+stays closed; *Edit* opens it on the map). Five example levels, played
+through: `examples/missions` (copy a folder into `Mods`).
+
+## Good to know (from playing levels through)
+
+* Lay weapons on flat ground and check, when testing, that the game offers
+  "Pick up": a long weapon on a slope may not be offered. Hitman picks up
+  the first item of a pile: keep items apart.
+* A level with *No buildings*: build it with models of other levels
+  (*Models* > *Other levels...*, as the floor). Copies of the map's own models
+  are not drawn on it (docs/playtest_log.md, P17).
+* Guards (BaseGuard) shoot a trespasser on sight: give the player cover, a
+  way behind them or a disguise.
+* Completing a level counts as completing its base map in the game's
+  profile.
+
 ## Where things are
 
 | | |

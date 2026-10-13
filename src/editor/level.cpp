@@ -29,6 +29,7 @@
 #include "../script/state.h"
 #include "history.h"
 #include "mission.h"
+#include "profile_guard.h"
 #include "music.h"
 #include "scene_panel.h"
 
@@ -1394,11 +1395,13 @@ bool SaveLevel(std::string* error)
                 jo["radius"] = o.radius;
             objs.push_back(jo);
         }
-        if (!objs.empty() || m.endWhenDone || !m.briefing.empty() || !m.baseEnds) {
+        if (!objs.empty() || m.endWhenDone || !m.briefing.empty() || !m.baseEnds || m.baseFiles >= 0) {
             j["mission"] = {{"objectives", objs}, {"end_when_done", m.endWhenDone}, {"exit", m.exitPath},
                             {"exit_radius", m.exitRadius}};
             if (!m.baseEnds)
                 j["mission"]["base_ends"] = false;
+            if (m.baseFiles >= 0)
+                j["mission"]["base_files"] = m.baseFiles == 1;
             if (!m.briefing.empty())
                 j["mission"]["briefing"] = m.briefing;
         }
@@ -1561,6 +1564,8 @@ bool LoadLevel(const std::string& folder, std::string* error)
             L.mission.exitRadius = m.value("exit_radius", 300.0f);
             L.mission.briefing = m.value("briefing", "");
             L.mission.baseEnds = m.value("base_ends", true);
+            if (m.contains("base_files") && m["base_files"].is_boolean())
+                L.mission.baseFiles = m["base_files"].get<bool>() ? 1 : 0;
         }
         if (j.contains("music") && j["music"].is_object())
             for (auto& [path, track] : j["music"].items())
@@ -2720,6 +2725,8 @@ bool Unmirror(Transform& t, const Transform& library)
 int ApplyLevel()
 {
     int n = 0;
+    if (!g_level.baseScene.empty() && g_level.baseScene == CurrentScene())
+        ProtectProfile();  // playing it does not count for the map in the game's profile (P15)
     BuildImportLibrary();
     for (SpawnedObject& s : g_level.spawned)
         if (s.sourcePath.rfind(std::string("ROOT/") + kLibrary + "/", 0) == 0)

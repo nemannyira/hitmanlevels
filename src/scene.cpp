@@ -15,11 +15,19 @@ namespace {
 std::string g_scene;
 std::vector<SceneCallback> g_callbacks;
 std::vector<SceneCallback> g_leaving;
+SceneRedirect g_redirect;
 
 using PushScene_t = void*(__fastcall*)(void* self, void* edx, const char* name);
 PushScene_t oPushScene;
 void* __fastcall hkPushScene(void* self, void* edx, const char* name)
 {
+    std::string instead = g_redirect && name ? g_redirect(g_scene, name) : std::string();
+    if (!instead.empty() && _stricmp(instead.c_str(), name) != 0) {
+        Log("PushScene(\"%s\"): \"%s\" instead", name, instead.c_str());
+        static std::string kept;
+        kept = instead;
+        name = kept.c_str();
+    }
     if (!g_scene.empty())
         for (SceneCallback cb : g_leaving)
             cb(g_scene);
@@ -44,6 +52,7 @@ const std::string& CurrentScene() { return g_scene; }
 
 void OnScenePushed(SceneCallback cb) { g_callbacks.push_back(cb); }
 void OnSceneLeaving(SceneCallback cb) { g_leaving.push_back(cb); }
+void SetSceneRedirect(SceneRedirect fn) { g_redirect = fn; }
 
 bool SceneExists(const std::string& name)
 {

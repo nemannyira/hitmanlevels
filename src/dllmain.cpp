@@ -20,6 +20,7 @@
 #include "editor/testtools.h"
 #include "editor/mission.h"
 #include "editor/music.h"
+#include "editor/profile_guard.h"
 #include "editor/launcher.h"
 #include "editor/models_panel.h"
 #include "editor/npc_panel.h"
@@ -128,6 +129,7 @@ void Init()
     h2::editor::InstallTestTools();
     h2::editor::InstallMission();
     h2::editor::InstallMusic();
+    h2::editor::InstallProfileGuard();
     h2::editor::InstallLauncher();
     h2::engine::InstallImports();
     h2::engine::InstallNpc();

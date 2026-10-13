@@ -82,8 +82,11 @@ through: `examples/missions` (copy a folder into `Mods`).
   levels (*Models* > *Other levels...*, as the floor) can be placed on it.
 * Guards (BaseGuard) shoot a trespasser on sight: give the player cover, a
   way behind them or a disguise.
-* Completing a level counts as completing its base map in the game's
-  profile.
+* Playing a level does not count in the game's profile (the campaign's
+  saved progress, ratings, bonus weapons): the statistics screen still shows
+  the rating, and its *Continue* goes to the main menu.
+* On an emptied map the base level's laptop files (its *Target Photo*) are
+  hidden; *Mission* tab > *The level's additional files* switches them.
 
 ## Where things are
 

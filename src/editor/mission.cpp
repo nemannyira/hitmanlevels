@@ -43,6 +43,7 @@ constexpr uintptr_t kLocFind = 0x428FF0;          // stdcall (const char* path, 
 constexpr uintptr_t kSetLocaleFolder = 0x52D340;  // BriefingMenu::(const char* folder)
 constexpr uintptr_t kSetObjective = 0x52E2E0;     // BriefingMenu::(int slot, const char* key)
 constexpr uintptr_t kSetCompleted = 0x52E350;     // BriefingMenu::(int* {slot, done})
+constexpr uintptr_t kBriefingAction = 0x52CED0;   // BriefingMenu::(int action) -> handled; 0xC9.. its files
 constexpr size_t kBriefingDoneBits = 0x610;       // BriefingMenu: bit n = line n checked
 constexpr uintptr_t kLevelInit = 0x504410;        // level routine (of LevelControl): registers its messages
 constexpr int kLevel_MissionFailed = 0xC0 / 4;    // what its MissionFailed / MissionCompleted messages call
@@ -196,6 +197,7 @@ uint8_t* __stdcall hkLocFind(const char* path, const uint8_t* root)
 }
 
 void BuildTexts();
+bool BaseFilesHidden() { return Doc().baseFiles == 0 || (Doc().baseFiles < 0 && CurrentLevel().emptyMap); }
 
 void __fastcall hkSetFolder(void* self, void* edx, const char* folder)
 {
@@ -204,6 +206,18 @@ void __fastcall hkSetFolder(void* self, void* edx, const char* folder)
     g_locRoot = nullptr;
     BuildTexts();  // the level's briefing text is read now
     oSetFolder(self, edx, folder);
+}
+
+// The base level's files hidden: a click on their (empty) entries opens nothing (the window's
+// buttons send the photo itself, whatever their text)
+using BriefingAction_t = bool(__fastcall*)(void* self, void* edx, uint32_t action);
+BriefingAction_t oBriefingAction;
+
+bool __fastcall hkBriefingAction(void* self, void* edx, uint32_t action)
+{
+    if (action >= 0xC9 && action <= 0xCD && self == g_briefing && ForThisScene() && BaseFilesHidden())
+        return true;
+    return oBriefingAction(self, edx, action);
 }
 
 void __fastcall hkLevelInit(void* self, void* edx)
@@ -458,6 +472,11 @@ void BuildTexts()
     for (const MissionObjective& o : Doc().objectives)
         if (!o.text.empty())
             g_texts[Lower(EditorKey(o.slot))] = Node(o.text, 256);
+    // the base level's additional files (its target's photo: "<folder>/Laptop/Files/Photo1".. 5, read by
+    // SetLocaleFolder 0x52D340): an empty text (not there, the key itself would show), as the unused entries
+    if (BaseFilesHidden() && !g_folder.empty())
+        for (int i = 1; i <= 5; ++i)
+            g_texts[Lower(g_folder + "/Laptop/Files/Photo" + std::to_string(i))] = Node("");
 }
 
 bool InDocument(int slot)
@@ -1319,6 +1338,15 @@ void DrawPanel()
 
     ImGui::SeparatorText("Briefing (the laptop's text)");
     DrawBriefingEditor();
+    bool files = !BaseFilesHidden();
+    if (ImGui::Checkbox("The level's additional files (Target Photo)", &files)) {
+        Doc().baseFiles = files ? 1 : 0;
+        Changed();
+        g_status = "the laptop's files change when the map loads again";
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The base level's files in the laptop, e.g. its target's photo.\n"
+                          "Hidden on an emptied map unless switched on. Takes effect when the map loads.");
     ImGui::SeparatorText("Objectives (the laptop's lines)");
     if (!g_briefing)
         ImGui::TextDisabled("(this map has no laptop briefing yet)");
@@ -1798,6 +1826,7 @@ void InstallMission()
     Hook("BriefingMenu::SetObjective", kSetObjective, hkSetObjective, &oSetObjective);
     Hook("Level::InitMessages", kLevelInit, hkLevelInit, &oLevelInit);
     Hook("BriefingMenu::SetObjectiveCompleted", kSetCompleted, hkSetCompleted, &oSetCompleted);
+    Hook("BriefingMenu::Action", kBriefingAction, hkBriefingAction, &oBriefingAction);
     overlay::AddPanel({"Mission", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     OnScenePushed(OnScene);
     OnFrameEnd(Check);

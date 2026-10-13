@@ -40,7 +40,7 @@ users are guided around it), **open**.
 | P12 | Estate Run | A loop over `h2.objects(...)` stopped with "object ... is not in the loaded scene" on `o:name()`: a sound object the game made for a moment was gone by then | fixed: `name()` reads the name from the path (no live object needed) |
 | P13 | Estate Run | `h2.spawn(source, x, y, z)` copies stayed unseen: they went into the source's room (a garage lamp's copy on the road was in the garage room, drawn only from inside) | fixed: a copy goes into the room of its place |
 | P14 | Estate Run | After `setpos` across the map Hitman sometimes fell through the ground (y -39009) and died; the game's pause menu then stops the clock | guarded (2026-10-13): not seen again in over 100 moves (standing, running, turning, right after a load); for 4 s after a move Hitman is put back on the place if he falls 5 m below it (logged) |
-| P15 | Estate Run | Completing a level counts as completing its base map in the profile (here C1-1's Silent Assassin bonus weapon was awarded) | open (known: docs/roadmap.md section 3, a map of its own) |
+| P15 | Estate Run | Completing a level counts as completing its base map in the profile (here C1-1's Silent Assassin bonus weapon was awarded) | open (known: docs/roadmap.md section 3, a map of its own); fixed 2026-10-14: see below |
 | P16 | Estate Run | A subtitle and an info line share one place on the screen: the first "seconds left" info hid the start subtitle | a script's care (docs/lua.md says so); the example fixed |
 | P17 | Arena | On a map with *No buildings*, copies of the map's own models (Models tab, Ctrl+D, `h2.spawn`) are not drawn, though placed, not hidden, in the right room; the same copies on the normal map are | fixed (2026-10-13): a copy of a hidden object is never drawn, also when shown later; the blank map's models are shown while being copied (the copy keeps its model's collision as before) |
 | P18 | Arena | A copy placed at a position (`h2.dev_edit("dup")`, the editor's duplicate at a place) went into its source's room: far from it, unseen | fixed: the room of its place, as points |
@@ -113,3 +113,10 @@ saves and loads (22 checks).
 | P28 | A new *No buildings* level made while Hitman was falling (a blank map without its floor) put the floor where he had fallen to | fixed: then under the place he came in at |
 | P29 | The editor's "reach a place" goal done was lost by loading a saved game (its check mark too) | fixed: kept with the saved game (as above) |
 
+
+## 2026-10-14: the last open findings
+
+| # | Found | Status |
+|---|---|---|
+| P15 | Completing a level counted as completing its base map in the profile (C1-1's Silent Assassin bonus weapon), and *Continue* went on to the campaign's next mission | fixed: the profile is the global variables of CGlobalCom; while a level of the editor is on the map the statistics screen does not write Save\<n>.blap, the variables are put back when the map is left, and *Continue* goes to the main menu. Checked: the same completion without a level wrote the profile and awarded the weapon; with a level the profile stayed byte for byte (`tools/tests/profile_test.py`, 8 checks) |
+| P8 | The base level's *Target Photo* stayed in the laptop | fixed: on an emptied map its files are hidden (their texts empty, a click on the entry opens nothing: BriefingMenu action 0xC9..); *Mission* tab > *The level's additional files* (level.json `base_files`) shows or hides them on any map |

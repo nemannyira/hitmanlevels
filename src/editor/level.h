@@ -28,7 +28,8 @@
 //     "objectives": [ { "slot": 1, "text": "Kill the lawyer", "goal": "kill",
 //                       "target": "ROOT/.../MafiaLawyer/Ground", "replaces_original": true } ],
 //     "end_when_done": true, "exit": "ROOT/.../Point+3", "exit_radius": 300,
-//     "base_ends": false },                    // the base level's own logic does not end it
+//     "base_ends": false,                      // the base level's own logic does not end it
+//     "base_files": false },                   // its laptop files (Target Photo); absent: hidden on an emptied map
 //   "music": { "ROOT/.../MusicControl/InsideAndOutside/Location_01": "RussiaSlow" },
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
@@ -99,6 +100,8 @@ struct MissionDoc {
     float exitRadius = 300.0f;
     std::string briefing;          // the laptop's mission briefing ("" = the level's own)
     bool baseEnds = true;          // the base level's own logic may end the mission
+    int baseFiles = -1;            // the laptop's additional files of the base level (Target Photo):
+                                   // 1 shown, 0 hidden, -1 hidden on an emptied map
 };
 
 struct ImportedModel {        // a model of another level the map is loaded with

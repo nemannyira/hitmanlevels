@@ -172,8 +172,11 @@ Save\<slot>.h2lua next to the game's files).
 * The end of a mission (the level routine's MissionCompleted, 0x5058B0;
   also the editor's goals and h2.mission("complete")) saves progress
   (GlobalCom strLastCompletedScene / strHighestCompletedScene) and shows the
-  statistics window (MSG_SHOWSTATS): a level of the editor on C1-1 counts as
-  completing C1-1 in the save. A map of its own (section 3) keeps them apart.
+  statistics window (MSG_SHOWSTATS). The profile (Save\<n>.blap) is the
+  global variables of CGlobalCom (0x6A40EC: a buffer of 0x2000 bytes); the
+  statistics screen writes it (0x551420). While a level of the editor is on
+  the map that write is skipped and the variables are put back when the map
+  is left; its Continue goes to the main menu (src/editor/profile_guard.h).
 * The counters come from the game's events: shots, kills (CharacterKilled /
   ActorDead), headshots (scripts call IncHeadshots), alerts (guard scripts).
   Characters the level places are made with the scene and count like the

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <algorithm>
+#include <set>
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -103,13 +104,32 @@ bool InItem(engine::ZGEOM* geom)
     return false;
 }
 
+// Objects hidden as the map's files have them, noted when a saved game is
+// loaded (it hides what the blank map took out: those are taken out again)
+std::set<engine::ZGEOM*> g_hiddenAtLoad;
+bool g_hiddenAtLoadKnown;
+
+void NoteHiddenBeforeGameLoad()
+{
+    g_hiddenAtLoad.clear();
+    for (const auto& g : SceneModel(0).geoms)
+        if (IsLive(g.geom) && IsHidden(g.geom))
+            g_hiddenAtLoad.insert(g.geom);
+    g_hiddenAtLoadKnown = true;
+}
+
+bool HiddenByTheMap(engine::ZGEOM* geom)
+{
+    return g_hiddenAtLoadKnown ? g_hiddenAtLoad.count(geom) > 0 : IsHidden(geom);
+}
+
 void BlankScene()
 {
     if (!g_blanked.empty())
         return;
     for (const auto& g : SceneModel(0).geoms) {
         engine::ZGEOM* geom = g.geom;
-        if (!IsLive(geom) || IsSpawned(geom) || IsHidden(geom))
+        if (!IsLive(geom) || IsSpawned(geom) || HiddenByTheMap(geom))
             continue;  // the editor's, or hidden already (templates, cutscenes)
         uint32_t mesh = engine::MeshOf(geom);
         if (!mesh || !engine::IsPlainModel(mesh) || InActor(geom) || InItem(geom))
@@ -119,14 +139,23 @@ void BlankScene()
             c = char(tolower(static_cast<unsigned char>(c)));
         if (g.name.rfind("SkyDome", 0) == 0 || lowPath.find("backdrop") != std::string::npos ||
             g.path.find("HitmanAs") != std::string::npos || g.path.find("GuiSetup") != std::string::npos ||
-            g.path.find("HeroSetup") != std::string::npos)
-            continue;  // the sky (its dome and clouds) stays; clothes Hitman can wear, the interface and Hitman's setup too
+            g.path.find("HeroSetup") != std::string::npos || g.path.rfind("ROOT/EditorImports", 0) == 0)
+            continue;  // the sky (its dome and clouds) stays; clothes Hitman can wear, the interface and Hitman's
+                       // setup too; the models of other levels the level uses (its floor's collision is theirs)
         g_blanked.push_back({geom, mesh});
         SetHidden(geom, true);
         engine::SetModelSolid(mesh, false);
     }
     InvalidateSceneModel();
     Log("level: blank map, %d models taken out", int(g_blanked.size()));
+}
+
+bool IsBlanked(engine::ZGEOM* geom)
+{
+    for (const Blanked& b : g_blanked)
+        if (b.geom == geom)
+            return true;
+    return false;
 }
 
 void RestoreBlank()
@@ -224,6 +253,8 @@ void RestoreScene()
 bool g_panelVisible = true;
 bool g_autoApply = true;
 bool g_applyPending;
+float g_hitmanAtLoad[3];   // where Hitman was when the map came up (the floor's place when he is falling)
+bool g_hitmanAtLoadKnown;
 int g_applyWaitFrames;
 char g_newName[64] = "My level";
 std::string g_status;
@@ -648,6 +679,7 @@ void OnScene(const std::string& scene)
     g_retiredPoints.clear();
     g_cleared.clear();  // they went with the scene
     g_blanked.clear();
+    g_hitmanAtLoadKnown = false;
     script::ForgetScriptObjects();
     for (auto& [path, e] : g_level.objects)
         e.hasOriginal = false;  // originals belong to the previous load
@@ -690,6 +722,11 @@ void OnFrame()
             classesKnown = true;
         }
     PutBackFallen();
+    if (!g_hitmanAtLoadKnown && engine::SceneDataValid())
+        if (engine::ZGEOM* hitman = engine::Player(); hitman && IsLive(hitman)) {
+            memcpy(g_hitmanAtLoad, GetTransform(hitman).pos, sizeof(g_hitmanAtLoad));
+            g_hitmanAtLoadKnown = true;
+        }
     if (!g_applyPending || --g_applyWaitFrames > 0)
         return;
     g_applyPending = false;
@@ -737,11 +774,14 @@ std::vector<Problem> FindProblems()
                                g ? PathOf(g) : ""});
             }
         for (const MissionObjective& o : L.mission.objectives)
-            if (o.goal != MissionObjective::Level && (o.target.empty() || !Resolve(o.target)))
+            if (o.goal != MissionObjective::Level && (o.target.empty() || !ResolveTarget(o.target)))
                 out.push_back({"objective " + std::to_string(o.slot) + ": its " +
-                                   (o.goal == MissionObjective::Kill ? "target" : "place") + " is missing",
+                                   (o.goal == MissionObjective::Kill   ? "target"
+                                    : o.goal == MissionObjective::Take ? "object"
+                                                                       : "place") +
+                                   " is missing",
                                ""});
-        if (!L.mission.exitPath.empty() && !Resolve(L.mission.exitPath))
+        if (!L.mission.exitPath.empty() && !ResolveTarget(L.mission.exitPath))
             out.push_back({"the mission's exit is missing", ""});
     }
     for (const std::string& s : L.scripts) {
@@ -1344,13 +1384,13 @@ bool SaveLevel(std::string* error)
         const MissionDoc& m = g_level.mission;
         json objs = json::array();
         for (const MissionObjective& o : m.objectives) {
-            static const char* goals[] = {"level", "kill", "reach"};
+            static const char* goals[] = {"level", "kill", "reach", "take"};
             json jo = {{"slot", o.slot}, {"text", o.text}, {"goal", goals[o.goal]}};
             if (o.goal != MissionObjective::Level) {
                 jo["target"] = o.target;
                 jo["replaces_original"] = o.replacesOriginal;
             }
-            if (o.goal == MissionObjective::Reach)
+            if (o.goal == MissionObjective::Reach || o.goal == MissionObjective::Take)
                 jo["radius"] = o.radius;
             objs.push_back(jo);
         }
@@ -1504,10 +1544,14 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 mo.slot = o.value("slot", 1);
                 mo.text = o.value("text", "");
                 std::string goal = o.value("goal", "level");
-                mo.goal = goal == "kill" ? MissionObjective::Kill
-                                         : goal == "reach" ? MissionObjective::Reach : MissionObjective::Level;
+                mo.goal = goal == "kill"    ? MissionObjective::Kill
+                          : goal == "reach" ? MissionObjective::Reach
+                          : goal == "take"  ? MissionObjective::Take
+                                            : MissionObjective::Level;
                 mo.target = o.value("target", "");
-                mo.radius = o.value("radius", 250.0f);
+                mo.radius = o.value("radius", mo.goal == MissionObjective::Take ? 150.0f : 250.0f);
+                if (!(mo.radius >= 50.0f && mo.radius <= 5000.0f))  // also NaN
+                    mo.radius = 250.0f;
                 mo.replacesOriginal = o.value("replaces_original", true);
                 if (mo.slot >= 1 && mo.slot <= 6)
                     L.mission.objectives.push_back(mo);
@@ -1850,6 +1894,128 @@ bool DeleteObject(engine::ZGEOM* geom)
 }
 
 const SpawnedObject* FindSpawned(engine::ZGEOM* geom) { return EntryOf(geom); }
+
+namespace {
+
+bool ValidPointName(const std::string& n)
+{
+    if (n.empty() || n.size() > 40)
+        return false;
+    for (char c : n)
+        if (!(isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '+'))
+            return false;
+    return true;
+}
+
+// every path of the document naming the object `from` -> `to`; a goal's own
+// text ("Reach Point") follows its new name
+void ReplacePath(const std::string& from, const std::string& to, std::string oldName, const std::string& newName)
+{
+    auto fix = [&](std::string& p) {
+        if (!from.empty() && p == from)
+            p = to;
+    };
+    if (size_t plus = oldName.find('+'); plus != std::string::npos && plus > 0)
+        oldName.resize(plus);
+    for (MissionObjective& o : g_level.mission.objectives) {
+        if (from.empty() || o.target != from)
+            continue;
+        o.target = to;
+        for (const char* verb : {"Reach ", "Take "})
+            if (o.text == verb + oldName)
+                o.text = verb + newName;
+    }
+    fix(g_level.mission.exitPath);
+    for (LevelNpc& n : g_level.npcs)
+        for (ParamValue& v : n.params)
+            fix(v.value);
+    for (auto& [record, e] : g_level.npcEdits)
+        for (ParamValue& v : e.params)
+            fix(v.value);
+    for (auto& [path, points] : g_level.lists)
+        for (std::string& p : points)
+            fix(p);
+}
+
+// the point of entry `oldId` made again under the name `newId`, the level's references following it
+engine::ZGEOM* DoRenamePoint(const std::string& oldId, const std::string& newId, std::string* error)
+{
+    auto it = std::find_if(g_level.spawned.begin(), g_level.spawned.end(),
+                           [&](const SpawnedObject& s) { return s.id == oldId; });
+    if (it == g_level.spawned.end() || !it->point) {
+        if (error)
+            *error = "no such point of the level";
+        return nullptr;
+    }
+    SpawnedObject before = *it, after = *it;
+    after.id = newId;
+    engine::ZGEOM* old = LiveSpawned(oldId);
+    if (old)
+        after.transform = GetTransform(old);
+    std::string oldPath = old ? PathOf(old) : "";
+    RemoveSpawned(oldId);  // (a point is kept by the engine, out of the level: an undo takes it back)
+    engine::ZGEOM* g = Materialize(after, error);
+    if (!g) {
+        AddSpawned(before);
+        return nullptr;
+    }
+    g_level.spawned.push_back(after);
+    g_level.dirty = true;
+    std::string newPath = PathOf(g);
+    ReplacePath(oldPath, newPath, oldId, newId);
+    if (CurrentScene() == g_level.baseScene)
+        ApplyMission();  // the laptop's texts of goals that followed the name
+    for (auto& [path, points] : g_level.lists)  // routes through it: their new element
+        if (std::find(points.begin(), points.end(), newPath) != points.end())
+            ApplyListEdit(path, points);
+    Log("level: point %s renamed %s", oldId.c_str(), newId.c_str());
+    return g;
+}
+
+} // namespace
+
+engine::ZGEOM* RenamePoint(engine::ZGEOM* geom, const std::string& name, std::string* error)
+{
+    auto fail = [&](const std::string& why) -> engine::ZGEOM* {
+        if (error)
+            *error = why;
+        return nullptr;
+    };
+    const SpawnedObject* e = EntryOf(geom);
+    if (!e || !e->point)
+        return fail("only points the level made can be renamed");
+    if (!ValidPointName(name))
+        return fail("a name of letters, digits, _ and - (at most 40)");
+    if (name == e->id)
+        return geom;
+    for (const SpawnedObject& s : g_level.spawned)
+        if (s.id == name)
+            return fail("the level has an object named " + name);
+    if (!SceneModel().FindName(name).empty() && !g_retiredPoints.count(name))
+        return fail("the map has an object named " + name);
+    std::string oldId = e->id;
+    engine::ZGEOM* g = DoRenamePoint(oldId, name, error);
+    if (!g)
+        return nullptr;
+    PushAction(
+        "rename", [oldId, name] { return DoRenamePoint(name, oldId, nullptr) != nullptr; },
+        [oldId, name] { return DoRenamePoint(oldId, name, nullptr) != nullptr; });
+    return g;
+}
+
+std::string TargetFor(engine::ZGEOM* geom)
+{
+    if (const SpawnedObject* s = EntryOf(geom); s && s->item)
+        return "level:" + s->id;
+    return PathOf(geom);
+}
+
+engine::ZGEOM* ResolveTarget(const std::string& target)
+{
+    if (target.rfind("level:", 0) == 0)
+        return LiveSpawned(target.substr(6));
+    return Resolve(target);
+}
 
 const LevelNpc* FindLevelNpc(engine::ZGEOM* actor) { return NpcEntryOf(actor); }
 
@@ -2376,6 +2542,11 @@ bool PlaceFloor()
     if (!hitman || !IsLive(hitman) || !model)
         return false;
     Transform mt = GetTransform(model), h = GetTransform(hitman), t = mt;
+    if (g_hitmanAtLoadKnown && h.pos[1] < g_hitmanAtLoad[1] - 100.0f) {
+        // falling (a blank map without its floor yet): under the place he came in at
+        Log("level: Hitman is falling (%.0f): the floor goes under his start", h.pos[1]);
+        memcpy(h.pos, g_hitmanAtLoad, sizeof(h.pos));
+    }
     float c[3], r = 0.0f;
     if (!GetBounds(model, c, r))
         memcpy(c, mt.pos, sizeof(c));
@@ -2683,6 +2854,12 @@ std::vector<std::string> ListLevels()
 
 void InstallLevelPanel()
 {
+    SetTakenOutTest(IsBlanked);
+    script::SetBeforeGameLoad(NoteHiddenBeforeGameLoad);
+    OnSceneLeaving([](const std::string&) {
+        g_hiddenAtLoad.clear();
+        g_hiddenAtLoadKnown = false;
+    });
     overlay::AddPanel({"Level", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     overlay::AddMenu("File", FileMenu);
     OnScenePushed(OnScene);

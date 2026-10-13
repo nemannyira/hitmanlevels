@@ -17,7 +17,7 @@ local package, best = nil, math.huge
 for _, o in ipairs(h2.findall("KeyRoom")) do
   local x, _, z = o:pos()
   local d = (x - 2700) ^ 2 + (z + 5500) ^ 2
-  if d < best then package, best = o, d end
+  if o:isa("ZItem") and d < best then package, best = o, d end  -- the item, not its model
 end
 if not package then error("Dead Drop: the package is not on the map") end
 

@@ -48,6 +48,9 @@ void SetState(engine::ZGEOM* geom, const ObjectState& s);
 // part of the scene model and destroyed before the scene is left.
 engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error = nullptr,
                           engine::ZGEOM* parent = nullptr);
+// Objects the level took out of the map (the blank map's models): a copy of
+// one is made as of a shown one (a copy of a hidden object is never drawn).
+void SetTakenOutTest(bool (*takenOut)(engine::ZGEOM*));
 // The room (ZROOM) an object belongs to: the engine draws a room's contents
 // only when the room is visible, so new objects go into the room they stand in.
 engine::ZGEOM* RoomOf(engine::ZGEOM* geom);

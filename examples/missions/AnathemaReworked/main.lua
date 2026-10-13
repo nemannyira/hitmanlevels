@@ -44,11 +44,12 @@ local function allDone()
   return h2.state.ledger and h2.state.suit and h2.state.done5 and h2.state.done6
 end
 
--- 1: the ledger (the level's KeyRoom by the road)
+-- 1: the ledger (the level's KeyRoom by the road). findall finds the item's
+-- model too (".../KeyRoom#1/KeyRoom"): the item itself is the ZItem.
 local ledger
 for _, o in ipairs(h2.findall("KeyRoom")) do
   local x, _, z = o:pos()
-  if (x - 4200) ^ 2 + (z + 6200) ^ 2 < 300 ^ 2 then ledger = o end
+  if o:isa("ZItem") and (x - 4200) ^ 2 + (z + 6200) ^ 2 < 300 ^ 2 then ledger = o end
 end
 h2.on("pickup", function(e)
   if not h2.state.ledger and ledger and e.object and e.object:path() == ledger:path() then

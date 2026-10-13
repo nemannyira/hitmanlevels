@@ -35,7 +35,7 @@ the map is loaded (`obj:valid()`).
 | call | |
 |---|---|
 | `h2.find(name)` | by name (`"Crate#2"`: the third of that name) or full path; nil: none |
-| `h2.findall(name)` | all of that name |
+| `h2.findall(name)` | all of that name (an item's model has its name too: `o:isa("ZItem")` is the item itself) |
 | `h2.objects(class)` | all of a class, derived ones too (`"ZActor"`, `"ZSTDOBJ"`, `"ZItemTemplate"`) |
 | `obj:name()`, `obj:path()`, `obj:class()`, `obj:isa(class)`, `obj:valid()` | |
 | `obj:pos()`, `obj:setpos(x, y, z)` | world position, centimetres, +Y up |
@@ -44,7 +44,7 @@ the map is loaded (`obj:valid()`).
 | `obj:children()`, `obj:parent()` | |
 | `obj:spawn([x, y, z [, yaw]])`, `h2.spawn(source, x, y, z [, yaw])` | a copy of an object's model (runtime only) |
 | `obj:destroy()`, `obj:spawned()` | objects made by scripts |
-| `h2.item(template, x, y, z [, yaw])` | a working item from a template of the map (`"GunHardballer"`, `"KeyDoor"`; see `h2.objects("ZItemTemplate")`) |
+| `h2.item(template, x, y, z [, yaw])` | a working item from a template of the map (`"GunHardballer"`, `"KeyDoor"`; see `h2.objects("ZItemTemplate")`). The game offers it to pick up only while (x, y, z) is above the ground's collision: a few centimetres over the floor |
 | `h2.point(x, y, z [, room])` | an invisible point (for routes, walking) |
 | `list:points()`, `list:setpoints{ obj, ... }` | routes and point lists of the map |
 | `h2.mesh_object(mesh, x, y, z [, parent [, flags]])` | a plain object showing a model of the map |
@@ -129,10 +129,10 @@ fails prints its error and the others still run.
 | `"death"` | a character (checked 4 times a second, any cause) |
 | `"hitman_damage"` | `{amount, health, dead}` |
 | `"mission"` | `{result = "completed" / "failed", stopped}`: `stopped`, the base level's own end not let through |
-| `"objective"` | the slot of an objective the editor's mission marked done |
+| `"objective"` | the slot of an objective the editor's mission marked done (a target dead, a place reached, an object taken) |
 | `"suspicious"`, `"recognized"`, `"hostile"`, `"spotted"`, `"help"` | a guard's reaction; `e.to`: the guard (once a second each) |
 | `"alarm"` | `e.on`; levels whose scripts have an alarm state (not C1-1) |
-| `"disguise"`, `"pickup"`, `"useitem"`, `"drop"` | Hitman's clothes, items (`e.object`) |
+| `"disguise"`, `"pickup"`, `"useitem"`, `"drop"` | Hitman's clothes, items (`e.object`: the item, not its model) |
 | `"shot"` | `e.silent`; once a second per place (everyone near hears it) |
 | `"hit"`, `"damage"`, `"explosion"`, `"unconscious"` | |
 | `"door"` | `e.open`, `e.to` the door, `e.object` who |
@@ -151,6 +151,8 @@ booleans and tables (lists 1..n or string keys; number keys of other tables
 come back as strings; functions are not kept). A new map starts with it
 empty; a saved game gives it back before the level's scripts run, so they
 see it:
+
+The key `__editor` is the editor's own (its mission goals done).
 
 ```lua
 h2.state.stage = h2.state.stage or 1

@@ -1,6 +1,7 @@
 #include "model.h"
 #include "playtest.h"
 
+#include <windows.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -11,6 +12,7 @@
 #include "../config.h"
 #include "../engine/messages.h"
 #include "../engine/npc.h"
+#include "../engine/scene_data.h"
 #include "../engine/spawn.h"
 #include "../game.h"
 #include "../log.h"
@@ -167,6 +169,12 @@ void DestroyAllSpawned(const std::string&)
     InvalidateSceneModel();
 }
 
+namespace {
+bool (*g_takenOut)(engine::ZGEOM*);
+}
+
+void SetTakenOutTest(bool (*takenOut)(engine::ZGEOM*)) { g_takenOut = takenOut; }
+
 engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error,
                           engine::ZGEOM* parent)
 {
@@ -175,7 +183,29 @@ engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::s
         hooked = true;
         OnSceneLeaving(DestroyAllSpawned);
     }
+    // A copy of a hidden object stays unseen after it is shown: the blank map's
+    // models (P17, 2026-10-13). They are shown while being copied (no frame is
+    // drawn in between); parts hidden by the map itself (a lamp's "on" stage)
+    // stay hidden in the copy too.
+    std::vector<engine::ZGEOM*> hidden;
+    const auto& snap = SceneModel();
+    int start = snap.Find(source);
+    if (start >= 0) {
+        std::vector<int> queue{start};
+        for (size_t q = 0; q < queue.size() && q < 4096; ++q) {
+            const engine::GeomInfo& g = snap.geoms[queue[q]];
+            if (IsLive(g.geom) && IsHidden(g.geom) && g_takenOut && g_takenOut(g.geom))
+                hidden.push_back(g.geom);
+            queue.insert(queue.end(), g.children.begin(), g.children.end());
+        }
+    } else if (IsHidden(source) && g_takenOut && g_takenOut(source)) {
+        hidden.push_back(source);
+    }
+    for (engine::ZGEOM* h : hidden)
+        SetHidden(h, false);
     engine::ZGEOM* geom = engine::CloneGeom(source, name, error, parent);
+    for (engine::ZGEOM* h : hidden)
+        SetHidden(h, true);
     if (geom) {
         g_spawned.push_back({geom->node, geom});
         InvalidateSceneModel();
@@ -382,6 +412,51 @@ void CancelSettle(engine::ZGEOM* actor)
         }
 }
 
+// After a long move Hitman twice ended at his old place (x, z) under the
+// ground and fell (P14, 2026-10-12: a test player moving him across the map
+// right after walking; not seen again in 100 moves). For a few seconds after a
+// move he is put back on the place if he falls far below it.
+namespace {
+struct HitmanMove {
+    engine::ZGEOM* hitman = nullptr;
+    Transform to{};
+    double until = 0;
+    int putBack = 0;
+} g_hitmanMove;
+
+void CheckHitmanFall()
+{
+    HitmanMove& m = g_hitmanMove;
+    if (!m.hitman)
+        return;
+    if (GetTickCount64() > m.until || !IsLive(m.hitman) || !engine::SceneDataValid()) {
+        m.hitman = nullptr;
+        return;
+    }
+    Transform now = GetTransform(m.hitman);
+    if (now.pos[1] > m.to.pos[1] - 500.0f || m.putBack >= 2)
+        return;
+    ++m.putBack;
+    Log("Hitman fell after a move (%.0f %.0f %.0f, the place %.0f %.0f %.0f): put back", now.pos[0], now.pos[1],
+        now.pos[2], m.to.pos[0], m.to.pos[1], m.to.pos[2]);
+    Transform back = m.to;
+    back.pos[1] += 30.0f;
+    engine::ZBaseGeom* parent = m.hitman->node->parent;
+    if (parent && engine::IsReadable(parent, sizeof(*parent)) && parent->geom && IsLive(parent->geom))
+        SetTransform(parent->geom, back);
+}
+} // namespace
+
+void WatchHitmanAfterMove(engine::ZGEOM* hitman, const Transform& to)
+{
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnFrameEnd(CheckHitmanFall);
+    }
+    g_hitmanMove = {hitman, to, double(GetTickCount64()) + 4000.0, 0};
+}
+
 void SetTransform(engine::ZGEOM* geom, const Transform& t)
 {
     if (engine::IsA(geom, "ZActor")) {  // characters keep their own position: teleported
@@ -395,6 +470,7 @@ void SetTransform(engine::ZGEOM* geom, const Transform& t)
     // where he is (moving the node itself flings him out of the world)
     if (engine::IsA(geom, "ZHITMAN2") && parentGeom && IsLive(parentGeom) && engine::IsA(parentGeom, "ZGROUP")) {
         SetTransform(parentGeom, t);
+        WatchHitmanAfterMove(geom, t);
         return;
     }
     EnsureDynamic(geom);
@@ -515,12 +591,16 @@ engine::ZGEOM* Resolve(const std::string& path)
         return snap.geoms[i].geom;
     // An object the level made ("Point+1": its name is its own) may be in another room after the
     // map loads again than when a goal took its path (a garage point, 2026-10-13): found by name.
+    // A renamed point ("Garage") is the editor's too.
     size_t slash = path.rfind('/');
     std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
-    if (name.find('+') == std::string::npos)
+    if (name.empty() || name.find('#') != std::string::npos)
         return nullptr;
     std::vector<int> same = snap.FindName(name);
-    return same.size() == 1 ? snap.geoms[same[0]].geom : nullptr;
+    if (same.size() != 1)
+        return nullptr;
+    engine::ZGEOM* g = snap.geoms[same[0]].geom;
+    return name.find('+') != std::string::npos || IsSpawned(g) ? g : nullptr;
 }
 
 void MatrixToEuler(const float m[9], float& yaw, float& pitch, float& roll)
@@ -571,6 +651,25 @@ void Orthonormalize(float m[9])
     u[2] = f[0] * r[1] - f[1] * r[0];
 }
 
+namespace {
+// really under `root` now: the snapshot's lists can be older than the scene.
+// (The editor's own copies are not parts either: a placement preview is made
+// next to its source, under an item template, and the preview made again in
+// another room got the first one as a second part: the key was placed
+// kilometres away, 2026-10-13.)
+bool Below(engine::ZGEOM* geom, engine::ZGEOM* root)
+{
+    engine::ZBaseGeom* n = geom->node;
+    for (int depth = 0; n && depth < 32; ++depth, n = n->parent) {
+        if (n == root->node)
+            return true;
+        if (!engine::IsReadable(n, sizeof(engine::ZBaseGeom)))
+            return false;
+    }
+    return false;
+}
+} // namespace
+
 std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root)
 {
     // render instance (0x8000) and none of: sound/sight helper (PosBox_Hand),
@@ -588,7 +687,8 @@ std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root)
     std::vector<int> queue{start};
     for (size_t q = 0; q < queue.size() && q < 512; ++q) {
         const engine::GeomInfo& g = snap.geoms[queue[q]];
-        if (IsLive(g.geom) && engine::MeshOf(g.geom) && (g.node->flags & kShown) && !(g.node->flags & kNotShown))
+        if (IsLive(g.geom) && engine::MeshOf(g.geom) && (g.node->flags & kShown) && !(g.node->flags & kNotShown) &&
+            (g.geom == root || !IsSpawned(g.geom)) && Below(g.geom, root))
             parts.push_back(g.geom);
         queue.insert(queue.end(), g.children.begin(), g.children.end());
     }

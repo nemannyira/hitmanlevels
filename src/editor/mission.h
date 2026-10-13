@@ -21,9 +21,10 @@ void InstallMission();
 // A text the editor answers in the game's LOC tree (UTF-8), e.g. its main menu entry.
 void SetLocText(const std::string& key, const std::string& text);
 // The inspector's Mission row for the selected object: make it a target to kill,
-// a place Hitman has to reach or the mission's exit (or which line it is already).
+// an object Hitman has to take, a place Hitman has to reach or the mission's
+// exit (or which line it is already).
 void DrawMissionForSelection(engine::ZGEOM* geom);
-// The same from code (dev commands): "target" | "reach" | "exit"; what was done or why not.
+// The same from code (dev commands): "target" | "take" | "reach" | "exit"; what was done or why not.
 std::string MissionGoalFor(engine::ZGEOM* geom, const std::string& goal);
 // Picking a target / place in the world for an objective: the viewport hands the mouse over.
 bool MissionPicking();

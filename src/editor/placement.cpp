@@ -26,6 +26,10 @@ namespace {
 constexpr float kRad = 3.14159265f / 180.0f;
 constexpr float kRotateStep = 15.0f;  // degrees per wheel notch
 constexpr float kLiftStep = 5.0f;     // cm per wheel notch (Ctrl: the grid step)
+// An item is offered to pick up only while its own point (the ZItem's position) is
+// above the ground's collision: 2 cm under it no "Pick up", 2 cm over it yes (C1-1,
+// 2026-10-13, P22). The drawn surface and the collision differ by a centimetre or so.
+constexpr float kItemClearance = 3.0f;
 
 // placing a model
 std::string g_sourcePath;
@@ -219,6 +223,22 @@ Transform CurrentTransform()
     return t;
 }
 
+// an item's own point at least kItemClearance over the surface under the mouse
+void KeepItemClear(Transform& item)
+{
+    if (!g_haveHit)
+        return;
+    const float* n = SurfaceNormal();
+    if (n[1] < 0.5f)
+        return;  // on a wall: the floor below decides
+    float target[3];
+    TargetPoint(target);
+    float d = (item.pos[0] - target[0]) * n[0] + (item.pos[1] - target[1]) * n[1] + (item.pos[2] - target[2]) * n[2];
+    if (d < kItemClearance)
+        for (int i = 0; i < 3; ++i)
+            item.pos[i] += n[i] * (kItemClearance - d);
+}
+
 void DestroyPreview()
 {
     SetPickIgnore(nullptr);
@@ -264,7 +284,9 @@ void Commit(bool keepPlacing)
         engine::ZGEOM* tmpl = Resolve(g_templatePath);
         if (tmpl && source) {
             Transform modelInTemplate = Relative(GetTransform(tmpl), GetTransform(source));
-            placed = PlaceItem(tmpl, Compose(t, Inverse(modelInTemplate)), &err);
+            Transform item = Compose(t, Inverse(modelInTemplate));
+            KeepItemClear(item);
+            placed = PlaceItem(tmpl, item, &err);
         } else {
             err = "item template not found";
         }
@@ -516,6 +538,8 @@ void UpdatePlacement()
         SetHighlightExtra(g_preview.parts, 0xFF40E0FF);
     // a grabbed object stays where it is while the mouse is not over a surface
     Transform t = g_grab && !g_haveHit ? GetTransform(g_grab) : CurrentTransform();
+    if (g_grab && g_haveHit && engine::IsA(g_grab, "ZItem"))
+        KeepItemClear(t);
     DrawGuide(t);
     if (g_grab) {
         Transform cur = GetTransform(g_grab);

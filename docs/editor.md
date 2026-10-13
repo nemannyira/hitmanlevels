@@ -40,10 +40,19 @@ level* / *File > Open level* loads a saved one.
 **Mission**:
 
 * *Mission* tab: the laptop's briefing and objective lines, what completes
-  each (the level's own logic, a character's death, Hitman reaching a place),
-  the mission's end and the music.
+  each (the level's own logic, a character's death, Hitman reaching a place,
+  Hitman taking an object), the mission's end and the music.
 * Quicker from a selection: the Inspector's *Mission* row: *Make it a
-  target* (a character), *Hitman has to get here*, *Make it the exit*.
+  target* (a character), *Hitman has to take it* (an object), *Hitman has to
+  get here*, *Make it the exit*.
+* An object to take can be anything placed or on the map. An item (a key,
+  a weapon: *Models > Pickup items*) is taken when Hitman picks it up the
+  game's way. Any other model (a briefcase, a stack of books) is taken when
+  Hitman presses E near it (*how near*, 1.5 m by default): it goes from the
+  world and the game shows "Taken.". Goals done stay done in saved games.
+* Points have names of their own: select one, type a name in the Inspector
+  (e.g. *Hideout*) and *Rename*. Routes, goals and characters' settings
+  follow it; scripts find it with `h2.find("Hideout")`.
 * A story of your own: Lua scripts. *Level > Scripts > New script from a
   template* writes one with the usual parts; *Run now* runs the scripts again
   without loading the map. The whole API: [lua.md](lua.md). The console
@@ -64,12 +73,13 @@ through: `examples/missions` (copy a folder into `Mods`).
 
 ## Good to know (from playing levels through)
 
-* Lay weapons on flat ground and check, when testing, that the game offers
-  "Pick up": a long weapon on a slope may not be offered. Hitman picks up
-  the first item of a pile: keep items apart.
-* A level with *No buildings*: build it with models of other levels
-  (*Models* > *Other levels...*, as the floor). Copies of the map's own models
-  are not drawn on it (docs/playtest_log.md, P17).
+* The game offers "Pick up" for an item only while its own point is above
+  the ground's collision: the editor puts placed items 3 cm above the
+  surface. Moved by hand into the ground (or a long weapon on a slope) it is
+  not offered: check the prompt when testing. Hitman picks up the first item
+  of a pile: keep items apart.
+* A level with *No buildings*: the map's own models and models of other
+  levels (*Models* > *Other levels...*, as the floor) can be placed on it.
 * Guards (BaseGuard) shoot a trespasser on sight: give the player cover, a
   way behind them or a disguise.
 * Completing a level counts as completing its base map in the game's

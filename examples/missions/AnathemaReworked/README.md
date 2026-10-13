@@ -10,6 +10,6 @@ starts in*).
 Play: copy this folder into the game's `Mods` folder, then main menu > Level
 Editor > Open a level > *Play*.
 
-Played through 2026-10-13 (docs/playtest_log.md): completed. The ledger,
-laid on the road by the garage, sank into the ground and could not be
-picked up (P22, open): the test marked it taken from the console.
+Played through 2026-10-13 (docs/playtest_log.md): completed. The ledger
+lies on the road by the garage: walk onto it and press E (the game offers
+items from about a metre).

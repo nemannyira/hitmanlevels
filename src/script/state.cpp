@@ -37,6 +37,10 @@ constexpr int kLoadEventFrames = 120;            // without level scripts: the "
 
 using json = nlohmann::json;
 
+void (*g_beforeGameLoad)();
+std::string (*g_saveExtra)();
+void (*g_loadExtra)(const std::string&);
+constexpr const char* kExtraKey = "__editor";
 int g_loadedSlot = -1;   // a "load" event to fire (-1: none)
 int g_loadFrames;
 
@@ -283,6 +287,16 @@ void WriteState(unsigned slot)
         lua_pop(L, 1);
         return;
     }
+    if (std::string extra = g_saveExtra ? g_saveExtra() : ""; !extra.empty()) {
+        json all = json::parse(text, nullptr, false);
+        json mine = json::parse(extra, nullptr, false);
+        if (!all.is_object())
+            all = json::object();
+        if (!mine.is_discarded()) {
+            all[kExtraKey] = mine;
+            text = all.dump(1, '	', false, json::error_handler_t::replace);
+        }
+    }
     std::string path = StatePath(slot);
     if (text.empty() || text == "{}") {
         DeleteFileA(path.c_str());  // nothing to keep: no file (a slot saved over)
@@ -326,6 +340,13 @@ void ReadState(unsigned slot)
             }
         }
     }
+    std::string extra;
+    if (j.is_object() && j.contains(kExtraKey)) {
+        extra = j[kExtraKey].dump();
+        j.erase(kExtraKey);
+    }
+    if (g_loadExtra)
+        g_loadExtra(extra);
     lua_pushcfunction(L, RestoreState);
     lua_pushlightuserdata(L, &j);
     if (PCall(L, 1, 0, 0) != LUA_OK) {
@@ -358,6 +379,8 @@ void __fastcall hkLoadGame2(void* engine, void* edx)
     unsigned slot = 0;
     if (auto sys = reinterpret_cast<char*>(game::SysInterface()))
         slot = *reinterpret_cast<unsigned*>(sys + kSys_LoadingSlot);
+    if (g_beforeGameLoad)
+        g_beforeGameLoad();
     oLoadGame2(engine, edx);
     if (slot) {
         ReadState(slot);
@@ -395,6 +418,14 @@ void InstallState()
         ResetState();
         g_loadedSlot = -1;
     });
+}
+
+void SetBeforeGameLoad(void (*fn)()) { g_beforeGameLoad = fn; }
+
+void SetSaveExtra(std::string (*save)(), void (*load)(const std::string&))
+{
+    g_saveExtra = save;
+    g_loadExtra = load;
 }
 
 void UpdateState()

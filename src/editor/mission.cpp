@@ -6,13 +6,17 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "imgui.h"
+#include "json.hpp"
 
 #include "../engine/game_events.h"
 #include "../engine/messages.h"
+#include "../engine/npc.h"
+#include "../input/dinput.h"
 #include "../engine/scene_data.h"
 #include "../hook.h"
 #include "../log.h"
@@ -21,6 +25,7 @@
 #include "../game.h"
 #include "../scene.h"
 #include "../script/events.h"
+#include "../script/state.h"
 #include "freecam.h"
 #include "level.h"
 #include "model.h"
@@ -76,6 +81,15 @@ bool g_ended;
 double g_lastCheck;
 bool g_applied;                            // the mission was applied to this scene
 std::map<engine::ZGEOM*, bool> g_alive;    // characters' life (the "death" event)
+// "Hitman takes it" goals: an item is taken when he holds it (its object is
+// kept: its path changes when he picks it up); anything else when he presses
+// the game's pickup key (E) near it: it is taken out of the world.
+engine::ZGEOM* g_takeObject[kSlots + 1];
+bool g_nearTake[kSlots + 1];                 // Hitman is near the object (the hint was shown)
+std::map<std::string, ObjectState> g_taken;  // objects taken out (target -> as they were)
+std::string g_pendingGoals;                  // goals done in a loaded saved game (applied when the mission runs)
+constexpr int kDikE = 0x12;                  // the game's pickup key (its default binding)
+constexpr float kAway = -100000.0f;          // a taken object's place: 1 km under the map
 
 MissionDoc& Doc() { return CurrentLevel().mission; }
 
@@ -305,10 +319,10 @@ bool SetVisible(void* element, bool visible)
 int g_shownLines;          // the last line shown beyond the level's own (0: none)
 bool g_hiddenLines[8];     // hidden by scripts (h2.objective(slot, false))
 float g_savesY = -1e30f;   // the "saves left" line's own place (local y); -1e30: not known
+float g_lineY[kSlots + 1];  // each line's own place (local y)
+bool g_lineYKnown;
 
-// The "saves left" line goes below the last line shown (in a level with 4
-// lines it is where line 5 is). Lines are siblings in "Objectives", one
-// line height apart.
+// Lines are siblings in "Objectives", one line height apart.
 engine::ZGEOM* LocalY(const char* name, float& y)
 {
     auto* e = static_cast<engine::ZGEOM*>(Element(name));
@@ -318,27 +332,52 @@ engine::ZGEOM* LocalY(const char* name, float& y)
     return e;
 }
 
-void PlaceSavesLeft(int lastLine)
+void SetLocalY(engine::ZGEOM* e, float y)
 {
-    char name[64];
-    snprintf(name, sizeof(name), "Objectives\\%d", lastLine);
-    float y1, y2, yLast, ySaves;
-    engine::ZGEOM* saves = LocalY("Objectives\\SavesLeft", ySaves);
-    if (!saves || !LocalY("Objectives\\1", y1) || !LocalY("Objectives\\2", y2) || !LocalY(name, yLast))
+    engine::ZBaseGeom* n = e->node;
+    if (n->pos[1] == y)
         return;
-    if (g_savesY < -1e29f)
-        g_savesY = ySaves;
-    float want = std::max(g_savesY, yLast + (y2 - y1));
-    if (want == ySaves)
-        return;
-    engine::ZBaseGeom* n = saves->node;
-    float pos[3] = {n->pos[0], want, n->pos[2]};
+    float pos[3] = {n->pos[0], y, n->pos[2]};
     float mat[9];
     memcpy(mat, n->mat, sizeof(mat));
     __try {
-        game::SetLocalTransform(saves, mat, pos);
+        game::SetLocalTransform(e, mat, pos);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
+}
+
+// The lines shown close up (a line hidden above leaves no gap: the level's
+// lines a script hid above the editor's, P8) and the "saves left" line goes
+// below the last one (in a level with 4 lines it is where line 5 is).
+void Relayout()
+{
+    char name[64];
+    if (!g_lineYKnown) {
+        for (int slot = 1; slot <= kSlots; ++slot) {
+            snprintf(name, sizeof(name), "Objectives\\%d", slot);
+            if (!LocalY(name, g_lineY[slot]))
+                return;
+        }
+        g_lineYKnown = true;
+    }
+    int shown = 0;
+    for (int slot = 1; slot <= kSlots; ++slot) {
+        snprintf(name, sizeof(name), "Objectives\\%d", slot);
+        float y;
+        engine::ZGEOM* e = LocalY(name, y);
+        if (!e)
+            continue;
+        bool hidden = (e->node->flags & 0xC00) != 0;  // the window file's 0x400, SetHidden's 0x800
+        SetLocalY(e, hidden ? g_lineY[slot] : g_lineY[++shown]);
+    }
+    float ySaves;
+    engine::ZGEOM* saves = LocalY("Objectives\\SavesLeft", ySaves);
+    if (!saves)
+        return;
+    if (g_savesY < -1e29f)
+        g_savesY = ySaves;
+    float step = g_lineY[2] - g_lineY[1];
+    SetLocalY(saves, shown > 0 ? g_lineY[shown] + step : g_savesY);
 }
 
 // lines the level does not use are hidden in its laptop
@@ -349,6 +388,7 @@ void HideLineElements(int slot)
         snprintf(name, sizeof(name), "Objectives\\%d%s", slot, part);
         SetVisible(Element(name), false);
     }
+    Relayout();
 }
 
 void ShowLineElements(int slot)
@@ -359,7 +399,7 @@ void ShowLineElements(int slot)
         SetVisible(Element(name), true);
     }
     g_shownLines = std::max(g_shownLines, slot);
-    PlaceSavesLeft(g_shownLines);
+    Relayout();
 }
 
 bool CallSetCompleted(int slot, bool done)
@@ -501,6 +541,7 @@ void ShowLines(const std::vector<int>& removed = {})
     for (int slot = 1; slot <= kSlots; ++slot)
         if (g_hiddenLines[slot])
             HideLineElements(slot);
+    Relayout();
 }
 
 bool CallSetFolder(void* briefing, const char* folder)
@@ -558,10 +599,49 @@ void DrawBriefingEditor()
 
 // ---- goals ----
 
+bool IsItem(engine::ZGEOM* g) { return g && engine::IsA(g, "ZItem") && !engine::IsA(g, "ZItemTemplate"); }
+
+// the item an object is a part of (its model), or the object itself
+engine::ZGEOM* ItemOrSelf(engine::ZGEOM* geom)
+{
+    for (engine::ZBaseGeom* n = geom && geom->node ? geom->node : nullptr; n; n = n->parent)
+        if (IsItem(n->geom))
+            return n->geom;
+    return geom;
+}
+
 engine::ZGEOM* Target(const MissionObjective& o)
 {
-    engine::ZGEOM* g = o.target.empty() ? nullptr : Resolve(o.target);
-    return g && IsLive(g) ? g : nullptr;
+    if (o.goal == MissionObjective::Take && o.slot >= 1 && o.slot <= kSlots) {
+        engine::ZGEOM*& kept = g_takeObject[o.slot];
+        if (kept && IsLive(kept))
+            return kept;
+        kept = nullptr;
+    }
+    engine::ZGEOM* g = o.target.empty() ? nullptr : ResolveTarget(o.target);
+    g = g && IsLive(g) ? g : nullptr;
+    if (g && o.goal == MissionObjective::Take && o.slot >= 1 && o.slot <= kSlots)
+        g_takeObject[o.slot] = g;
+    return g;
+}
+
+bool HeldByHitman(engine::ZGEOM* item)
+{
+    engine::ZGEOM* hitman = engine::Player();
+    uint32_t owner = 0;
+    return hitman && item && engine::ItemHolder(item, owner) && owner == engine::RefOf(hitman);
+}
+
+// an object (not an item) taken: out of sight and out of the way
+void TakeOut(const std::string& target, engine::ZGEOM* g)
+{
+    if (!g || !IsLive(g) || g_taken.count(target))
+        return;
+    ObjectState st = GetState(g);
+    g_taken[target] = st;
+    st.transform.pos[1] = kAway;
+    st.hidden = true;
+    SetState(g, st);
 }
 
 float DistanceToPlayer(engine::ZGEOM* place)
@@ -583,6 +663,10 @@ bool Reached(const MissionObjective& o)
     }
     case MissionObjective::Reach:
         return DistanceToPlayer(Target(o)) <= o.radius;
+    case MissionObjective::Take: {
+        engine::ZGEOM* t = Target(o);
+        return t && (IsItem(t) ? HeldByHitman(t) : g_taken.count(o.target) > 0);
+    }
     default:
         return LineChecked(o.slot);
     }
@@ -605,8 +689,40 @@ void WatchDeaths()
     }
 }
 
+void ApplyPendingGoals();
+
+// Take goals of objects that are not items: the pickup key near them
+void CheckTakes()
+{
+    int presses = TakeGameKeyPresses(kDikE);
+    if (!ForThisScene() || !engine::SceneDataValid())
+        return;
+    for (const MissionObjective& o : Doc().objectives) {
+        if (o.goal != MissionObjective::Take || g_done[o.slot] || g_taken.count(o.target))
+            continue;
+        engine::ZGEOM* t = Target(o);
+        if (!t || IsItem(t)) {
+            g_nearTake[o.slot] = false;
+            continue;
+        }
+        engine::ZGEOM* hitman = engine::Player();
+        bool inReach = hitman && engine::IsAlive(hitman) && DistanceToPlayer(t) <= o.radius;
+        if (inReach && !g_nearTake[o.slot])
+            ShowInfo(InfoKind::Hint, "E: take it (" +
+                                         (o.text.empty() ? "objective " + std::to_string(o.slot) : o.text) + ")");
+        g_nearTake[o.slot] = inReach;
+        if (inReach && presses > 0) {
+            TakeOut(o.target, t);
+            ShowInfo(InfoKind::Info, "Taken.");
+            Log("mission: objective %d: Hitman took %s", o.slot, o.target.c_str());
+            presses = 0;  // one object a press
+        }
+    }
+}
+
 void Check()
 {
+    CheckTakes();
     double now = double(GetTickCount64());
     if (now - g_lastCheck < 250.0)
         return;
@@ -619,6 +735,7 @@ void Check()
         g_applied = true;
         ShowLines();
     }
+    ApplyPendingGoals();
     bool all = true;
     for (const MissionObjective& o : Doc().objectives) {
         if (o.goal == MissionObjective::Level) {
@@ -636,7 +753,7 @@ void Check()
     if (!Doc().endWhenDone || g_ended || !all || Doc().objectives.empty())
         return;
     if (!Doc().exitPath.empty()) {
-        engine::ZGEOM* exit = Resolve(Doc().exitPath);
+        engine::ZGEOM* exit = ResolveTarget(Doc().exitPath);
         if (!exit || DistanceToPlayer(exit) > Doc().exitRadius)
             return;
     }
@@ -651,6 +768,7 @@ void OnScene(const std::string&)
 {
     g_shownLines = 0;
     g_savesY = -1e30f;
+    g_lineYKnown = false;
     g_briefing = nullptr;
     g_level = nullptr;
     g_folder.clear();
@@ -659,6 +777,10 @@ void OnScene(const std::string&)
     g_applied = false;
     g_alive.clear();
     memset(g_done, 0, sizeof(g_done));
+    memset(g_takeObject, 0, sizeof(g_takeObject));
+    memset(g_nearTake, 0, sizeof(g_nearTake));
+    g_taken.clear();
+    TakeGameKeyPresses(kDikE);
     for (std::string& k : g_lineKeys)
         k.clear();
     g_scriptTexts.clear();
@@ -669,11 +791,35 @@ void OnScene(const std::string&)
 
 // ---- panel ----
 
+// an object's name for texts: an item's as the game shows it ("Room key"), a
+// copy's without the editor's "+1"
+std::string NiceName(engine::ZGEOM* g)
+{
+    std::string name = engine::SafeString(g->name);
+    if (IsItem(g)) {
+        std::string tmpl = name;
+        if (const SpawnedObject* s = FindSpawned(g))
+            tmpl = s->sourcePath.substr(s->sourcePath.rfind('/') + 1);
+        const uint8_t* node = g_locRoot && oLocFind
+                                  ? SafeLocFind(("AllLevels/Items/ShortNames/" + tmpl).c_str(), g_locRoot)
+                                  : nullptr;
+        if (node && (node[0] & 1)) {
+            std::string shown = FromGameText(reinterpret_cast<const char*>(node + 1));
+            if (!shown.empty() && shown.size() < 64)
+                return shown;
+        }
+    }
+    size_t plus = name.find('+');
+    if (plus != std::string::npos && plus > 0)
+        name.resize(plus);
+    return name;
+}
+
 std::string Label(const std::string& path)
 {
     if (path.empty())
         return "";
-    engine::ZGEOM* g = Resolve(path);
+    engine::ZGEOM* g = ResolveTarget(path);
     if (!g || !IsLive(g))
         return "(missing) " + path.substr(path.rfind('/') + 1);
     if (engine::ZGEOM* a = ActorOf(g)) {
@@ -681,7 +827,7 @@ std::string Label(const std::string& path)
         if (rec >= 0)
             return NpcModel(rec) + (IsPlacedNpc(a) ? " (placed)" : "");
     }
-    return engine::SafeString(g->name);
+    return NiceName(g);
 }
 
 std::vector<engine::ZGEOM*> Characters()
@@ -739,6 +885,8 @@ std::string Summary(const MissionObjective* o)
     std::string what = Label(o->target);
     if (o->goal == MissionObjective::Kill)
         return what.empty() ? "kill: choose who" : what + " dies";
+    if (o->goal == MissionObjective::Take)
+        return what.empty() ? "take: choose what" : "Hitman takes " + what;
     return what.empty() ? "reach: choose where" : "Hitman reaches " + what;
 }
 
@@ -751,14 +899,20 @@ bool LineDone(int slot)
 // text that follows the goal while the user has not written their own
 bool AutoText(const std::string& text)
 {
-    return text.empty() || text.rfind("Kill ", 0) == 0 || text.rfind("Reach ", 0) == 0 || text == "New objective";
+    return text.empty() || text.rfind("Kill ", 0) == 0 || text.rfind("Reach ", 0) == 0 ||
+           text.rfind("Take ", 0) == 0 || text == "New objective";
 }
 
 void SetTarget(MissionObjective& o, const std::string& path)
 {
     o.target = path;
+    if (o.slot >= 1 && o.slot <= kSlots)
+        g_takeObject[o.slot] = nullptr;
     if (AutoText(o.text) && !path.empty()) {  // the laptop's text follows the new target
-        std::string text = (o.goal == MissionObjective::Kill ? "Kill " : "Reach ") + Label(path);
+        std::string text = (o.goal == MissionObjective::Kill   ? "Kill "
+                            : o.goal == MissionObjective::Take ? "Take "
+                                                               : "Reach ") +
+                           Label(path);
         // three bodyguards of one model are three lines of one text: numbered
         int same = 1;
         for (const MissionObjective& other : Doc().objectives)
@@ -771,7 +925,7 @@ void SetTarget(MissionObjective& o, const std::string& path)
 
 // ---- picking in the world ----
 
-enum class PickKind { None, Character, Place };
+enum class PickKind { None, Character, Place, Object };
 PickKind g_pick = PickKind::None;
 int g_pickSlot;          // the objective's line; 0 = the mission's exit
 bool g_pickPending;
@@ -813,6 +967,30 @@ void OnPlacePick(engine::ZGEOM* hit, const float* point, const float*)
         SetTarget(Editable(g_pickSlot), path);
     }
     g_status = "place set (an invisible point: move it later from the Scene tab)";
+}
+
+// the object to take: an item (also when its model was clicked) or any model; not characters
+engine::ZGEOM* TakeableAt(engine::ZGEOM* hit)
+{
+    if (!hit || !IsLive(hit) || ActorOf(hit))
+        return nullptr;
+    engine::ZGEOM* g = ItemOrSelf(hit);
+    return TargetFor(g).empty() ? nullptr : g;
+}
+
+void OnObjectPick(engine::ZGEOM* hit, const float*, const float*)
+{
+    g_pickPending = false;
+    if (g_pick != PickKind::Object)
+        return;
+    engine::ZGEOM* g = TakeableAt(hit);
+    if (!g) {
+        g_status = hit ? "a character cannot be taken: click an object" : "nothing there: click an object";
+        return;
+    }
+    g_pick = PickKind::None;
+    SetTarget(Editable(g_pickSlot), TargetFor(g));
+    g_status = "Hitman has to take " + Label(TargetFor(g));
 }
 
 void DrawHint(const char* text)
@@ -858,7 +1036,7 @@ bool PlaceButtons(int slot, const std::string& current)
     if (!current.empty()) {
         ImGui::SameLine();
         if (ImGui::SmallButton("Fly to")) {
-            if (engine::ZGEOM* g = Resolve(current)) {
+            if (engine::ZGEOM* g = ResolveTarget(current)) {
                 FlyCameraTo(GetTransform(g).pos);
             }
         }
@@ -902,11 +1080,18 @@ void DrawLineEditor(int slot)
                                           int(MissionObjective::Level));
     goalChanged |= ImGui::RadioButton("a character dies", &goal, int(MissionObjective::Kill));
     goalChanged |= ImGui::RadioButton("Hitman reaches a place", &goal, int(MissionObjective::Reach));
+    goalChanged |= ImGui::RadioButton("Hitman takes an object", &goal, int(MissionObjective::Take));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("An item (a weapon, a key...): done when Hitman picks it up.\n"
+                          "Any other object (a model you placed or one of the map's): done when Hitman\n"
+                          "presses E near it; it goes from the world.");
     if (goalChanged) {
         MissionObjective& e = Editable(slot);
         if (e.goal != MissionObjective::Goal(goal)) {
             e.goal = MissionObjective::Goal(goal);
             e.target.clear();
+            e.radius = e.goal == MissionObjective::Take ? 150.0f : 250.0f;
+            g_takeObject[slot] = nullptr;
             Changed();
         }
         o = &e;
@@ -933,12 +1118,46 @@ void DrawLineEditor(int slot)
             picking ? (void)(g_pick = PickKind::None) : StartPick(PickKind::Character, slot);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Click the character in the world");
-        if (engine::ZGEOM* t = o->target.empty() ? nullptr : Resolve(o->target)) {
+        if (engine::ZGEOM* t = o->target.empty() ? nullptr : ResolveTarget(o->target)) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Select"))
                 Select(t);
             ImGui::SameLine();
             ImGui::TextDisabled(engine::IsAlive(t) ? "(alive)" : "(dead)");
+        }
+        ImGui::Unindent();
+    } else if (o && o->goal == MissionObjective::Take) {
+        ImGui::Indent();
+        std::string label = Label(o->target);
+        engine::ZGEOM* t = o->target.empty() ? nullptr : ResolveTarget(o->target);
+        ImGui::TextUnformatted(label.empty() ? "no object yet" : label.c_str());
+        if (t) {
+            ImGui::SameLine();
+            ImGui::TextDisabled(IsItem(t) ? "(an item: picked up)" : "(taken with E)");
+        }
+        bool picking = g_pick == PickKind::Object && g_pickSlot == slot;
+        if (ImGui::SmallButton(picking ? "click an object... (Esc)" : "Pick in the world"))
+            picking ? (void)(g_pick = PickKind::None) : StartPick(PickKind::Object, slot);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click the object Hitman has to take (an item or any model)");
+        ImGui::SameLine();
+        engine::ZGEOM* sel = TakeableAt(Selected());
+        ImGui::BeginDisabled(!sel);
+        if (ImGui::SmallButton("The selected object"))
+            SetTarget(*o, TargetFor(sel));
+        ImGui::EndDisabled();
+        if (t) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Select"))
+                Select(t);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Fly to"))
+                FlyCameraTo(GetTransform(t).pos);
+        }
+        if (t && !IsItem(t)) {
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
+            if (ImGui::DragFloat("how near", &o->radius, 5.0f, 50.0f, 1000.0f, "%.0f cm"))
+                CurrentLevel().dirty = true;
         }
         ImGui::Unindent();
     } else if (o && o->goal == MissionObjective::Reach) {
@@ -1278,6 +1497,11 @@ void ApplyMission()
 void RevertMission()
 {
     engine::SetLevelEndsAllowed(true);
+    for (auto& [target, st] : g_taken)  // taken objects come back
+        if (engine::ZGEOM* g = ResolveTarget(target); g && IsLive(g))
+            SetState(g, st);
+    g_taken.clear();
+    memset(g_takeObject, 0, sizeof(g_takeObject));
     std::vector<int> slots;
     for (const MissionObjective& o : Doc().objectives)
         slots.push_back(o.slot);
@@ -1329,6 +1553,8 @@ void NewGoal(MissionObjective::Goal goal, const std::string& path)
     MissionObjective o;
     o.slot = slot;
     o.goal = goal;
+    if (goal == MissionObjective::Take)
+        o.radius = 150.0f;
     Doc().objectives.push_back(o);
     SetTarget(Doc().objectives.back(), path);
     g_selSlot = slot;
@@ -1359,8 +1585,13 @@ std::string MissionGoalFor(engine::ZGEOM* geom, const std::string& goal)
             Changed();
             g_status = "the mission ends when every objective is done and Hitman reaches " + Label(path);
         }
+    } else if (goal == "take") {
+        engine::ZGEOM* g = TakeableAt(geom);
+        if (!g)
+            return "not an object to take";
+        NewGoal(MissionObjective::Take, TargetFor(g));
     } else {
-        return "goal: target, reach or exit";
+        return "goal: target, reach, take or exit";
     }
     return g_status.empty() ? "ok" : g_status;
 }
@@ -1397,6 +1628,30 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
     std::string path = PathOf(geom);
     if (path.empty())
         return;
+    // an object to take (an item: only this row, it is not a place)
+    if (engine::ZGEOM* take = TakeableAt(geom)) {
+        std::string what = TargetFor(take);
+        if (int slot = LineWith(MissionObjective::Take, what)) {
+            ImGui::TextDisabled("Hitman takes it: objective %d", slot);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("edit##take")) {
+                g_selSlot = slot;
+                overlay::ShowPanel("Mission");
+            }
+        } else {
+            ImGui::BeginDisabled(full);
+            if (ImGui::Button("Hitman has to take it"))
+                NewGoal(MissionObjective::Take, what);
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("%s", full           ? "The laptop has 6 lines, all in use"
+                                        : IsItem(take) ? "A new objective: \"Take ...\", done when Hitman picks this item up"
+                                                       : "A new objective: \"Take ...\", done when Hitman presses E near it\n"
+                                                         "(it goes from the world)");
+        }
+        if (IsItem(take))
+            return;
+    }
     int line = LineWith(MissionObjective::Reach, path);
     bool exit = Doc().endWhenDone && Doc().exitPath == path;
     if (line) {
@@ -1462,6 +1717,15 @@ void UpdateMissionPick()
             SetTarget(Editable(g_pickSlot), PathOf(hover));
             g_status = "target: " + name;
         }
+    } else if (g_pick == PickKind::Object) {
+        DrawHint("click the object Hitman has to take   Esc: cancel");
+        if (g_pickPending && ImGui::GetFrameCount() - g_pickFrame > 10)
+            g_pickPending = false;
+        if (overWorld && !g_pickPending && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            g_pickPending = true;
+            g_pickFrame = ImGui::GetFrameCount();
+            RequestPick(io.MousePos.x, io.MousePos.y, OnObjectPick);
+        }
     } else if (g_pick == PickKind::Place) {
         DrawHint(g_pickSlot ? "click the ground: the place Hitman has to reach   Esc: cancel"
                             : "click the ground: the mission's exit   Esc: cancel");
@@ -1475,8 +1739,59 @@ void UpdateMissionPick()
     }
 }
 
+namespace {
+
+// the editor's goals done (and objects taken) in a saved game
+std::string SaveGoals()
+{
+    if (!ForThisScene() || Doc().objectives.empty())
+        return "";
+    nlohmann::json done = nlohmann::json::array(), taken = nlohmann::json::array();
+    for (const MissionObjective& o : Doc().objectives)
+        if (o.goal != MissionObjective::Level && g_done[o.slot])
+            done.push_back(o.slot);
+    for (const auto& [target, st] : g_taken)
+        taken.push_back(target);
+    if (done.empty() && taken.empty())
+        return "";
+    return nlohmann::json{{"scene", CurrentScene()}, {"level", CurrentLevel().name}, {"done", done}, {"taken", taken}}
+        .dump();
+}
+
+void LoadGoals(const std::string& text) { g_pendingGoals = text; }
+
+// after a saved game was loaded: its goals done again, its taken objects out
+void ApplyPendingGoals()
+{
+    if (g_pendingGoals.empty())
+        return;
+    std::string text;
+    text.swap(g_pendingGoals);
+    nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
+    if (!j.is_object() || j.value("scene", "") != CurrentScene() || j.value("level", "") != CurrentLevel().name)
+        return;
+    for (const auto& t : j.value("taken", nlohmann::json::array()))
+        if (t.is_string())
+            for (const MissionObjective& o : Doc().objectives)
+                if (o.goal == MissionObjective::Take && o.target == t.get<std::string>())
+                    TakeOut(o.target, Target(o));
+    for (const auto& s : j.value("done", nlohmann::json::array()))
+        if (s.is_number_integer()) {
+            int slot = s.get<int>();
+            const MissionObjective* o = slot >= 1 && slot <= kSlots ? ObjectiveAt(slot) : nullptr;
+            if (o && o->goal != MissionObjective::Level && !g_done[slot]) {
+                g_done[slot] = true;
+                CallSetCompleted(slot, true);
+            }
+        }
+    Log("mission: goals of the saved game back (%s)", text.c_str());
+}
+
+} // namespace
+
 void InstallMission()
 {
+    script::SetSaveExtra(SaveGoals, LoadGoals);
     OnScenePushed([](const std::string&) { g_pick = PickKind::None; });
     Hook("LOC find", kLocFind, hkLocFind, &oLocFind);
     Hook("BriefingMenu::SetLocaleFolder", kSetLocaleFolder, hkSetFolder, &oSetFolder);

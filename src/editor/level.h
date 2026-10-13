@@ -85,10 +85,10 @@ struct NpcEditEntry {        // changed behaviour settings of a character of the
 struct MissionObjective {
     int slot = 1;                  // line of the laptop's objectives (1..6)
     std::string text;              // shown there ("" = the level's own text)
-    enum Goal { Level, Kill, Reach };
+    enum Goal { Level, Kill, Reach, Take };
     Goal goal = Level;             // Level: the level's own scripts decide
-    std::string target;            // Kill: the character, Reach: the place (object paths)
-    float radius = 250.0f;         // Reach: how near Hitman has to get
+    std::string target;            // Kill: the character, Reach: the place, Take: the object (paths)
+    float radius = 250.0f;         // Reach: how near Hitman has to get; Take (not an item): to take it
     bool replacesOriginal = true;  // the level's own completion of this line no longer counts
 };
 
@@ -192,6 +192,11 @@ engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::
 // Deletes an object the level created (undoable); false for scene objects.
 bool DeleteObject(engine::ZGEOM* geom);
 const SpawnedObject* FindSpawned(engine::ZGEOM* geom);
+// A mission goal's object: an item the level made is kept as "level:<its id>"
+// (its path changes when Hitman picks it up, and "KeyRoom#2" is a count of
+// same-named objects), anything else as its path.
+std::string TargetFor(engine::ZGEOM* geom);
+engine::ZGEOM* ResolveTarget(const std::string& target);
 
 // ---- characters (undoable, kept in the level) ----
 engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error = nullptr);
@@ -206,6 +211,10 @@ const LevelNpc* FindLevelNpc(engine::ZGEOM* actor);
 // The room of the map a point is in (the smallest map model around it).
 engine::ZGEOM* RoomAt(const float p[3]);
 engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string* error = nullptr);
+// A point of the level under a name of its own ("Garage"; undoable): it is made
+// again under it and the level's routes, goals and behaviour settings follow it
+// (scripts naming it by its old name do not). Returns the renamed point.
+engine::ZGEOM* RenamePoint(engine::ZGEOM* point, const std::string& name, std::string* error = nullptr);
 // New elements of a list (a route: the points in walking order).
 bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& points, std::string* error = nullptr);
 

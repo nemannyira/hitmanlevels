@@ -37,6 +37,8 @@ void* g_keyboard;  // ... and keyboard
 unsigned char g_injectedKeys[256];      // dev commands: keys reported as held by buffered reads
 unsigned char g_injectedButtons[4];
 std::atomic<long> g_dx, g_dy, g_wheel;
+unsigned char g_keysSeen[256];          // the keyboard as the game last read it (GetDeviceState)
+std::atomic<int> g_keyPresses[256];     // presses the game has seen (TakeGameKeyPresses)
 
 using SetCooperativeLevel_t = HRESULT(WINAPI*)(void* self, HWND wnd, DWORD flags);
 SetCooperativeLevel_t oSetCooperativeLevel;
@@ -70,6 +72,14 @@ HRESULT WINAPI hkGetDeviceState(void* self, DWORD size, void* data)
         else if (self == g_mouse && size >= sizeof(DIMOUSESTATE)) {
             auto m = static_cast<DIMOUSESTATE*>(data);
             DevInjectMouse(&m->lX, &m->lY, m->rgbButtons, &m->lZ);
+        }
+    }
+    if (hr >= 0 && self == g_keyboard && size >= 256 && !g_blocked) {
+        auto keys = static_cast<const unsigned char*>(data);
+        for (int k = 0; k < 256; ++k) {
+            if ((keys[k] & 0x80) && !(g_keysSeen[k] & 0x80))
+                ++g_keyPresses[k];
+            g_keysSeen[k] = keys[k];
         }
     }
     if (hr >= 0 && self == g_mouse && size >= sizeof(DIMOUSESTATE)) {
@@ -157,6 +167,13 @@ HRESULT WINAPI hkGetDeviceData(void* self, DWORD objSize, void* objData, DWORD* 
             else if (e[0] == 8) g_wheel += v;
         }
     }
+    if (hr >= 0 && self == g_keyboard && !g_blocked && objData && inOut && objSize >= 8) {
+        for (DWORD i = 0; i < *inOut; ++i) {  // DIDEVICEOBJECTDATA: dwOfs (DIK code), dwData (0x80 down)
+            auto e = reinterpret_cast<const DWORD*>(static_cast<const char*>(objData) + i * objSize);
+            if (e[0] < 256 && (e[1] & 0x80))
+                ++g_keyPresses[e[0]];
+        }
+    }
     if (hr >= 0 && g_blocked && inOut)
         *inOut = 0;  // events were drained, the game sees none
     return hr;
@@ -202,6 +219,8 @@ int TakeGameClicks()
     g_clicks = 0;
     return n;
 }
+
+int TakeGameKeyPresses(int dik) { return dik >= 0 && dik < 256 ? g_keyPresses[dik].exchange(0) : 0; }
 
 MouseDelta TakeMouseDelta() { return {g_dx.exchange(0), g_dy.exchange(0), g_wheel.exchange(0)}; }
 

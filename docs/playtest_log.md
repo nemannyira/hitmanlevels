@@ -29,25 +29,25 @@ users are guided around it), **open**.
 | P1 | all | A player could not *play* a level: the launcher's *Open* always opened the editor on it (world frozen, F8 to leave) | fixed: *Play* (editor stays closed) and *Edit* in the launcher |
 | P2 | The Accountant | Problems listed the mission's exit point as "off the path network": a place Hitman goes to does not need the network | fixed: points used as the exit or a place to reach are not checked |
 | P3 | The Accountant | *Fly camera here* (F) and the other *Fly to* buttons moved the camera but kept its old direction: it often looked away from the object (here at a cliff) | fixed: one FlyCameraTo, the object in the middle of the view |
-| P4 | The Accountant | A long weapon laid on the sloping hilltop could not be picked up (no "Pick up" prompt; a key, ammo, and the same rifle on flat ground could) | worked around: the game's own range check; docs/editor.md says to lay weapons on flat ground and to check the prompt when testing |
+| P4 | The Accountant | A long weapon laid on the sloping hilltop could not be picked up (no "Pick up" prompt; a key, ammo, and the same rifle on flat ground could) | explained (2026-10-13, P22): an item is offered only while its own point is above the ground's collision; placed items are put 3 cm above the surface, docs say to check the prompt |
 | P5 | The Accountant | `h2.give(weapon)` while copies of that weapon lay on the map: drawing the given one crashed the game (RenderD3D, 0x474E82); reproduced 3 times, never without the copies | fixed (2026-10-13): the game's loop placing a weapon's parts (0x474E70) used a part reference without checking it; a dead one now sends the loop to its next part (the reproduction no longer crashes). `h2.give` still refuses then, as a precaution |
 | P6 | The Accountant | `h2.give("AmmoSniper")` added no ammunition (the clip stays empty): the game counts ammo only when it is picked up | worked around: `h2.give` refuses ammo with an explanation; docs/lua.md |
 | P7 | The Accountant | The editor's *exit* goal reported the previous status message | fixed |
-| P8 | The Accountant | Hiding the base level's laptop lines (h2.objective(n, false)) leaves their space empty above the level's own line; the base level's *Target Photo* stays in the laptop | open (cosmetic) |
+| P8 | The Accountant | Hiding the base level's laptop lines (h2.objective(n, false)) leaves their space empty above the level's own line; the base level's *Target Photo* stays in the laptop | fixed (2026-10-13): the lines shown close up (a hidden line leaves no gap), "saves left" under the last; the *Target Photo* stays (the base level's file) |
 | P9 | Dead Drop | On an emptied map the laptop lines a script gives (`h2.objective(1, "...")`) stayed empty: the editor replaced every line it did not own with an empty text, the script's own too | fixed: the editor's and scripts' lines are kept |
 | P10 | Dead Drop | An emptied map showed empty bullets for the base level's own lines | fixed: those lines are hidden |
 | P11 | Dead Drop | Placed BaseGuard guards shoot Hitman on sight in his suit: a level with them is hard (died twice) | as designed (the game's guards); README says how to approach |
 | P12 | Estate Run | A loop over `h2.objects(...)` stopped with "object ... is not in the loaded scene" on `o:name()`: a sound object the game made for a moment was gone by then | fixed: `name()` reads the name from the path (no live object needed) |
 | P13 | Estate Run | `h2.spawn(source, x, y, z)` copies stayed unseen: they went into the source's room (a garage lamp's copy on the road was in the garage room, drawn only from inside) | fixed: a copy goes into the room of its place |
-| P14 | Estate Run | After `setpos` across the map Hitman sometimes fell through the ground (y -39009) and died; the game's pause menu then stops the clock | open: seen with the test player's long moves only; a story script should move him to a spot near him, or test it |
+| P14 | Estate Run | After `setpos` across the map Hitman sometimes fell through the ground (y -39009) and died; the game's pause menu then stops the clock | guarded (2026-10-13): not seen again in over 100 moves (standing, running, turning, right after a load); for 4 s after a move Hitman is put back on the place if he falls 5 m below it (logged) |
 | P15 | Estate Run | Completing a level counts as completing its base map in the profile (here C1-1's Silent Assassin bonus weapon was awarded) | open (known: docs/roadmap.md section 3, a map of its own) |
 | P16 | Estate Run | A subtitle and an info line share one place on the screen: the first "seconds left" info hid the start subtitle | a script's care (docs/lua.md says so); the example fixed |
-| P17 | Arena | On a map with *No buildings*, copies of the map's own models (Models tab, Ctrl+D, `h2.spawn`) are not drawn, though placed, not hidden, in the right room; the same copies on the normal map are | open; partly: such a copy gets its model's collision back (taking a model out is one setting for all its objects: the map's own ones that stay out are moved under the map until it is restored). Build blank maps with models of other levels (as the floor) |
+| P17 | Arena | On a map with *No buildings*, copies of the map's own models (Models tab, Ctrl+D, `h2.spawn`) are not drawn, though placed, not hidden, in the right room; the same copies on the normal map are | fixed (2026-10-13): a copy of a hidden object is never drawn, also when shown later; the blank map's models are shown while being copied (the copy keeps its model's collision as before) |
 | P18 | Arena | A copy placed at a position (`h2.dev_edit("dup")`, the editor's duplicate at a place) went into its source's room: far from it, unseen | fixed: the room of its place, as points |
 | P19 | Arena | Three targets of one model got the same laptop text ("Kill BodyguardMafia_01 (placed)" three times) | fixed: numbered (2), (3) |
 | P20 | Arena | A guard standing on the floor from another level fell through it (it is made a moment after the level's characters) and stood 2 m below | fixed: shortly after the level is applied, its characters far below their place are put back |
 | P21 | Arena | On the blank map the level's *MissionCompleted* stops on an assert (int3, caught) after the end screen came up; the editor's goal check then called it again every quarter second (49 times) | fixed: once per map; the exception is logged |
-| P22 | Anathema Reworked | The ledger (an item placed on the road) sank 30 cm into the ground when the level loaded and was never offered to pick up, also after lifting it (the same as P4: items the level makes while the map loads) | open: test pickups of placed items; the pickup was marked from the console to finish the run |
+| P22 | Anathema Reworked | The ledger (an item placed on the road) sank 30 cm into the ground when the level loaded and was never offered to pick up, also after lifting it (the same as P4: items the level makes while the map loads) | fixed (2026-10-13): two causes. The script took the ledger's model for the item (`h2.findall` finds both; the examples now check `o:isa("ZItem")`), and the test player stopped 1.5 m away (the game offers items from about 1 m). The ledger is picked up the game's way now |
 | P23 | Anathema Reworked | A goal's place (a point) was in another room after the map loaded again than when the goal took its path: "its place is missing", the goal could not be done | fixed: an object the level made is found by its own name ("Point+1") when its path changed |
 | P24 | Anathema Reworked | The editor's own mission end counts only its goals, not a script's lines | by design: a level mixing both ends from its script (the `objective` event reports the editor's goals); the example shows how |
 
@@ -80,7 +80,7 @@ menu to start The Informant: the editor stayed closed, the level ran.
 | Estate Run | C1-1 emptied | checkpoints in order, markers, a clock | completed with 20 s to spare |
 | The Informant | C1-1 as it is | an escort who follows Hitman | completed; failed (he died); failed (left behind) |
 | Arena | C1-1, no buildings, C3-3 yard | a level built in the sky, three armed targets, an exit | completed (Silent Assassin) |
-| Anathema Reworked | C1-1 reworked | six objectives of six kinds (item, disguise, rule, time, kill, place), start outfit, exit | completed (the ledger pickup stood in, P22) |
+| Anathema Reworked | C1-1 reworked | six objectives of six kinds (item, disguise, rule, time, kill, place), start outfit, exit | completed (the ledger pickup stood in, P22; picked up the game's way after the fix, 2026-10-13) |
 
 ## 2026-10-13
 
@@ -88,3 +88,28 @@ P5 fixed in the engine (the weapon parts loop); the start outfit (Level tab >
 *Hitman starts in*, `h2.outfit`) added and tested (postman, bodyguard); the
 big level made and played through. API 74/74, security 41/41 on the last
 build.
+
+## 2026-10-13 (day): objects to take, the open findings
+
+New: **Hitman takes an object** as a mission goal (Mission tab, or the
+Inspector's *Hitman has to take it*). An item is taken when Hitman picks it
+up; any other model (placed or the map's own) when he presses E near it
+(it goes from the world, "Taken."). The editor's goals done (a target
+dead, a place reached, an object taken) are kept with saved games (the
+editor's part of `Save\<slot>.h2lua`). Points can be renamed in the
+Inspector (routes, goals and characters' settings follow).
+
+Played as a user: a key placed from *Models > Pickup items* on the road,
+*Hitman has to take it*, saved, the map loaded, Hitman walked to it and
+pressed E: objective done. The new test `tools/tests/goals_test.py` plays a
+blank-map level with an item, a copy of a map model and a renamed point,
+saves and loads (22 checks).
+
+| # | Found | Status |
+|---|---|---|
+| P25 | An item placed from the Models tab landed kilometres from the click: its placement preview is made next to its source, under the item template; made again in the room under the mouse, the first preview counted as a second part of the template, and the item was placed at the middle of the two | fixed: the editor's own copies are never parts of a model |
+| P26 | Loading a saved game of a *No buildings* level took out only 3 models (of 3617): the saved game has the map's models hidden, so they were taken for hidden by the map; their collision stayed | fixed: what the map itself hides is noted before a saved game's state is loaded |
+| P27 | On a *No buildings* level Hitman sometimes fell through the floor from another level: taking the map's models out also took out the editor's library of other levels' models, whose collision is the floor's | fixed: the library is left alone |
+| P28 | A new *No buildings* level made while Hitman was falling (a blank map without its floor) put the floor where he had fallen to | fixed: then under the place he came in at |
+| P29 | The editor's "reach a place" goal done was lost by loading a saved game (its check mark too) | fixed: kept with the saved game (as above) |
+

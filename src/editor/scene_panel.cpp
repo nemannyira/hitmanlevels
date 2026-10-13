@@ -229,9 +229,41 @@ void DrawInspector()
         ImGui::SameLine();
         if (ImGui::Button("Delete (Del)"))
             DeleteSelection();
-        if (spawned->point)
+        if (spawned->point) {
             ImGui::TextDisabled("point made by the level (invisible in the game)");
-        else if (spawned->item)
+            // its name: routes, goals and scripts (h2.find) name it
+            static char name[48];
+            static engine::ZGEOM* nameOf;
+            static std::string renameError;
+            if (nameOf != geom) {
+                snprintf(name, sizeof(name), "%s", spawned->id.c_str());
+                nameOf = geom;
+                renameError.clear();
+            }
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+            bool enter = ImGui::InputText("##pointname", name, sizeof(name), ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::SameLine();
+            ImGui::BeginDisabled(spawned->id == name);
+            if (ImGui::Button("Rename") || (enter && spawned->id != name)) {
+                std::string err;
+                if (engine::ZGEOM* renamed = RenamePoint(geom, name, &err)) {
+                    Select(renamed);
+                    nameOf = renamed;
+                    renameError.clear();
+                    ImGui::EndDisabled();
+                    return;  // (geom was made again: the rest next frame)
+                } else {
+                    renameError = err;
+                }
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("A name of its own, e.g. Garage (letters, digits, _ and -).\n"
+                                  "The level's routes, goals and characters' settings follow it;\n"
+                                  "scripts find it by the new name: h2.find(\"Garage\").");
+            if (!renameError.empty())
+                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", renameError.c_str());
+        } else if (spawned->item)
             ImGui::TextDisabled("item placed by the level (%s)", spawned->sourcePath.c_str());
         else
             ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());

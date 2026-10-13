@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 
 // A level's story state, kept with the game's saves.
 //
@@ -22,5 +23,13 @@ void InstallState();
 void UpdateState();
 // The level's scripts have run (level.cpp).
 void OnLevelScriptsRan();
+// The editor's own state kept with a saved game (its mission goals done): a
+// JSON text under the reserved key "__editor" of the slot's .h2lua. `save`
+// returns it ("" nothing to keep); `load` gets it back after a saved game was
+// loaded ("" when the slot had none).
+void SetSaveExtra(std::string (*save)(), void (*load)(const std::string&));
+// Called when a saved game is being loaded, just before the objects get their
+// saved state (the map is loaded fresh then: as its files have it).
+void SetBeforeGameLoad(void (*fn)());
 
 } // namespace h2::script

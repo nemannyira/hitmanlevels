@@ -21,5 +21,8 @@ MouseDelta TakeMouseDelta();
 // Presses of the left mouse button the game has seen since the last call
 // (its own menus' clicks).
 int TakeGameClicks();
+// Presses of a key (DIK code) the game has seen since the last call (not while
+// its input is blocked): what the player pressed in the game, injected keys too.
+int TakeGameKeyPresses(int dik);
 
 } // namespace h2

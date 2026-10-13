@@ -55,6 +55,13 @@ CASES = {
     "mission bogus": case(mission={"objectives": [{"slot": s, "text": "t" * 1000000, "kind": "kill", "target": "ROOT"}
                                                   for s in (0, 1, 99, -5)],
                                    "briefing": "b" * 2000000, "exit": "ROOT", "exit_radius": -1e30, "base_ends": "no"}),
+    "take goals bogus": case(mission={"objectives": [
+        {"slot": s, "goal": "take", "target": tg, "radius": r}
+        for s, tg, r in [(1, "level:", -0.0), (2, "level:../../x", -5), (3, "level:" + "A" * 5000, 1e30),
+                         (4, "ROOT", 0), (5, "ROOT/C1-1", 1e-30), (6, "level:level:x", 150)]]},
+        spawned=[{"id": "level:x", "kind": "point", "parent": "ROOT", "pos": [0, 0, 0], "matrix": M}]),
+    "take goals wrong types": case(mission={"objectives": [{"slot": 1, "goal": "take", "target": None, "radius": "x"},
+                                                           {"slot": 2, "goal": ["take"], "target": 5}]}),
     "scene bogus": case(base_scene=r"MainMenu\MainMenu"),
     "scene outside": case(base_scene=r"..\..\..\Windows\win"),
     "behaviour bogus": case(npcs=[{"id": "A", "record": 2350, "pos": [-4176, -20, -6682], "matrix": M,

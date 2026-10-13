@@ -16,6 +16,7 @@ extern "C" {
 }
 
 #include "config.h"
+#include "editor/highlight.h"
 #include "editor/history.h"
 #include "editor/level.h"
 #include "editor/mission.h"
@@ -23,6 +24,7 @@ extern "C" {
 #include "editor/npcs.h"
 #include "editor/playtest.h"
 #include "editor/scene_panel.h"
+#include "engine/imports.h"
 #include "engine/npc.h"
 #include "imgui.h"
 #include "hook.h"
@@ -143,6 +145,7 @@ int LoadGameCmd(lua_State* L)
 //   "delete", path             delete an object the level made
 //   "item", template, x, y, z  place an item -> path
 //   "point", x, y, z           place a point -> path
+//   "rename", path, name       rename a point of the level -> path
 //   "removenpc", path          remove a placed character
 //   "sky", level               the sky of another level ("" its own)
 int EditCmd(lua_State* L)
@@ -189,6 +192,8 @@ int EditCmd(lua_State* L)
     } else if (op == "point") {
         editor::Transform t = at(2);
         made = editor::PlacePoint(t, editor::RoomAt(t.pos), &err);
+    } else if (op == "rename") {  // the Inspector's point name
+        made = editor::RenamePoint(resolve(2), luaL_checkstring(L, 3), &err);
     } else if (op == "removenpc") {
         lua_pushboolean(L, editor::RemoveNpc(editor::ActorOf(resolve(2)), &err));
         return 1;
@@ -357,8 +362,14 @@ int Level(lua_State* L)
         editor::Undo();
     } else if (op == "redo") {
         editor::Redo();
-    } else if (op == "target" || op == "reach" || op == "exit") {  // the Inspector's Mission row
+    } else if (op == "target" || op == "reach" || op == "take" || op == "exit") {  // the Inspector's Mission row
         lua_pushstring(L, editor::MissionGoalFor(editor::Resolve(arg), op).c_str());
+        return 1;
+    } else if (op == "blank") {  // the Level panel's No buildings, now ("on" / "off")
+        editor::SetBlankMap(arg == "on");
+    } else if (op == "solid") {  // "<mesh hex> on|off": a model's collision (reverse engineering)
+        uint32_t mesh = uint32_t(strtoul(arg.c_str(), nullptr, 16));
+        lua_pushboolean(L, engine::SetModelSolid(mesh, arg.find(" on") != std::string::npos));
         return 1;
     } else if (op == "problems") {
         std::string all;
@@ -640,6 +651,15 @@ int __fastcall hkGatherDynamic(void* self, void* edx, void** out, uint32_t a, ui
     }
     return n;
 }
+
+// h2.dev_drawn(path) -> bool: whether the renderer drew the object in the last frames
+int Drawn(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    lua_pushboolean(L, g && editor::IsLive(g) && editor::WasDrawnRecently(g->node));
+    return 1;
+}
+
 int Coll(lua_State* L)
 {
     uintptr_t render = reinterpret_cast<uintptr_t>(GetModuleHandleA("RenderD3D.dll"));
@@ -691,6 +711,7 @@ void InstallDevCommands()
     script::Register("dev_callers", Callers);
     script::Register("dev_callers_dump", CallersDump);
     script::Register("dev_coll", Coll);
+    script::Register("dev_drawn", Drawn);
     script::Register("dev_coll_seen", CollSeen);
     Log("dev commands on: Mods\\_cmd.lua");
 }

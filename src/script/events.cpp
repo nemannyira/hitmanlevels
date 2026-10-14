@@ -22,6 +22,8 @@ namespace h2::script {
 namespace {
 
 bool g_levelScripts;  // handlers of the level's scripts may be there
+std::set<std::string> g_editorEvents;  // SetEditorEvents
+EditorEventFn g_editorFn;
 
 // registry: name -> { {fn = f, owner = "level"}, ... }
 constexpr const char* kHandlers = "h2.handlers";
@@ -117,6 +119,9 @@ void UpdateWatch()
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
+    for (const Alias& a : kAliases)
+        if (g_editorEvents.count(a.event))
+            names.insert(a.message);
     engine::WatchMessages(names, all);
 }
 
@@ -309,6 +314,8 @@ void FireGameMessage(const engine::GameEvent& e)
     Fire("message", push);
     Fire("msg:" + name, push);
     for (const Alias& a : kAliases) {
+        if (name == a.message && g_editorFn && g_editorEvents.count(a.event))
+            g_editorFn(a.event, e);
         if (name != a.message || !HasHandlers(a.event))
             continue;
         bool flag = a.flag < 0 ? e.param != 0 : a.flag != 0;
@@ -392,6 +399,14 @@ void FireGameEvents()
             break;
         }
     }
+}
+
+void SetEditorEvents(const std::set<std::string>& events, EditorEventFn fn)
+{
+    g_editorEvents = events;
+    g_editorFn = fn;
+    if (State())
+        UpdateWatch();
 }
 
 void RegisterEvents()

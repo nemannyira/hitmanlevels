@@ -40,8 +40,9 @@ level* / *File > Open level* loads a saved one.
 **Mission**:
 
 * *Mission* tab: the laptop's briefing and objective lines, what completes
-  each (the level's own logic, a character's death, Hitman reaching a place,
-  Hitman taking an object), the mission's end and the music.
+  each (the level's own logic, a character's death or being knocked out,
+  Hitman reaching a place, taking an object or bringing it to a place, never
+  being spotted), the mission's end and the music.
 * Quicker from a selection: the Inspector's *Mission* row: *Make it a
   target* (a character), *Hitman has to take it* (an object), *Hitman has to
   get here*, *Make it the exit*.
@@ -50,6 +51,13 @@ level* / *File > Open level* loads a saved one.
   game's way. Any other model (a briefcase, a stack of books) is taken when
   Hitman presses E near it (*how near*, 1.5 m by default): it goes from the
   world and the game shows "Taken.". Goals done stay done in saved games.
+* *Hitman brings an object to a place*: an item is done when it lies at
+  the place (dropped there); any other object is taken with E and put down
+  at the place when Hitman gets there with it.
+* *a character is knocked out*: done when its behaviour is unconscious
+  (chloroform) and it lives. *Hitman is never spotted*: checked from the
+  start, lost for good when a guard spots him (drawn weapon, trespassing,
+  seen through the disguise); optionally that fails the mission.
 * Points have names of their own: select one, type a name in the Inspector
   (e.g. *Hideout*) and *Rename*. Routes, goals and characters' settings
   follow it; scripts find it with `h2.find("Hideout")`.

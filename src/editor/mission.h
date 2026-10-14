@@ -26,6 +26,9 @@ void SetLocText(const std::string& key, const std::string& text);
 void DrawMissionForSelection(engine::ZGEOM* geom);
 // The same from code (dev commands): "target" | "take" | "reach" | "exit"; what was done or why not.
 std::string MissionGoalFor(engine::ZGEOM* geom, const std::string& goal);
+// A "bring it to a place" line's place; a new "never spotted" line (dev commands).
+std::string MissionPlaceFor(int slot, engine::ZGEOM* place);
+std::string MissionUnseen(bool failsMission);
 // Picking a target / place in the world for an objective: the viewport hands the mouse over.
 bool MissionPicking();
 void UpdateMissionPick();

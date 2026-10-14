@@ -86,9 +86,11 @@ struct NpcEditEntry {        // changed behaviour settings of a character of the
 struct MissionObjective {
     int slot = 1;                  // line of the laptop's objectives (1..6)
     std::string text;              // shown there ("" = the level's own text)
-    enum Goal { Level, Kill, Reach, Take };
+    enum Goal { Level, Kill, Reach, Take, KnockOut, Deliver, Unseen };
     Goal goal = Level;             // Level: the level's own scripts decide
-    std::string target;            // Kill: the character, Reach: the place, Take: the object (paths)
+    std::string target;            // Kill / KnockOut: the character, Reach: the place, Take / Deliver: the object
+    std::string place;             // Deliver: where the object has to go (Unseen: no target)
+    bool failsMission = false;     // Unseen: being spotted fails the mission too
     float radius = 250.0f;         // Reach: how near Hitman has to get; Take (not an item): to take it
     bool replacesOriginal = true;  // the level's own completion of this line no longer counts
 };

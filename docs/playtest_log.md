@@ -120,3 +120,16 @@ saves and loads (22 checks).
 |---|---|---|
 | P15 | Completing a level counted as completing its base map in the profile (C1-1's Silent Assassin bonus weapon), and *Continue* went on to the campaign's next mission | fixed: the profile is the global variables of CGlobalCom; while a level of the editor is on the map the statistics screen does not write Save\<n>.blap, the variables are put back when the map is left, and *Continue* goes to the main menu. Checked: the same completion without a level wrote the profile and awarded the weapon; with a level the profile stayed byte for byte (`tools/tests/profile_test.py`, 8 checks) |
 | P8 | The base level's *Target Photo* stayed in the laptop | fixed: on an emptied map its files are hidden (their texts empty, a click on the entry opens nothing: BriefingMenu action 0xC9..); *Mission* tab > *The level's additional files* (level.json `base_files`) shows or hides them on any map |
+
+## 2026-10-14: more goal types
+
+New editor goals: *knocked out* (the character's behaviour state
+`Being2.Unconscious`: the game reports knock-outs to the level only as a
+script event without the victim), *brings an object to a place*, *never
+spotted* (the "spotted" / "hostile" reactions; optionally fails the mission).
+Played: never spotted checked at the start, lost when a pistol was drawn in
+front of two guards ("Thread_Angry"); a model taken with E was put down at
+its place when Hitman got there; a key held at its place showed "Drop it
+here" and was not counted. Not played: a real knock-out (the test player
+could not get chloroform to take: the guard turned and attacked), and an
+item dropped at its place (no drop key found for the test player).

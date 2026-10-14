@@ -362,7 +362,18 @@ int Level(lua_State* L)
         editor::Undo();
     } else if (op == "redo") {
         editor::Redo();
-    } else if (op == "target" || op == "reach" || op == "take" || op == "exit") {  // the Inspector's Mission row
+    } else if (op == "place") {  // "<slot>|<path>": a "bring it" line's place
+        size_t bar = arg.find('|');
+        int slot = atoi(arg.substr(0, bar).c_str());
+        lua_pushstring(L, editor::MissionPlaceFor(slot, bar == std::string::npos ? nullptr
+                                                                                  : editor::Resolve(arg.substr(bar + 1)))
+                              .c_str());
+        return 1;
+    } else if (op == "unseen") {  // "fail": being spotted fails the mission
+        lua_pushstring(L, editor::MissionUnseen(arg == "fail").c_str());
+        return 1;
+    } else if (op == "target" || op == "reach" || op == "take" || op == "knockout" || op == "deliver" ||
+               op == "exit") {  // the Inspector's Mission row
         lua_pushstring(L, editor::MissionGoalFor(editor::Resolve(arg), op).c_str());
         return 1;
     } else if (op == "blank") {  // the Level panel's No buildings, now ("on" / "off")

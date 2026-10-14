@@ -767,7 +767,8 @@ std::vector<Problem> FindProblems()
                 std::string path = g ? PathOf(g) : "";
                 bool missionPlace = !path.empty() && path == L.mission.exitPath;  // Hitman goes there, not characters
                 for (const MissionObjective& o : L.mission.objectives)
-                    missionPlace |= !path.empty() && o.goal == MissionObjective::Reach && o.target == path;
+                    missionPlace |= !path.empty() && ((o.goal == MissionObjective::Reach && o.target == path) ||
+                                                       (o.goal == MissionObjective::Deliver && o.place == path));
                 if (missionPlace)
                     continue;
                 out.push_back({"point " + s.id.substr(0, s.id.find('+')) +
@@ -775,13 +776,19 @@ std::vector<Problem> FindProblems()
                                g ? PathOf(g) : ""});
             }
         for (const MissionObjective& o : L.mission.objectives)
-            if (o.goal != MissionObjective::Level && (o.target.empty() || !ResolveTarget(o.target)))
+        {
+            if (o.goal != MissionObjective::Level && o.goal != MissionObjective::Unseen &&
+                (o.target.empty() || !ResolveTarget(o.target)))
                 out.push_back({"objective " + std::to_string(o.slot) + ": its " +
-                                   (o.goal == MissionObjective::Kill   ? "target"
-                                    : o.goal == MissionObjective::Take ? "object"
-                                                                       : "place") +
+                                   (o.goal == MissionObjective::Kill || o.goal == MissionObjective::KnockOut ? "target"
+                                    : o.goal == MissionObjective::Take || o.goal == MissionObjective::Deliver
+                                        ? "object"
+                                        : "place") +
                                    " is missing",
                                ""});
+            if (o.goal == MissionObjective::Deliver && (o.place.empty() || !ResolveTarget(o.place)))
+                out.push_back({"objective " + std::to_string(o.slot) + ": the place to bring it to is missing", ""});
+        }
         if (!L.mission.exitPath.empty() && !ResolveTarget(L.mission.exitPath))
             out.push_back({"the mission's exit is missing", ""});
     }
@@ -1385,14 +1392,19 @@ bool SaveLevel(std::string* error)
         const MissionDoc& m = g_level.mission;
         json objs = json::array();
         for (const MissionObjective& o : m.objectives) {
-            static const char* goals[] = {"level", "kill", "reach", "take"};
+            static const char* goals[] = {"level", "kill", "reach", "take", "knockout", "deliver", "unseen"};
             json jo = {{"slot", o.slot}, {"text", o.text}, {"goal", goals[o.goal]}};
             if (o.goal != MissionObjective::Level) {
                 jo["target"] = o.target;
                 jo["replaces_original"] = o.replacesOriginal;
             }
-            if (o.goal == MissionObjective::Reach || o.goal == MissionObjective::Take)
+            if (o.goal == MissionObjective::Reach || o.goal == MissionObjective::Take ||
+                o.goal == MissionObjective::Deliver)
                 jo["radius"] = o.radius;
+            if (o.goal == MissionObjective::Deliver)
+                jo["place"] = o.place;
+            if (o.goal == MissionObjective::Unseen)
+                jo["fails_mission"] = o.failsMission;
             objs.push_back(jo);
         }
         if (!objs.empty() || m.endWhenDone || !m.briefing.empty() || !m.baseEnds || m.baseFiles >= 0) {
@@ -1550,12 +1562,19 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 mo.goal = goal == "kill"    ? MissionObjective::Kill
                           : goal == "reach" ? MissionObjective::Reach
                           : goal == "take"  ? MissionObjective::Take
-                                            : MissionObjective::Level;
+                          : goal == "knockout" ? MissionObjective::KnockOut
+                          : goal == "deliver"  ? MissionObjective::Deliver
+                          : goal == "unseen"   ? MissionObjective::Unseen
+                                               : MissionObjective::Level;
                 mo.target = o.value("target", "");
                 mo.radius = o.value("radius", mo.goal == MissionObjective::Take ? 150.0f : 250.0f);
                 if (!(mo.radius >= 50.0f && mo.radius <= 5000.0f))  // also NaN
                     mo.radius = 250.0f;
                 mo.replacesOriginal = o.value("replaces_original", true);
+                if (o.contains("place") && o["place"].is_string())
+                    mo.place = o["place"].get<std::string>();
+                if (o.contains("fails_mission") && o["fails_mission"].is_boolean())
+                    mo.failsMission = o["fails_mission"].get<bool>();
                 if (mo.slot >= 1 && mo.slot <= 6)
                     L.mission.objectives.push_back(mo);
             }
@@ -1923,6 +1942,7 @@ void ReplacePath(const std::string& from, const std::string& to, std::string old
     if (size_t plus = oldName.find('+'); plus != std::string::npos && plus > 0)
         oldName.resize(plus);
     for (MissionObjective& o : g_level.mission.objectives) {
+        fix(o.place);
         if (from.empty() || o.target != from)
             continue;
         o.target = to;

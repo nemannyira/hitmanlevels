@@ -1,5 +1,10 @@
 #pragma once
+#include <set>
 #include <string>
+
+namespace h2::engine {
+struct GameEvent;
+}
 
 namespace h2::script {
 
@@ -45,6 +50,11 @@ void FireFrame(double dt);
 void FireDeath(const std::string& path);
 void FireObjective(int slot);
 void FireGameEvents();
+// The editor's own listener (its mission goals): called with the events
+// named (as h2.on names them: "spotted", "unconscious", ...) whether or not a
+// script listens, before the scripts get them.
+using EditorEventFn = void (*)(const char* event, const engine::GameEvent& e);
+void SetEditorEvents(const std::set<std::string>& events, EditorEventFn fn);
 // "key" (triggers.h)
 void FireKey(int vk, const std::string& name);
 // "save" / "load" (state.h): {slot}

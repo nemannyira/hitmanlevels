@@ -76,7 +76,8 @@ level* / *File > Open level* loads a saved one.
 **Test**: the toolbar's *Test* saves, loads the map again and starts it
 with Hitman where he is, where the camera looks or at the level's start. The
 *Testing* panel: game speed, freeze, god mode, invisible Hitman, the path
-network. The Level tab's *Problems* list shows what would go wrong: characters
+network (a mission completed after god mode, invisible Hitman or another
+speed was on says so over the statistics: not a real rating). The Level tab's *Problems* list shows what would go wrong: characters
 and route points off the path network, objectives whose target is gone,
 missing script files, the scripts' errors since they last ran.
 

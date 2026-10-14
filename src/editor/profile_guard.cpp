@@ -8,6 +8,7 @@
 #include "../hook.h"
 #include "../log.h"
 #include "../scene.h"
+#include "testtools.h"
 
 namespace h2::editor {
 
@@ -103,6 +104,11 @@ void __fastcall hkMissionCompleted(void* self, void* edx)
 {
     if (g_protected)
         g_completed = true;
+    std::string aids = g_protected ? AidsUsed() : "";
+    if (!aids.empty()) {  // (the statistics do not see them: a Silent Assassin with god mode)
+        NoteMissionEnd();
+        Log("profile: mission completed with %s", aids.c_str());
+    }
     oMissionCompleted(self, edx);
 }
 

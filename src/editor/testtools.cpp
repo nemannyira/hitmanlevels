@@ -36,6 +36,8 @@ constexpr float kSpeeds[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f};
 bool g_visible = true;
 float g_speed = 1.0f;
 bool g_god, g_invisible;
+unsigned g_aids;  // used on this map: 1 god mode, 2 invisible Hitman, 4 game speed
+std::string g_endNote;  // the mission completed with them: shown over the statistics
 
 bool OnMap()
 {
@@ -260,6 +262,12 @@ void OnFrame()
     bool map = OnMap();
     bool changed = map != wasMap;
     wasMap = map;
+    if (changed) {
+        g_aids = 0;  // (a map loaded: a new run)
+        g_endNote.clear();
+    }
+    if (map)
+        g_aids |= (g_god ? 1u : 0u) | (g_invisible ? 2u : 0u) | (g_speed != 1.0f ? 4u : 0u);
     float speed = map ? g_speed : 1.0f;
     bool god = map && g_god, invisible = map && g_invisible;
     char* sys = reinterpret_cast<char*>(game::SysInterface());
@@ -290,6 +298,8 @@ std::string ActiveText()
         add("GOD MODE");
     if (g_invisible)
         add("INVISIBLE");
+    if (!g_endNote.empty())
+        add(g_endNote);
     return s;
 }
 
@@ -407,6 +417,22 @@ void SetGameSpeed(float factor) { g_speed = std::isfinite(factor) ? std::clamp(f
 bool GodMode() { return g_god; }
 void SetGodMode(bool on) { g_god = on; }
 bool HitmanInvisible() { return g_invisible; }
+void NoteMissionEnd()
+{
+    std::string aids = AidsUsed();
+    g_endNote = aids.empty() ? "" : "TESTED WITH " + aids + ": NOT A REAL RATING";
+    for (char& c : g_endNote)
+        c = char(toupper(static_cast<unsigned char>(c)));
+}
+
+std::string AidsUsed()
+{
+    std::string s;
+    for (auto [bit, name] : {std::pair<unsigned, const char*>{1, "god mode"}, {2, "invisible Hitman"}, {4, "game speed"}})
+        if (g_aids & bit)
+            s += (s.empty() ? "" : ", ") + std::string(name);
+    return s;
+}
 void SetHitmanInvisible(bool on) { g_invisible = on; }
 
 void InstallTestTools()

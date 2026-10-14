@@ -197,8 +197,11 @@ Save\<slot>.h2lua next to the game's files).
 * The game does not note cheats: EnableCheats (SysInterface +0x7B6) only
   turns on the cheat keys. The editor's testing aids (god mode, invisible
   Hitman, game speed, frozen) are not seen by the statistics either: a run
-  tested with them can still be rated Silent Assassin. A later step: the
-  editor marks such runs (or turns the rating off while they were on).
+  tested with them can still be rated Silent Assassin. The editor marks such
+  runs: a mission of a level of the editor completed after god mode,
+  invisible Hitman or another game speed was on (since the map loaded)
+  shows "TESTED WITH ...: NOT A REAL RATING" over the statistics
+  (testtools.h AidsUsed / NoteMissionEnd).
 
 ## 9. The sky (done)
 

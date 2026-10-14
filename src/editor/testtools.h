@@ -13,6 +13,8 @@
 //                not 0: no one is told he sees anyone, 0x48D210)
 //
 // They hold while a map is loaded (the main menu always runs at 1x, normal).
+#include <string>
+
 namespace h2::editor {
 
 void InstallTestTools();
@@ -23,5 +25,11 @@ bool GodMode();
 void SetGodMode(bool on);
 bool HitmanInvisible();
 void SetHitmanInvisible(bool on);
+// The testing aids used on the map since it loaded ("god mode, game speed";
+// "": none): a run with them is not rated for real.
+std::string AidsUsed();
+// The mission completed: the aids used (if any) are shown over the
+// statistics until the map is left.
+void NoteMissionEnd();
 
 } // namespace h2::editor

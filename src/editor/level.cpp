@@ -29,6 +29,7 @@
 #include "../script/state.h"
 #include "history.h"
 #include "mission.h"
+#include "own_map.h"
 #include "profile_guard.h"
 #include "music.h"
 #include "scene_panel.h"
@@ -1202,6 +1203,7 @@ void DrawPanel()
     DrawProblems();
     DrawScripts();
     DrawStartOutfit();
+    DrawOwnMap();
 
     bool empty = L.emptyMap;
     if (ImGui::Checkbox("Empty map", &empty))
@@ -1437,6 +1439,8 @@ bool SaveLevel(std::string* error)
         j["empty_map"] = true;
     if (g_level.blankMap)
         j["blank_map"] = true;
+    if (!g_level.ownMapOf.empty())
+        j["own_map_of"] = g_level.ownMapOf;
     if (!g_level.startOutfit.empty())
         j["start_outfit"] = g_level.startOutfit;
     if (!g_level.floorLevel.empty())
@@ -1605,6 +1609,8 @@ bool LoadLevel(const std::string& folder, std::string* error)
         }
         L.emptyMap = j.value("empty_map", false);
         L.blankMap = j.value("blank_map", false);
+        if (j.contains("own_map_of") && j["own_map_of"].is_string() && j["own_map_of"].get<std::string>().size() < 128)
+            L.ownMapOf = j["own_map_of"].get<std::string>();
         L.startOutfit = j.value("start_outfit", "");
         if (L.startOutfit.size() > 64)
             L.startOutfit.clear();
@@ -2894,7 +2900,8 @@ int ApplyLevel()
     if (g_level.blankMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
         BlankScene();
     for (const SpawnedObject& s : g_level.spawned)
-        if (s.sourceScene.empty() || s.sourceScene == CurrentScene())
+        if (s.sourceScene.empty() || s.sourceScene == CurrentScene() ||
+            (!g_level.ownMapOf.empty() && s.sourceScene == g_level.ownMapOf))  // made on the original map
             n += Materialize(s) != nullptr;
     for (auto& [path, e] : g_level.objects) {
         engine::ZGEOM* geom = Resolve(path);

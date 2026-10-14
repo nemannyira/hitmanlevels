@@ -153,3 +153,14 @@ whole (a car: a new group with copies of its parts).
 Played: a Ferrari copy driving a loop of four points on the C1-1 road,
 saved with the level and driving again when the map loaded (headlights
 first); `h2.drive` with `speed` / `progress` / the "arrived" event.
+
+## 2026-10-14: a map of its own
+
+The car level (_Cars, a Ferrari copy driving a route) made a map of its own
+(CarTown): loaded from the launcher's *Play*, saved and loaded again, back to
+the original map.
+
+| # | Found | Done |
+|---|---|---|
+| P34 | On its own map a level's placed objects were not made (0/5): each remembers the scene it was placed on | fixed: the original map counts as the copy's |
+| P35 | The launcher showed an own map as its scene name | fixed: *CarTown (own map)* |

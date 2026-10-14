@@ -22,6 +22,7 @@ extern "C" {
 #include "editor/mission.h"
 #include "editor/model.h"
 #include "editor/npcs.h"
+#include "editor/own_map.h"
 #include "editor/playtest.h"
 #include "editor/scene_panel.h"
 #include "editor/vehicles.h"
@@ -393,6 +394,12 @@ int Level(lua_State* L)
         d.vehicles.push_back(v);
         d.dirty = true;
         editor::ApplyVehicles(d.vehicles);
+    } else if (op == "ownmap") {  // "<name>": the level's map copied as a map of its own; "original": back
+        bool ok = arg == "original" ? editor::BackToOriginalMap(true, &err) : editor::MakeOwnMap(arg, &err);
+        if (!ok)
+            return luaL_error(L, "ownmap: %s", err.c_str());
+        lua_pushstring(L, d.baseScene.c_str());
+        return 1;
     } else if (op == "unseen") {  // "fail": being spotted fails the mission
         lua_pushstring(L, editor::MissionUnseen(arg == "fail").c_str());
         return 1;

@@ -57,6 +57,7 @@ add_library(h2fix SHARED
     src/editor/playtest.cpp
     src/editor/profile_guard.cpp
     src/editor/vehicles.cpp
+    src/editor/own_map.cpp
     src/editor/testtools.cpp
     src/editor/npc_panel.cpp
     src/editor/npcs.cpp

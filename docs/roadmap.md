@@ -132,6 +132,13 @@ Save\<slot>.h2lua next to the game's files).
   (tools/clone_scene.py: `Scenes\Custom1\Custom1__MAIN.ZIP`, entries renamed)
   loads with its characters, laptop and texts. A map of one's own can be its
   own scene package, its levels and save progress apart from the original.
+* Done: *Level > A map of its own* (src/editor/own_map.cpp) copies the
+  level's map as `Scenes\<Name>\<Name>__MAIN.ZIP` (entries renamed, data
+  copied as it is) with its WAV / WHD; the level's base scene becomes
+  `<Name>\<Name>__MAIN`, `own_map_of` keeps the original. Objects keep their
+  paths (ROOT/C1-1/...); placed objects made on the original are applied on
+  the copy. Tested: placed objects, a driven car, a saved game loaded, the
+  launcher's Play.
 * A scene package: GMS (records: known, the editor writes it), BUF (strings),
   PRM (models: known, imports copy them), TEX (textures: known), OCT
   (collision: mostly known), RMC / RMI (room trees), SGP (sound graph), SND,

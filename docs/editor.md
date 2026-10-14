@@ -82,6 +82,15 @@ missing script files, the scripts' errors since they last ran.
 
 **Save**: Ctrl+S or *Save* in the toolbar.
 
+**A map of its own**: *Level > A map of its own* copies the level's map
+under a new name (`Scenes\<Name>`, about 15 MB: the map's archive with its
+entries renamed, its sounds) and makes the level that map's. The launcher
+lists it as *<Name> (own map)*; it loads as a scene of its own, its saved
+games are its own and the campaign's map is untouched. Everything placed
+before stays (objects keep their paths), the laptop, texts and scripts work
+as on the original. *Back to the original map* returns (optionally deleting
+the copy's files, from another map).
+
 **Play**: main menu > *Level Editor* > *Open a level* > *Play* (the editor
 stays closed; *Edit* opens it on the map). Five example levels, played
 through: `examples/missions` (copy a folder into `Mods`).

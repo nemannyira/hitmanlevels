@@ -266,12 +266,15 @@ void LoadSavedList()
     g_pick = g_saved.empty() ? -1 : 0;
 }
 
-const char* MapName(const std::string& scene)
+// A map of the game by its name; a level's own map ("CarTown\CarTown__MAIN")
+// by its folder's.
+std::string MapName(const std::string& scene)
 {
     for (const Map& m : kMaps)
         if (_stricmp(m.scene, scene.c_str()) == 0)
             return m.name;
-    return scene.c_str();
+    size_t slash = scene.find('\\');
+    return slash == std::string::npos ? scene : scene.substr(0, slash) + " (own map)";
 }
 
 void StartOn(const std::string& scene)
@@ -380,7 +383,7 @@ void DrawLauncher()
                             go = ImGui::IsMouseDoubleClicked(0);
                         }
                         ImGui::TableNextColumn();
-                        ImGui::TextUnformatted(MapName(g_saved[i].scene));
+                        ImGui::TextUnformatted(MapName(g_saved[i].scene).c_str());
                         ImGui::TableNextColumn();
                         ImGui::TextDisabled("%s", g_saved[i].modified.c_str());
                     }

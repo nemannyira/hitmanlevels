@@ -9,6 +9,7 @@
 //   "blank_map": true,                          // and its buildings (every model but the sky): hidden, stopping nothing
 //   "place_floor": { "level": "C3-3", "mesh": 6341746 },  // a model of another level to put under Hitman (once)
 //   "base_scene": "C1-1\\C1-1__MAIN",          // scene the level is built on
+//   "own_map_of": "C1-1\\C1-1__MAIN",          // base_scene is a copy of it, the level's own (own_map.h)
 //   "objects": [                                // edits of objects of the base scene
 //     { "path": "ROOT/.../Crate#2", "class": "ZSTDOBJ",
 //       "pos": [x, y, z], "matrix": [9 floats], "hidden": false } ],
@@ -125,6 +126,7 @@ struct LevelDocument {
     std::string name = "Untitled";
     std::string folder;  // Mods\<folder>
     std::string baseScene;
+    std::string ownMapOf;   // the game's map a map of its own was copied from ("": base_scene is the game's)
     bool emptyMap = false;  // the base scene's characters, items and objective lines are taken out
     std::string startOutfit;  // Hitman starts in the clothes of this model ("" his own suit)
     bool blankMap = false;  // its buildings too: every model of the map but the sky (hidden, stopping nothing)

@@ -45,7 +45,7 @@ def load():
     while time.time() - t < 150 and "C1-1__MAIN" not in dev.run("return h2.scene()", 5):
         time.sleep(1)
     time.sleep(8)
-    lua('GOALS = {} if not KO_WATCHED then KO_WATCHED = true '  # (console handlers outlive a map load)
+    lua('GOALS = {} if not GOALS_WATCHED then GOALS_WATCHED = true '  # (console handlers outlive a map load; goals_test uses the same one)
         'h2.on("objective", function(slot) GOALS[#GOALS + 1] = slot end) end '
         'h2.god(true) h2.invisible(true) return 1')
 

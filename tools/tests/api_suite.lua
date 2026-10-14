@@ -240,6 +240,25 @@ rejects("walkable radius", function() h2.walkable(0, 0, 0, 5000) end)
 rejects("walkable nan", function() h2.walkable(0 / 0, 0, 0) end)
 check("messages", function() return #h2.messages() > 100 end)
 
+-- ---------------------------------------------------------------- vehicles of the game
+check("trackpos", function()  -- C1-1's van parks at its track's end
+  local at = h2.trackpos(h2.find("TruckDeliveryVan"))
+  return at ~= nil and at >= 0 and at <= 1, at
+end)
+check("track", function() return h2.track(h2.find("TruckDeliveryVan"), 1) == true end)  -- (where it is: it stays)
+check("trackpos of no vehicle", function() return h2.trackpos(h2.player()) == nil end)
+rejects("track of no vehicle", function() h2.track(h2.player(), 0) end)
+rejects("track without a vehicle", function() h2.track(nil, 0) end)
+
+-- ---------------------------------------------------------------- characters: knocked out
+check("knockedout", function()
+  for _, c in ipairs(h2.npcs()) do
+    local o = c.object
+    if o and o:alive() then return o:knockedout() == false end
+  end
+  return false, "no character"
+end)
+
 -- ---------------------------------------------------------------- Hitman
 check("health", function()
   local was = h2.health()

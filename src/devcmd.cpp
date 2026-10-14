@@ -24,6 +24,7 @@ extern "C" {
 #include "editor/npcs.h"
 #include "editor/playtest.h"
 #include "editor/scene_panel.h"
+#include "editor/vehicles.h"
 #include "engine/imports.h"
 #include "engine/npc.h"
 #include "imgui.h"
@@ -369,6 +370,29 @@ int Level(lua_State* L)
                                                                                   : editor::Resolve(arg.substr(bar + 1)))
                               .c_str());
         return 1;
+    } else if (op == "vehicle") {  // "<object>|<point>|<point>...|speed=<cm/s>|loop": a vehicle of the level
+        editor::LevelVehicle v;
+        size_t start = 0;
+        for (int i = 0;; ++i) {
+            size_t bar = arg.find('|', start);
+            std::string part = arg.substr(start, bar == std::string::npos ? std::string::npos : bar - start);
+            if (i == 0)
+                v.object = part;
+            else if (part.rfind("speed=", 0) == 0)
+                v.speed = float(atof(part.c_str() + 6));
+            else if (part == "loop")
+                v.loop = true;
+            else if (part == "reverse")
+                v.reverse = true;
+            else if (!part.empty())
+                v.route.push_back(part);
+            if (bar == std::string::npos)
+                break;
+            start = bar + 1;
+        }
+        d.vehicles.push_back(v);
+        d.dirty = true;
+        editor::ApplyVehicles(d.vehicles);
     } else if (op == "unseen") {  // "fail": being spotted fails the mission
         lua_pushstring(L, editor::MissionUnseen(arg == "fail").c_str());
         return 1;

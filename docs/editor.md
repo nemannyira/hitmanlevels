@@ -34,6 +34,13 @@ level* / *File > Open level* loads a saved one.
   none is near: it would stand there and not walk. *Testing > Path network*
   shows where they can walk. A selected character shows its routes; *Add
   points...* adds points to one.
+* *Vehicles*: select a car (or any object) and *Inspector > Vehicle > Make it
+  drive a route*, then click the road for its points (Esc ends); speed,
+  *round and round*, *its front is its back* if it drives backwards, *Try
+  it*. It drives when the level is played. A car of the map's that is a group
+  (the C1-1 Ferrari) is copied whole with Ctrl+D or Duplicate; the game's own
+  vehicles that follow their tracks (the C1-1 van) cannot be driven, their
+  copies can.
 * A placed character is real (behaviour, collision, can be shot) only after
   the map loads again: *Test now (save and reload)*.
 

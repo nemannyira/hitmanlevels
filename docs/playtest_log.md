@@ -133,3 +133,23 @@ its place when Hitman got there; a key held at its place showed "Drop it
 here" and was not counted. Not played: a real knock-out (the test player
 could not get chloroform to take: the guard turned and attacked), and an
 item dropped at its place (no drop key found for the test player).
+
+## 2026-10-14: vehicles
+
+The game's vehicles move along splines (ZMoveOnSpline: a mover object at
++0x5C puts the vehicle on its spline every frame; the scripts drive it
+through Car_If / Vehicle_If / MoveOnSpline_if methods SetPath,
+SetMoveParams, DriveFwdToSplineVal, MoveToSplineVal). Those are not used:
+the editor drives objects itself (src/editor/vehicles.h), and copies groups
+whole (a car: a new group with copies of its parts).
+
+| # | Found | Status |
+|---|---|---|
+| P30 | Groups (a car) could not be copied ("only objects with a mesh") | fixed: a group copy (level.json kind "group") |
+| P31 | A group copy's parts went kilometres away: a map's group is at the world's origin, its parts where they stand | fixed: a group's place is its parts' middle, at the bottom of their boxes |
+| P32 | Parts made dynamic under a new group crashed the engine's dynamic set (0x5BCC04) | fixed: only the group is dynamic (as the game's vehicles) |
+| P33 | A driven car went sideways: the Ferrari's long side is its x | fixed: driven along its long side (`reverse` for the other end) |
+
+Played: a Ferrari copy driving a loop of four points on the C1-1 road,
+saved with the level and driving again when the map loaded (headlights
+first); `h2.drive` with `speed` / `progress` / the "arrived" event.

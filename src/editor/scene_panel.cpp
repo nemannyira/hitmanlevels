@@ -21,6 +21,7 @@
 #include "mission.h"
 #include "model.h"
 #include "placement.h"
+#include "vehicles.h"
 #include "viewport.h"
 
 namespace h2::editor {
@@ -269,6 +270,7 @@ void DrawInspector()
             ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());
     }
     DrawMissionForSelection(geom);
+    DrawVehicleForSelection(geom);
 }
 
 void DrawSelectionMarker()

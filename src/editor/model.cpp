@@ -176,7 +176,7 @@ bool (*g_takenOut)(engine::ZGEOM*);
 void SetTakenOutTest(bool (*takenOut)(engine::ZGEOM*)) { g_takenOut = takenOut; }
 
 engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error,
-                          engine::ZGEOM* parent)
+                          engine::ZGEOM* parent, bool dynamic)
 {
     static bool hooked;
     if (!hooked) {
@@ -203,7 +203,7 @@ engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::s
     }
     for (engine::ZGEOM* h : hidden)
         SetHidden(h, false);
-    engine::ZGEOM* geom = engine::CloneGeom(source, name, error, parent);
+    engine::ZGEOM* geom = engine::CloneGeom(source, name, error, parent, dynamic);
     for (engine::ZGEOM* h : hidden)
         SetHidden(h, true);
     if (geom) {
@@ -653,7 +653,8 @@ void Orthonormalize(float m[9])
 
 namespace {
 // really under `root` now: the snapshot's lists can be older than the scene.
-// (The editor's own copies are not parts either: a placement preview is made
+// (The editor's own copies are not parts of the map's objects either (they are of its own, a group
+// copy's): a placement preview is made
 // next to its source, under an item template, and the preview made again in
 // another room got the first one as a second part: the key was placed
 // kilometres away, 2026-10-13.)
@@ -688,7 +689,7 @@ std::vector<engine::ZGEOM*> VisibleParts(engine::ZGEOM* root)
     for (size_t q = 0; q < queue.size() && q < 512; ++q) {
         const engine::GeomInfo& g = snap.geoms[queue[q]];
         if (IsLive(g.geom) && engine::MeshOf(g.geom) && (g.node->flags & kShown) && !(g.node->flags & kNotShown) &&
-            (g.geom == root || !IsSpawned(g.geom)) && Below(g.geom, root))
+            (g.geom == root || !IsSpawned(g.geom) || IsSpawned(root)) && Below(g.geom, root))
             parts.push_back(g.geom);
         queue.insert(queue.end(), g.children.begin(), g.children.end());
     }

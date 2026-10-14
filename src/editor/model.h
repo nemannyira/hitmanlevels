@@ -47,7 +47,7 @@ void SetState(engine::ZGEOM* geom, const ObjectState& s);
 // Objects created by the editor (visual clones, see engine/spawn.h). They are
 // part of the scene model and destroyed before the scene is left.
 engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::string* error = nullptr,
-                          engine::ZGEOM* parent = nullptr);
+                          engine::ZGEOM* parent = nullptr, bool dynamic = true);
 // Objects the level took out of the map (the blank map's models): a copy of
 // one is made as of a shown one (a copy of a hidden object is never drawn).
 void SetTakenOutTest(bool (*takenOut)(engine::ZGEOM*));

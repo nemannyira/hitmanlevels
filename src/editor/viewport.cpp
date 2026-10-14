@@ -18,6 +18,7 @@
 #include "level.h"
 #include "model.h"
 #include "mission.h"
+#include "vehicles.h"
 #include "npc_panel.h"
 #include "playtest.h"
 #include "placement.h"
@@ -260,7 +261,7 @@ void Shortcuts()
     ImGuiIO& io = ImGui::GetIO();
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))  // also while typing
         SaveShortcut();
-    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing() || NpcPlacing() || MissionPicking())
+    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing() || NpcPlacing() || MissionPicking() || VehiclePicking())
         return;  // these have their own keys
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z))
         Undo();
@@ -411,6 +412,10 @@ void DrawViewport()
     }
     if (MissionPicking()) {
         UpdateMissionPick();
+        return;
+    }
+    if (VehiclePicking()) {
+        UpdateVehiclePick();
         return;
     }
 

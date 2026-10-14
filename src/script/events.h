@@ -49,6 +49,8 @@ void FireScene(const std::string& scene);
 void FireFrame(double dt);
 void FireDeath(const std::string& path);
 void FireObjective(int slot);
+// "arrived" {vehicle (its id), object}: a vehicle at the end of its route (editor/vehicles.h)
+void FireArrived(int id, const std::string& path);
 void FireGameEvents();
 // The editor's own listener (its mission goals): called with the events
 // named (as h2.on names them: "spotted", "unconscious", ...) whether or not a

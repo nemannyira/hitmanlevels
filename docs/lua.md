@@ -144,6 +144,24 @@ fails prints its error and the others still run.
 | `"message"` | every message of the game (about 100 a second): `{name, to, from, object, value, words, param, text}` |
 | `"msg:<name>"` | one of them (`"msg:hitmanspotted"`, any case); `h2.messages()` lists the names |
 
+## Vehicles
+
+```lua
+local car = h2.find("CarFerrari+1")                 -- a car the level placed (a group copy)
+local v = h2.drive(car, h2.find("CarRoute"), {speed = 800, loop = true})
+-- route: a list of points (its :points()), or { object, ... }, or { {x, y, z}, ... }
+v:stop()  v:go()  v:speed(400)  -- cm/s
+print(v:running(), v:progress())                     -- progress 0..1
+h2.on("arrived", function(e) print("arrived", e.vehicle, e.object:name()) end)
+```
+
+The object drives a smooth curve through the points, turned along it (its
+long side forward; `reverse = true` if it goes backwards), uphill and
+downhill with the points' heights, in the game's time (it stands while the
+world is frozen). One drive an object: a new one replaces it. The game's own
+vehicles (ZMoveOnSpline: the C1-1 van) are kept on their tracks by the game:
+refused.
+
 ## Story state
 
 `h2.state` is a table kept with the game's saves: strings, numbers,

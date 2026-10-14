@@ -31,6 +31,8 @@
 //     "base_ends": false,                      // the base level's own logic does not end it
 //     "base_files": false },                   // its laptop files (Target Photo); absent: hidden on an emptied map
 //   "music": { "ROOT/.../MusicControl/InsideAndOutside/Location_01": "RussiaSlow" },
+//   "vehicles": [ { "object": "ROOT/.../CarFerrari+1", "route": ["ROOT/.../Point+4", ...],
+//                   "speed": 800, "loop": true, "reverse": false } ],  // driven along their points
 //   "scripts": ["main.lua"]                     // level scripts, relative to the folder
 // }
 //
@@ -41,6 +43,7 @@
 
 #include "model.h"
 #include "npcs.h"
+#include "vehicles.h"
 
 namespace h2::editor {
 
@@ -55,6 +58,8 @@ struct SpawnedObject {
     std::string id;           // also the object's name in the scene (copies)
     bool item = false;        // a working item made from the item template at sourcePath
     bool point = false;       // an invisible point (characters walk to points), no source
+    bool group = false;       // a copy of a group (a car: body, doors, wheels): a new group with copies of
+                              // the source's visible parts in it
     std::string sourceScene;  // clones currently come from the base scene itself
     std::string sourcePath;
     std::string parentPath;   // room it is placed in ("" = the source's parent)
@@ -138,6 +143,7 @@ struct LevelDocument {
     std::map<std::string, std::string> music;  // music object path -> track name ("RussiaSlow")
     std::vector<std::string> scripts;
     std::vector<ImportedModel> imports;
+    std::vector<LevelVehicle> vehicles;  // objects driving routes when the level is played
     bool dirty = false;
 };
 

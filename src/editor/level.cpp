@@ -326,6 +326,89 @@ engine::ZGEOM* LiveSpawned(const std::string& id)
     return it->second;
 }
 
+// A group's own place: its parts' (a map's groups are often at the world's origin, their parts
+// where they stand): the middle of the parts, at the bottom of their boxes, the group's turn
+Transform GroupFrame(engine::ZGEOM* group)
+{
+    Transform t = GetTransform(group);
+    std::vector<engine::ZGEOM*> parts = VisibleParts(group);
+    if (parts.empty())
+        return t;
+    float sum[2] = {0, 0}, low = 1e30f;
+    for (engine::ZGEOM* p : parts) {
+        Transform pt = GetTransform(p);
+        sum[0] += pt.pos[0];
+        sum[1] += pt.pos[2];
+        // the bottom of its box (node space: x right, y up, z forward)
+        const engine::ZBaseGeom* n = p->node;
+        float cy = pt.pos[1] + pt.mat[7] * n->boundCenter[0] + pt.mat[4] * n->boundCenter[1] + pt.mat[1] * n->boundCenter[2];
+        float hy = std::fabs(pt.mat[7]) * n->boundHalf[0] + std::fabs(pt.mat[4]) * n->boundHalf[1] +
+                   std::fabs(pt.mat[1]) * n->boundHalf[2];
+        low = std::min(low, cy - hy);
+    }
+    t.pos[0] = sum[0] / float(parts.size());
+    t.pos[1] = low;
+    t.pos[2] = sum[1] / float(parts.size());
+    return t;
+}
+
+// A group copy: a new group (a helper the engine keeps, as points) with copies of the source's
+// visible parts in it, each where it is in the source (relative to GroupFrame)
+std::map<std::string, std::vector<engine::ZGEOM*>> g_groupParts;  // id -> its parts' copies
+
+engine::ZGEOM* MaterializeGroup(const SpawnedObject& s, engine::ZGEOM* source, engine::ZGEOM* parent,
+                                std::string* error)
+{
+    std::vector<engine::ZGEOM*> parts = VisibleParts(source);
+    if (parts.empty()) {
+        if (error)
+            *error = "the group has no models";
+        return nullptr;
+    }
+    if (!parent)
+        parent = RoomAt(s.transform.pos);
+    if (!parent)
+        parent = Resolve("ROOT");
+    engine::ZGEOM* g =
+        engine::CreateHelper(s.id, parent, 0, s.transform.mat, s.transform.pos, error, "ZGROUP");
+    if (!g)
+        return nullptr;
+    AdoptEngineOwned(g);
+    SetTransform(g, s.transform);
+    Transform from = GroupFrame(source), to = GetTransform(g);
+    std::vector<engine::ZGEOM*>& made = g_groupParts[s.id];
+    made.clear();
+    for (engine::ZGEOM* part : parts) {
+        std::string err;
+        engine::ZGEOM* c = SpawnClone(part, s.id + "_part", &err, g, false);  // the group moves (made dynamic)
+        if (!c) {
+            Log("level: group %s: a part of %s not copied: %s", s.id.c_str(), s.sourcePath.c_str(), err.c_str());
+            continue;
+        }
+        SetTransform(c, Compose(to, Relative(from, GetTransform(part))));
+        ShowBlankedMesh(engine::MeshOf(part));
+        made.push_back(c);
+    }
+    InvalidateSceneModel();
+    return g;
+}
+
+// a group copy taken away: its parts destroyed, the group (the engine's) out of sight
+void RetireGroup(const std::string& id, engine::ZGEOM* g)
+{
+    for (engine::ZGEOM* c : g_groupParts[id])
+        if (c && IsSpawned(c))
+            DestroySpawned(c);
+    g_groupParts.erase(id);
+    ForgetEngineOwned(g);
+    if (IsLive(g)) {
+        Transform t = GetTransform(g);
+        t.pos[1] -= 100000.0f;
+        SetTransform(g, t);
+        SetHidden(g, true);
+    }
+}
+
 // Creates the object of a spawned entry in the loaded scene (if not there yet).
 engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
 {
@@ -364,6 +447,17 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
         return nullptr;
     }
     engine::ZGEOM* parent = s.parentPath.empty() ? nullptr : Resolve(s.parentPath);
+    if (s.group) {
+        engine::ZGEOM* g = MaterializeGroup(s, source, parent, error);
+        if (!g)
+            return nullptr;
+        g_live[s.id] = g;
+        ObjectState st;
+        st.transform = s.transform;
+        st.hidden = s.hidden;
+        SetState(g, st);
+        return g;
+    }
     engine::ZGEOM* g = s.item ? SpawnItem(source, error) : SpawnClone(source, s.id, error, parent);
     if (!g)
         return nullptr;
@@ -526,6 +620,14 @@ void RetirePoint(const std::string& id, engine::ZGEOM* g)
     g_retiredPoints[id] = g;
 }
 
+bool IsGroupEntry(const std::string& id)
+{
+    for (const auto& s : g_level.spawned)
+        if (s.id == id)
+            return s.group;
+    return false;
+}
+
 bool IsPointEntry(const std::string& id)
 {
     for (const auto& s : g_level.spawned)
@@ -539,6 +641,8 @@ bool RemoveSpawned(const std::string& id)
     if (engine::ZGEOM* g = LiveSpawned(id)) {
         if (IsPointEntry(id))
             RetirePoint(id, g);
+        else if (IsGroupEntry(id))
+            RetireGroup(id, g);
         else
             DestroySpawned(g);
     }
@@ -678,6 +782,7 @@ void OnScene(const std::string& scene)
     g_live.clear();         // the editor destroyed them when the previous scene was left
     g_liveNpcs.clear();
     g_retiredPoints.clear();
+    g_groupParts.clear();  // destroyed with the editor's objects when the scene was left
     g_cleared.clear();  // they went with the scene
     g_blanked.clear();
     g_hitmanAtLoadKnown = false;
@@ -1357,6 +1462,8 @@ bool SaveLevel(std::string* error)
             o["kind"] = "item";
         else if (s.point)
             o["kind"] = "point";
+        else if (s.group)
+            o["kind"] = "group";
         if (!s.parentPath.empty())
             o["parent"] = s.parentPath;
         o["hidden"] = s.hidden;
@@ -1420,6 +1527,13 @@ bool SaveLevel(std::string* error)
     }
     if (!g_level.music.empty())
         j["music"] = g_level.music;
+    if (!g_level.vehicles.empty()) {
+        json vs = json::array();
+        for (const LevelVehicle& v : g_level.vehicles)
+            vs.push_back({{"object", v.object}, {"route", v.route}, {"speed", v.speed}, {"loop", v.loop},
+                          {"reverse", v.reverse}});
+        j["vehicles"] = vs;
+    }
     j["lists"] = json::array();
     for (auto& [path, points] : g_level.lists)
         j["lists"].push_back({{"path", path}, {"points", points}});
@@ -1518,6 +1632,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
             s.sourcePath = o.value("source_path", "");
             s.item = o.value("kind", "") == "item";
             s.point = o.value("kind", "") == "point";
+            s.group = o.value("kind", "") == "group";
             s.parentPath = o.value("parent", "");
             L.spawned.push_back(s);
         }
@@ -1585,6 +1700,22 @@ bool LoadLevel(const std::string& folder, std::string* error)
             L.mission.baseEnds = m.value("base_ends", true);
             if (m.contains("base_files") && m["base_files"].is_boolean())
                 L.mission.baseFiles = m["base_files"].get<bool>() ? 1 : 0;
+        }
+        for (const json& o : j.value("vehicles", json::array())) {
+            if (!o.is_object() || !o.contains("object") || !o["object"].is_string())
+                continue;
+            LevelVehicle v;
+            v.object = o["object"].get<std::string>();
+            for (const json& p : o.value("route", json::array()))
+                if (p.is_string() && v.route.size() < 256)
+                    v.route.push_back(p.get<std::string>());
+            v.speed = o.value("speed", 800.0f);
+            if (!(v.speed >= 10.0f && v.speed <= 20000.0f))
+                v.speed = 800.0f;
+            v.loop = o.value("loop", false);
+            v.reverse = o.value("reverse", false);
+            if (L.vehicles.size() < 64)
+                L.vehicles.push_back(v);
         }
         if (j.contains("music") && j["music"].is_object())
             for (auto& [path, track] : j["music"].items())
@@ -1835,8 +1966,12 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
     }
     if (s.sourcePath.empty())
         return fail("the object has no stable path");
-    if (!engine::MeshOf(source))
-        return fail("only objects with a mesh can be duplicated");
+    if (const SpawnedObject* from = EntryOf(source))
+        s.group = from->group;
+    else if (!engine::MeshOf(source) && !VisibleParts(source).empty())
+        s.group = true;  // a group of models (a car): copied as one
+    if (!engine::MeshOf(source) && !s.group)
+        return fail("only objects with a mesh (or groups of them) can be duplicated");
     if (InActor(source))
         return fail("parts of characters cannot be copied");
     if (parent)
@@ -1850,7 +1985,7 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
     if (at) {
         s.transform = *at;
     } else {
-        s.transform = GetTransform(source);
+        s.transform = s.group && !EntryOf(source) ? GroupFrame(source) : GetTransform(source);
         // next to the original, so both are visible
         float c[3], r = 100.0f;
         if (!GetBounds(source, c, r))
@@ -2793,11 +2928,13 @@ int ApplyLevel()
     ApplyMusic();
     PlaceFloor();
     ApplySky();
+    ApplyVehicles(g_level.vehicles);
     return n;
 }
 
 void RevertLevel()
 {
+    StopDrives("level");
     RestoreSky();
     RestoreScene();
     RestoreBlank();
@@ -2809,6 +2946,8 @@ void RevertLevel()
     for (auto& [id, g] : g_live) {
         if (IsPointEntry(id) && IsLive(g))
             RetirePoint(id, g);
+        else if (IsGroupEntry(id))
+            RetireGroup(id, g);
         else if (IsSpawned(g))
             DestroySpawned(g);
     }

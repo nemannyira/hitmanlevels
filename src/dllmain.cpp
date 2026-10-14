@@ -21,6 +21,7 @@
 #include "editor/mission.h"
 #include "editor/music.h"
 #include "editor/profile_guard.h"
+#include "editor/vehicles.h"
 #include "editor/launcher.h"
 #include "editor/models_panel.h"
 #include "editor/npc_panel.h"
@@ -100,6 +101,7 @@ void Init()
     h2::script::RegisterEvents();
     h2::script::RegisterObjectsApi();
     h2::script::InstallTriggers();
+    h2::editor::InstallVehicles();
     h2::script::InstallState();
     h2::InstallDevCommands();
     if (h2::g_config.luaMemory)

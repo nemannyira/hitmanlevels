@@ -494,6 +494,17 @@ void FireDeath(const std::string& path)
     });
 }
 
+void FireArrived(int id, const std::string& path)
+{
+    Fire("arrived", [&](lua_State* L) {
+        lua_createtable(L, 0, 2);
+        SetInteger(L, "vehicle", id);
+        PushObjectPath(L, path);
+        lua_setfield(L, -2, "object");
+        return 1;
+    });
+}
+
 void FireObjective(int slot)
 {
     Fire("objective", [&](lua_State* L) {

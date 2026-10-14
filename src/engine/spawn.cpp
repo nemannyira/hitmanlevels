@@ -46,6 +46,7 @@ struct CloneArgs {
     uint32_t flags;
     float mat[9];
     float pos[3];
+    bool dynamic;
     ZBaseGeom* result;
     int step;  // how far it got, for the log
 };
@@ -92,7 +93,8 @@ bool DoClone(CloneArgs& a)
         VFunc<void(__thiscall*)(ZGEOM*)>(geom, kGeom_PostInit)(geom);
         a.step = 8;
         // moving objects are tracked by the dynamic set (collision, culling)
-        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, bool)>(game::ZBaseGeom_SetDynamic)(node, true);
+        if (a.dynamic)
+            reinterpret_cast<void(__thiscall*)(ZBaseGeom*, bool)>(game::ZBaseGeom_SetDynamic)(node, true);
         a.step = 9;
         return true;
     } __except (Filter(GetExceptionInformation())) {
@@ -215,7 +217,7 @@ uint32_t MeshOf(const ZGEOM* geom)
     return mesh;
 }
 
-ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGEOM* parent)
+ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGEOM* parent, bool dynamic)
 {
     auto fail = [&](const char* why) -> ZGEOM* {
         if (error)
@@ -234,6 +236,7 @@ ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error, ZGE
     CloneArgs a{};
     a.table = table;
     a.name = name.c_str();  // copied by the engine
+    a.dynamic = dynamic;
     a.mesh = MeshOf(source);
     if (!a.mesh)
         return fail("the source object has no mesh");

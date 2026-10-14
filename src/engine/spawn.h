@@ -23,7 +23,9 @@ namespace h2::engine {
 // a plain ZSTDOBJ named `name`, a child of `parent` (a group; default: the
 // source's parent). Behaviour (doors, items, AI...) is not copied. Returns
 // null (and the reason) on failure.
-ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error = nullptr, ZGEOM* parent = nullptr);
+// `dynamic` false: not tracked as a moving object itself (a part of a group that is: it moves with it).
+ZGEOM* CloneGeom(ZGEOM* source, const std::string& name, std::string* error = nullptr, ZGEOM* parent = nullptr,
+                 bool dynamic = true);
 
 // A working item (weapon, ammo, container...) made from an item template
 // (ZItemTemplate, under "ItemTemplates" in the scenes) the way the game does

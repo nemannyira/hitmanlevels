@@ -89,6 +89,9 @@ void OnLeaving(const std::string&)
     if (g_wePaused && EnginePaused())
         PauseScene(false);  // loading pauses and resumes the scene itself
     g_wePaused = false;
+    // the next map runs a moment before the editor holds it: the game's
+    // camera starts in Hitman's head and moves behind him only while it runs
+    g_stepFrames = 60;
 }
 
 void Reload()

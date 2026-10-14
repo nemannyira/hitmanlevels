@@ -186,3 +186,7 @@ launcher's *No buildings either* with another floor (C2-2's snowy ground),
 map again*, *NPCs* > Vittorio > *Place character* > a click on the floor >
 *Test now*: a real character there (Neutral2).
 
+| # | Found | Done |
+|---|---|---|
+| P42 | A map loaded with the editor open (*Load the map again* for models of other levels) showed the world from inside Hitman's head: the editor held the world from the first frame, before the game's camera moved behind him | fixed: a new map runs 60 frames before the editor holds it |
+

@@ -95,7 +95,8 @@ def run_case(name, text, script="h2.log('fuzz main ran')"):
                 break
             time.sleep(1)
         time.sleep(6)
-    alive = "C1-1" in dev.run("return h2.scene()", 10) or "Logos" in dev.run("return h2.scene()", 5)
+    scene = dev.run("return h2.scene()", 10)  # (any scene: the test before may have left another map)
+    alive = dev.running() and bool(scene) and "timeout" not in scene and not scene.startswith("error")
     print("%-20s load: %-60s game: %s" % (name, out[:60], "alive" if alive else "DOWN"))
     shutil.rmtree(path, ignore_errors=True)
     return alive

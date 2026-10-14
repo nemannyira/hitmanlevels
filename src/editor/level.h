@@ -8,6 +8,7 @@
 //   "empty_map": true,                          // the base scene's characters, items and objectives taken out
 //   "blank_map": true,                          // and its buildings (every model but the sky): hidden, stopping nothing
 //   "place_floor": { "level": "C3-3", "mesh": 6341746 },  // a model of another level to put under Hitman (once)
+//   "floor_object": "Yard_06-7-8.C3-3.60C472+1",  // that floor once placed (a "spawned" id)
 //   "base_scene": "C1-1\\C1-1__MAIN",          // scene the level is built on
 //   "own_map_of": "C1-1\\C1-1__MAIN",          // base_scene is a copy of it, the level's own (own_map.h)
 //   "objects": [                                // edits of objects of the base scene
@@ -134,6 +135,7 @@ struct LevelDocument {
     // blank map's floor); then it is an object of the level like the others
     std::string floorLevel;
     uint32_t floorMesh = 0;
+    std::string floorObject;  // the placed floor (a spawned object's id): offered out when the buildings come back
     // the sky of another level instead of the map's own (its backdrop's models, imported)
     std::string skyLevel;
     std::map<std::string, ObjectEdit> objects;  // by path

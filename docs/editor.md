@@ -102,6 +102,8 @@ through: `examples/missions` (copy a folder into `Mods`).
   surface. Moved by hand into the ground (or a long weapon on a slope) it is
   not offered: check the prompt when testing. Hitman picks up the first item
   of a pile: keep items apart.
+* *No buildings* turned off again: the buildings come back; the floor it put
+  under Hitman stays an object of the level (*Level* > *Take the floor out*).
 * A level with *No buildings*: the map's own models and models of other
   levels (*Models* > *Other levels...*, as the floor) can be placed on it.
 * Guards (BaseGuard) shoot a trespasser on sight: give the player cover, a

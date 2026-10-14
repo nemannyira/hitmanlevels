@@ -1219,6 +1219,21 @@ void DrawPanel()
         ImGui::SetTooltip("Every model of the map but the sky is taken out too (hidden, and it stops nothing):\n"
                           "build your own place from models (Models tab, Other levels...).\n"
                           "Stand on something first: Hitman falls without a floor.");
+    if (!L.blankMap && !L.floorObject.empty()) {
+        if (engine::ZGEOM* floor = LiveSpawned(L.floorObject)) {  // (the buildings back: the floor cuts through them)
+            ImGui::TextDisabled("Its floor stays:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Take the floor out")) {
+                DeleteObject(floor);
+                L.floorObject.clear();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("The floor No buildings put under Hitman (%s) cuts through the map now", L.floorObject.c_str());
+        } else if (std::none_of(L.spawned.begin(), L.spawned.end(),
+                                [&](const SpawnedObject& s) { return s.id == L.floorObject; })) {
+            L.floorObject.clear();  // (deleted by hand; not just not made yet)
+        }
+    }
 
     // the sky
     std::string skyLabel = L.skyLevel.empty() ? "the map's own" : L.skyLevel;
@@ -1445,6 +1460,8 @@ bool SaveLevel(std::string* error)
         j["start_outfit"] = g_level.startOutfit;
     if (!g_level.floorLevel.empty())
         j["place_floor"] = {{"level", g_level.floorLevel}, {"mesh", g_level.floorMesh}};
+    if (!g_level.floorObject.empty())
+        j["floor_object"] = g_level.floorObject;
     if (!g_level.skyLevel.empty())
         j["sky"] = {{"level", g_level.skyLevel}};
     j["objects"] = json::array();
@@ -1618,6 +1635,8 @@ bool LoadLevel(const std::string& folder, std::string* error)
             L.floorLevel = j["place_floor"].value("level", "");
             L.floorMesh = j["place_floor"].value("mesh", 0u);
         }
+        if (j.contains("floor_object") && j["floor_object"].is_string())
+            L.floorObject = j["floor_object"].get<std::string>().substr(0, 128);
         if (j.contains("sky") && j["sky"].is_object())
             L.skyLevel = j["sky"].value("level", "");
         for (const json& o : j.value("objects", json::array())) {
@@ -2725,6 +2744,8 @@ bool PlaceFloor()
     Log("level: floor %s: %s", LibraryName(*m).c_str(), floor ? "placed under Hitman" : err.c_str());
     g_level.floorLevel.clear();
     g_level.floorMesh = 0;
+    if (floor && !g_level.spawned.empty())
+        g_level.floorObject = g_level.spawned.back().id;
     g_level.dirty = true;
     if (floor && !g_level.folder.empty())
         SaveLevel(&err);

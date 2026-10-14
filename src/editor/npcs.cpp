@@ -411,6 +411,15 @@ int FindNpcRecord(const std::string& what)
     return -1;
 }
 
+bool KnockedOut(engine::ZGEOM* g)
+{
+    engine::ZGEOM* actor = ActorOf(g);
+    std::string state = engine::ScriptState(actor ? actor : g);
+    for (char& c : state)
+        c = char(tolower(static_cast<unsigned char>(c)));
+    return state.find("unconscious") != std::string::npos;
+}
+
 engine::ZGEOM* ActorOf(engine::ZGEOM* g)
 {
     engine::ZBaseGeom* node = g && IsLive(g) ? g->node : nullptr;

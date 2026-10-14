@@ -167,12 +167,17 @@ Save\<slot>.h2lua next to the game's files).
 * Possible now: a level's own vehicles with their own tracks; a vehicle of
   another level imported as models (looks only), its script as a behaviour
   of another level (as characters) once its group is made at load time.
-* Next steps: (1) place copies of a level's car groups at load time (as
-  characters), with a track picked from the level's splines; (2) read the
-  ZSHAPE record format, then draw new tracks in the editor; (3) Lua:
-  car:drive(track), car:stop(), car:speed(v) through ZMoveOnSpline's fields
-  or its script's variables; (4) drivers / passengers (C2-2 LimoGuard's
-  rLimo + seat number).
+* Done (b2dc9ba): a copied group (a car: kind "group" in level.json) is
+  driven kinematically along a route of points the user clicks (a
+  Catmull-Rom curve; Inspector > Vehicle, level.json "vehicles"; Lua
+  `h2.drive` with stop / go / speed). The game's own vehicles are refused:
+  their mover (+0x5C) puts them back on their spline every frame.
+* Next steps: (1) the game's own vehicles on their own splines through their
+  script interface (InitCarPosDir 0, MoveToRef 3, Stop 7, MoveToSplineVal 8,
+  DriveFwdToSplineVal 10, SetMoveParams 14, SetPath 23); (2) the ZSHAPE
+  record format, then new splines the game's vehicles can use; (3) drivers /
+  passengers (C2-2 LimoGuard's rLimo + seat number); (4) what a driven car
+  does to characters in its way (not checked yet).
 
 ## 8. The rating (Silent Assassin, ...)
 

@@ -164,3 +164,17 @@ the original map.
 |---|---|---|
 | P34 | On its own map a level's placed objects were not made (0/5): each remembers the scene it was placed on | fixed: the original map counts as the copy's |
 | P35 | The launcher showed an own map as its scene name | fixed: *CarTown (own map)* |
+
+## 2026-10-14 (evening): the goals played for real, VS 18
+
+The DLL built with VS 18 (MSVC 19.52) passed every suite. The two goals not
+played before, played: a revolver picked up, carried to the place and dropped
+with G (the game's DropItem key; close combat items are drawn with 1); the
+C1-1 garage guard knocked out from behind with chloroform (Hitman invisible).
+
+| # | Found | Done |
+|---|---|---|
+| P36 | A knocked out character never completed its goal: the engine counts it as not alive (Actor IsAlive) and the goal wanted it alive | fixed: knocked out = its unconscious state, alive or not for the engine |
+| P37 | The same made a knock-out complete a "dies" goal, fire the scripts' death event and `npc:alive()` false | fixed: not a death; killed afterwards it is (tested: knocked out, then the instant death) |
+| P38 | `npc:kill()` did nothing to a knocked out character | fixed: its behaviour gets the instant death |
+

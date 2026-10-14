@@ -59,8 +59,8 @@ level* / *File > Open level* loads a saved one.
   Hitman presses E near it (*how near*, 1.5 m by default): it goes from the
   world and the game shows "Taken.". Goals done stay done in saved games.
 * *Hitman brings an object to a place*: an item is done when it lies at
-  the place (dropped there); any other object is taken with E and put down
-  at the place when Hitman gets there with it.
+  the place (dropped there: G, the game's Drop key); any other object is
+  taken with E and put down at the place when Hitman gets there with it.
 * *a character is knocked out*: done when its behaviour is unconscious
   (chloroform) and it lives. *Hitman is never spotted*: checked from the
   start, lost for good when a guard spots him (drawn weapon, trespassing,

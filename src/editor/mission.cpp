@@ -713,7 +713,7 @@ bool Reached(const MissionObjective& o)
     switch (o.goal) {
     case MissionObjective::Kill: {
         engine::ZGEOM* t = Target(o);
-        return t && !engine::IsAlive(t);
+        return t && !engine::IsAlive(t) && !KnockedOut(t);  // (the engine counts a knocked out one as dead)
     }
     case MissionObjective::Reach:
         return DistanceToPlayer(Target(o)) <= o.radius;
@@ -723,13 +723,12 @@ bool Reached(const MissionObjective& o)
     }
     case MissionObjective::KnockOut: {  // its behaviour in the base class's state (Being2.Unconscious)
         engine::ZGEOM* t = Target(o);
-        if (!t || !engine::IsAlive(t))
+        if (!t)
             return false;
         engine::ZGEOM* actor = ActorOf(t);
         if (g_knockedOut.count(t) || (actor && g_knockedOut.count(actor)))
             return true;
-        std::string state = Lower(engine::ScriptState(actor ? actor : t));
-        if (state.find("unconscious") == std::string::npos)
+        if (!KnockedOut(t))  // (dead: Being2.Dead)
             return false;
         g_knockedOut.insert(actor ? actor : t);  // (it may wake up: the goal stays done)
         return true;
@@ -749,7 +748,7 @@ std::vector<engine::ZGEOM*> Characters();
 void WatchDeaths()
 {
     for (engine::ZGEOM* a : Characters()) {
-        bool alive = engine::IsAlive(a);
+        bool alive = engine::IsAlive(a) || KnockedOut(a);  // (knocked out: not a death)
         auto it = g_alive.find(a);
         if (it != g_alive.end() && it->second && !alive) {
             std::string path = PathOf(a);
@@ -1259,7 +1258,7 @@ void DrawLineEditor(int slot)
             if (ImGui::SmallButton("Select"))
                 Select(t);
             ImGui::SameLine();
-            ImGui::TextDisabled(engine::IsAlive(t) ? "(alive)" : "(dead)");
+            ImGui::TextDisabled(engine::IsAlive(t) ? "(alive)" : KnockedOut(t) ? "(knocked out)" : "(dead)");
         }
         ImGui::Unindent();
     } else if (o && o->goal == MissionObjective::Unseen) {

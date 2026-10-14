@@ -52,6 +52,10 @@ int FindNpcRecord(const std::string& what);
 
 // The character an object belongs to (the ZActor up its parents), or null.
 engine::ZGEOM* ActorOf(engine::ZGEOM* geom);
+// A character knocked out (chloroform, a blow): its behaviour in the base
+// class's unconscious state ("Being2.Unconscious"). The engine counts it as
+// not alive (Actor IsAlive): it is not dead.
+bool KnockedOut(engine::ZGEOM* geom);
 // Record a scene NPC was made from, or the record a placed NPC copies; -1.
 int NpcRecordOf(engine::ZGEOM* actor);
 

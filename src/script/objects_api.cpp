@@ -911,10 +911,18 @@ int Parent(lua_State* L)
 }
 
 // obj:select(): selects the object in the editor
-// npc:alive() -> bool
+// npc:alive() -> bool (a knocked out character is alive)
 int Alive(lua_State* L)
 {
-    lua_pushboolean(L, engine::IsAlive(Geom(L)));
+    engine::ZGEOM* g = Geom(L);
+    lua_pushboolean(L, engine::IsAlive(g) || editor::KnockedOut(g));
+    return 1;
+}
+
+// npc:knockedout() -> bool
+int KnockedOutFn(lua_State* L)
+{
+    lua_pushboolean(L, editor::KnockedOut(Geom(L)));
     return 1;
 }
 
@@ -1037,6 +1045,11 @@ int Kill(lua_State* L)
         g = a;  // its group
     if (!engine::IsA(g, "ZActor"))
         return luaL_error(L, "kill: %s is not a character", engine::SafeString(g->name).c_str());
+    if (editor::KnockedOut(g)) {  // not alive for the engine: its behaviour still takes the instant death
+        static const char* param = "Msg_InstantDeath";
+        lua_pushboolean(L, engine::SendMessage(g, g, engine::RegisterMessage("ScriptEvent"), &param));
+        return 1;
+    }
     lua_pushboolean(L, engine::KillActor(g));
     return 1;
 }
@@ -1261,7 +1274,7 @@ void RegisterObjectsApi()
         {"hide", Hide},   {"show", Show},     {"hidden", Hidden},
         {"spawn", ObjSpawn}, {"destroy", Destroy}, {"spawned", Spawned}, {"behaviour", Behaviour}, {"state", State}, {"event", Event},
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
-        {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"kill", Kill},
+        {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"knockedout", KnockedOutFn}, {"kill", Kill},
         {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet}, {"animation", Animation}, {"faceto", FaceTo},
         {nullptr, nullptr},
     };

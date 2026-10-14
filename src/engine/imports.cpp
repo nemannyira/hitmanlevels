@@ -1,6 +1,7 @@
 #include "imports.h"
 
 #include <windows.h>
+#include <intrin.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -1500,8 +1501,75 @@ uint32_t ImportedMesh(const std::string& level, uint32_t mesh)
     return it == g_meshes.end() ? 0 : it->second;
 }
 
+// ---- saved games: pointers the save cannot place ----
+//
+// ZSaveGame::AddSafePointer (0x4297F0) writes a pointer as (kind, value):
+// 1 null, 2 into the static buffer (ZEngineDataBase+0x1C47), 3 into the
+// animation buffer (+0x40), 4 a resource (SysInterface+0x18A0 -> +0x18:
+// vfunc 0x14 owns, 0x10 its index); anything else as kind 0, which
+// ZLoadGame::GetSafePointer (0x42A440) stops at (int3).
+using AddSafePointer_t = void(__fastcall*)(void* save, void* edx, void* p);
+AddSafePointer_t oAddSafePointer;
+int g_unplaced;
+std::map<const void*, const char*> g_saveNames;  // heap name -> the scene's own (SaveNameAs)
+const void* g_saveNamesScene;
+
+bool InBlock(const char* block, const void* p)
+{
+    if (!block || !IsReadable(block - 8, 4))
+        return false;
+    uint32_t size = *reinterpret_cast<const uint32_t*>(block - 8) & 0x1FFFFFFF;
+    return p >= block && p < block + size;
+}
+
+void __fastcall hkAddSafePointer(void* save, void* edx, void* p)
+{
+    auto sys = reinterpret_cast<char*>(game::SysInterface());
+    char* db = sys ? *reinterpret_cast<char**>(sys + 0x98) : nullptr;
+    if (auto it = g_saveNames.find(p); p && it != g_saveNames.end() && db &&
+                                       g_saveNamesScene == *reinterpret_cast<void**>(db + 0x1C47)) {
+        oAddSafePointer(save, edx, const_cast<char*>(it->second));
+        return;
+    }
+    if (p && db && g_unplaced < 40) {
+        char* stat = *reinterpret_cast<char**>(db + 0x1C47);
+        char* anim = *reinterpret_cast<char**>(db + 0x40);
+        if (!InBlock(stat, p) && !InBlock(anim, p)) {
+            void* rm = *reinterpret_cast<void**>(*reinterpret_cast<char**>(sys + 0x18A0) + 0x18);
+            auto owns = (*reinterpret_cast<bool(__thiscall***)(void*, void*)>(rm))[0x14 / 4];
+            if (!owns(rm, p)) {
+                ++g_unplaced;
+                const uint32_t* w = static_cast<const uint32_t*>(p);
+                bool rd = IsReadable(w - 2, 32);
+                Log("save: a pointer of no kind: %p (from %p; static %p size %08X, anim %p size %08X) heap %08X: %08X %08X %08X %08X %08X %08X",
+                    p, _ReturnAddress(), stat, *reinterpret_cast<uint32_t*>(stat - 8) & 0x1FFFFFFF, anim,
+                    *reinterpret_cast<uint32_t*>(anim - 8) & 0x1FFFFFFF, rd ? w[-2] : 0, rd ? w[0] : 0, rd ? w[1] : 0,
+                    rd ? w[2] : 0, rd ? w[3] : 0, rd ? w[4] : 0, rd ? w[5] : 0);
+            }
+        }
+    }
+    oAddSafePointer(save, edx, p);
+}
+
+void SaveNameAs(const char* heapName, const char* gameName)
+{
+    auto sys = reinterpret_cast<char*>(game::SysInterface());
+    char* db = sys ? *reinterpret_cast<char**>(sys + 0x98) : nullptr;
+    if (!heapName || !gameName || !db)
+        return;
+    void* stat = *reinterpret_cast<void**>(db + 0x1C47);
+    if (stat != g_saveNamesScene) {  // (a new static buffer: another scene)
+        g_saveNames.clear();
+        g_saveNamesScene = stat;
+    }
+    if (!InBlock(static_cast<const char*>(stat), gameName))
+        return;  // (not one the save can place either)
+    g_saveNames[heapName] = gameName;
+}
+
 void InstallImports()
 {
+    Hook("AddSafePointer", 0x4297F0, &hkAddSafePointer, &oAddSafePointer);
     Hook("GetPrimsSize", kGetPrimsSize, &hkPrimsSize, &oPrimsSize);
     Hook("GetPrimsData", kGetPrimsData, &hkPrimsData, &oPrimsData);
     Hook("GetTextureSize", kGetTextureSize, &hkTexSize, &oTexSize);

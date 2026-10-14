@@ -31,6 +31,11 @@ void SetImportProvider(std::function<std::vector<ModelImport>(const std::string&
 void SetModelImports(const std::vector<ModelImport>& list);
 // The mesh reference of an imported model in the loaded scene (0: not there).
 uint32_t ImportedMesh(const std::string& level, uint32_t mesh);
+// Saved games: an object made while playing keeps its name in the engine's
+// heap, which a saved game cannot point to (loading it stopped at an int3);
+// `gameName` (a name of the scene's own, in its static buffer) is saved in
+// its place. Forgotten when the scene changes.
+void SaveNameAs(const char* heapName, const char* gameName);
 
 struct LevelModelPart {
     uint32_t mesh = 0;

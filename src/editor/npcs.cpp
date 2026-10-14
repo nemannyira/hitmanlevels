@@ -90,6 +90,7 @@ engine::ZGEOM* OutfitGroup(int groupRecord, uint32_t body, const std::string& na
         Log("npc: outfit %s: body not made (%s)", name.c_str(), err.c_str());
     engine::InitObject(made);
     AdoptEngineOwned(made);
+    engine::SaveNameAs(made->name, group->name);  // (saved games point to names of the scene's own)
     g_outfits[key] = made;
     Log("npc: outfit %s made", name.c_str());
     return made;

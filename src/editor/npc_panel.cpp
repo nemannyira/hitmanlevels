@@ -35,6 +35,19 @@ namespace h2::editor {
 
 namespace {
 
+// a character's name in the lists: its model; a placed one with a body of
+// another level by that body ("Vittorio (C0-1)", not the character lending it
+// its behaviour)
+std::string CharacterName(engine::ZGEOM* actor)
+{
+    std::string name = engine::SafeString(actor->name);
+    for (const LevelNpc& n : CurrentLevel().npcs)
+        if (n.id == name && !n.importName.empty())
+            return n.importName + " (" + n.importLevel + ")";
+    int record = NpcRecordOf(actor);
+    return record >= 0 ? NpcModel(record) : name;
+}
+
 // a kind of character: one actor record of the scene per model + behaviour
 struct NpcType {
     int record = -1;
@@ -891,9 +904,8 @@ void DrawTarget()
     }
     RefreshTarget(false);
     bool placed = IsPlacedNpc(actor);
-    int record = NpcRecordOf(actor);
     ImGui::SeparatorText("Character");
-    ImGui::Text("%s", record >= 0 ? NpcModel(record).c_str() : engine::SafeString(actor->name).c_str());
+    ImGui::Text("%s", CharacterName(actor).c_str());
     ImGui::SameLine();
     ImGui::TextDisabled(placed ? "(placed by the level)" : "(of the scene)");
     std::string state = engine::ScriptState(actor);
@@ -1163,11 +1175,10 @@ void DrawList()
     for (size_t i = 0; i < all.size(); ++i) {
         engine::ZGEOM* g = all[i];
         ImGui::PushID(int(i));
-        int rec = NpcRecordOf(g);
         engine::ScriptInfo s;
         std::string b = CurrentBehaviour(g, s) ? engine::ScriptShortName(s.name) : "-";
         char label[192];
-        snprintf(label, sizeof(label), "%s%s", rec >= 0 ? NpcModel(rec).c_str() : "?", IsPlacedNpc(g) ? " *" : "");
+        snprintf(label, sizeof(label), "%s%s", CharacterName(g).c_str(), IsPlacedNpc(g) ? " *" : "");
         if (ImGui::Selectable(label, g == g_target, ImGuiSelectableFlags_AllowOverlap)) {
             Select(g);
             SetTarget(g);

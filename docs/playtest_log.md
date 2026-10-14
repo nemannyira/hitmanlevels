@@ -178,3 +178,11 @@ C1-1 garage guard knocked out from behind with chloroform (Hitman invisible).
 | P37 | The same made a knock-out complete a "dies" goal, fire the scripts' death event and `npc:alive()` false | fixed: not a death; killed afterwards it is (tested: knocked out, then the instant death) |
 | P38 | `npc:kill()` did nothing to a knocked out character | fixed: its behaviour gets the instant death || P39 | A saved game of a level with characters of other levels (CharTest: C1-1's maid and bodyguard, C3-2a's ninja on C2-1) did not load: the game stopped at an int3 in ZLoadGame::GetSafePointer. The outfit groups made for imported bodies (`<model>_HMas` / `_Nude`) keep their names in the engine's heap, and ZSaveGame::AddSafePointer writes such a pointer as kind 0 | fixed: their names are saved as the template's groups' (in the scene's static buffer); a pointer the save cannot place is logged ("save: a pointer of no kind"). Tested: saved, loaded, the ninja's clothes taken after loading, saved and loaded again in them |
 | P40 | *No buildings* turned off: the buildings come back, the floor it put under Hitman stays and cuts through the map, with nothing saying it is an object of the level | fixed: the Level panel offers *Take the floor out* (level.json `floor_object`); undoable |
+| P41 | A placed character with a body of another level was listed under the name of the character lending it its behaviour ("DeliveryBoy" for C0-1's Vittorio) | fixed: by its own body ("Vittorio (C0-1)") |
+
+Also played through the GUI (mouse and keyboard, no dev commands): the
+launcher's *No buildings either* with another floor (C2-2's snowy ground),
+*Models* > *Other levels...* > *Characters* > Vittorio (C0-1) > *Load the
+map again*, *NPCs* > Vittorio > *Place character* > a click on the floor >
+*Test now*: a real character there (Neutral2).
+

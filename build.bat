@@ -12,7 +12,7 @@ call "%VCVARS%" >nul || exit /b 1
 set BUILD=build\%CONFIG%
 rem a Visual Studio being updated can lack its compiler: the 2019 Build Tools
 rem then, in a folder of their own (a CMake cache keeps its compiler)
-if not exist "%VCToolsInstallDir%bin\Hostx64\cl.exe" (call "%VS2019%" >nul & set BUILD=build\%CONFIG%19)
+if not exist "%VCToolsInstallDir%bin\Hostx64\x86\cl.exe" (call "%VS2019%" >nul & set BUILD=build\%CONFIG%19)
 where cl >nul 2>nul || (echo no C++ compiler found & exit /b 1)
 
 cd /d "%~dp0"

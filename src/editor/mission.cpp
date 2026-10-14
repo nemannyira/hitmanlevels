@@ -2016,7 +2016,7 @@ void ApplyPendingGoals()
 }
 
 // the game's events the goals need: Hitman spotted (a character knocked out: its state, Reached)
-void OnEditorEvent(const char* event, const engine::GameEvent& e)
+void OnEditorEvent(const char* /*event*/, const engine::GameEvent& e)
 {
     if (!ForThisScene())
         return;

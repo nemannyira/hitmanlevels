@@ -39,8 +39,9 @@ level* / *File > Open level* loads a saved one.
   *round and round*, *its front is its back* if it drives backwards, *Try
   it*. It drives when the level is played. A car of the map's that is a group
   (the C1-1 Ferrari) is copied whole with Ctrl+D or Duplicate; the game's own
-  vehicles that follow their tracks (the C1-1 van) cannot be driven, their
-  copies can.
+  vehicles that follow their tracks (the C1-1 van) drive only those: the
+  Inspector's *To its start* / *To its end* / *Stop* and a speed (Lua
+  `h2.track`); a copy of one drives a route of its own.
 * A placed character is real (behaviour, collision, can be shot) only after
   the map loads again: *Test now (save and reload)*.
 

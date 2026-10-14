@@ -179,6 +179,45 @@ float LongSideTurn(engine::ZGEOM* object)
     return sx > sz * 1.2f ? 90.0f : 0.0f;  // (which end is the front: the C1-1 Ferrari's; "reverse" turns it)
 }
 
+// ---- the game's vehicles: their own tracks ----
+//
+// A ZMoveOnSpline's mover (+0x5C, vtable 0x65C884) keeps it on its spline:
+// its place there (+0x04, 0 .. 1 along the track), the place it goes to
+// (+0x4A), the way (+0x20: 1 / -1), its speed (+0x5B, cm/s), acceleration
+// (+0x5F) and top speed (+0x63; the vehicle's own +0xC4 too: both 350 on
+// C1-1's van, faster asked stays at that). Its vfunc 0 (0x596040: place,
+// flag) sends it there along the track (it takes its speed with vfunc 0x08);
+// scripts call it as MoveToSplineVal.
+constexpr uintptr_t kMoverVtable = 0x65C884;
+constexpr uintptr_t kMoverMoveTo = 0x596040;
+
+char* TrackMover(engine::ZGEOM* g, engine::ZGEOM** vehicle = nullptr)
+{
+    for (engine::ZBaseGeom* n = g && g->node ? g->node : nullptr; n; n = n->parent) {
+        if (!engine::IsReadable(n, sizeof(*n)))
+            return nullptr;
+        if (!n->geom || !engine::IsA(n->geom, "ZMoveOnSpline"))
+            continue;
+        auto m = *reinterpret_cast<char**>(reinterpret_cast<char*>(n->geom) + 0x5C);
+        if (!m || !engine::IsReadable(m, 0x6C) || *reinterpret_cast<uintptr_t*>(m) != kMoverVtable)
+            return nullptr;
+        if (vehicle)
+            *vehicle = n->geom;
+        return m;
+    }
+    return nullptr;
+}
+
+bool MoverMoveTo(char* m, float to)
+{
+    __try {
+        reinterpret_cast<void(__thiscall*)(void*, float, uint8_t)>(kMoverMoveTo)(m, to, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool IsGameVehicle(engine::ZGEOM* g)
 {
     for (engine::ZBaseGeom* n = g && g->node ? g->node : nullptr; n; n = n->parent)
@@ -228,7 +267,73 @@ Drive* Find(int id)
     return nullptr;
 }
 
+} // namespace
+
+bool DriveTrack(engine::ZGEOM* vehicle, float to, float speed, std::string* error)
+{
+    engine::ZGEOM* group = nullptr;
+    char* m = vehicle && IsLive(vehicle) ? TrackMover(vehicle, &group) : nullptr;
+    if (!m || !group) {
+        if (error)
+            *error = "not a vehicle of the game (a copy drives a route: h2.drive)";
+        return false;
+    }
+    if (!std::isfinite(to))
+        to = 0.0f;
+    to = std::clamp(to, 0.0f, 1.0f);
+    if (speed > 0.0f && std::isfinite(speed)) {
+        float s = std::clamp(speed, kMinSpeed, kMaxSpeed);
+        memcpy(m + 0x5B, &s, sizeof(s));
+        memcpy(m + 0x63, &s, sizeof(s));  // (its top speeds: else it stays at theirs)
+        memcpy(reinterpret_cast<char*>(group) + 0xC4, &s, sizeof(s));
+    }
+    if (!MoverMoveTo(m, to)) {
+        if (error)
+            *error = "its mover did not take it";
+        return false;
+    }
+    return true;
+}
+
+float TrackPlace(engine::ZGEOM* vehicle)
+{
+    char* m = vehicle && IsLive(vehicle) ? TrackMover(vehicle) : nullptr;
+    return m ? *reinterpret_cast<float*>(m + 4) : -1.0f;
+}
+
+bool StopTrack(engine::ZGEOM* vehicle)
+{
+    float at = TrackPlace(vehicle);
+    return at >= 0.0f && DriveTrack(vehicle, at, 0.0f);
+}
+
+namespace {
+
 // ---- Lua ----
+
+// h2._track(object path, place 0..1 | nil (stop) [, km/h]) -> true / error
+int LuaTrack(lua_State* L)
+{
+    engine::ZGEOM* g = Resolve(luaL_checkstring(L, 1));
+    std::string err;
+    bool ok = lua_isnoneornil(L, 2) ? StopTrack(g)
+                                    : DriveTrack(g, float(luaL_checknumber(L, 2)),
+                                                 float(luaL_optnumber(L, 3, 0.0) / 0.036), &err);
+    if (!ok)
+        return luaL_error(L, "track: %s", err.empty() ? "not a vehicle of the game" : err.c_str());
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+// h2._trackpos(object path) -> 0 .. 1 / nil
+int LuaTrackPos(lua_State* L)
+{
+    float at = TrackPlace(Resolve(luaL_checkstring(L, 1)));
+    if (at < 0.0f)
+        return 0;
+    lua_pushnumber(L, at);
+    return 1;
+}
 
 // h2._drive(object path, {{x,y,z}, ...}, speed, loop, reverse) -> id
 int LuaDrive(lua_State* L)
@@ -287,6 +392,14 @@ int LuaDriveCtl(lua_State* L)
 }
 
 const char* const kLuaDrive = R"lua(
+h2.track = function(vehicle, to, kmh)
+  assert(type(vehicle) == "table" and vehicle._path, "track: a vehicle of the game (h2.find)")
+  return h2._track(vehicle._path, to, kmh)
+end
+h2.trackpos = function(vehicle)
+  assert(type(vehicle) == "table" and vehicle._path, "trackpos: a vehicle of the game (h2.find)")
+  return h2._trackpos(vehicle._path)
+end
 h2.drive = function(obj, route, opts)
   assert(type(obj) == "table" and obj._path, "drive: an object (h2.find)")
   opts = opts or {}
@@ -491,8 +604,28 @@ void DrawVehicleForSelection(engine::ZGEOM* geom)
         return;
     ImGui::SeparatorText("Vehicle");
     if (IsGameVehicle(geom)) {
-        ImGui::TextDisabled("a vehicle of the game: it follows its own track");
-        ImGui::TextDisabled("(a copy of its model can drive a route)");
+        static float kmh = 18.0f;
+        float at = TrackPlace(geom);
+        if (at < 0.0f) {
+            ImGui::TextDisabled("a vehicle of the game: it follows its own track");
+            ImGui::TextDisabled("(a copy of its model can drive a route)");
+            return;
+        }
+        ImGui::Text("Its own track: at %.0f%%", at * 100.0f);
+        if (ImGui::SmallButton("To its start"))
+            DriveTrack(geom, 0.0f, kmh / 0.036f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("To its end"))
+            DriveTrack(geom, 1.0f, kmh / 0.036f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Stop"))
+            StopTrack(geom);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("It goes while the world runs (Freeze off, or the editor closed);\n"
+                              "its own script may send it elsewhere too. Lua: h2.track");
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
+        ImGui::DragFloat("speed##track", &kmh, 0.5f, 1.0f, 200.0f, "%.0f km/h");
+        ImGui::TextDisabled("a copy of its model can drive a route of its own");
         return;
     }
     LevelVehicle* v = EntryFor(path);
@@ -563,6 +696,8 @@ void InstallVehicles()
 {
     script::Register("_drive", LuaDrive);
     script::Register("_drivectl", LuaDriveCtl);
+    script::Register("_track", LuaTrack);
+    script::Register("_trackpos", LuaTrackPos);
     if (lua_State* L = script::State())
         if (luaL_dostring(L, kLuaDrive) != LUA_OK) {
             Log("vehicles: %s", lua_tostring(L, -1));

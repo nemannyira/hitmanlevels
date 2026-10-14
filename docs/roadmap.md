@@ -172,8 +172,11 @@ Save\<slot>.h2lua next to the game's files).
   Catmull-Rom curve; Inspector > Vehicle, level.json "vehicles"; Lua
   `h2.drive` with stop / go / speed). The game's own vehicles are refused:
   their mover (+0x5C) puts them back on their spline every frame.
-* Next steps: (1) the game's own vehicles on their own splines through their
-  script interface (InitCarPosDir 0, MoveToRef 3, Stop 7, MoveToSplineVal 8,
+* Done: the game's own vehicles along their own tracks (h2.track, the
+  Inspector): their mover (+0x5C, vtable 0x65C884) takes a place on the track
+  with its vfunc 0 (0x596040, MoveToSplineVal); speed +0x5B, top speeds +0x63
+  and the vehicle's +0xC4. Tested: C1-1's van, C7-1's bus.
+* Next steps: (1) the rest of their script interface (InitCarPosDir 0, MoveToRef 3, Stop 7, MoveToSplineVal 8,
   DriveFwdToSplineVal 10, SetMoveParams 14, SetPath 23); (2) the ZSHAPE
   record format, then new splines the game's vehicles can use; (3) drivers /
   passengers (C2-2 LimoGuard's rLimo + seat number); (4) what a driven car

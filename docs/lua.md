@@ -160,7 +160,18 @@ long side forward; `reverse = true` if it goes backwards), uphill and
 downhill with the points' heights, in the game's time (it stands while the
 world is frozen). One drive an object: a new one replaces it. The game's own
 vehicles (ZMoveOnSpline: the C1-1 van) are kept on their tracks by the game:
-refused.
+refused. They drive their own track instead:
+
+```lua
+local van = h2.find("TruckDeliveryVan")
+h2.track(van, 0, 60)      -- to its track's start (0; 1 its end), at most 60 km/h
+print(h2.trackpos(van))   -- where it is on it, 0..1
+h2.track(van)             -- stops it where it is
+```
+
+Front first, speeding up and slowing down as the game's vehicles do; its
+own script (the level's) may send it elsewhere too (C1-1's van goes back to
+its place when it stops, C7-1's bus keeps driving its round).
 
 ## Story state
 

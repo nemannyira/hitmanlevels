@@ -33,7 +33,10 @@ level* / *File > Open level* loads a saved one.
   on the nearest place characters can walk (2 m at most); a red ring means
   none is near: it would stand there and not walk. *Testing > Path network*
   shows where they can walk. A selected character shows its routes; *Add
-  points...* adds points to one.
+  points...* adds points to one. A route several characters share (a change
+  applies to all) becomes the selected one's own with *A route of its own*:
+  a copy of the list, made with the map when it loads again (*Test now*),
+  whose points then change for that character only.
 * *Vehicles*: select a car (or any object) and *Inspector > Vehicle > Make it
   drive a route*, then click the road for its points (Esc ends); speed,
   *round and round*, *its front is its back* if it drives backwards, *Try

@@ -24,6 +24,8 @@
 //       "params": [ { "name": "GuardPoint", "type": "ZGEOMREF", "value": "ROOT/.../Lobby" }, ... ] } ],
 //   "npc_edits": [                              // behaviour settings of the scene's characters
 //     { "record": 2350, "path": "ROOT/.../Ground", "behaviour": "...", "params": [...] } ],
+//   "new_lists": [                              // lists of the level's own (a character's route), made with the map
+//     { "name": "Route_2366_HelpPoints", "copy_of": "ROOT/.../HelpPoints_DeliveryGuy", "record": 5246 } ],
 //   "lists": [                                  // changed lists (routes): their points in order
 //     { "path": "ROOT/.../WPList", "points": ["ROOT/.../WP1Wait", "ROOT/.../Point+1", ...] } ],
 //   "mission": {                                // objectives (the laptop's lines) and the mission's end
@@ -143,6 +145,14 @@ struct LevelDocument {
     std::vector<LevelNpc> npcs;
     std::map<int, NpcEditEntry> npcEdits;  // by actor record
     std::map<std::string, std::vector<std::string>> lists;  // changed lists: path -> element paths
+    // new lists of the level (a character's route of its own): copies of the
+    // scene's lists made with the scene ("ROOT/<name>"), their points in `lists`
+    struct NewList {
+        std::string name;
+        std::string copyOf;  // the scene's list it copies (path; information)
+        int record = -1;     // its record
+    };
+    std::vector<NewList> newLists;
     MissionDoc mission;
     std::map<std::string, std::string> music;  // music object path -> track name ("RussiaSlow")
     std::vector<std::string> scripts;
@@ -217,6 +227,10 @@ engine::ZGEOM* ResolveTarget(const std::string& target);
 engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error = nullptr);
 bool RemoveNpc(engine::ZGEOM* actor, std::string* error = nullptr);
 // New behaviour settings for any character (or another behaviour for a placed one).
+// A character's route (a list setting of its behaviour, e.g. WayPoints) of
+// its own: a copy of the list it shares (MakeOwnList), its setting that copy
+// from the next load of the map. -> the list's path, "" and `error`.
+std::string GiveOwnRoute(engine::ZGEOM* actor, const std::string& param, std::string* error = nullptr);
 engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour,
                                 std::string* error = nullptr);
 const LevelNpc* FindLevelNpc(engine::ZGEOM* actor);
@@ -232,6 +246,10 @@ engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string*
 engine::ZGEOM* RenamePoint(engine::ZGEOM* point, const std::string& name, std::string* error = nullptr);
 // New elements of a list (a route: the points in walking order).
 bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& points, std::string* error = nullptr);
+// A list of the level's own: a copy of a list of the scene (its points now),
+// made with the map when it loads again. -> its path ("ROOT/<name>"), "" and
+// `error`: not made.
+std::string MakeOwnList(engine::ZGEOM* list, const std::string& name, std::string* error = nullptr);
 
 // Takes the scene's characters and items out (empty map) or puts them back.
 void SetEmptyMap(bool empty);

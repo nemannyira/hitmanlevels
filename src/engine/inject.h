@@ -28,6 +28,15 @@ struct SceneNpc {
     std::vector<std::string> anims;  // its animation sets (empty: the template's)
 };
 
+// A new list of the scene (a route of a character's own): a copy of a list
+// record (its elements too: the editor sets them after loading), at the root.
+struct SceneList {
+    std::string name;  // the list's object name, unique in the scene ("NPC_Guard_1_Route")
+    int record = -1;   // the list it copies
+};
+// Asked for every scene that loads, with the characters.
+void SetSceneListProvider(std::function<std::vector<SceneList>(const std::string& scene)> provider);
+
 // Asked for every scene that loads (its name as GetSceneName gives it).
 void SetSceneNpcProvider(std::function<std::vector<SceneNpc>(const std::string& scene)> provider);
 // The record made for a character of that name in the scene loaded last (-1: none).

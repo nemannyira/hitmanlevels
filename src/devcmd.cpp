@@ -400,6 +400,35 @@ int Level(lua_State* L)
             return luaL_error(L, "ownmap: %s", err.c_str());
         lua_pushstring(L, d.baseScene.c_str());
         return 1;
+    } else if (op == "ownlist") {  // "<list path>|<name>": a list of the level's own, a copy (made with the map)
+        size_t bar = arg.find('|');
+        std::string path = editor::MakeOwnList(editor::Resolve(arg.substr(0, bar)),
+                                               bar == std::string::npos ? "" : arg.substr(bar + 1), &err);
+        if (path.empty())
+            return luaL_error(L, "ownlist: %s", err.c_str());
+        lua_pushstring(L, path.c_str());
+        return 1;
+    } else if (op == "listpoints") {  // "<list path>|<point path>|...": the editor's change of a list (kept)
+        std::vector<engine::ZGEOM*> pts;
+        size_t start = arg.find('|');
+        engine::ZGEOM* list = editor::Resolve(arg.substr(0, start));
+        while (start != std::string::npos) {
+            size_t bar = arg.find('|', start + 1);
+            std::string p = arg.substr(start + 1, bar == std::string::npos ? std::string::npos : bar - start - 1);
+            if (engine::ZGEOM* g = editor::Resolve(p))
+                pts.push_back(g);
+            start = bar;
+        }
+        if (!editor::SetListPoints(list, pts, &err))
+            return luaL_error(L, "listpoints: %s", err.c_str());
+    } else if (op == "ownroute") {  // "<character path>|<list setting>": the NPC panel's A route of its own
+        size_t bar = arg.find('|');
+        std::string path = editor::GiveOwnRoute(editor::ActorOf(editor::Resolve(arg.substr(0, bar))),
+                                                bar == std::string::npos ? "" : arg.substr(bar + 1), &err);
+        if (path.empty())
+            return luaL_error(L, "ownroute: %s", err.c_str());
+        lua_pushstring(L, path.c_str());
+        return 1;
     } else if (op == "unseen") {  // "fail": being spotted fails the mission
         lua_pushstring(L, editor::MissionUnseen(arg == "fail").c_str());
         return 1;

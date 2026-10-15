@@ -46,6 +46,7 @@ int NodeKind(uint32_t cls)
 }
 
 std::function<std::vector<SceneNpc>(const std::string&)> g_provider;
+std::function<std::vector<SceneList>(const std::string&)> g_listProvider;
 std::map<std::string, int> g_made;  // name -> actor record (scene loaded last)
 std::set<uint32_t> g_groups;        // offsets of the new groups' records in the GMS
 struct PlayerStart {
@@ -156,6 +157,11 @@ bool FindArray(const std::vector<uint8_t>& b, size_t& at, uint32_t& bytes)
 
 } // namespace
 
+void SetSceneListProvider(std::function<std::vector<SceneList>(const std::string& scene)> provider)
+{
+    g_listProvider = std::move(provider);
+}
+
 void SetSceneNpcProvider(std::function<std::vector<SceneNpc>(const std::string& scene)> provider)
 {
     g_provider = std::move(provider);
@@ -235,10 +241,9 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
 {
     g_made.clear();
     g_groups.clear();
-    if (!g_provider)
-        return false;
-    std::vector<SceneNpc> npcs = g_provider(scene);
-    if (npcs.empty())
+    std::vector<SceneNpc> npcs = g_provider ? g_provider(scene) : std::vector<SceneNpc>{};
+    std::vector<SceneList> lists = g_listProvider ? g_listProvider(scene) : std::vector<SceneList>{};
+    if (npcs.empty() && lists.empty())
         return false;
     std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
     uint32_t list = U32(gms, 0), count = U32(gms, list);
@@ -329,8 +334,43 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         listed.push_back(0x80000000 | uint32_t(actorIndex + 1));
         g_made[npc.name] = actorIndex;
     }
+    // new lists: copies of list records, at the root after the groups (a node
+    // of their own: TakeNode), their data blocks copied
+    bool inGroup = added > 0;  // (the last entry was a group's child)
+    int listsAdded = 0;
+    for (const SceneList& l : lists) {
+        if (l.record < 0 || uint32_t(l.record) >= count || l.name.empty() || l.name.size() > 64 ||
+            !recs[l.record].data) {
+            Log("scene lists: %s: no list to copy (record %d)", l.name.c_str(), l.record);
+            continue;
+        }
+        std::vector<uint8_t> data = Block(gms, recs[l.record].data);
+        size_t at = 0;
+        uint32_t bytes = 0;
+        if (data.empty() || !FindArray(data, at, bytes)) {
+            Log("scene lists: %s: record %d is not a list", l.name.c_str(), l.record);
+            continue;
+        }
+        Put(data, 0, U32(data, 0) & 0x7FFFFFFF);  // not remapped yet
+        std::vector<uint8_t> r(gms.begin() + recordAt(l.record), gms.begin() + recordAt(l.record) + kRecord);
+        Put(r, 0x00, AppendString(buf, l.name));
+        Put(r, 0x20, Append(gms, data));
+        uint32_t pops = added == 0 ? uint32_t(depth) : inGroup ? 1u : 0u;
+        if (pops > 127)
+            break;
+        g_groups.insert(uint32_t((gms.size() + 3) & ~size_t(3)));  // (its node: TakeNode)
+        uint32_t off = Append(gms, r);
+        uint32_t e[2] = {(off / 4) | (pops << 25), recs[l.record].extra};
+        table.insert(table.end(), reinterpret_cast<uint8_t*>(e), reinterpret_cast<uint8_t*>(e) + 8);
+        ++moreOfClass[U32(r, 0x10)];
+        ++added;
+        ++listsAdded;
+        inGroup = false;
+    }
     if (!added)
         return false;
+    if (listsAdded)
+        Log("scene lists: %d new lists", listsAdded);
     // geom counts (the engine allocates the geoms of each class at once)
     uint32_t counts = U32(gms, 0x10), classes = U32(gms, counts);
     std::vector<uint8_t> ct(gms.begin() + counts + 4, gms.begin() + counts + 4 + size_t(classes) * 12);
@@ -362,7 +402,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     nodesBlock.insert(nodesBlock.end(), nb.begin(), nb.end());
     Put(gms, 0x14, Append(gms, nodesBlock));
     // the scene's actor list gets them
-    for (uint32_t i = 0; i < count; ++i) {
+    for (uint32_t i = 0; i < count && !listed.empty(); ++i) {
         if (recs[i].name != kActorList || !recs[i].data)
             continue;
         std::vector<uint8_t> b = Block(gms, recs[i].data);

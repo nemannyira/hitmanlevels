@@ -90,6 +90,11 @@ const Floor kFloors[] = {
 int g_floor = 1;
 struct Saved {
     std::string folder, name, scene, modified;
+    std::string ownMapOf;                 // its map is a copy of this one
+    std::string briefing;                 // the laptop's, its start ("" the map's own)
+    std::vector<std::string> objectives;  // their lines
+    int characters = 0;
+    bool emptyMap = false, blankMap = false;
 };
 std::vector<Saved> g_saved;
 int g_pick = -1;
@@ -258,6 +263,21 @@ void LoadSavedList()
             s.name = j.value("name", folder);
             s.scene = j.value("base_scene", "");
             s.modified = LevelModified(folder);
+            if (j.contains("own_map_of") && j["own_map_of"].is_string())
+                s.ownMapOf = j["own_map_of"].get<std::string>().substr(0, 64);
+            s.emptyMap = j.contains("empty_map") && j["empty_map"].is_boolean() && j["empty_map"].get<bool>();
+            s.blankMap = j.contains("blank_map") && j["blank_map"].is_boolean() && j["blank_map"].get<bool>();
+            if (j.contains("npcs") && j["npcs"].is_array())
+                s.characters = int(j["npcs"].size());
+            if (j.contains("mission") && j["mission"].is_object()) {
+                const auto& m = j["mission"];
+                if (m.contains("briefing") && m["briefing"].is_string())
+                    s.briefing = m["briefing"].get<std::string>().substr(0, 700);
+                if (m.contains("objectives") && m["objectives"].is_array())
+                    for (const auto& o : m["objectives"])
+                        if (o.is_object() && o.contains("text") && o["text"].is_string() && s.objectives.size() < 8)
+                            s.objectives.push_back(o["text"].get<std::string>().substr(0, 120));
+            }
         } catch (...) {
             continue;
         }
@@ -275,6 +295,33 @@ std::string MapName(const std::string& scene)
             return m.name;
     size_t slash = scene.find('\\');
     return slash == std::string::npos ? scene : scene.substr(0, slash) + " (own map)";
+}
+
+// the chosen level: its map, what it has, its objectives and briefing
+void DrawSavedDetails(const Saved& s)
+{
+    float h = std::max(ImGui::GetFontSize() * 4.0f,  // (the rest of the window, the buttons below)
+                       ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing() * 2.0f);
+    if (!ImGui::BeginChild("##details", ImVec2(-1, h), ImGuiChildFlags_Borders))
+        return ImGui::EndChild();
+    ImGui::TextUnformatted(s.name.c_str());
+    ImGui::SameLine();
+    if (!s.ownMapOf.empty())
+        ImGui::TextDisabled("on a map of its own (a copy of %s)", MapName(s.ownMapOf).c_str());
+    else
+        ImGui::TextDisabled("on %s%s", MapName(s.scene).c_str(),
+                            s.blankMap ? ", no buildings" : s.emptyMap ? ", emptied" : "");
+    if (s.characters > 0)
+        ImGui::TextDisabled("%d character%s of its own", s.characters, s.characters == 1 ? "" : "s");
+    for (const std::string& o : s.objectives)
+        ImGui::BulletText("%s", o.c_str());
+    if (!s.briefing.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", s.briefing.c_str());
+    } else if (s.objectives.empty()) {
+        ImGui::TextDisabled("the map's own objectives and briefing");
+    }
+    ImGui::EndChild();
 }
 
 void StartOn(const std::string& scene)
@@ -364,7 +411,7 @@ void DrawLauncher()
                 constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
                                                    ImGuiTableFlags_BordersInnerV;
                 if (!g_saved.empty() &&
-                    ImGui::BeginTable("##saved", 3, kFlags, ImVec2(-1, ImGui::GetFontSize() * 14))) {
+                    ImGui::BeginTable("##saved", 3, kFlags, ImVec2(-1, ImGui::GetFontSize() * 9))) {
                     ImGui::TableSetupScrollFreeze(0, 1);
                     ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableSetupColumn("Map", ImGuiTableColumnFlags_WidthStretch);
@@ -389,6 +436,8 @@ void DrawLauncher()
                     }
                     ImGui::EndTable();
                 }
+                if (g_pick >= 0 && g_pick < int(g_saved.size()))
+                    DrawSavedDetails(g_saved[g_pick]);
                 ImGui::BeginDisabled(g_pick < 0);
                 float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
                 bool play = ImGui::Button("Play", ImVec2(half, 0)) || go;

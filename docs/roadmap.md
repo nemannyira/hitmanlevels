@@ -40,8 +40,11 @@ Next steps:
 1. Parse the .ppo format (string table, import table of interface methods)
    to map method names to indices: then Lua could call Actor_If methods
    (walk to a point, look at, play an animation) directly.
-2. New route lists made at load time (records added like the characters),
-   so a patrol / pedestrian behaviour gets a route the user draws.
+2. Done: new route lists made at load time (copies of a list record, at
+   the root, a node of their own: inject.cpp SceneList, level.json
+   "new_lists"): *A route of its own* in the NPCs tab gives a character a
+   copy of the list it shares; tested on C1-1 (DeliveryBoy's HelpPoints, the
+   copy's points changed and kept, the template's not).
 
 ## 2. Lua: what to add for full story missions
 

@@ -750,8 +750,17 @@ void DrawRouteList(const std::string& param, engine::ZGEOM* list, ImU32 color)
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", PathOf(list).c_str());
     int users = ListUsers(list);
-    if (users > 1)
+    if (users > 1) {
         ImGui::TextDisabled("used by %d characters: a change applies to all of them", users);
+        if (ImGui::SmallButton("A route of its own")) {
+            std::string err, path = GiveOwnRoute(g_target, param, &err);
+            g_message = path.empty() ? "not made: " + err
+                                     : "its own " + param + " (" + path + ") comes with the map: Test now (save and reload)";
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("A copy of this list for this character only (its points as they are now),\n"
+                              "made when the map loads again; then its points can change on their own");
+    }
     engine::ZGEOM* sel = Selected();
     int selIndex = -1;
     for (size_t k = 0; k < pts.size(); ++k)

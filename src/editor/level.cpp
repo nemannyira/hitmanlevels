@@ -714,6 +714,40 @@ bool ApplyListEdit(const std::string& path, const std::vector<std::string>& poin
 }
 
 // the level's entry for a list: none when it is as the scene file has it
+void RecordList(const std::string& path, engine::ZGEOM* list, const std::vector<std::string>& points);
+
+} // namespace
+
+std::string MakeOwnList(engine::ZGEOM* list, const std::string& name, std::string* error)
+{
+    auto fail = [&](const std::string& why) {
+        if (error)
+            *error = why;
+        return std::string();
+    };
+    if (!list || !IsLive(list) || !engine::IsEditableList(list))
+        return fail("not a list");
+    int record = engine::RecordOf(list);
+    if (record < 0)
+        return fail("not a list of the scene file (copy that one)");
+    if (name.empty() || name.size() > 48 || !std::all_of(name.begin(), name.end(), [](char c) {
+            return isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-';
+        }))
+        return fail("a name of letters, digits, _ or -");
+    for (const LevelDocument::NewList& l : g_level.newLists)
+        if (l.name == name)
+            return fail("the level has a list of that name");
+    if (Resolve("ROOT/" + name))
+        return fail("the scene has an object of that name");
+    g_level.newLists.push_back({name, PathOf(list), record});
+    std::string path = "ROOT/" + name;
+    g_level.lists[path] = PathsOfRefs(engine::ListRefs(list));  // (its points now, set when it is made)
+    g_level.dirty = true;
+    return path;
+}
+
+namespace {
+
 void RecordList(const std::string& path, engine::ZGEOM* list, const std::vector<std::string>& points)
 {
     if (points == PathsOfRefs(engine::AuthoredListRefs(list)))
@@ -1555,6 +1589,11 @@ bool SaveLevel(std::string* error)
                           {"reverse", v.reverse}});
         j["vehicles"] = vs;
     }
+    if (!g_level.newLists.empty()) {
+        j["new_lists"] = json::array();
+        for (const LevelDocument::NewList& l : g_level.newLists)
+            j["new_lists"].push_back({{"name", l.name}, {"copy_of", l.copyOf}, {"record", l.record}});
+    }
     j["lists"] = json::array();
     for (auto& [path, points] : g_level.lists)
         j["lists"].push_back({{"path", path}, {"points", points}});
@@ -1746,6 +1785,17 @@ bool LoadLevel(const std::string& folder, std::string* error)
             for (auto& [path, track] : j["music"].items())
                 if (track.is_string())
                     L.music[path] = track.get<std::string>();
+        if (j.contains("new_lists") && j["new_lists"].is_array())
+            for (const json& o : j["new_lists"])
+                if (o.is_object() && o.contains("name") && o["name"].is_string() && o.contains("record") &&
+                    o["record"].is_number_integer() && L.newLists.size() < 256) {
+                    LevelDocument::NewList l;
+                    l.name = o["name"].get<std::string>().substr(0, 64);
+                    l.record = o["record"].get<int>();
+                    if (o.contains("copy_of") && o["copy_of"].is_string())
+                        l.copyOf = o["copy_of"].get<std::string>().substr(0, 512);
+                    L.newLists.push_back(l);
+                }
         for (const json& o : j.value("lists", json::array()))
             if (o.contains("path"))
                 L.lists[o["path"].get<std::string>()] = o.value("points", std::vector<std::string>{});
@@ -2263,6 +2313,50 @@ bool RemoveNpc(engine::ZGEOM* actor, std::string* error)
     return true;
 }
 
+std::string GiveOwnRoute(engine::ZGEOM* actor, const std::string& param, std::string* error)
+{
+    auto fail = [&](const std::string& why) {
+        if (error)
+            *error = why;
+        return std::string();
+    };
+    engine::ScriptInfo s;
+    if (!actor || !IsLive(actor) || !CurrentBehaviour(actor, s))
+        return fail("no character with a behaviour");
+    engine::ZGEOM* list = nullptr;
+    for (const engine::ScriptParam& p : s.params)
+        if (p.name == param && p.type == engine::ParamType::Ref && p.bits)
+            list = engine::GeomOfRef(p.bits);
+    if (!list || !engine::IsEditableList(list))
+        return fail("its " + param + " is not a list");
+    LevelNpc* e = NpcEntryOf(actor);
+    int record = engine::RecordOf(actor);
+    if (!e && record < 0)
+        return fail("not a character of this scene");
+    std::string name = (e ? e->id : "Route_" + std::to_string(record)) + "_" + param;
+    for (char& c : name)
+        if (!isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-')
+            c = '_';
+    std::string path = MakeOwnList(list, name, error);
+    if (path.empty())
+        return "";
+    std::vector<ParamValue> params = SaveParams(s);
+    for (ParamValue& v : params)
+        if (v.name == param)
+            v.value = path;
+    if (e) {
+        e->hasBehaviour = true;
+        e->behaviour = s.name;
+        e->behaviourLevel = s.level;
+        e->params = params;
+    } else {
+        g_level.npcEdits[record] = NpcEditEntry{record, PathOf(actor), s.name, params};
+    }
+    g_level.dirty = true;
+    Log("level: %s gets a %s of its own: %s (from the next load)", PathOf(actor).c_str(), param.c_str(), path.c_str());
+    return path;
+}
+
 engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, std::string* error)
 {
     if (LevelNpc* e = NpcEntryOf(actor)) {
@@ -2579,6 +2673,16 @@ std::vector<engine::SceneNpc> NpcsFor(const std::string& scene)
         }
         out.push_back(std::move(s));
     }
+    return out;
+}
+
+std::vector<engine::SceneList> ListsFor(const std::string& scene)
+{
+    std::vector<engine::SceneList> out;
+    if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
+        return out;
+    for (const LevelDocument::NewList& l : g_level.newLists)
+        out.push_back({l.name, l.record});
     return out;
 }
 
@@ -3061,6 +3165,7 @@ void InstallLevelPanel()
     OnFrameEnd(OnFrame);
     engine::SetImportProvider(ImportsFor);
     engine::SetSceneNpcProvider(NpcsFor);
+    engine::SetSceneListProvider(ListsFor);
 }
 
 void UseBlankedMesh(uint32_t mesh) { ShowBlankedMesh(mesh); }

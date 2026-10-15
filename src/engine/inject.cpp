@@ -340,7 +340,8 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     int listsAdded = 0;
     for (const SceneList& l : lists) {
         if (l.record < 0 || uint32_t(l.record) >= count || l.name.empty() || l.name.size() > 64 ||
-            !recs[l.record].data) {
+            !recs[l.record].data || recs[l.record].mesh || recs[l.record].script ||
+            (recs[l.record].classId & 0x100000)) {  // (a list: no model, no script, not a group)
             Log("scene lists: %s: no list to copy (record %d)", l.name.c_str(), l.record);
             continue;
         }

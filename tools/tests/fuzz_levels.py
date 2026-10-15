@@ -62,6 +62,9 @@ CASES = {
         spawned=[{"id": "level:x", "kind": "point", "parent": "ROOT", "pos": [0, 0, 0], "matrix": M}]),
     "take goals wrong types": case(mission={"objectives": [{"slot": 1, "goal": "take", "target": None, "radius": "x"},
                                                            {"slot": 2, "goal": ["take"], "target": 5}]}),
+    "new lists bogus": case(new_lists=[{"name": n, "record": r, "copy_of": 5}
+                                       for n, r in (("A", -1), ("B", 999999), ("C", 0), ("../x", 2350),
+                                                    ("x" * 300, 5246), ("D", 2 ** 31 - 1))] + [7, "x", None]),
     "scene bogus": case(base_scene=r"MainMenu\MainMenu"),
     "scene outside": case(base_scene=r"..\..\..\Windows\win"),
     "behaviour bogus": case(npcs=[{"id": "A", "record": 2350, "pos": [-4176, -20, -6682], "matrix": M,

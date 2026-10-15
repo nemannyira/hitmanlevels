@@ -15,6 +15,7 @@ extern "C" {
 }
 
 #include "../engine/geoms.h"
+#include "../engine/spawn.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../scene.h"
@@ -59,6 +60,7 @@ struct Drive {
     float roll0 = 0.0f;
     float turn = 0.0f;     // its long side across its own z: driven turned by 90 degrees
     std::string owner;
+    bool preview = false;  // Try it: it drives while the editor holds the world too
 };
 
 std::vector<Drive> g_drives;
@@ -231,11 +233,13 @@ void Update()
     double now = double(GetTickCount64());
     double dt = std::clamp((now - g_last) / 1000.0, 0.0, 0.25);
     g_last = now;
-    if (g_drives.empty() || ScenePaused() || !engine::SceneDataValid())
+    if (g_drives.empty() || !engine::SceneDataValid())
         return;
-    dt *= GameSpeed();
+    bool paused = ScenePaused();
+    if (!paused)
+        dt *= GameSpeed();
     for (Drive& d : g_drives) {
-        if (!d.running || d.arrived)
+        if (!d.running || d.arrived || (paused && !d.preview))
             continue;
         if (!d.object || !IsLive(d.object)) {
             d.running = false;
@@ -591,6 +595,17 @@ void DrawRoute(const LevelVehicle& v)
     }
 }
 
+engine::ZGEOM* WholeVehicle(engine::ZGEOM* part)
+{
+    if (!part || !IsLive(part) || !engine::MeshOf(part) || !part->node || !part->node->parent)
+        return nullptr;
+    engine::ZGEOM* group = part->node->parent->geom;
+    if (!group || !IsLive(group) || engine::MeshOf(group) || engine::ClassName(group) != "ZGROUP")
+        return nullptr;  // (a room, the root, a character's: not a car)
+    size_t parts = VisibleParts(group).size();
+    return parts >= 2 && parts <= 64 ? group : nullptr;
+}
+
 void DrawVehicleForSelection(engine::ZGEOM* geom)
 {
     if (!geom || !IsLive(geom) || ActorOf(geom) || CurrentScene().empty() ||
@@ -599,10 +614,18 @@ void DrawVehicleForSelection(engine::ZGEOM* geom)
     const SpawnedObject* spawned = FindSpawned(geom);
     if (spawned && spawned->point)
         return;  // a point: not a vehicle
+    engine::ZGEOM* whole = WholeVehicle(geom);
+    if (whole && !ActorOf(whole) && !FindSpawned(geom))
+        geom = whole;  // (a car clicked in the world: one of its parts; the car drives)
+    else
+        whole = nullptr;
     std::string path = TargetFor(geom);
     if (path.empty())
         return;
     ImGui::SeparatorText("Vehicle");
+    if (whole)
+        ImGui::TextDisabled("the whole %s (%d models)", engine::SafeString(whole->name).c_str(),
+                            int(VisibleParts(whole).size()));
     if (IsGameVehicle(geom)) {
         static float kmh = 18.0f;
         float at = TrackPlace(geom);
@@ -678,10 +701,13 @@ void DrawVehicleForSelection(engine::ZGEOM* geom)
         } else {
             std::vector<LevelVehicle> one{*v};
             ApplyVehicles(one);
+            for (Drive& d : g_drives)
+                if (d.object == geom)
+                    d.preview = true;  // (shown now, the editor holding the world or not)
         }
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("It drives while the world runs (Freeze off, or the editor closed)");
+        ImGui::SetTooltip("Drives it now, also while the world is frozen; when the level is played it drives by itself");
     ImGui::SameLine();
     if (ImGui::SmallButton("No route")) {
         auto& all = CurrentLevel().vehicles;

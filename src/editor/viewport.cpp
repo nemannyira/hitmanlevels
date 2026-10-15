@@ -466,6 +466,9 @@ void DuplicateSelection()
         Select(g);
         const SpawnedObject* s = FindSpawned(g);
         g_message = "created " + (s ? s->id : std::string("object")) + " (Ctrl+Z undoes)";
+        if (engine::ZGEOM* whole = WholeVehicle(sel))  // (a car clicked in the world: one of its parts)
+            g_message += "; only this part of " + engine::SafeString(whole->name) +
+                         ": its parent (Inspector: select parent) copies the whole";
     } else {
         g_message = "duplicate failed: " + err;
     }

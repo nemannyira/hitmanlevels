@@ -45,6 +45,9 @@ bool DriveTrack(engine::ZGEOM* vehicle, float to, float speed, std::string* erro
 bool StopTrack(engine::ZGEOM* vehicle);
 // Where it is on its track (0 .. 1); -1: not a vehicle of the game.
 float TrackPlace(engine::ZGEOM* vehicle);
+// A car of several models (its group: body, wheels, doors) when `part` is one
+// of them (clicking a car in the world picks one part); null otherwise.
+engine::ZGEOM* WholeVehicle(engine::ZGEOM* part);
 // The Inspector's Vehicle row for the selection.
 void DrawVehicleForSelection(engine::ZGEOM* geom);
 // Clicking the road for a route's points: the viewport hands the mouse over.

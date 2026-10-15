@@ -61,6 +61,10 @@ struct Drive {
     float turn = 0.0f;     // its long side across its own z: driven turned by 90 degrees
     std::string owner;
     bool preview = false;  // Try it: it drives while the editor holds the world too
+    // the object in its frame (ObjectFrame: a map's car group is at the world's origin, its parts
+    // where they stand): the curve takes the frame, the object follows it
+    float localPos[3] = {};
+    float localRot[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 
 std::vector<Drive> g_drives;
@@ -135,9 +139,17 @@ void Place(Drive& d)
         return;
     float yaw = std::atan2(dir[0], dir[2]) / kRad + (d.reverse ? 180.0f : 0.0f) + d.turn;
     float pitch = std::atan2(dir[1], flat) / kRad * (d.reverse ? -1.0f : 1.0f);
+    Transform f;  // the frame on the curve
+    EulerToMatrix(yaw, pitch + d.pitch0, d.roll0, f.mat);
+    memcpy(f.pos, pos, sizeof(f.pos));
+    // the object: its offset and rows in the frame's rows (forward, up, right)
     Transform t;
-    EulerToMatrix(yaw, pitch + d.pitch0, d.roll0, t.mat);
-    memcpy(t.pos, pos, sizeof(t.pos));
+    for (int k = 0; k < 3; ++k)
+        t.pos[k] = f.pos[k] + d.localPos[0] * f.mat[k] + d.localPos[1] * f.mat[3 + k] + d.localPos[2] * f.mat[6 + k];
+    for (int j = 0; j < 3; ++j)
+        for (int k = 0; k < 3; ++k)
+            t.mat[j * 3 + k] = d.localRot[j * 3] * f.mat[k] + d.localRot[j * 3 + 1] * f.mat[3 + k] +
+                               d.localRot[j * 3 + 2] * f.mat[6 + k];
     SetTransform(d.object, t);
 }
 
@@ -450,6 +462,29 @@ std::string g_pickFor;  // the vehicle's path
 bool g_pickPending;
 int g_pickFrame;
 
+// a route's point there (in the room of that place)
+std::string RoutePoint(const float point[3], engine::ZGEOM* hit)
+{
+    engine::ZGEOM* room = hit ? RoomOf(hit) : nullptr;
+    if (!room)
+        room = RoomAt(point);
+    if (!room)
+        room = Resolve("ROOT");
+    Transform t = {{0, 0, 1, 0, 1, 0, 1, 0, 0}, {point[0], point[1], point[2]}};
+    std::string err;
+    engine::ZGEOM* p = PlacePoint(t, room, &err);
+    return p ? PathOf(p) : "";
+}
+
+// a route starts where the object stands (then the clicked points)
+void StartPoint(LevelVehicle& v, engine::ZGEOM* object)
+{
+    Transform f = ObjectFrame(object);
+    std::string p = RoutePoint(f.pos, nullptr);
+    if (!p.empty())
+        v.route.push_back(p);
+}
+
 void OnPick(engine::ZGEOM* hit, const float* point, const float*)
 {
     g_pickPending = false;
@@ -505,10 +540,22 @@ int StartDrive(engine::ZGEOM* object, const std::vector<std::vector<float>>& poi
     d.loop = loop;
     d.reverse = reverse;
     d.owner = owner;
+    Transform frame = ObjectFrame(object), now = GetTransform(object);
     float yaw;
-    MatrixToEuler(GetTransform(object).mat, yaw, d.pitch0, d.roll0);
+    MatrixToEuler(frame.mat, yaw, d.pitch0, d.roll0);
     d.pitch0 = 0.0f;  // the road's pitch instead
     d.turn = LongSideTurn(object);
+    // the object in the frame's rows, the frame's own turn taken out (the curve gives it)
+    float fr[9];
+    EulerToMatrix(yaw, 0.0f, d.roll0, fr);
+    float rel[3] = {now.pos[0] - frame.pos[0], now.pos[1] - frame.pos[1], now.pos[2] - frame.pos[2]};
+    for (int i = 0; i < 3; ++i)
+        d.localPos[i] = rel[0] * fr[i * 3] + rel[1] * fr[i * 3 + 1] + rel[2] * fr[i * 3 + 2];
+    for (int j = 0; j < 3; ++j)
+        for (int i = 0; i < 3; ++i)
+            d.localRot[j * 3 + i] = now.mat[j * 3] * fr[i * 3] + now.mat[j * 3 + 1] * fr[i * 3 + 1] +
+                                    now.mat[j * 3 + 2] * fr[i * 3 + 2];
+    d.roll0 = 0.0f;  // (in localRot now)
     g_drives.push_back(std::move(d));
     Place(g_drives.back());
     return g_drives.back().id;
@@ -668,6 +715,7 @@ void DrawVehicleForSelection(engine::ZGEOM* geom)
     if (!v) {
         if (ImGui::Button("Make it drive a route")) {
             CurrentLevel().vehicles.push_back({path});
+            StartPoint(CurrentLevel().vehicles.back(), geom);
             CurrentLevel().dirty = true;
             if (CurrentLevel().baseScene.empty())
                 CurrentLevel().baseScene = CurrentScene();
@@ -692,6 +740,7 @@ void DrawVehicleForSelection(engine::ZGEOM* geom)
     ImGui::SameLine();
     if (ImGui::SmallButton("Clear")) {
         v->route.clear();
+        StartPoint(*v, geom);  // (it starts where it stands)
         CurrentLevel().dirty = true;
     }
     float kmh = v->speed * 0.036f;

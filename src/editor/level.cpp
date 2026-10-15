@@ -718,6 +718,13 @@ void RecordList(const std::string& path, engine::ZGEOM* list, const std::vector<
 
 } // namespace
 
+Transform ObjectFrame(engine::ZGEOM* geom)
+{
+    if (!geom || !IsLive(geom))
+        return {};
+    return !engine::MeshOf(geom) && !VisibleParts(geom).empty() ? GroupFrame(geom) : GetTransform(geom);
+}
+
 std::string MakeOwnList(engine::ZGEOM* list, const std::string& name, std::string* error)
 {
     auto fail = [&](const std::string& why) {

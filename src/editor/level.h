@@ -245,6 +245,10 @@ engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string*
 // (scripts naming it by its old name do not). Returns the renamed point.
 engine::ZGEOM* RenamePoint(engine::ZGEOM* point, const std::string& name, std::string* error = nullptr);
 // New elements of a list (a route: the points in walking order).
+// Where an object stands: a group of models (a car) by its parts (their
+// middle, at the bottom of their boxes; a map's group is often at the world's
+// origin), anything else by its own transform.
+Transform ObjectFrame(engine::ZGEOM* geom);
 bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& points, std::string* error = nullptr);
 // A list of the level's own: a copy of a list of the scene (its points now),
 // made with the map when it loads again. -> its path ("ROOT/<name>"), "" and

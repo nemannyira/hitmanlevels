@@ -1354,8 +1354,18 @@ const std::vector<LevelSkyPart>& LevelSky(const std::string& level)
             break;
     }
     for (const SceneRecord& r : records)
-        if (group >= 0 && r.parent == group && r.mesh && r.classId == kStdObjClass) {
+        if (group >= 0 && r.parent == group && r.mesh) {
             LevelSkyPart p;
+            if (r.classId != kStdObjClass) {  // the sun and its glow: their data block too (if it is plain)
+                uint32_t size = r.data ? (U32(gms, r.data) & 0xFFFFFF) : 0;
+                if (size < 4 || r.data + size > gms.size() || size > 4096)
+                    continue;
+                p.data.assign(gms.begin() + r.data, gms.begin() + r.data + size);
+                if (!BlockRefOffsets(p.data).empty())
+                    continue;  // (refers to records of its level: not here)
+                p.data[3] &= 0x7F;  // (not remapped)
+            }
+            p.classId = r.classId;
             p.mesh = r.mesh;
             p.name = r.name;
             p.flags = r.flags & 0xFFFFF;

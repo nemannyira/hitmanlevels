@@ -88,6 +88,8 @@ const std::vector<LevelCharacter>& LevelCharacters(const std::string& level);
 // planes...), in that group (from its scene file, cached; empty: none).
 struct LevelSkyPart {
     uint32_t mesh = 0;
+    uint32_t classId = 0;       // ZSTDOBJ (dome, clouds) or the sun / glow's (Z2DOBJ)
+    std::vector<uint8_t> data;  // its data block (a sun's size, colour: no references)
     std::string name;
     uint32_t flags = 0;   // node flags
     float mat[9] = {};    // in the group

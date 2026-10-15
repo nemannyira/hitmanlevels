@@ -212,8 +212,11 @@ Save\<slot>.h2lua next to the game's files).
 ## 9. The sky (done)
 
 The backdrop group's plain models (dome and cloud planes) of another level
-instead of the map's (Level panel, h2.sky). Next: the sun / glow (Z2DOBJ)
-and lens flare with them, the fog colour and light of the map to match.
+instead of the map's (Level panel, h2.sky), with its sun and the sun's glow
+(Z2DOBJ: their plain data blocks copied; put in their direction as far as
+the map's own sun, whose sky has another scale; checked: C3-3's pale sun
+over C1-1). Next: the lens flare (ZLightOverlay), the fog colour and light of
+the map to match.
 
 ## 10. Reviews (done this round)
 

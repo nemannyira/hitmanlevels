@@ -235,4 +235,8 @@ Level setting `sky: {level}` (Level panel, Lua h2.sky): the other level's
 backdrop models are imported (the map is loaded again for them), the map's
 are hidden and the other level's are made in the map's backdrop group with
 their own local transforms and node flags (not objects of the level; made
-again on every load). Checked: C3-3's sky over C1-1.
+again on every load). Its sun and glow (Z2DOBJ) come too: their data
+blocks (size, colour; no references) copied, put in their direction as far
+from the group as the map's own sun (each level's sky has its own scale: at
+C3-3's distance it was past the view). Checked: C3-3's sky and sun over
+C1-1. The lens flare (ZLightOverlay) stays the map's.

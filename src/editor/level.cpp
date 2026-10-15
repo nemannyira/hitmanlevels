@@ -2933,21 +2933,36 @@ bool ApplySky()
             group = g.geom->node->parent->geom;
     if (!group || !IsLive(group) || parts.empty())
         return false;
-    for (const auto& g : SceneModel(0).geoms)
-        if (IsLive(g.geom) && g.geom->node->parent && g.geom->node->parent->geom == group && engine::MeshOf(g.geom) &&
-            engine::ClassName(g.geom) == "ZSTDOBJ") {
+    uint32_t sunClass = 0;   // the sun / glow's class here (Z2DOBJ)
+    float sunDistance = 0;   // how far from the group the map's own sun is (its sky's scale)
+    for (const auto& g : SceneModel(0).geoms) {
+        if (!IsLive(g.geom) || !g.geom->node->parent || g.geom->node->parent->geom != group || !engine::MeshOf(g.geom))
+            continue;
+        std::string cls = engine::ClassName(g.geom);
+        if (cls == "Z2DOBJ") {
+            int rec = engine::RecordOf(g.geom);
+            if (rec >= 0 && size_t(rec) < engine::SceneRecords().size())
+                sunClass = engine::SceneRecords()[rec].classId;
+            Transform s = GetTransform(g.geom), o = GetTransform(group);
+            float d = std::sqrt((s.pos[0] - o.pos[0]) * (s.pos[0] - o.pos[0]) + (s.pos[1] - o.pos[1]) * (s.pos[1] - o.pos[1]) +
+                                (s.pos[2] - o.pos[2]) * (s.pos[2] - o.pos[2]));
+            sunDistance = std::max(sunDistance, d);
+        }
+        if (cls == "ZSTDOBJ" || cls == "Z2DOBJ") {
             g_ownSky.push_back({g.geom, (g.geom->node->flags & g_config.hideFlag) != 0});
             SetHidden(g.geom, true);
         }
+    }
     int missing = 0;
     for (const engine::LevelSkyPart& p : parts) {
-        uint32_t mesh = engine::ImportedMesh(g_level.skyLevel, p.mesh);
+        const char* cls = p.classId == 0x200002 ? "ZSTDOBJ" : sunClass && p.classId == sunClass ? "Z2DOBJ" : nullptr;
+        uint32_t mesh = cls ? engine::ImportedMesh(g_level.skyLevel, p.mesh) : 0;
         if (!mesh) {
-            ++missing;
+            missing += cls ? 1 : 0;
             continue;
         }
         std::string err;
-        engine::ZGEOM* made = engine::CreateObject("EditorSky_" + p.name, group, "ZSTDOBJ", mesh, p.flags, p.mat, p.pos, {},
+        engine::ZGEOM* made = engine::CreateObject("EditorSky_" + p.name, group, cls, mesh, p.flags, p.mat, p.pos, p.data,
                                                    &err);
         if (!made) {
             Log("level: sky part %s not made (%s)", p.name.c_str(), err.c_str());
@@ -2955,6 +2970,17 @@ bool ApplySky()
         }
         AdoptEngineOwned(made);
         g_madeSky.push_back(made);
+        if (std::string(cls) == "Z2DOBJ" && sunDistance > 0.0f) {
+            // its own sky's scale is not this one's: in its direction, as far as the map's own sun
+            Transform t = GetTransform(made), o = GetTransform(group);
+            float v[3] = {t.pos[0] - o.pos[0], t.pos[1] - o.pos[1], t.pos[2] - o.pos[2]};
+            float d = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (d > 1.0f) {
+                for (int k = 0; k < 3; ++k)
+                    t.pos[k] = o.pos[k] + v[k] * (sunDistance / d);
+                SetTransform(made, t);
+            }
+        }
     }
     Log("level: the sky of %s: %zu of its %zu models instead of %zu (%d not imported yet)", g_level.skyLevel.c_str(),
         g_madeSky.size(), parts.size(), g_ownSky.size(), missing);

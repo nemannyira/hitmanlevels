@@ -14,8 +14,12 @@
 // vehicle:stop() / go() / speed(v) / running() / progress(); the event
 // "arrived" {vehicle, object} at the route's end. A level keeps its vehicles
 // in level.json "vehicles" (they start when the level is put on the map).
+#include <array>
 #include <string>
 #include <vector>
+
+#include "../engine/imports.h"
+#include "../engine/inject.h"
 
 namespace h2::engine {
 struct ZGEOM;
@@ -29,7 +33,22 @@ struct LevelVehicle {
     float speed = 800.0f;             // cm/s
     bool loop = false;                // round and round (the last point back to the first)
     bool reverse = false;             // the object's front is its back
+    // Made with the map as the game's vehicles are (a ZCar along a ZSHAPE:
+    // engine/inject.h SceneCar, imports.h SceneShape): baked when the level is saved.
+    int model = -1;                                 // the map's group record the car is a copy of
+    std::string spawnedId;                          // the level's copy it stands for ("": a map object)
+    std::vector<std::pair<int, std::array<float, 12>>> parts;  // its models' records, in the car's frame
+    std::vector<std::array<float, 3>> wheels;                    // where its wheels are, in the car's frame
+    std::vector<std::array<float, 3>> points;       // the route (world)
 };
+
+// What the vehicles are made of with the map (from the live objects: before saving).
+void BakeVehicles(std::vector<LevelVehicle>& vehicles);
+// The splines and cars made with the map (asked while it loads).
+std::vector<engine::SceneShape> VehicleShapes(const std::vector<LevelVehicle>& vehicles);
+std::vector<engine::SceneCar> VehicleCars(const std::vector<LevelVehicle>& vehicles);
+// A copy of the level stands for one (the car is made instead of it).
+bool IsVehicleCopy(const std::vector<LevelVehicle>& vehicles, const std::string& spawnedId);
 
 void InstallVehicles();
 // A drive: the object along the points (world positions). 0 and `error`: refused.

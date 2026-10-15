@@ -6,6 +6,7 @@
 
 #include "../loader.h"
 #include "../log.h"
+#include "imports.h"
 #include "scene_data.h"
 
 namespace h2::engine {
@@ -47,6 +48,15 @@ int NodeKind(uint32_t cls)
 
 std::function<std::vector<SceneNpc>(const std::string&)> g_provider;
 std::function<std::vector<SceneList>(const std::string&)> g_listProvider;
+std::function<std::vector<SceneCar>(const std::string&)> g_carProvider;
+constexpr uint32_t kCarClass = 0x100BBF;    // ZCar (ZGROUP -> ZMoveOnSpline -> ZVehicle -> ZCar)
+constexpr uint32_t kShapeClass = 0x4000022;  // ZSHAPE
+// C1-1's van's data block (ZCar's settings; no references): for a scene without a car of its own
+const uint8_t kCarData[64] = {0x40, 0x00, 0x00, 0x00, 0x83, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x80,
+                              0x3f, 0x03, 0x01, 0x00, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00, 0x03, 0x00,
+                              0x00, 0x00, 0x00, 0x06, 0x88, 0xda, 0x0e, 0x00, 0x80, 0x08, 0x00, 0x00, 0x00,
+                              0x00, 0x8b, 0x1c, 0x19, 0x01, 0x00, 0x06, 0x08, 0x00, 0x00, 0x00, 0x00, 0x06,
+                              0x83, 0x00, 0x00, 0x00, 0x00, 0x82, 0x00, 0x00, 0x82, 0x42, 0x06, 0xff};
 std::map<std::string, int> g_made;  // name -> actor record (scene loaded last)
 std::set<uint32_t> g_groups;        // offsets of the new groups' records in the GMS
 struct PlayerStart {
@@ -157,6 +167,11 @@ bool FindArray(const std::vector<uint8_t>& b, size_t& at, uint32_t& bytes)
 
 } // namespace
 
+void SetSceneCarProvider(std::function<std::vector<SceneCar>(const std::string& scene)> provider)
+{
+    g_carProvider = std::move(provider);
+}
+
 void SetSceneListProvider(std::function<std::vector<SceneList>(const std::string& scene)> provider)
 {
     g_listProvider = std::move(provider);
@@ -243,7 +258,8 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     g_groups.clear();
     std::vector<SceneNpc> npcs = g_provider ? g_provider(scene) : std::vector<SceneNpc>{};
     std::vector<SceneList> lists = g_listProvider ? g_listProvider(scene) : std::vector<SceneList>{};
-    if (npcs.empty() && lists.empty())
+    std::vector<SceneCar> cars = g_carProvider ? g_carProvider(scene) : std::vector<SceneCar>{};
+    if (npcs.empty() && lists.empty() && cars.empty())
         return false;
     std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
     uint32_t list = U32(gms, 0), count = U32(gms, list);
@@ -368,8 +384,146 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         ++listsAdded;
         inGroup = false;
     }
+    // vehicles: a ZCar with copies of the model's records, and its spline
+    int carsAdded = 0;
+    if (!cars.empty()) {
+        int car = -1, shape = -1;  // the scene's own as templates
+        for (uint32_t i = 0; i < count && (car < 0 || shape < 0); ++i) {
+            if (recs[i].classId == kCarClass && car < 0)
+                car = int(i);
+            if (recs[i].classId == kShapeClass && shape < 0)
+                shape = int(i);
+        }
+        int open = added == 0 ? depth : inGroup ? 1 : 0;  // groups open before the next entry
+        auto emit = [&](std::vector<uint8_t>& rec, bool opens, int level, uint32_t extra, std::vector<uint32_t>* nodes,
+                        bool ownNode) {
+            uint32_t pops = uint32_t(open - level);
+            open = level + (opens ? 1 : 0);
+            if (ownNode)
+                g_groups.insert(uint32_t((gms.size() + 3) & ~size_t(3)));
+            uint32_t off = Append(gms, rec);
+            uint32_t e[2] = {(off / 4) | (opens ? kOpens : 0) | (pops << 25), extra};
+            table.insert(table.end(), reinterpret_cast<uint8_t*>(e), reinterpret_cast<uint8_t*>(e) + 8);
+            ++moreOfClass[U32(rec, 0x10)];
+            int pool = rec[0x2D] * 8 + NodeKind(U32(rec, 0x10));
+            if (nodes && pool < kPools)
+                ++(*nodes)[pool];
+            ++added;
+        };
+        auto copyBlock = [&](uint32_t at) -> uint32_t {
+            std::vector<uint8_t> b = Block(gms, at);
+            if (b.empty())
+                return 0;
+            Put(b, 0, U32(b, 0) & 0x7FFFFFFF);  // not remapped yet
+            return Append(gms, b);
+        };
+        std::vector<std::vector<int>> children(count);
+        for (uint32_t i = 0; i < count; ++i)
+            if (recs[i].parent >= 0 && uint32_t(recs[i].parent) < count)
+                children[recs[i].parent].push_back(int(i));
+        // a record of the model and what is under it, a level deeper each group
+        std::function<void(int, int, size_t, const std::array<float, 12>*, int, const char*)> copy =
+            [&](int r, int level, size_t block, const std::array<float, 12>* local, int guard, const char* name) {
+                if (guard > 8)
+                    return;
+                std::vector<uint8_t> rec(gms.begin() + recordAt(r), gms.begin() + recordAt(r) + kRecord);
+                if (name)
+                    Put(rec, 0x00, AppendString(buf, name));
+                if (local) {
+                    Put(rec, 0x04, Append(gms, local->data(), 36));
+                    Put(rec, 0x08, Append(gms, local->data() + 9, 12));
+                }
+                Put(rec, 0x20, recs[r].data ? copyBlock(recs[r].data) : 0);
+                Put(rec, 0x28, 0);  // (no scripts on the copy)
+                bool opens = (U32(gms, entry(r)) & kOpens) != 0;
+                emit(rec, opens, level, recs[r].extra, &groupBlocks[block], false);
+                if (recs[r].classId & 0x100000) {
+                    groupBlocks.emplace_back(kPools);
+                    size_t mine = groupBlocks.size() - 1;
+                    for (int c : children[r])
+                        copy(c, level + 1, mine, nullptr, guard + 1, nullptr);
+                }
+            };
+        for (const SceneCar& c : cars) {
+            if (c.parts.empty() || c.parts.size() > 64 || shape < 0 ||
+                c.name.empty() || c.name.size() > 64 || c.shape.empty() || c.shape.size() > 64) {
+                Log("scene cars: %s: no models (of record %d) or no ZSHAPE to copy", c.name.c_str(), c.model);
+                continue;
+            }
+            uint32_t mesh = ShapeMesh(c.shape);
+            if (!mesh) {
+                Log("scene cars: %s: its spline %s was not made", c.name.c_str(), c.shape.c_str());
+                continue;
+            }
+            // the spline: a ZSHAPE at the origin, hidden (as the game's paths)
+            std::vector<uint8_t> s(gms.begin() + recordAt(shape), gms.begin() + recordAt(shape) + kRecord);
+            const float ident[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0}, zero[3] = {};
+            Put(s, 0x00, AppendString(buf, c.shape));
+            Put(s, 0x04, Append(gms, ident, sizeof(ident)));
+            Put(s, 0x08, Append(gms, zero, sizeof(zero)));
+            Put(s, 0x0C, mesh);
+            Put(s, 0x18, (U32(s, 0x18) & ~0xFFFFFu) | 0x200000);
+            Put(s, 0x20, recs[shape].data ? copyBlock(recs[shape].data) : 0);
+            Put(s, 0x28, 0);
+            emit(s, false, 0, recs[shape].extra, nullptr, true);
+            // the car: a ZCar group (the scene's own as the template, else the model's with the van's settings)
+            int tmpl = car >= 0 ? car : c.parts.front().first;
+            std::vector<uint8_t> g(gms.begin() + recordAt(tmpl), gms.begin() + recordAt(tmpl) + kRecord);
+            Put(g, 0x00, AppendString(buf, c.name));
+            Put(g, 0x04, Append(gms, c.mat, sizeof(c.mat)));
+            Put(g, 0x08, Append(gms, c.pos, sizeof(c.pos)));
+            Put(g, 0x0C, 0);
+            Put(g, 0x10, kCarClass);
+            if (car >= 0) {
+                Put(g, 0x20, recs[car].data ? copyBlock(recs[car].data) : 0);
+            } else {
+                std::vector<uint8_t> d(kCarData, kCarData + sizeof(kCarData));
+                Put(g, 0x18, (U32(g, 0x18) & ~0xFFFFFu) | 0x44000);  // dynamic, auto-assign (as the van)
+                g[0x2D] = gms[recordAt(recs[c.parts.front().first].parent >= 0 ? recs[c.parts.front().first].parent
+                                                                              : c.parts.front().first) + 0x2D];
+                Put(g, 0x20, Append(gms, d));
+            }
+            Put(g, 0x28, 0);  // (the editor drives it: no script)
+            emit(g, true, 0, recs[tmpl].extra, nullptr, true);
+            groupBlocks.emplace_back(kPools);
+            size_t block = groupBlocks.size() - 1;
+            bool body = false;  // ZMoveOnSpline's init (0x5912A0) takes its "*Body*" child as the body (+0xDE)
+            for (const auto& [r, local] : c.parts)
+                if (r >= 0 && uint32_t(r) < count && !(recs[r].classId & 0x100000) && recs[r].mesh) {
+                    copy(r, 1, block, &local, 0, body ? nullptr : "Body");
+                    body = true;
+                }
+            static const char* const kWheels[4] = {"FrontLeft_01", "FrontRight_01", "BackLeft_01", "BackRight_01"};
+            for (size_t k = 0; k < c.wheels.size() && k < 4; ++k) {
+                std::vector<uint8_t> w(gms.begin() + recordAt(c.model), gms.begin() + recordAt(c.model) + kRecord);
+                Put(w, 0x00, AppendString(buf, kWheels[k]));
+                Put(w, 0x04, Append(gms, ident, sizeof(ident)));
+                Put(w, 0x08, Append(gms, c.wheels[k].data(), 12));
+                Put(w, 0x0C, 0);
+                Put(w, 0x10, 0x100001);  // ZGROUP, empty
+                Put(w, 0x14, 0);
+                Put(w, 0x20, 0);
+                Put(w, 0x28, 0);
+                bool front = k < 2;  // a front wheel steers: its "Wheel*" child turns (0x5958E0)
+                emit(w, front, 1, recs[c.model].extra, &groupBlocks[block], false);
+                groupBlocks.emplace_back(kPools);
+                if (front) {
+                    size_t mine = groupBlocks.size() - 1;
+                    std::vector<uint8_t> h = w;
+                    Put(h, 0x00, AppendString(buf, "Wheel"));
+                    Put(h, 0x08, Append(gms, zero, sizeof(zero)));
+                    emit(h, false, 2, recs[c.model].extra, &groupBlocks[mine], false);
+                    groupBlocks.emplace_back(kPools);
+                }
+            }
+            ++carsAdded;
+        }
+        inGroup = open > 0;
+    }
     if (!added)
         return false;
+    if (carsAdded)
+        Log("scene cars: %d vehicles (ZCar) with their splines", carsAdded);
     if (listsAdded)
         Log("scene lists: %d new lists", listsAdded);
     // geom counts (the engine allocates the geoms of each class at once)

@@ -12,6 +12,7 @@
 // counts and node pool counts they need, and the actor in the scene's
 // list TrackLinkObjects. The engine then makes them as it makes the others.
 // Their behaviour is set after loading (npc.h SetScript).
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -36,6 +37,29 @@ struct SceneList {
 };
 // Asked for every scene that loads, with the characters.
 void SetSceneListProvider(std::function<std::vector<SceneList>(const std::string& scene)> provider);
+
+// A vehicle of the level's own, made as the game's are: a ZCar group (its
+// mover drives it along a spline: SetPath / SetMoveParams / MoveToSplineVal)
+// with copies of a model group's records (a car of the map: body, wheels,
+// doors) as its children, and its spline (a ZSHAPE whose PRM record
+// imports.h makes, SceneShape), both at the root.
+struct SceneCar {
+    std::string name;   // the car's group ("ROOT/<name>")
+    std::string shape;  // its spline's object name (ShapeMesh of the same name)
+    int model = -1;     // the group record it is a copy of (information)
+    // its models (records of plain meshes, ZSTDOBJ) as the car's own children, in the car's frame
+    // (mat 9, pos 3): the first is its body (ZMoveOnSpline's init takes the first plain child as
+    // the body, +0xDE, which ZCar's placing 0x58FC20 needs; C1-1's van: Body)
+    std::vector<std::pair<int, std::array<float, 12>>> parts;
+    // where its wheels are (car frame: x right, y up, z forward): FrontLeft_01, FrontRight_01,
+    // BackLeft_01, BackRight_01. ZCar's init (0x592EC0) finds its wheels by those names (the
+    // front ones steer) and divides by their counts; a model with its wheels in one mesh gets
+    // empty groups there (as the game's: C1-1's van has Wheel_FrontLeft_01 .. BackRight_01)
+    std::vector<std::array<float, 3>> wheels;
+    float mat[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};    // the car's place (world) until it drives
+    float pos[3] = {};
+};
+void SetSceneCarProvider(std::function<std::vector<SceneCar>(const std::string& scene)> provider);
 
 // Asked for every scene that loads (its name as GetSceneName gives it).
 void SetSceneNpcProvider(std::function<std::vector<SceneNpc>(const std::string& scene)> provider);

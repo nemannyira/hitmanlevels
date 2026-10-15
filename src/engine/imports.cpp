@@ -122,6 +122,9 @@ const std::vector<uint8_t>* SourceAnm(const std::string& level)
 
 std::vector<ModelImport> g_requests;
 std::function<std::vector<ModelImport>(const std::string&)> g_provider;
+std::function<std::vector<SceneShape>(const std::string&)> g_shapeProvider;
+std::vector<SceneShape> g_shapes;              // asked for the scene loading
+std::map<std::string, uint32_t> g_shapeMeshes;  // name -> its PRM record
 std::vector<ModelImport> g_load;  // what the scene being loaded gets
 
 // the load in progress
@@ -164,8 +167,10 @@ bool Wanted(void* engine)
     if (g_provider)
         g_load = g_provider(n);
     g_load.insert(g_load.end(), g_requests.begin(), g_requests.end());
-    Log("imports: %s gets %zu models of other levels", n.c_str(), g_load.size());
-    return !g_load.empty();
+    g_shapes = g_shapeProvider ? g_shapeProvider(n) : std::vector<SceneShape>{};
+    g_shapeMeshes.clear();
+    Log("imports: %s gets %zu models of other levels, %zu splines", n.c_str(), g_load.size(), g_shapes.size());
+    return !g_load.empty() || !g_shapes.empty();
 }
 
 struct Chain {
@@ -566,6 +571,66 @@ bool Copy(const ModelImport& m)
     return true;
 }
 
+// a spline's model record after the blob's other data (see SceneShape)
+void AppendShape(const SceneShape& s)
+{
+    size_t n = s.knots.size() / 9;
+    if (n < 2 || n > 1024 || s.name.empty())
+        return;
+    auto align = [] { g_blob.resize((g_blob.size() + 15) & ~size_t(15)); };
+    auto put = [](size_t at, uint32_t v) { memcpy(&g_blob[at], &v, 4); };
+    auto here = [] { return g_base + uint32_t(g_blob.size()); };
+    align();
+    uint32_t knots = here();
+    g_blob.insert(g_blob.end(), reinterpret_cast<const uint8_t*>(s.knots.data()),
+                  reinterpret_cast<const uint8_t*>(s.knots.data() + n * 9));
+    uint32_t count = here();
+    g_blob.resize(g_blob.size() + 4);
+    put(g_blob.size() - 4, uint32_t(n));
+    // a polyline through the knots (36-byte vertices: position, the rest 0), drawn only when shown
+    align();
+    uint32_t verts = here();
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    for (size_t i = 0; i < n; ++i) {
+        float v[9] = {s.knots[i * 9], s.knots[i * 9 + 1], s.knots[i * 9 + 2]};
+        for (int k = 0; k < 3; ++k) {
+            lo[k] = std::min(lo[k], v[k]);
+            hi[k] = std::max(hi[k], v[k]);
+        }
+        g_blob.insert(g_blob.end(), reinterpret_cast<uint8_t*>(v), reinterpret_cast<uint8_t*>(v + 9));
+    }
+    uint32_t indices = here();
+    for (size_t i = 0; i < n; ++i) {
+        uint16_t ix = uint16_t(i);
+        g_blob.insert(g_blob.end(), reinterpret_cast<uint8_t*>(&ix), reinterpret_cast<uint8_t*>(&ix) + 2);
+    }
+    // bounds (0x3C, as the game's: {0, 1e38, 0, 0, 0, 1e38, 0, 0, 0, max, min})
+    align();
+    uint32_t bounds = here();
+    float b[15] = {0, 1e38f, 0, 0, 0, 1e38f, 0, 0, 0, hi[0], hi[1], hi[2], lo[0], lo[1], lo[2]};
+    g_blob.insert(g_blob.end(), reinterpret_cast<uint8_t*>(b), reinterpret_cast<uint8_t*>(b + 15));
+    // the record
+    align();
+    size_t rec = g_blob.size();
+    g_blob.resize(rec + 0x8C);
+    memset(&g_blob[rec], 0, 0x8C);
+    put(rec + 0x00, 0x40000);
+    put(rec + 0x14, uint32_t(n) << 16);
+    put(rec + 0x18, bounds);
+    put(rec + 0x1C, verts);
+    put(rec + 0x38, 0xFF);
+    put(rec + 0x40, 0xFFFF00);
+    put(rec + 0x44, indices);
+    put(rec + 0x48, uint32_t(n));
+    put(rec + 0x54, 1);
+    put(rec + 0x58, 1);
+    put(rec + 0x5C, 0x3F800000);
+    put(rec + 0x84, knots);
+    put(rec + 0x88, count);
+    g_shapeMeshes[s.name] = g_base + uint32_t(rec);
+    Log("imports: spline %s, %zu knots, record %08X", s.name.c_str(), n, g_base + uint32_t(rec));
+}
+
 uint32_t __fastcall hkPrimsSize(void* self, void* edx)
 {
     uint32_t real = oPrimsSize(self, edx);
@@ -585,6 +650,8 @@ uint32_t __fastcall hkPrimsSize(void* self, void* edx)
     for (const ModelImport& m : g_load)
         if (done.insert({m.level, m.mesh}).second)
             Copy(m);
+    for (const SceneShape& s : g_shapes)
+        AppendShape(s);
     if (g_blob.empty())
         return real;
     g_active = true;
@@ -1309,6 +1376,17 @@ void BuildCatalogue(const std::string& level, Catalogue& cat)
 void SetImportProvider(std::function<std::vector<ModelImport>(const std::string&)> provider)
 {
     g_provider = std::move(provider);
+}
+
+void SetShapeProvider(std::function<std::vector<SceneShape>(const std::string&)> provider)
+{
+    g_shapeProvider = std::move(provider);
+}
+
+uint32_t ShapeMesh(const std::string& name)
+{
+    auto it = g_shapeMeshes.find(name);
+    return it == g_shapeMeshes.end() ? 0 : it->second;
 }
 
 const std::vector<LevelModel>& LevelModels(const std::string& level)

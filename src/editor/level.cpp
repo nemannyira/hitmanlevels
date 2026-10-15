@@ -1591,9 +1591,22 @@ bool SaveLevel(std::string* error)
         j["music"] = g_level.music;
     if (!g_level.vehicles.empty()) {
         json vs = json::array();
-        for (const LevelVehicle& v : g_level.vehicles)
-            vs.push_back({{"object", v.object}, {"route", v.route}, {"speed", v.speed}, {"loop", v.loop},
-                          {"reverse", v.reverse}});
+        BakeVehicles(g_level.vehicles);
+        for (const LevelVehicle& v : g_level.vehicles) {
+            json o = {{"object", v.object}, {"route", v.route}, {"speed", v.speed}, {"loop", v.loop},
+                      {"reverse", v.reverse}};
+            if (v.model >= 0) {
+                o["model"] = v.model;
+                o["spawned_id"] = v.spawnedId;
+                json parts = json::array();
+                for (const auto& [r, l] : v.parts)
+                    parts.push_back({{"record", r}, {"local", l}});
+                o["parts"] = parts;
+                o["wheels"] = v.wheels;
+                o["points"] = v.points;
+            }
+            vs.push_back(o);
+        }
         j["vehicles"] = vs;
     }
     if (!g_level.newLists.empty()) {
@@ -1785,6 +1798,36 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 v.speed = 800.0f;
             v.loop = o.value("loop", false);
             v.reverse = o.value("reverse", false);
+            try {  // (what the car is made of: checked again by the scene loader)
+                v.model = o.value("model", -1);
+                v.spawnedId = o.value("spawned_id", std::string()).substr(0, 128);
+                if (o.contains("parts"))
+                    for (const json& q : o["parts"])
+                        v.parts.push_back({q.at("record").get<int>(), q.at("local").get<std::array<float, 12>>()});
+                if (o.contains("points"))
+                    v.points = o["points"].get<std::vector<std::array<float, 3>>>();
+                if (o.contains("wheels"))
+                    v.wheels = o["wheels"].get<std::vector<std::array<float, 3>>>();
+                if (v.parts.size() > 64 || v.points.size() > 256 || v.wheels.size() > 4)
+                    throw std::runtime_error("too many");
+                for (const auto& [r, l] : v.parts)
+                    for (float x : l)
+                        if (!std::isfinite(x) || std::fabs(x) > 1e6f)
+                            throw std::runtime_error("bad number");
+                for (const auto& q : v.wheels)
+                    for (float x : q)
+                        if (!std::isfinite(x) || std::fabs(x) > 1e6f)
+                            throw std::runtime_error("bad number");
+                for (const auto& q : v.points)
+                    for (float x : q)
+                        if (!std::isfinite(x) || std::fabs(x) > 1e6f)
+                            throw std::runtime_error("bad number");
+            } catch (...) {
+                v.model = -1;
+                v.parts.clear();
+                v.wheels.clear();
+                v.points.clear();
+            }
             if (L.vehicles.size() < 64)
                 L.vehicles.push_back(v);
         }
@@ -3058,7 +3101,9 @@ int ApplyLevel()
     if (g_level.blankMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
         BlankScene();
     for (const SpawnedObject& s : g_level.spawned)
-        if (s.sourceScene.empty() || s.sourceScene == CurrentScene() ||
+        if (IsVehicleCopy(g_level.vehicles, s.id)) {
+            continue;  // (its car is made with the map instead)
+        } else if (s.sourceScene.empty() || s.sourceScene == CurrentScene() ||
             (!g_level.ownMapOf.empty() && s.sourceScene == g_level.ownMapOf))  // made on the original map
             n += Materialize(s) != nullptr;
     for (auto& [path, e] : g_level.objects) {
@@ -3199,6 +3244,14 @@ void InstallLevelPanel()
     engine::SetImportProvider(ImportsFor);
     engine::SetSceneNpcProvider(NpcsFor);
     engine::SetSceneListProvider(ListsFor);
+    engine::SetShapeProvider([](const std::string& scene) {
+        return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene) ? VehicleShapes(g_level.vehicles)
+                                                                                 : std::vector<engine::SceneShape>{};
+    });
+    engine::SetSceneCarProvider([](const std::string& scene) {
+        return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene) ? VehicleCars(g_level.vehicles)
+                                                                                 : std::vector<engine::SceneCar>{};
+    });
 }
 
 void UseBlankedMesh(uint32_t mesh) { ShowBlankedMesh(mesh); }

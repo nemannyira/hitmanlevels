@@ -568,20 +568,115 @@ void StopDrives(const std::string& owner)
                    g_drives.end());
 }
 
+// ---- the level's vehicles, as the game's: a ZCar along its ZSHAPE ----
+//
+// Made with the map (inject.cpp / imports.cpp), then driven by the car's own
+// mover through the vfuncs its scripts call (MoveOnSpline_if, 0x58CE30):
+// 0x2AC SetPath(spline ref, start 0..1: the mover 0x595F30), 0x2B0
+// SetMoveParams(speed, acceleration, top speed, +0xC4: 0x5963B0), 0x2CC
+// MoveToSplineVal(place, flag: the mover's vfunc 0 0x596040).
+
+std::string CarName(size_t i) { return "EditorCar_" + std::to_string(i + 1); }
+std::string ShapeName(size_t i) { return "EditorPath_" + std::to_string(i + 1); }
+
+struct LevelCar {
+    engine::ZGEOM* car = nullptr;
+    uint32_t path = 0;  // its spline's ref
+    bool loop = false;
+};
+std::vector<LevelCar> g_levelCars;
+
+bool CarCall(engine::ZGEOM* car, int vfunc, uint32_t a, uint32_t b, uint32_t c, uint32_t d, int n)
+{
+    __try {
+        void* fn = (*reinterpret_cast<void***>(car))[vfunc / 4];
+        if (n == 2)
+            reinterpret_cast<void(__thiscall*)(void*, uint32_t, uint32_t)>(fn)(car, a, b);
+        else
+            reinterpret_cast<void(__thiscall*)(void*, uint32_t, uint32_t, uint32_t, uint32_t)>(fn)(car, a, b, c, d);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+uint32_t Bits(float f)
+{
+    uint32_t u;
+    memcpy(&u, &f, 4);
+    return u;
+}
+
+// the route's knots for the spline: a Catmull-Rom curve through the points as cubic Bezier
+// segments (each knot: the point, its control point out, the next one's control point in)
+std::vector<float> Knots(const std::vector<std::array<float, 3>>& in, bool loop)
+{
+    std::vector<std::array<float, 3>> p = in;
+    if (loop && p.size() > 2)
+        p.push_back(p.front());  // closed: back to the start
+    size_t n = p.size();
+    std::vector<float> out;
+    auto at = [&](long i) -> const std::array<float, 3>& {
+        if (loop && in.size() > 2) {
+            long m = long(in.size());
+            return in[size_t(((i % m) + m) % m)];
+        }
+        return p[size_t(std::clamp(i, 0L, long(n) - 1))];
+    };
+    for (size_t i = 0; i < n; ++i) {
+        const auto& a = p[i];
+        const auto& prev = at(long(i) - 1);
+        const auto& next = at(long(i) + 1);
+        const auto& next2 = at(long(i) + 2);
+        float k[9];
+        for (int c = 0; c < 3; ++c) {
+            k[c] = a[c];
+            k[3 + c] = a[c] + (next[c] - prev[c]) / 6.0f;      // out of this one
+            k[6 + c] = next[c] - (next2[c] - a[c]) / 6.0f;     // into the next one
+        }
+        out.insert(out.end(), k, k + 9);
+    }
+    return out;
+}
+
 void ApplyVehicles(const std::vector<LevelVehicle>& vehicles)
 {
     StopDrives("level");
-    for (const LevelVehicle& v : vehicles) {
-        engine::ZGEOM* g = ResolveTarget(v.object);
-        std::vector<std::vector<float>> pts;
-        for (const std::string& p : v.route)
-            if (engine::ZGEOM* pg = ResolveTarget(p); pg && IsLive(pg)) {
-                Transform t = GetTransform(pg);
-                pts.push_back({t.pos[0], t.pos[1], t.pos[2]});
-            }
-        std::string err;
-        if (!StartDrive(g, pts, v.speed, v.loop, v.reverse, "level", &err))
-            Log("vehicles: %s does not drive: %s", v.object.c_str(), err.c_str());
+    g_levelCars.clear();
+    for (size_t i = 0; i < vehicles.size(); ++i) {
+        const LevelVehicle& v = vehicles[i];
+        engine::ZGEOM* car = Resolve("ROOT/" + CarName(i));
+        engine::ZGEOM* path = Resolve("ROOT/" + ShapeName(i));
+        if (!car || !IsLive(car) || !path || !IsLive(path)) {
+            if (v.model >= 0 && v.points.size() >= 2)
+                Log("vehicles: %s: its car is made with the map (load it again)", v.object.c_str());
+            continue;
+        }
+        if (v.spawnedId.empty())
+            if (engine::ZGEOM* source = ResolveTarget(v.object); source && IsLive(source))
+                SetHidden(source, true);  // the map's car: the copy drives instead
+        uint32_t ref = engine::RefOf(path);
+        float speed = std::clamp(v.speed, kMinSpeed, kMaxSpeed);
+        bool ok = CarCall(car, 0x2B0, Bits(speed), Bits(400.0f), Bits(speed), Bits(speed), 4) &&
+                  CarCall(car, 0x2AC, ref, Bits(0.0f), 0, 0, 2) && CarCall(car, 0x2CC, Bits(1.0f), 0, 0, 0, 2);
+        Log("vehicles: %s drives its path %s (%.0f cm/s%s)%s", CurrentLevel().name.c_str(), ShapeName(i).c_str(), speed,
+            v.loop ? ", round and round" : "", ok ? "" : ": the car did not take it");
+        if (ok)
+            g_levelCars.push_back({car, ref, v.loop});
+    }
+}
+
+// round and round: at its path's end (closed) back to its start, on again
+void LoopCars()
+{
+    for (LevelCar& c : g_levelCars) {
+        if (!c.loop || !IsLive(c.car))
+            continue;
+        float at = TrackPlace(c.car);
+        if (at >= 0.999f) {
+            CarCall(c.car, 0x2AC, c.path, Bits(0.0f), 0, 0, 2);
+            CarCall(c.car, 0x2CC, Bits(1.0f), 0, 0, 0, 2);
+        }
     }
 }
 
@@ -664,6 +759,133 @@ engine::ZGEOM* WholeVehicle(engine::ZGEOM* part)
         return nullptr;  // (not in a room: a zip's group, the root)
     size_t parts = VisibleParts(group).size();
     return parts >= 2 && parts <= 64 ? group : nullptr;
+}
+
+void BakeVehicles(std::vector<LevelVehicle>& vehicles)
+{
+    const auto& records = engine::SceneRecords();
+    for (LevelVehicle& v : vehicles) {
+        engine::ZGEOM* object = ResolveTarget(v.object);
+        if (!object || !IsLive(object))
+            continue;  // (not on the map now: as it was baked)
+        const SpawnedObject* s = FindSpawned(object);
+        v.spawnedId = s ? s->id : "";
+        engine::ZGEOM* model = s && s->group ? Resolve(s->sourcePath) : object;
+        int rec = model ? engine::RecordOf(model) : -1;
+        if (rec < 0 || size_t(rec) >= records.size() || !(records[rec].classId & 0x100000))
+            rec = -1;
+        v.model = rec;
+        v.parts.clear();
+        if (rec >= 0) {
+            // the car's frame: where the model stands, its long side forward
+            Transform f = ObjectFrame(model);
+            float yaw, pitch, roll;
+            MatrixToEuler(f.mat, yaw, pitch, roll);
+            float fr[9];
+            EulerToMatrix(yaw + LongSideTurn(model) + (v.reverse ? 180.0f : 0.0f), 0.0f, 0.0f, fr);
+            // its plain models (records of the scene), the biggest (the body) first
+            std::vector<std::pair<float, engine::ZGEOM*>> models;
+            for (engine::ZGEOM* c : VisibleParts(model)) {
+                float ctr[3], r = 0.0f;
+                if (engine::RecordOf(c) >= 0 && engine::MeshOf(c))
+                    models.push_back({GetBounds(c, ctr, r) ? r : 0.0f, c});
+            }
+            std::stable_sort(models.begin(), models.end(),
+                             [](const auto& a, const auto& b) { return a.first > b.first; });
+            for (const auto& [size, c] : models) {
+                Transform w = GetTransform(c);
+                std::array<float, 12> l{};
+                float rel[3] = {w.pos[0] - f.pos[0], w.pos[1] - f.pos[1], w.pos[2] - f.pos[2]};
+                // in the frame's x (right: row 2), y (up: row 1), z (forward: row 0)
+                static const int kAxis[3] = {2, 1, 0};
+                for (int a = 0; a < 3; ++a) {
+                    const float* ax = fr + kAxis[a] * 3;
+                    l[9 + a] = rel[0] * ax[0] + rel[1] * ax[1] + rel[2] * ax[2];
+                }
+                for (int j = 0; j < 3; ++j)
+                    for (int a = 0; a < 3; ++a) {
+                        const float* ax = fr + kAxis[a] * 3;
+                        l[j * 3 + a] = w.mat[j * 3] * ax[0] + w.mat[j * 3 + 1] * ax[1] + w.mat[j * 3 + 2] * ax[2];
+                    }
+                v.parts.push_back({engine::RecordOf(c), l});
+            }
+            // its box in the frame (x right, y up, z forward): the wheels near its corners, low
+            float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+            for (const auto& [size, c] : models) {
+                Transform pt = GetTransform(c);
+                const engine::ZBaseGeom* n = c->node;
+                float ctr[3];
+                for (int k = 0; k < 3; ++k)
+                    ctr[k] = pt.pos[k] + pt.mat[6 + k] * n->boundCenter[0] + pt.mat[3 + k] * n->boundCenter[1] +
+                             pt.mat[k] * n->boundCenter[2];
+                static const int kAxis[3] = {2, 1, 0};
+                for (int a = 0; a < 3; ++a) {
+                    const float* ax = fr + kAxis[a] * 3;
+                    float m = (ctr[0] - f.pos[0]) * ax[0] + (ctr[1] - f.pos[1]) * ax[1] + (ctr[2] - f.pos[2]) * ax[2];
+                    float e = 0.0f;
+                    for (int k = 0; k < 3; ++k) {
+                        const float* axis = pt.mat + (k == 0 ? 6 : k == 1 ? 3 : 0);
+                        e += std::fabs(axis[0] * ax[0] + axis[1] * ax[1] + axis[2] * ax[2]) * n->boundHalf[k];
+                    }
+                    lo[a] = std::min(lo[a], m - e);
+                    hi[a] = std::max(hi[a], m + e);
+                }
+            }
+            v.wheels.clear();
+            if (hi[0] > lo[0]) {
+                float w = hi[0] - lo[0], len = hi[2] - lo[2];
+                float x = w * 0.5f - w * 0.12f, y = lo[1] + 30.0f, mid = (hi[0] + lo[0]) * 0.5f;
+                float front = hi[2] - len * 0.2f, back = lo[2] + len * 0.2f;
+                v.wheels = {{mid - x, y, front}, {mid + x, y, front}, {mid - x, y, back}, {mid + x, y, back}};
+            }
+        }
+        std::vector<std::array<float, 3>> pts;
+        for (const std::string& p : v.route)
+            if (engine::ZGEOM* g = ResolveTarget(p); g && IsLive(g)) {
+                Transform t = GetTransform(g);
+                pts.push_back({t.pos[0], t.pos[1], t.pos[2]});
+            }
+        if (pts.size() >= 2 || v.route.empty())
+            v.points = pts;
+    }
+}
+
+std::vector<engine::SceneShape> VehicleShapes(const std::vector<LevelVehicle>& vehicles)
+{
+    std::vector<engine::SceneShape> out;
+    for (size_t i = 0; i < vehicles.size(); ++i)
+        if (vehicles[i].model >= 0 && vehicles[i].points.size() >= 2)
+            out.push_back({ShapeName(i), Knots(vehicles[i].points, vehicles[i].loop)});
+    return out;
+}
+
+std::vector<engine::SceneCar> VehicleCars(const std::vector<LevelVehicle>& vehicles)
+{
+    std::vector<engine::SceneCar> out;
+    for (size_t i = 0; i < vehicles.size(); ++i) {
+        const LevelVehicle& v = vehicles[i];
+        if (v.model < 0 || v.parts.empty() || v.wheels.size() != 4 || v.points.size() < 2)
+            continue;
+        engine::SceneCar c;
+        c.name = CarName(i);
+        c.shape = ShapeName(i);
+        c.model = v.model;
+        c.parts = v.parts;
+        c.wheels = v.wheels;
+        memcpy(c.pos, v.points.front().data(), sizeof(c.pos));  // (the spline puts it on its start)
+        out.push_back(c);
+    }
+    return out;
+}
+
+bool IsVehicleCopy(const std::vector<LevelVehicle>& vehicles, const std::string& spawnedId)
+{
+    if (spawnedId.empty())
+        return false;
+    for (const LevelVehicle& v : vehicles)
+        if (v.spawnedId == spawnedId && v.model >= 0 && v.points.size() >= 2)
+            return true;
+    return false;
 }
 
 void DrawVehicleForSelection(engine::ZGEOM* geom)
@@ -754,22 +976,11 @@ void DrawVehicleForSelection(engine::ZGEOM* geom)
     ImGui::SameLine();
     if (ImGui::Checkbox("its front is its back", &v->reverse))
         CurrentLevel().dirty = true;
-    bool driving = false;
-    for (const Drive& d : g_drives)
-        driving |= d.object == geom && d.running && !d.arrived;
-    if (ImGui::SmallButton(driving ? "Stop" : "Try it")) {
-        if (driving) {
-            StopDrives("level");
-        } else {
-            std::vector<LevelVehicle> one{*v};
-            ApplyVehicles(one);
-            for (Drive& d : g_drives)
-                if (d.object == geom)
-                    d.preview = true;  // (shown now, the editor holding the world or not)
-        }
-    }
+    if (ImGui::SmallButton("Test now (save and reload)"))
+        TestLevel();
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Drives it now, also while the world is frozen; when the level is played it drives by itself");
+        ImGui::SetTooltip("The car is made with the map as the game's are (a ZCar on a path of its own):\n"
+                          "the map loads again and it drives (when the world runs)");
     ImGui::SameLine();
     if (ImGui::SmallButton("No route")) {
         auto& all = CurrentLevel().vehicles;
@@ -792,7 +1003,9 @@ void InstallVehicles()
             lua_pop(L, 1);
         }
     OnFrameEnd(Update);
+    OnFrameEnd(LoopCars);
     OnSceneLeaving([](const std::string&) {
+        g_levelCars.clear();
         g_drives.clear();
         g_picking = false;
     });

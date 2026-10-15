@@ -27,6 +27,21 @@ struct ModelImport {
 void InstallImports();
 // What a scene being loaded gets ("C1-1\C1-1__MAIN"; asked while it loads).
 void SetImportProvider(std::function<std::vector<ModelImport>(const std::string& scene)> provider);
+
+// A spline of the level's own (a vehicle's path), made as the game's are: a
+// ZSHAPE's model record in the PRM (type 0x40000; +0x84 the knots, 9 floats
+// each: the point, its control point out, the next one's control point in;
+// +0x88 their count; +0x18 bounds, +0x1C / +0x44 a polyline to draw) that
+// ZSHAPE builds its cubic segments from (0x44DEB0). Knots in the shape's
+// space (the shape is made at the world's origin, unturned).
+struct SceneShape {
+    std::string name;
+    std::vector<float> knots;  // 9 floats a knot
+};
+// Asked while a scene's PRM loads (before its GMS).
+void SetShapeProvider(std::function<std::vector<SceneShape>(const std::string& scene)> provider);
+// The PRM record made for a shape of that name in the scene loading / loaded last (0: none).
+uint32_t ShapeMesh(const std::string& name);
 // Testing: models for every level scene loaded from now on (besides the provider's).
 void SetModelImports(const std::vector<ModelImport>& list);
 // The mesh reference of an imported model in the loaded scene (0: not there).

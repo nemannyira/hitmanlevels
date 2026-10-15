@@ -750,8 +750,9 @@ void DrawRouteList(const std::string& param, engine::ZGEOM* list, ImU32 color)
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", PathOf(list).c_str());
     int users = ListUsers(list);
-    if (users > 1) {
+    if (users > 1)
         ImGui::TextDisabled("used by %d characters: a change applies to all of them", users);
+    if (engine::RecordOf(list) >= 0) {  // (a list of the scene file: copied with the map)
         if (ImGui::SmallButton("A route of its own")) {
             std::string err, path = GiveOwnRoute(g_target, param, &err);
             g_message = path.empty() ? "not made: " + err

@@ -16,7 +16,7 @@ void InstallViewport();
 
 // Copies the selected object into the level (and selects the copy) / deletes
 // the selected object when the level created it.
-void DuplicateSelection();
+void DuplicateSelection(bool partOnly = false);  // a part of a car: the whole car (partOnly: the part)
 void DeleteSelection();
 
 // The character (by its bounding sphere) under a screen position, or null.

@@ -184,7 +184,8 @@ int EditCmd(lua_State* L)
         editor::Transform t = at(3);
         engine::ZGEOM* g = resolve(2);
         memcpy(t.mat, editor::GetTransform(g).mat, sizeof(t.mat));
-        made = editor::DuplicateObject(g, &err, &t);
+        engine::ZGEOM* parent = lua_isstring(L, 6) ? editor::Resolve(lua_tostring(L, 6)) : nullptr;  // (testing)
+        made = editor::DuplicateObject(g, &err, &t, parent);
     } else if (op == "delete") {
         lua_pushboolean(L, editor::DeleteObject(resolve(2)));
         return 1;

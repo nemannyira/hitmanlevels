@@ -104,6 +104,13 @@ Transform GetTransform(engine::ZGEOM* geom)
 // bookkeeping (crash in a tree erase), so they are converted back before the
 // scene is left.
 std::vector<std::pair<engine::ZBaseGeom*, engine::ZGEOM*>> g_madeDynamic;
+std::vector<std::pair<engine::ZBaseGeom*, engine::ZGEOM*>> g_madeAutoAssign;  // (the rooms from where it is)
+
+void SetAutoAssign(engine::ZBaseGeom* node, bool on)
+{
+    using Fn = void(__thiscall*)(engine::ZBaseGeom*, char);
+    reinterpret_cast<Fn>(game::ZBaseGeom_SetAutoAssign)(node, on ? 1 : 0);
+}
 
 void SetDynamic(engine::ZBaseGeom* node, bool dynamic)
 {
@@ -113,6 +120,10 @@ void SetDynamic(engine::ZBaseGeom* node, bool dynamic)
 
 void RevertDynamic(const std::string&)
 {
+    for (auto& [node, geom] : g_madeAutoAssign)  // (first: as the scene file had it, for its unload)
+        if (IsLive(geom) && geom->node == node && (node->flags & game::kNodeAutoAssign))
+            SetAutoAssign(node, false);
+    g_madeAutoAssign.clear();
     int n = 0;
     for (auto& [node, geom] : g_madeDynamic) {
         if (IsLive(geom) && geom->node == node && (node->flags & game::kNodeDynamic)) {
@@ -128,8 +139,16 @@ void RevertDynamic(const std::string&)
 void EnsureDynamic(engine::ZGEOM* geom)
 {
     engine::ZBaseGeom* node = geom->node;
-    if ((node->flags & game::kNodeDynamic) || engine::IsA(geom, "ZActor"))
+    if (engine::IsA(geom, "ZActor"))
         return;  // characters have their own movement; converting them breaks their rendering
+    if (node->flags & game::kNodeDynamic) {
+        // moving: drawn in the rooms where it is, not only in the one it was put in
+        if (!(node->flags & game::kNodeAutoAssign) && !(node->parent && (node->parent->flags & game::kNodeDynamic))) {
+            SetAutoAssign(node, true);
+            g_madeAutoAssign.push_back({node, geom});
+        }
+        return;
+    }
     // parts of a moving group (vehicle, item) move with it: only the group is tracked
     for (engine::ZBaseGeom* p = node->parent; p && engine::IsReadable(p, sizeof(*p)); p = p->parent) {
         if (p->flags & game::kNodeDynamic) {
@@ -147,6 +166,10 @@ void EnsureDynamic(engine::ZGEOM* geom)
     }
     SetDynamic(node, true);
     g_madeDynamic.push_back({node, geom});
+    if (!(node->flags & game::kNodeAutoAssign)) {
+        SetAutoAssign(node, true);
+        g_madeAutoAssign.push_back({node, geom});
+    }
     Log("made %p dynamic (flags %08X)", static_cast<void*>(geom), node->flags);
 }
 

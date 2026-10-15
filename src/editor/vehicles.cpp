@@ -597,11 +597,24 @@ void DrawRoute(const LevelVehicle& v)
 
 engine::ZGEOM* WholeVehicle(engine::ZGEOM* part)
 {
-    if (!part || !IsLive(part) || !engine::MeshOf(part) || !part->node || !part->node->parent)
+    if (!part || !IsLive(part) || !engine::MeshOf(part) || !part->node)
         return nullptr;
-    engine::ZGEOM* group = part->node->parent->geom;
-    if (!group || !IsLive(group) || engine::MeshOf(group) || engine::ClassName(group) != "ZGROUP")
-        return nullptr;  // (a room, the root, a character's: not a car)
+    // up through its groups to the one in a room (C1-1's Ferrari: Karroseri ->
+    // Carbody -> CarFerrari, in the garage's room)
+    engine::ZGEOM* group = nullptr;
+    engine::ZBaseGeom* n = part->node->parent;
+    for (int depth = 0; n && depth < 6; ++depth, n = n->parent) {
+        if (!engine::IsReadable(n, sizeof(*n)) || !n->geom || !IsLive(n->geom))
+            return nullptr;
+        std::string cls = engine::ClassName(n->geom);
+        if (cls == "ZROOM")
+            break;
+        if (cls != "ZGROUP" || engine::MeshOf(n->geom))
+            return nullptr;  // (a character's, an item's: not a car)
+        group = n->geom;
+    }
+    if (!group || !n)
+        return nullptr;  // (not in a room: a zip's group, the root)
     size_t parts = VisibleParts(group).size();
     return parts >= 2 && parts <= 64 ? group : nullptr;
 }

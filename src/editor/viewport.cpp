@@ -261,7 +261,7 @@ void Shortcuts()
     ImGuiIO& io = ImGui::GetIO();
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))  // also while typing
         SaveShortcut();
-    if (io.WantCaptureKeyboard || FreeCamLooking() || Placing() || NpcPlacing() || MissionPicking() || VehiclePicking())
+    if (io.WantTextInput || FreeCamLooking() || Placing() || NpcPlacing() || MissionPicking() || VehiclePicking())
         return;  // these have their own keys
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z))
         Undo();
@@ -277,7 +277,7 @@ void Shortcuts()
         Select(nullptr);
     else if (engine::ZGEOM* sel = Selected(); sel && IsLive(sel)) {
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
-            DuplicateSelection();
+            DuplicateSelection(io.KeyShift);
         } else if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
             DeleteSelection();
         } else if (ImGui::IsKeyPressed(ImGuiKey_G)) {
@@ -458,17 +458,18 @@ engine::ZGEOM* CharacterAt(float x, float y) { return SphereHit(x, y, true); }
 
 float SnapMoveStep() { return g_snap ? g_snapMove : 0.0f; }
 
-void DuplicateSelection()
+void DuplicateSelection(bool partOnly)
 {
     engine::ZGEOM* sel = Selected();
+    // a car clicked in the world is one of its parts: the whole car is copied
+    engine::ZGEOM* whole = partOnly || FindSpawned(sel) ? nullptr : WholeVehicle(sel);
     std::string err;
-    if (engine::ZGEOM* g = DuplicateObject(sel, &err)) {
+    if (engine::ZGEOM* g = DuplicateObject(whole ? whole : sel, &err)) {
         Select(g);
         const SpawnedObject* s = FindSpawned(g);
         g_message = "created " + (s ? s->id : std::string("object")) + " (Ctrl+Z undoes)";
-        if (engine::ZGEOM* whole = WholeVehicle(sel))  // (a car clicked in the world: one of its parts)
-            g_message += "; only this part of " + engine::SafeString(whole->name) +
-                         ": its parent (Inspector: select parent) copies the whole";
+        if (whole)
+            g_message += ": the whole " + engine::SafeString(whole->name) + " (Shift+Ctrl+D: the part only)";
     } else {
         g_message = "duplicate failed: " + err;
     }

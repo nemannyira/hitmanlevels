@@ -91,6 +91,14 @@ constexpr uintptr_t ZEngineDataBase_FrameUpdate = 0x4228E0;        // ?FrameUpda
 // for geoms that move (ZEngineDataBase::MakeDynamicGeomsDynamic).
 constexpr uintptr_t ZBaseGeom_SetDynamic = 0x5BAA00;
 constexpr uint32_t kNodeDynamic = 0x40000;
+// ZBaseGeom's auto-assign (bool, 0x5BDBD0): flag 0x4000, the rooms a node is
+// drawn with come from where it is (its box against the room trees, 0x5BD760),
+// again in every frame it moved (FrameUpdate -> 0x5BCF10). Without it a
+// dynamic node keeps the room it is in (its parents): moved out of that room
+// it is not drawn. The engine sets it at load for the moving ones
+// (MakeAutoAssignGeomsAutoAssign: C1-1's van has it, the garage's Ferrari not).
+constexpr uintptr_t ZBaseGeom_SetAutoAssign = 0x5BDBD0;
+constexpr uint32_t kNodeAutoAssign = 0x4000;
 
 // ZGEOM transform virtuals (all forward to the ZBaseGeom node at geom+8).
 // Matrices are 3x3 floats with rows [Z axis, Y axis, X axis] = forward, up, right;

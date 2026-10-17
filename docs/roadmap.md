@@ -241,3 +241,30 @@ games with the level's characters, the GMS copy leak, a freed camera during
 loading with the editor open, the blank map keeping the clouds, the sky's
 objects destroyed when it changes, testing values not fighting the game's
 cheats.
+
+## 11. The game's own way: what is left (found, not built yet)
+
+* **Taking an object that is not an item** (the Take goal's E key): the game
+  gives objects actions with a ZGEOM_Action routine (ctor 0x487680, vtable
+  0x649770; messages Action_GetActionList, CanOperateObject, EnableAction,
+  RemoveNamedAction...). Doors add theirs at runtime with 0x488A70 (fastcall:
+  geom, LOC node of the text, then kind, message, 0, distance, 0: "OpenDoor"
+  kind 2 at 400, "PeekHole" kind 0xB at 250; items' "_Pickup" is kind 0x10):
+  the routine is found or added (geom vfunc 0xE8 / 0xF4 "ZGEOM_Action"), then
+  its vfuncs 0x50 (1, geom) / 0xAC (the entry) / 0x50 (2). What each kind
+  makes Hitman do (and which one only sends the message) has to be found in
+  the game running before a "take" action can be added this way.
+* **npc:carry**: the item could be given to the character when the script
+  says so (GiveItem, ZITEM::SetOwner as guards get their weapons) and dropped
+  by the game when it dies (MSG_DROPITEM 0x47EAF0 / 0x5333B0, Being2's
+  DropItem); whether a dead character's inventory (not its held weapon) is
+  dropped has to be seen in the game first.
+* **Characters added while playing** (h2.npc, NpcSpec::now) stay runtime
+  objects: the scene's are records (inject.cpp); a runtime one is shown until
+  the map loads again.
+* **Not possible as records**: leaving the scene's records out (an emptied
+  map, a deleted character): their indices are what scripts and data blocks
+  point to; the sky of another level: it has to be in a ZROOM (a root record
+  is not drawn as the room's backdrop); a teleport: ZLIST_TeleportList
+  (vtable 0x64C550) is a list of places, the actor's own SetWorldTransform
+  (vfunc 0x80 = 0x463AC0) is what moves it, already used.

@@ -270,6 +270,40 @@ bool MoverMoveTo(char* m, float to)
     }
 }
 
+// The scene's light table (engine +0x5D1F, see inject.cpp): vfunc 0x24 (node) gives a node an entry of its
+// own (0x4286F0: an empty one, {0, 1}), as the game does for the nodes it copies or registers at runtime
+uint32_t RegisterLights(engine::ZBaseGeom* node)
+{
+    __try {
+        uintptr_t sys = *reinterpret_cast<uintptr_t*>(0x6A6C5C);
+        uintptr_t db = sys ? *reinterpret_cast<uintptr_t*>(sys + 0x98) : 0;
+        void* table = db ? *reinterpret_cast<void**>(db + 0x5D1F) : nullptr;
+        if (!table)
+            return 0;
+        auto reg = reinterpret_cast<uint32_t(__thiscall*)(void*, void*)>((*reinterpret_cast<void***>(table))[0x24 / 4]);
+        return reg(table, node);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+// a level's car: its parts (made with the map, with an empty entry shared) get light table entries of their own
+void OwnLightEntries(engine::ZGEOM* car)
+{
+    int made = 0;
+    for (engine::ZGEOM* p : VisibleParts(car)) {
+        engine::ZBaseGeom* n = p->node;
+        if (!(n->flags & 0x8000))
+            continue;
+        if (uint32_t h = RegisterLights(n)) {
+            *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(n) + 0x6C) = h;
+            n->flags |= 0x1000000;  // (its lights looked at again, as 0x5BB2C0 does)
+            ++made;
+        }
+    }
+    Log("vehicles: %s: %d parts with light table entries of their own", engine::SafeString(car->name).c_str(), made);
+}
+
 bool IsGameVehicle(engine::ZGEOM* g)
 {
     for (engine::ZBaseGeom* n = g && g->node ? g->node : nullptr; n; n = n->parent)
@@ -693,6 +727,7 @@ void ApplyVehicles(const std::vector<LevelVehicle>& vehicles)
         if (v.spawnedId.empty())
             if (engine::ZGEOM* source = ResolveTarget(v.object); source && IsLive(source))
                 SetHidden(source, true);  // the map's car: the copy drives instead
+        OwnLightEntries(car);
         uint32_t ref = engine::RefOf(path);
         float speed = std::clamp(v.speed, kMinSpeed, kMaxSpeed);
         bool ok = CarCall(car, 0x2B0, Bits(speed), Bits(400.0f), Bits(speed), Bits(speed), 4) &&

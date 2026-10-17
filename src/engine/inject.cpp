@@ -426,6 +426,24 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         // the trucks', the limos', the escape cutscene's Ferrari): CreateGeoms (0x41D078) makes a plain mesh
         // record without it a lightweight static node, not to be moved (moved, the world around it was drawn torn)
         uint32_t copyFlags = 0;
+        // ... and their light table handle (a list entry's second u32, node +0x6C): the scene's light table
+        // (GMS +0x18, engine +0x5D1F, made by 0x428880) keeps for each handle the lights on that node; a node
+        // that moves marks those lights changed (0x428180). The game never shares one: a node it copies, or
+        // registers at runtime, gets an entry of its own (0x5BB2C0, SetFlags 0x5BAC80: vfunc 0x24). A car's
+        // parts get, while loading, the handle of an empty entry ({0, 1}, as the game's moving parts have:
+        // C1-1's van) and one of their own once the level runs (OwnLightEntries)
+        uint32_t copyExtra = 0;
+        uint32_t emptyLights = 0;
+        if (uint32_t lt = U32(gms, 0x18); lt && lt + 8 <= gms.size()) {
+            size_t data = lt + 4;
+            uint32_t words = U32(gms, data);
+            for (uint32_t i = 0; i < count && !emptyLights; ++i) {
+                uint32_t h = recs[i].extra;
+                if (h > 3 && h + 1 < words && data + (h + 2) * 4 <= gms.size() && U32(gms, data + h * 4) == 0 &&
+                    U32(gms, data + h * 4 + 4) == 1)
+                    emptyLights = h;
+            }
+        }
         std::function<void(int, int, size_t, const std::array<float, 12>*, int, const char*)> copy =
             [&](int r, int level, size_t block, const std::array<float, 12>* local, int guard, const char* name) {
                 if (guard > 8)
@@ -441,7 +459,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                 Put(rec, 0x28, 0);  // (no scripts on the copy)
                 Put(rec, 0x18, U32(rec, 0x18) | copyFlags);
                 bool opens = (U32(gms, entry(r)) & kOpens) != 0;
-                emit(rec, opens, level, recs[r].extra, &groupBlocks[block], false);
+                emit(rec, opens, level, copyExtra ? copyExtra : recs[r].extra, &groupBlocks[block], false);
                 if (recs[r].classId & 0x100000) {
                     groupBlocks.emplace_back(kPools);
                     size_t mine = groupBlocks.size() - 1;
@@ -494,12 +512,17 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             size_t block = groupBlocks.size() - 1;
             bool body = false;  // ZMoveOnSpline's init (0x5912A0) takes its "*Body*" child as the body (+0xDE)
             copyFlags = 0x200000;
+            copyExtra = emptyLights;
+            if (!emptyLights)
+                Log("scene cars: %s: no empty light table entry in this scene (its parts keep their models')",
+                    c.name.c_str());
             for (const auto& [r, local] : c.parts)
                 if (r >= 0 && uint32_t(r) < count && !(recs[r].classId & 0x100000) && recs[r].mesh) {
                     copy(r, 1, block, &local, 0, body ? nullptr : "Body");
                     body = true;
                 }
             copyFlags = 0;
+            copyExtra = 0;
             static const char* const kWheels[4] = {"FrontLeft_01", "FrontRight_01", "BackLeft_01", "BackRight_01"};
             for (size_t k = 0; k < c.wheels.size() && k < 4; ++k) {
                 std::vector<uint8_t> w(gms.begin() + recordAt(c.model), gms.begin() + recordAt(c.model) + kRecord);

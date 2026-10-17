@@ -2720,6 +2720,12 @@ std::vector<engine::SceneNpc> NpcsFor(const std::string& scene)
             if (!s.mesh)
                 continue;  // its body was not loaded: made at runtime (it says why)
             s.anims = engine::ImportedAnimFiles(s.mesh);
+            s.importName = n.importName;
+            for (const ImportedModel& m : g_level.imports)  // its outfits: records of their own
+                if (m.level == n.importLevel && m.mesh == n.importMesh) {
+                    s.outfitMesh = m.outfitMesh ? engine::ImportedMesh(m.level, m.outfitMesh) : 0;
+                    s.nudeMesh = m.nudeMesh ? engine::ImportedMesh(m.level, m.nudeMesh) : 0;
+                }
         }
         out.push_back(std::move(s));
     }

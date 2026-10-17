@@ -287,6 +287,60 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     std::vector<std::vector<uint32_t>> groupBlocks;    // node counts of the new groups' children
     std::vector<uint32_t> listed;  // actor references for TrackLinkObjects
     int added = 0;
+    auto copyBlock = [&](uint32_t at) -> uint32_t {
+        std::vector<uint8_t> b = Block(gms, at);
+        if (b.empty())
+            return 0;
+        Put(b, 0, U32(b, 0) & 0x7FFFFFFF);  // not remapped yet
+        return Append(gms, b);
+    };
+    auto add = [&](const std::vector<uint8_t>& rec, uint32_t flags, uint32_t extra, std::vector<uint32_t>& nodes) {
+        uint32_t off = Append(gms, rec);
+        uint32_t e[2] = {(off / 4) | flags, extra};
+        table.insert(table.end(), reinterpret_cast<uint8_t*>(e), reinterpret_cast<uint8_t*>(e) + 8);
+        ++moreOfClass[U32(rec, 0x10)];
+        int pool = rec[0x2D] * 8 + NodeKind(U32(rec, 0x10));
+        if (pool < kPools)
+            ++nodes[pool];
+        ++added;
+    };
+    // Outfits of other bodies, as the game's own (HitmanAs/<model>_HMas, a
+    // group at the origin with a drawn child): a copy of the template's group
+    // and its child at the root, the child showing the body. One for each
+    // template group and body; its record index, or -1.
+    std::map<std::pair<uint32_t, uint32_t>, int> outfits;
+    std::set<std::string> outfitNames;
+    auto outfitGroup = [&](uint32_t idx, uint32_t body, const std::string& prefix, const std::string& suffix) -> int {
+        if (auto it = outfits.find({idx, body}); it != outfits.end())
+            return it->second;
+        int child = -1;
+        for (uint32_t k = idx + 1; k < count && k < idx + 8; ++k)
+            if (recs[k].parent == int(idx) && recs[k].mesh) {
+                child = int(k);
+                break;
+            }
+        uint32_t pops = added == 0 ? uint32_t(depth) : 1;
+        if (child < 0 || !(recs[idx].classId & 0x100000) || pops > 127)
+            return -1;
+        std::string name = prefix + suffix;  // (unique: another template group, another name)
+        for (int n = 2; outfitNames.count(LowerCase(name)); ++n)
+            name = prefix + "_" + std::to_string(n) + suffix;
+        outfitNames.insert(LowerCase(name));
+        std::vector<uint8_t> g(gms.begin() + recordAt(int(idx)), gms.begin() + recordAt(int(idx)) + kRecord);
+        std::vector<uint8_t> c(gms.begin() + recordAt(child), gms.begin() + recordAt(child) + kRecord);
+        Put(g, 0x00, AppendString(buf, name));
+        Put(g, 0x20, recs[idx].data ? copyBlock(recs[idx].data) : 0);
+        Put(c, 0x0C, body);
+        Put(c, 0x20, recs[child].data ? copyBlock(recs[child].data) : 0);
+        int index = int(count) + added;
+        groupBlocks.emplace_back(kPools);
+        g_groups.insert(uint32_t((gms.size() + 3) & ~size_t(3)));
+        add(g, kOpens | (pops << 25), recs[idx].extra, rootNodes);
+        add(c, 0, recs[child].extra, groupBlocks.back());
+        outfits[{idx, body}] = index;
+        Log("scene npcs: outfit %s (%s with another body)", name.c_str(), recs[idx].name.c_str());
+        return index;
+    };
     for (const SceneNpc& npc : npcs) {
         if (npc.record < 0 || uint32_t(npc.record) >= count || recs[npc.record].classId != kActorClass ||
             recs[npc.record].parent < 0) {
@@ -295,9 +349,24 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         }
         const SceneRecord& actor = recs[npc.record];
         const SceneRecord& group = recs[actor.parent];
+        std::vector<uint8_t> data = Block(gms, actor.data);
+        // its outfits (before its group: at the root)
+        if (npc.mesh && (npc.outfitMesh || npc.nudeMesh))
+            for (size_t at : BlockRefOffsets(data)) {
+                uint32_t ref = U32(data, at), idx = (ref & 0x7FFFFFFF) - 1;
+                if (!(ref & 0x80000000) || idx >= count)
+                    continue;
+                const std::string& n = recs[idx].name;
+                std::string suffix = n.size() > 5 ? n.substr(n.size() - 5) : "";
+                uint32_t body = suffix == "_HMas" ? npc.outfitMesh : suffix == "_Nude" ? npc.nudeMesh : 0;
+                if (!body)
+                    continue;
+                int made = outfitGroup(idx, body, npc.importName.empty() ? npc.name : npc.importName, suffix);
+                if (made >= 0)
+                    Put(data, at, 0x80000000 | uint32_t(made + 1));
+            }
         int groupIndex = int(count) + added, actorIndex = groupIndex + 1, helperIndex = groupIndex + 2;
         // its data: its own aim helper (the template's is its only), its body's animations
-        std::vector<uint8_t> data = Block(gms, actor.data);
         int helper = -1;
         for (size_t at : BlockRefOffsets(data)) {
             uint32_t ref = U32(data, at), idx = (ref & 0x7FFFFFFF) - 1;
@@ -331,16 +400,6 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             Log("scene npcs: the record list is too deep");
             break;
         }
-        auto add = [&](const std::vector<uint8_t>& rec, uint32_t flags, uint32_t extra, std::vector<uint32_t>& nodes) {
-            uint32_t off = Append(gms, rec);
-            uint32_t e[2] = {(off / 4) | flags, extra};
-            table.insert(table.end(), reinterpret_cast<uint8_t*>(e), reinterpret_cast<uint8_t*>(e) + 8);
-            ++moreOfClass[U32(rec, 0x10)];
-            int pool = rec[0x2D] * 8 + NodeKind(U32(rec, 0x10));
-            if (pool < kPools)
-                ++nodes[pool];
-            ++added;
-        };
         groupBlocks.emplace_back(kPools);
         g_groups.insert(uint32_t((gms.size() + 3) & ~size_t(3)));
         add(g, kOpens | (pops << 25), group.extra, rootNodes);
@@ -409,13 +468,6 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             if (nodes && pool < kPools)
                 ++(*nodes)[pool];
             ++added;
-        };
-        auto copyBlock = [&](uint32_t at) -> uint32_t {
-            std::vector<uint8_t> b = Block(gms, at);
-            if (b.empty())
-                return 0;
-            Put(b, 0, U32(b, 0) & 0x7FFFFFFF);  // not remapped yet
-            return Append(gms, b);
         };
         std::vector<std::vector<int>> children(count);
         for (uint32_t i = 0; i < count; ++i)

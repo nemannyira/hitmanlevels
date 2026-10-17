@@ -170,6 +170,16 @@ one by one with their sizes, the references moved by a map; the NPCs tab
 offers it worn by a character of this map (NpcSpawn.mesh): that character's
 data, size and behaviour, the outfits and animations of its own level.
 
+Its outfits are made as the game's own: an actor's data block names its clothes
+on Hitman and its body without them, groups `HitmanAs/<model>_HMas` and
+`_Nude` (at the origin, hidden, each with one drawn child "Ground"). For a
+character of the level made with the scene, the template's group and its child
+are copied as records at the root, the child showing the imported body, named
+`<model>_HMas` / `_Nude` (in the scene's buffer: a saved game points to them as
+to any of the scene's); its data block points to the copies. Only a character
+added while playing gets them made then (`OutfitGroup`, its names saved as the
+template's, P39).
+
 ## ANM (animations)
 
 Chunks `{u32 tag, u32 size | flags}` (size with the header, low 30 bits).

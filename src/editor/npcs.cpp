@@ -461,8 +461,6 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
     engine::NpcSpawn s;
     s.record = spec.record;
     s.mesh = spec.mesh;
-    if (spec.mesh && (spec.outfitMesh || spec.nudeMesh))
-        s.refSwap = OutfitSwap(spec.record, spec.importName, spec.outfitMesh, spec.nudeMesh);
     s.parent = spec.parentRoom ? spec.parentRoom : parent;
     if (!s.parent)
         return fail("no room for the character");
@@ -507,7 +505,10 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
             Log("npc %s: the scene's own (made while loading)", s.name.c_str());
             return made;
         }
-    // not one of the scene's yet: it shows where it will be (CreateNpc in npcs.h)
+    // not one of the scene's yet: it shows where it will be (CreateNpc in npcs.h);
+    // its outfits made now (the scene's own get theirs as records: engine/inject.h)
+    if (spec.mesh && (spec.outfitMesh || spec.nudeMesh))
+        s.refSwap = OutfitSwap(spec.record, spec.importName, spec.outfitMesh, spec.nudeMesh);
     if (!spec.now) {
         s.script.clear();
         s.collides = false;

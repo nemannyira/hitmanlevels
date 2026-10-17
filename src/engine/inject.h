@@ -27,6 +27,12 @@ struct SceneNpc {
     float pos[3] = {};     // world position of its group
     uint32_t mesh = 0;     // another body (0: the template's)
     std::vector<std::string> anims;  // its animation sets (empty: the template's)
+    // Its outfits with another body: its clothes on Hitman and its body without
+    // them (the template's data block names groups HitmanAs/<model>_HMas and
+    // _Nude, each with a drawn child): made as records of their own with these
+    // bodies, named <importName>_HMas / _Nude (0: the template's kept).
+    uint32_t outfitMesh = 0, nudeMesh = 0;
+    std::string importName;
 };
 
 // A new list of the scene (a route of a character's own): a copy of a list

@@ -81,7 +81,6 @@ bool g_done[kSlots + 1];
 bool g_ended;
 double g_lastCheck;
 bool g_applied;                            // the mission was applied to this scene
-std::map<engine::ZGEOM*, bool> g_alive;    // characters' life (the "death" event)
 // "Hitman takes it" goals: an item is taken when he holds it (its object is
 // kept: its path changes when he picks it up); anything else when he presses
 // the game's pickup key (E) near it: it is taken out of the world.
@@ -711,9 +710,10 @@ bool Delivered(const MissionObjective& o)
 bool Reached(const MissionObjective& o)
 {
     switch (o.goal) {
-    case MissionObjective::Kill: {
+    case MissionObjective::Kill: {  // the level routine told it was killed (Being2: CharacterKilled)
         engine::ZGEOM* t = Target(o);
-        return t && !engine::IsAlive(t) && !KnockedOut(t);  // (the engine counts a knocked out one as dead)
+        engine::ZGEOM* actor = ActorOf(t);
+        return t && (engine::WasKilled(actor ? actor : t) || engine::WasKilled(t));
     }
     case MissionObjective::Reach:
         return DistanceToPlayer(Target(o)) <= o.radius;
@@ -721,16 +721,17 @@ bool Reached(const MissionObjective& o)
         engine::ZGEOM* t = Target(o);
         return t && (IsItem(t) ? HeldByHitman(t) : g_taken.count(o.target) > 0);
     }
-    case MissionObjective::KnockOut: {  // its behaviour in the base class's state (Being2.Unconscious)
-        engine::ZGEOM* t = Target(o);
+    case MissionObjective::KnockOut: {  // the level routine told it was harmed, not killed (Being2:
+        engine::ZGEOM* t = Target(o);      // CharacterHarmed when it goes unconscious)
         if (!t)
             return false;
         engine::ZGEOM* actor = ActorOf(t);
-        if (g_knockedOut.count(t) || (actor && g_knockedOut.count(actor)))
+        engine::ZGEOM* who = actor ? actor : t;
+        if (g_knockedOut.count(who))
             return true;
-        if (!KnockedOut(t))  // (dead: Being2.Dead)
+        if (!engine::WasHarmed(who) || engine::WasKilled(who))
             return false;
-        g_knockedOut.insert(actor ? actor : t);  // (it may wake up: the goal stays done)
+        g_knockedOut.insert(who);  // (it may wake up: the goal stays done)
         return true;
     }
     case MissionObjective::Deliver:
@@ -744,18 +745,15 @@ bool Reached(const MissionObjective& o)
 
 std::vector<engine::ZGEOM*> Characters();
 
-// the "death" event for level scripts
+// the "death" event for level scripts: the characters the level routine was told were killed
 void WatchDeaths()
 {
-    for (engine::ZGEOM* a : Characters()) {
-        bool alive = engine::IsAlive(a) || KnockedOut(a);  // (knocked out: not a death)
-        auto it = g_alive.find(a);
-        if (it != g_alive.end() && it->second && !alive) {
-            std::string path = PathOf(a);
-            if (!path.empty())
-                script::FireDeath(path);
-        }
-        g_alive[a] = alive;
+    for (engine::ZGEOM* a : engine::TakeKilled()) {
+        if (!IsLive(a))
+            continue;
+        std::string path = PathOf(a);
+        if (!path.empty())
+            script::FireDeath(path);
     }
 }
 
@@ -873,7 +871,6 @@ void OnScene(const std::string&)
     g_locRoot = nullptr;
     g_ended = false;
     g_applied = false;
-    g_alive.clear();
     memset(g_done, 0, sizeof(g_done));
     memset(g_takeObject, 0, sizeof(g_takeObject));
     memset(g_nearTake, 0, sizeof(g_nearTake));

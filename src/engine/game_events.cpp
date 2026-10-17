@@ -294,8 +294,35 @@ const LevelEntries* EntriesOf(void* level)
 using Victim_t = void(__fastcall*)(void* level, void* edx, uint32_t victim, int type);
 using End_t = void(__fastcall*)(void* level, void* edx);
 
+// The characters the level routine was told of (the game's own: Being2 sends CharacterKilled /
+// CharacterHarmed to LevelControl, 0x504960 -> Kill / Harm): for the editor's goals and its "death"
+// event, not polled. Kept until the scene is left.
+std::set<ZGEOM*> g_killed, g_harmed;
+std::vector<ZGEOM*> g_newlyKilled;
+
+ZGEOM* VictimGeom(uint32_t value)
+{
+    if (value >= 0x10000) {  // a pointer (as scripts' events pass it)
+        void* vt = nullptr;
+        if (CopyMem(&vt, reinterpret_cast<void*>(uintptr_t(value)), 4) && uintptr_t(vt) >= 0x600000 &&
+            uintptr_t(vt) < 0x700000)
+            return reinterpret_cast<ZGEOM*>(uintptr_t(value));
+    }
+    // a geom reference: dynamic ones are looked up in a table, static ones are offsets of 0x70 byte nodes
+    bool ref = value && !(value & 0x80000000) && (!(value & 0x40000000) || (value & 0x3FFFFFFF) % 0x70 == 0);
+    return ref ? GeomOfRef(value) : nullptr;
+}
+
 void QueueVictim(GameEvent::Kind kind, void* level, uint32_t victim, int type)
 {
+    if (ZGEOM* g = VictimGeom(victim)) {
+        if (kind == GameEvent::Kill) {
+            if (g_killed.insert(g).second && g_newlyKilled.size() < 1024)
+                g_newlyKilled.push_back(g);
+        } else {
+            g_harmed.insert(g);
+        }
+    }
     GameEvent e;
     e.kind = kind;
     e.to = static_cast<ZGEOM*>(level);
@@ -459,9 +486,22 @@ void WatchLevel(void* level)
     Log("game events: level routine vtable %p %s", static_cast<void*>(vt), ok ? "watched" : "not writable");
 }
 
+bool WasKilled(ZGEOM* character) { return character && g_killed.count(character); }
+bool WasHarmed(ZGEOM* character) { return character && g_harmed.count(character); }
+
+std::vector<ZGEOM*> TakeKilled()
+{
+    std::vector<ZGEOM*> out;
+    out.swap(g_newlyKilled);
+    return out;
+}
+
 std::vector<GameEvent> TakeGameEvents()
 {
     if (!SceneDataValid()) {  // between scenes: the objects are going
+        g_killed.clear();
+        g_harmed.clear();
+        g_newlyKilled.clear();
         g_queue.clear();
         return {};
     }

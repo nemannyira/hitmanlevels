@@ -72,6 +72,13 @@ void SetLevelEndsAllowed(bool allowed);
 bool LevelEndsAllowed();
 void AllowLevelEnd();  // the next end is the editor's (h2.mission, its goals)
 
+// The characters the level routine was told were killed / harmed (knocked out) in this scene, as
+// the game's own scripts tell it (Being2: CharacterKilled / CharacterHarmed -> LevelControl 0x504960
+// -> Kill vfunc 0xB4 / Harm vfunc 0xB8 with the victim). The actor (ZActor) is the victim.
+bool WasKilled(ZGEOM* character);
+bool WasHarmed(ZGEOM* character);
+std::vector<ZGEOM*> TakeKilled();  // killed since the last call
+
 // The events since the last call (at most a few thousand a frame).
 std::vector<GameEvent> TakeGameEvents();
 // Every message name the engine knows now (lower case: as WatchMessages).

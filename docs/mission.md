@@ -72,13 +72,22 @@ Addresses are hitman2.exe (Steam build).
   0x80001000, 44100, 16, ?, Ogg length, 2 channels, data offset, PCM size, 4,
   1}`. The tracks are Ogg Vorbis with **byte-identical headers** (id, comment,
   code books).
-* The game decodes with its own libogg / libvorbis loop (stream open around
-  0x5EBE40: three header packets once, then only pages of that serial), so a
-  mid-stream jump into another stream is silence. The editor serves the chosen
-  track's audio pages rewritten as the continuation of the playing stream
-  (its serial, continuing page numbers, growing granules, no EOS, new CRC);
-  when the game starts the track from its beginning, the chosen one's headers
-  come first.
+* A zone's MusicSegment routine (vtable 0x64B858, ctor 0x4A7D10) reads its
+  data at 0x4A7F10: mood +0x72 (0 calm, 1 tension, 2 combat), +0x76, the sound
+  reference **+0x7A**, +0x7E, a flag +0x82, three floats +0x83..; saved and
+  loaded with the game (0x4A80B0 / 0x4A8030). Its vfunc 0x84 (0x4A7FC0) copies
+  that state for the MusicControl.
+* MusicControl's data (0x4A8400): Hitman +0x72, its rooms +0x76, the level's
+  LevelControl +0x122, its segments +0x126, message ids +0x1D2 / +0x1D4.
+  Entering a room (0x4A8720) it sends every segment's state (0x4A8470) to the
+  LevelControl (geom vfunc 0x118: message, state); the level's script plays
+  them. **+0x1E4**: set by the ctor, cleared after a check: the next check
+  takes the room as entered anew. A geom's routine by name: vfunc 0xEC
+  ("MusicSegment", "MusicControl").
+* The editor gives a zone another track as the game's load would: the
+  segment's +0x7A, then MusicControl +0x1E4 (it sends the segments again).
+  (Before 2026-10-17 it served the chosen track's Ogg pages in place of the
+  original's reads of streams.wav.)
 
 ## Main menu
 

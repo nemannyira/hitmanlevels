@@ -6,11 +6,10 @@
 // each with a sound reference into the level's sound table (.SND, kept in
 // memory by the game; a reference is the offset of an entry's fields after
 // its name: {1, name offset, ...}). Every level lists all the music streams
-// (Streams/Music/*.wav), all played from streams.wav; the scene's .WHD gives
-// each one's data in that file. The editor plays another track for a mood by
-// serving the game's reads of the original track's data from the chosen
-// track's Ogg pages, rewritten as the continuation of the playing stream (all
-// tracks share the same Vorbis headers), so the change is heard at once.
+// (Streams/Music/*.wav). Each zone's MusicSegment routine keeps its sound
+// reference (+0x7A, as the game's load of its data puts it); the editor gives
+// it another track there, and the MusicControl takes Hitman's zone as entered
+// anew, sending its segments to the level's LevelControl, which plays them.
 #include <cstdint>
 #include <string>
 #include <vector>

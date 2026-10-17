@@ -239,9 +239,8 @@ float LongSideTurn(engine::ZGEOM* object)
 // (+0x5F) and top speed (+0x63; the vehicle's own +0xC4 too: both 350 on
 // C1-1's van, faster asked stays at that). Its vfunc 0 (0x596040: place,
 // flag) sends it there along the track (it takes its speed with vfunc 0x08);
-// scripts call it as MoveToSplineVal.
+// scripts call it through the vehicle (MoveToSplineVal: DriveTrack).
 constexpr uintptr_t kMoverVtable = 0x65C884;
-constexpr uintptr_t kMoverMoveTo = 0x596040;
 
 char* TrackMover(engine::ZGEOM* g, engine::ZGEOM** vehicle = nullptr)
 {
@@ -260,14 +259,26 @@ char* TrackMover(engine::ZGEOM* g, engine::ZGEOM** vehicle = nullptr)
     return nullptr;
 }
 
-bool MoverMoveTo(char* m, float to)
+// a vehicle's virtual call (thiscall, 2 or 4 arguments)
+bool CarCall(engine::ZGEOM* car, int vfunc, uint32_t a, uint32_t b, uint32_t c, uint32_t d, int n)
 {
     __try {
-        reinterpret_cast<void(__thiscall*)(void*, float, uint8_t)>(kMoverMoveTo)(m, to, 0);
+        void* fn = (*reinterpret_cast<void***>(car))[vfunc / 4];
+        if (n == 2)
+            reinterpret_cast<void(__thiscall*)(void*, uint32_t, uint32_t)>(fn)(car, a, b);
+        else
+            reinterpret_cast<void(__thiscall*)(void*, uint32_t, uint32_t, uint32_t, uint32_t)>(fn)(car, a, b, c, d);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+}
+
+uint32_t Bits(float f)
+{
+    uint32_t u;
+    memcpy(&u, &f, 4);
+    return u;
 }
 
 // The scene's light table (engine +0x5D1F, see inject.cpp): vfunc 0x24 (node) gives a node an entry of its
@@ -357,6 +368,10 @@ Drive* Find(int id)
 
 } // namespace
 
+// As the game's scripts drive them (MoveOnSpline_if): SetMoveParams (vfunc 0x2B0, 0x591680: the
+// mover's speed, acceleration and top speed, 0x5963B0, taken at once while it drives; the vehicle's
+// +0xC4) and MoveToSplineVal (vfunc 0x2CC, 0x591810: the mover's vfunc 0, then the vehicle's arrival
+// flags +0xD0 / +0xD1 cleared)
 bool DriveTrack(engine::ZGEOM* vehicle, float to, float speed, std::string* error)
 {
     engine::ZGEOM* group = nullptr;
@@ -371,11 +386,16 @@ bool DriveTrack(engine::ZGEOM* vehicle, float to, float speed, std::string* erro
     to = std::clamp(to, 0.0f, 1.0f);
     if (speed > 0.0f && std::isfinite(speed)) {
         float s = std::clamp(speed, kMinSpeed, kMaxSpeed);
-        memcpy(m + 0x5B, &s, sizeof(s));
-        memcpy(m + 0x63, &s, sizeof(s));  // (its top speeds: else it stays at theirs)
-        memcpy(reinterpret_cast<char*>(group) + 0xC4, &s, sizeof(s));
+        float accel = *reinterpret_cast<float*>(m + 0x5F);  // (its own)
+        if (!(accel > 0.0f && std::isfinite(accel)))
+            accel = 400.0f;
+        if (!CarCall(group, 0x2B0, Bits(s), Bits(accel), Bits(s), Bits(s), 4)) {
+            if (error)
+                *error = "it did not take the speed";
+            return false;
+        }
     }
-    if (!MoverMoveTo(m, to)) {
+    if (!CarCall(group, 0x2CC, Bits(to), 0, 0, 0, 2)) {
         if (error)
             *error = "its mover did not take it";
         return false;
@@ -657,27 +677,6 @@ struct LevelCar {
     bool loop = false;
 };
 std::vector<LevelCar> g_levelCars;
-
-bool CarCall(engine::ZGEOM* car, int vfunc, uint32_t a, uint32_t b, uint32_t c, uint32_t d, int n)
-{
-    __try {
-        void* fn = (*reinterpret_cast<void***>(car))[vfunc / 4];
-        if (n == 2)
-            reinterpret_cast<void(__thiscall*)(void*, uint32_t, uint32_t)>(fn)(car, a, b);
-        else
-            reinterpret_cast<void(__thiscall*)(void*, uint32_t, uint32_t, uint32_t, uint32_t)>(fn)(car, a, b, c, d);
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
-uint32_t Bits(float f)
-{
-    uint32_t u;
-    memcpy(&u, &f, 4);
-    return u;
-}
 
 // the route's knots for the spline: a Catmull-Rom curve through the points as cubic Bezier
 // segments (each knot: the point, its control point out, the next one's control point in)

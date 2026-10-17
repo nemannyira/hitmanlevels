@@ -1,4 +1,7 @@
 #pragma once
+
+#include <cstdint>
+#include <string>
 #include <vector>
 
 namespace h2::engine {
@@ -16,6 +19,10 @@ void InstallHighlight();
 
 // Called by the D3D hooks: device creation, and once per presented frame.
 void SetHighlightDevice(void* device);
+void* HighlightDevice();  // the game's IDirect3DDevice8 (null before it is made)
+// dev: which nodes draw a mesh, at which positions (RenderD3D's DrawNode)
+void TraceMeshDraws(uint32_t mesh);
+std::string TracedMeshDraws();
 void HighlightBeginFrame();
 
 // Whether RenderD3D queued the node for drawing in the last frames (visible,

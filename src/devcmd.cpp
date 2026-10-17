@@ -4,7 +4,9 @@
 #include <cstdio>
 #include <fstream>
 #include <intrin.h>
+#include <algorithm>
 #include <map>
+#include <tuple>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -29,6 +31,7 @@ extern "C" {
 #include "engine/imports.h"
 #include "engine/npc.h"
 #include "imgui.h"
+#include "d3d8types.h"
 #include "hook.h"
 #include "fov.h"
 #include "game.h"
@@ -725,6 +728,135 @@ int __fastcall hkGatherDynamic(void* self, void* edx, void** out, uint32_t a, ui
 }
 
 // h2.dev_drawn(path) -> bool: whether the renderer drew the object in the last frames
+// h2.dev_locktrace(on): logs the vertex / index buffer locks (reverse engineering): per buffer,
+// caller and flags, how many and the bytes locked; h2.dev_locktrace_dump() -> lines
+struct LockKey {
+    void* buffer;
+    void* caller;
+    void* outer;  // the caller's caller (flags 0: through RenderD3D's buffer wrappers)
+    DWORD flags;
+    bool index;
+    bool operator<(const LockKey& o) const
+    {
+        return std::tie(buffer, caller, outer, flags, index) < std::tie(o.buffer, o.caller, o.outer, o.flags, o.index);
+    }
+};
+struct LockStat {
+    void* data = nullptr;  // the memory the last lock gave
+    unsigned count = 0;
+    UINT lo = 0xFFFFFFFF, hi = 0;
+};
+std::mutex g_lockMutex;
+std::map<LockKey, LockStat> g_locks;
+bool g_lockTrace;
+using BufLock_t = HRESULT(WINAPI*)(void* self, UINT offset, UINT size, BYTE** data, DWORD flags);
+void NoteLock(void* self, void* caller, void* outer, UINT offset, UINT size, DWORD flags, bool index)
+{
+    std::lock_guard<std::mutex> lock(g_lockMutex);
+    LockStat& s = g_locks[{self, caller, flags ? nullptr : outer, flags, index}];
+    ++s.count;
+    s.lo = std::min(s.lo, offset);
+    s.hi = std::max(s.hi, size ? offset + size : 0xFFFFFFFFu);
+}
+// one detour per distinct Lock (the runtime has buffer classes of their own: managed, default, dynamic)
+template <int N, bool Index>
+struct LockHook {
+    static inline BufLock_t original;
+    static HRESULT WINAPI Detour(void* self, UINT offset, UINT size, BYTE** data, DWORD flags)
+    {
+        void* caller = _ReturnAddress();
+        void* outer = static_cast<void**>(_AddressOfReturnAddress())[6];
+        HRESULT hr = original(self, offset, size, data, flags);
+        if (g_lockTrace) {
+            NoteLock(self, caller, outer, offset, size, flags, Index);
+            if (hr >= 0 && data) {
+                std::lock_guard<std::mutex> lock(g_lockMutex);
+                g_locks[{self, caller, flags ? nullptr : outer, flags, Index}].data = *data;
+            }
+        }
+        return hr;
+    }
+};
+std::vector<void*> g_lockTargets;
+template <int N, bool Index>
+void HookLock(void* buffer)
+{
+    void* target = d3d8::VtableEntry(buffer, 11);
+    if (std::find(g_lockTargets.begin(), g_lockTargets.end(), target) != g_lockTargets.end())
+        return;
+    g_lockTargets.push_back(target);
+    Hook(Index ? "IDirect3DIndexBuffer8::Lock" : "IDirect3DVertexBuffer8::Lock", target, &LockHook<N, Index>::Detour,
+         &LockHook<N, Index>::original);
+    Log("locktrace: %s Lock %p hooked", Index ? "IB" : "VB", target);
+}
+bool g_lockHooked;
+int LockTrace(lua_State* L)
+{
+    bool on = lua_toboolean(L, 1) != 0;
+    if (on && !g_lockHooked) {
+        void* dev = editor::HighlightDevice();
+        if (!dev)
+            return luaL_error(L, "no device");
+        g_lockHooked = true;
+        auto release = [](void* b) { reinterpret_cast<ULONG(WINAPI*)(void*)>(d3d8::VtableEntry(b, 2))(b); };
+        auto vb = [&](DWORD usage, DWORD pool) {
+            void* b = nullptr;
+            reinterpret_cast<HRESULT(WINAPI*)(void*, UINT, DWORD, DWORD, DWORD, void**)>(d3d8::VtableEntry(dev, 23))(
+                dev, 64, usage, 0x2, pool, &b);
+            return b;
+        };
+        auto ib = [&](DWORD usage, DWORD pool) {
+            void* b = nullptr;
+            reinterpret_cast<HRESULT(WINAPI*)(void*, UINT, DWORD, DWORD, DWORD, void**)>(d3d8::VtableEntry(dev, 24))(
+                dev, 64, usage, 101, pool, &b);
+            return b;
+        };
+        // usage 0x8 write only, 0x200 dynamic; pool 0 default, 1 managed, 2 system memory
+        void* v[4] = {vb(0, 1), vb(0x8, 0), vb(0x208, 0), vb(0, 2)};
+        void* i[4] = {ib(0, 1), ib(0x8, 0), ib(0x208, 0), ib(0, 2)};
+        if (v[0]) HookLock<0, false>(v[0]);
+        if (v[1]) HookLock<1, false>(v[1]);
+        if (v[2]) HookLock<2, false>(v[2]);
+        if (v[3]) HookLock<3, false>(v[3]);
+        if (i[0]) HookLock<4, true>(i[0]);
+        if (i[1]) HookLock<5, true>(i[1]);
+        if (i[2]) HookLock<6, true>(i[2]);
+        if (i[3]) HookLock<7, true>(i[3]);
+        for (void* b : v)
+            if (b)
+                release(b);
+        for (void* b : i)
+            if (b)
+                release(b);
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_lockMutex);
+        if (on)
+            g_locks.clear();
+        g_lockTrace = on;
+    }
+    lua_pushinteger(L, lua_Integer(g_lockTargets.size()));
+    return 1;
+}
+int LockTraceDump(lua_State* L)
+{
+    uintptr_t render = reinterpret_cast<uintptr_t>(GetModuleHandleA("RenderD3D.dll"));
+    std::ostringstream out;
+    std::lock_guard<std::mutex> lock(g_lockMutex);
+    for (const auto& [k, s] : g_locks) {
+        char line[200];
+        uintptr_t c = reinterpret_cast<uintptr_t>(k.caller);
+        uintptr_t o = reinterpret_cast<uintptr_t>(k.outer);
+        snprintf(line, sizeof(line), "%s %p caller %s+%X outer %X flags %lX count %u bytes %X..%X data %p",
+                 k.index ? "IB" : "VB", k.buffer, c >= render && c < render + 0x200000 ? "RenderD3D" : "?",
+                 unsigned(c >= render ? c - render : c), unsigned(o >= render && o < render + 0x200000 ? o - render : o),
+                 k.flags, s.count, s.lo, s.hi, s.data);
+        out << line << '\n';
+    }
+    lua_pushstring(L, out.str().c_str());
+    return 1;
+}
+
 int Drawn(lua_State* L)
 {
     engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
@@ -784,6 +916,16 @@ void InstallDevCommands()
     script::Register("dev_callers_dump", CallersDump);
     script::Register("dev_coll", Coll);
     script::Register("dev_drawn", Drawn);
+    script::Register("dev_locktrace", LockTrace);
+    script::Register("dev_meshtrace", [](lua_State* L) {
+        editor::TraceMeshDraws(uint32_t(luaL_optinteger(L, 1, 0)));
+        return 0;
+    });
+    script::Register("dev_meshtrace_dump", [](lua_State* L) {
+        lua_pushstring(L, editor::TracedMeshDraws().c_str());
+        return 1;
+    });
+    script::Register("dev_locktrace_dump", LockTraceDump);
     script::Register("dev_coll_seen", CollSeen);
     Log("dev commands on: Mods\\_cmd.lua");
 }

@@ -1,8 +1,10 @@
 #include "highlight.h"
 
 #include <array>
+#include <map>
 
 #include <windows.h>
+#include <intrin.h>
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
@@ -506,15 +508,129 @@ HRESULT WINAPI hkDrawPrimitive(void* dev, DWORD type, UINT start, UINT count)
 
 using DrawNode_t = void(__fastcall*)(void* self, void* edx, engine::ZBaseGeom* node, void* a, void* b);
 DrawNode_t oDrawNode;
+uint32_t g_traceMesh;  // dev: draws of the nodes with this mesh (node, position)
+std::map<std::pair<engine::ZBaseGeom*, std::array<int, 3>>, int> g_traced;
 void __fastcall hkDrawNode(void* self, void* edx, engine::ZBaseGeom* node, void* a, void* b)
 {
     g_drawn[node] = g_frame;
+    if (g_traceMesh && node && *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(node) + 0x68) == g_traceMesh &&
+        b && g_traced.size() < 256) {
+        const float* p = static_cast<const float*>(b);
+        ++g_traced[{node, {int(p[0]), int(p[1]), int(p[2])}}];
+    }
     oDrawNode(self, edx, node, a, b);
+}
+
+// dev (Mods\_alloctrace.txt): RenderD3D's range allocators (0x34F80 take, 0x34E60 give back; vertex /
+// index ranges of its geometry caches) checked against what each has given out: a range given twice,
+// or given back while not out, is logged with its callers
+std::map<void*, std::map<uint32_t, std::pair<uint32_t, int>>> g_rangesOut;  // start -> count, flush generation
+int g_rangeGen;
+std::vector<std::string> g_rangeSince;  // given since the last flush (callers)
+using CacheFlush_t = void(__fastcall*)(void* self, void* edx);
+CacheFlush_t oCacheFlush;
+int g_rangeIssues;
+uintptr_t g_render;
+using RangeTake_t = int(__fastcall*)(void* self, void* edx, uint32_t count, uint32_t extra);  // (ret 8)
+using RangeGive_t = void(__fastcall*)(void* self, void* edx, uint32_t start, uint32_t count);
+RangeTake_t oRangeTake;
+RangeGive_t oRangeGive;
+std::string RangeCallers(void** frame)
+{
+    std::string out;
+    int found = 0;
+    for (int i = 0; i < 160 && found < 6; ++i) {
+        uintptr_t v = reinterpret_cast<uintptr_t>(frame[i]);
+        if (v > g_render + 0x1000 && v < g_render + 0x40000) {
+            char b[16];
+            snprintf(b, sizeof(b), " +%X", unsigned(v - g_render));
+            out += b;
+            ++found;
+        }
+    }
+    return out;
+}
+int __fastcall hkRangeTake(void* self, void* edx, uint32_t count, uint32_t extra)
+{
+    int start = oRangeTake(self, edx, count, extra);
+    if (start != -1 && count) {
+        auto& out = g_rangesOut[self];
+        auto it = out.upper_bound(uint32_t(start));
+        int gen = -1;
+        if (it != out.end() && it->first < uint32_t(start) + count)
+            gen = it->second.second;
+        if (it != out.begin()) {
+            auto prev = std::prev(it);
+            if (prev->first + prev->second.first > uint32_t(start))
+                gen = prev->second.second;
+        }
+        if (gen >= 0 && g_rangeIssues++ < 400)
+            Log("alloctrace: %p gave %X+%X, already out (given in generation %d, now %d):%s", self, unsigned(start),
+                count, gen, g_rangeGen, RangeCallers(static_cast<void**>(_AddressOfReturnAddress())).c_str());
+        out[uint32_t(start)] = {count, g_rangeGen};
+        if (g_rangeSince.size() < 64)
+            g_rangeSince.push_back(std::string("  ") + std::to_string(start) + "+" + std::to_string(count) + ":" +
+                                   RangeCallers(static_cast<void**>(_AddressOfReturnAddress())));
+    }
+    return start;
+}
+void __fastcall hkRangeGive(void* self, void* edx, uint32_t start, uint32_t count)
+{
+    auto& out = g_rangesOut[self];
+    auto it = out.find(start);
+    if ((it == out.end() || it->second.first != count) && g_rangeIssues++ < 400)
+        Log("alloctrace: %p back %X+%X, not out (%s):%s", self, start, count,
+            it == out.end() ? "unknown" : "other size",
+            RangeCallers(static_cast<void**>(_AddressOfReturnAddress())).c_str());
+    if (it != out.end())
+        out.erase(it);
+    oRangeGive(self, edx, start, count);
+}
+// RenderD3D's geometry cache flush (cache vfunc 0x1C, 0x1000C740: each slot's ranges given back, then
+// the vertex / index range allocators reset) leaves its deferred give-backs queued (0x1000C910 queues a
+// range leaving a LOD for frame + 5; 0x1000D030 gives the due ones back each frame): given back after
+// the reset, they land in the fresh allocators while new nodes hold them, and two nodes get the same
+// range (trees and grass drawn from each other's vertices, worse with each load). A level's moving car
+// changes LODs all the time, so at a scene change some are always queued. The queue is dropped with the
+// flush: after the reset those ranges are free already.
+void DropDeferredRanges(void* cache)
+{
+    auto at = [cache](uint32_t off) { return reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(cache) + off); };
+    *at(0x25764) = *at(0x25760);  // vertex ranges: read = write
+    *at(0x25774) = *at(0x25770);  // index ranges
+}
+void __fastcall hkCacheFlush(void* self, void* edx)
+{
+    if (!g_render) {
+        oCacheFlush(self, edx);
+        DropDeferredRanges(self);
+        return;
+    }
+    ++g_rangeGen;
+    size_t live = 0;
+    for (const auto& [a, m] : g_rangesOut)
+        live += m.size();
+    Log("alloctrace: cache flush %d (%zu ranges out):%s", g_rangeGen, live,
+        RangeCallers(static_cast<void**>(_AddressOfReturnAddress())).c_str());
+    if (live < 64)
+        for (const std::string& r : g_rangeSince)
+            Log("alloctrace:   out at the flush:%s", r.c_str());
+    g_rangeSince.clear();
+    oCacheFlush(self, edx);  // (gives each slot's ranges back, then resets the allocators)
+    DropDeferredRanges(self);
+    g_rangesOut.clear();
 }
 
 void OnRendererLoaded(HMODULE mod)
 {
     Hook("RenderD3D::DrawNode", reinterpret_cast<unsigned char*>(mod) + kRenderD3D_DrawNode, hkDrawNode, &oDrawNode);
+    Hook("RenderD3D::CacheFlush", reinterpret_cast<unsigned char*>(mod) + 0xC740, hkCacheFlush, &oCacheFlush);
+    if (GetFileAttributesA("Mods/_alloctrace.txt") != INVALID_FILE_ATTRIBUTES) {
+        g_render = reinterpret_cast<uintptr_t>(mod);
+        Hook("RenderD3D::RangeTake", reinterpret_cast<unsigned char*>(mod) + 0x34F80, hkRangeTake, &oRangeTake);
+        Hook("RenderD3D::RangeGive", reinterpret_cast<unsigned char*>(mod) + 0x34E60, hkRangeGive, &oRangeGive);
+        Log("alloctrace: on");
+    }
 }
 
 void ReleasePickSurfaces()
@@ -783,6 +899,26 @@ void StartPick()
 }
 
 } // namespace
+
+void* HighlightDevice() { return g_device; }
+
+void TraceMeshDraws(uint32_t mesh)
+{
+    g_traceMesh = mesh;
+    g_traced.clear();
+}
+
+std::string TracedMeshDraws()
+{
+    std::string out;
+    for (const auto& [k, n] : g_traced) {
+        char line[160];
+        snprintf(line, sizeof(line), "node %p pos %d %d %d draws %d\n", static_cast<void*>(k.first), k.second[0],
+                 k.second[1], k.second[2], n);
+        out += line;
+    }
+    return out;
+}
 
 void SetHighlightDevice(void* device)
 {

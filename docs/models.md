@@ -29,6 +29,18 @@ snd wav whd anm zgf sgp).
   reads it from the stream), the entries after it to the collision manager
   (renderer +0x1C, vfunc 0x50 until -1) and the rest (vfunc 0x44 (data, size)).
 
+## RenderD3D's geometry cache (a bug of the game, fixed)
+
+RenderD3D keeps lit copies of the nodes' models in shared vertex / index buffers, ranges given out by
+range allocators (take 0x10034F80, give back 0x10034E60). A range leaving a LOD is given back
+later (0x1000C910 queues it for frame + 5; 0x1000D030 gives back the due ones each frame). The cache
+flush at a scene change (cache vfunc 0x1C, 0x1000C740) gives each slot's ranges back and resets the
+allocators, but kept that queue: given back after the reset, ranges the new scene's nodes held went
+free again, and two nodes drew from one range (trees, grass, the mansion torn, worse with each load).
+The vanilla game seldom has anything queued then; a level's moving car always does. The editor drops
+the queue with the flush (highlight.cpp DropDeferredRanges). Found with h2.dev_locktrace,
+h2.dev_meshtrace and Mods/_alloctrace.txt (the allocators checked against what they gave out).
+
 ## PRM
 
 Header `{u32 list, u32 used (header[1]), u32 table, u32 count}`; `table` =

@@ -422,6 +422,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             if (recs[i].parent >= 0 && uint32_t(recs[i].parent) < count)
                 children[recs[i].parent].push_back(int(i));
         // a record of the model and what is under it, a level deeper each group
+        // record flags the copies get: a car's parts 0x200000, as every part of the game's vehicles (the van's,
+        // the trucks', the limos', the escape cutscene's Ferrari): CreateGeoms (0x41D078) makes a plain mesh
+        // record without it a lightweight static node, not to be moved (moved, the world around it was drawn torn)
+        uint32_t copyFlags = 0;
         std::function<void(int, int, size_t, const std::array<float, 12>*, int, const char*)> copy =
             [&](int r, int level, size_t block, const std::array<float, 12>* local, int guard, const char* name) {
                 if (guard > 8)
@@ -435,6 +439,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                 }
                 Put(rec, 0x20, recs[r].data ? copyBlock(recs[r].data) : 0);
                 Put(rec, 0x28, 0);  // (no scripts on the copy)
+                Put(rec, 0x18, U32(rec, 0x18) | copyFlags);
                 bool opens = (U32(gms, entry(r)) & kOpens) != 0;
                 emit(rec, opens, level, recs[r].extra, &groupBlocks[block], false);
                 if (recs[r].classId & 0x100000) {
@@ -488,11 +493,13 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             groupBlocks.emplace_back(kPools);
             size_t block = groupBlocks.size() - 1;
             bool body = false;  // ZMoveOnSpline's init (0x5912A0) takes its "*Body*" child as the body (+0xDE)
+            copyFlags = 0x200000;
             for (const auto& [r, local] : c.parts)
                 if (r >= 0 && uint32_t(r) < count && !(recs[r].classId & 0x100000) && recs[r].mesh) {
                     copy(r, 1, block, &local, 0, body ? nullptr : "Body");
                     body = true;
                 }
+            copyFlags = 0;
             static const char* const kWheels[4] = {"FrontLeft_01", "FrontRight_01", "BackLeft_01", "BackRight_01"};
             for (size_t k = 0; k < c.wheels.size() && k < 4; ++k) {
                 std::vector<uint8_t> w(gms.begin() + recordAt(c.model), gms.begin() + recordAt(c.model) + kRecord);

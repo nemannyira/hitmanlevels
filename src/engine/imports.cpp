@@ -599,11 +599,14 @@ void AppendShape(const SceneShape& s)
         }
         g_blob.insert(g_blob.end(), reinterpret_cast<uint8_t*>(v), reinterpret_cast<uint8_t*>(v + 9));
     }
+    // its lines as the game's shapes keep them (C1-1's van path, ladder guides): u16 count, then
+    // {2, from, to} for each
     uint32_t indices = here();
-    for (size_t i = 0; i < n; ++i) {
-        uint16_t ix = uint16_t(i);
-        g_blob.insert(g_blob.end(), reinterpret_cast<uint8_t*>(&ix), reinterpret_cast<uint8_t*>(&ix) + 2);
-    }
+    std::vector<uint16_t> lines = {uint16_t(n - 1)};
+    for (size_t i = 0; i + 1 < n; ++i)
+        lines.insert(lines.end(), {uint16_t(2), uint16_t(i), uint16_t(i + 1)});
+    g_blob.insert(g_blob.end(), reinterpret_cast<uint8_t*>(lines.data()),
+                  reinterpret_cast<uint8_t*>(lines.data() + lines.size()));
     // bounds (0x3C, as the game's: {0, 1e38, 0, 0, 0, 1e38, 0, 0, 0, max, min})
     align();
     uint32_t bounds = here();
@@ -621,7 +624,7 @@ void AppendShape(const SceneShape& s)
     put(rec + 0x38, 0xFF);
     put(rec + 0x40, 0xFFFF00);
     put(rec + 0x44, indices);
-    put(rec + 0x48, uint32_t(n));
+    put(rec + 0x48, uint32_t(lines.size()));
     put(rec + 0x54, 1);
     put(rec + 0x58, 1);
     put(rec + 0x5C, 0x3F800000);

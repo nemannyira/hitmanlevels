@@ -179,11 +179,24 @@ Save\<slot>.h2lua next to the game's files).
   Inspector): their mover (+0x5C, vtable 0x65C884) takes a place on the track
   with its vfunc 0 (0x596040, MoveToSplineVal); speed +0x5B, top speeds +0x63
   and the vehicle's +0xC4. Tested: C1-1's van, C7-1's bus.
-* Next steps: (1) the rest of their script interface (InitCarPosDir 0, MoveToRef 3, Stop 7, MoveToSplineVal 8,
-  DriveFwdToSplineVal 10, SetMoveParams 14, SetPath 23); (2) the ZSHAPE
-  record format, then new splines the game's vehicles can use; (3) drivers /
-  passengers (C2-2 LimoGuard's rLimo + seat number); (4) what a driven car
-  does to characters in its way (not checked yet).
+* Done (6fd2fdf): a level's vehicles the game's way. The route is a ZSHAPE:
+  its model record in the PRM (type 0x40000; +0x84 knots of 9 floats: the
+  point, its control point out, the next one's in; +0x88 their count; +0x18
+  bounds; +0x1C / +0x44 a polyline), which ZSHAPE builds cubic segments from
+  (0x44DEB0; the renderer's resource manager vfunc 0xD4 / 0xD8 give the knots
+  and the count). The car is a ZCar made at load with the model's meshes as
+  its children: its "*Body*" (ZMoveOnSpline's init 0x5912A0, +0xDE: ZCar's
+  placing 0x58FC20 needs it), wheels named *FrontLeft_01* / *FrontRight_01*
+  (each with a "Wheel*" child: they steer, 0x5958E0) / *BackLeft_01* /
+  *BackRight_01* (ZCar's init 0x592EC0 counts them and divides by the counts).
+  Driven through the vfuncs MoveOnSpline_if calls (dispatcher 0x58D280,
+  methods 0x58CE30): 0x2AC SetPath(ref, start) -> mover 0x595F30, 0x2B0
+  SetMoveParams(speed, acceleration, top speed, +0xC4) -> 0x5963B0, 0x2CC
+  MoveToSplineVal(place, flag) -> mover vfunc 0. Its frame (0x591610, ZMoveOnSpline
+  vfunc 0x154) steps the mover and places the car.
+* Next steps: (1) drivers / passengers (C2-2 LimoGuard's rLimo + seat
+  number); (2) what a driven car does to characters in its way (not checked
+  yet); (3) a map car's records left out at load (now it is hidden).
 
 ## 8. The rating (Silent Assassin, ...)
 

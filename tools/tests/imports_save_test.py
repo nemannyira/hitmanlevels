@@ -56,7 +56,7 @@ def check(name, ok, detail=""):
 def wait_map():
     time.sleep(4)
     t = time.time()
-    while time.time() - t < 150:
+    while time.time() - t < 300:  # three imported bodies and their animations load slowly
         if "C2-1__MAIN" in dev.run("return h2.scene()", 5):
             break
         time.sleep(1)

@@ -146,6 +146,12 @@ fails prints its error and the others still run.
 
 ## Vehicles
 
+A level's vehicles (Inspector > Vehicle) are the game's: a ZCar made with the
+map on a path of its own (`ROOT/EditorCar_1`, `ROOT/EditorPath_1`, ...);
+`h2.track(car, place, kmh)` drives one along its path as the game's own
+vehicles. `h2.drive` below moves any object along points by itself (a
+script's effect, not a vehicle of the game).
+
 ```lua
 local car = h2.find("CarFerrari+1")                 -- a car the level placed (a group copy)
 local v = h2.drive(car, h2.find("CarRoute"), {speed = 800, loop = true})

@@ -37,10 +37,14 @@ level* / *File > Open level* loads a saved one.
   applies to all) becomes the selected one's own with *A route of its own*:
   a copy of the list, made with the map when it loads again (*Test now*),
   whose points then change for that character only.
-* *Vehicles*: select a car (or any object) and *Inspector > Vehicle > Make it
-  drive a route*, then click the road for its points (Esc ends); speed,
-  *round and round*, *its front is its back* if it drives backwards, *Try
-  it*. It drives when the level is played. A car of the map's that is a group
+* *Vehicles*: select a car (a car of the map, or a copy of one) and
+  *Inspector > Vehicle > Make it drive a route*: the route starts where it
+  stands; click the road for its points (Esc ends); speed, *round and round*,
+  *its front is its back* if it drives backwards, then *Test now (save and
+  reload)*. The car is made with the map as the game's are (a ZCar on a path
+  of its own, driven by the game's own mover: speeding up, slowing down,
+  drawn in the rooms it is in, kept in saved games); the map's car (or the
+  copy) it stands for is not there while it drives. A car of the map's that is a group
   (the C1-1 Ferrari) is copied whole with Ctrl+D or Duplicate; the game's own
   vehicles that follow their tracks (the C1-1 van) drive only those: the
   Inspector's *To its start* / *To its end* / *Stop* and a speed (Lua

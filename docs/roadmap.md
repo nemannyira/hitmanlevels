@@ -254,6 +254,13 @@ cheats.
   its vfuncs 0x50 (1, geom) / 0xAC (the entry) / 0x50 (2). What each kind
   makes Hitman do (and which one only sends the message) has to be found in
   the game running before a "take" action can be added this way.
+  Seen in the game (x32dbg, C1-1 loading, 2026-10-18): 0x488A70 gets ecx = the
+  door, edx = the text itself ("Open door", not a LOC node), and on the stack
+  (text, kind 2, message 0x57 = "dooropen", 0, distance 400, 0), RET 0x18. The
+  entry (vfunc 0xAC = 0x488A10: text, text, kind, message, 0, distance, ?)
+  keeps kind at +0x72 (1 by the ctor), the message at +0x76 (short), distance
+  at +0x80 (also vfunc 0xA4); used, it sends that message to its geom. Who
+  reads the kind (Hitman's side of Action_GetActionList) is still to be found.
 * **npc:carry**: the item could be given to the character when the script
   says so (GiveItem, ZITEM::SetOwner as guards get their weapons) and dropped
   by the game when it dies (MSG_DROPITEM 0x47EAF0 / 0x5333B0, Being2's

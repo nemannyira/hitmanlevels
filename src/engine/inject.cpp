@@ -6,6 +6,7 @@
 
 #include "../loader.h"
 #include "../log.h"
+#include "geoms.h"
 #include "imports.h"
 #include "scene_data.h"
 
@@ -49,6 +50,10 @@ int NodeKind(uint32_t cls)
 std::function<std::vector<SceneNpc>(const std::string&)> g_provider;
 std::function<std::vector<SceneList>(const std::string&)> g_listProvider;
 std::function<std::vector<SceneCar>(const std::string&)> g_carProvider;
+std::function<std::vector<SceneZone>(const std::string&)> g_zoneProvider;
+std::map<std::string, int> g_zones;  // name -> its record (scene loaded last)
+constexpr uint32_t kBoxClass = 0x2000E1;  // ZBoxPrimitive (0x44A300)
+constexpr uint32_t kZoneInside = 0x88;    // CheckInside: Hitman inside (0x48ACF0 / 0x4FC480)
 constexpr uint32_t kCarClass = 0x100BBF;    // ZCar (ZGROUP -> ZMoveOnSpline -> ZVehicle -> ZCar)
 constexpr uint32_t kShapeClass = 0x4000022;  // ZSHAPE
 // C1-1's van's data block (ZCar's settings; no references): for a scene without a car of its own
@@ -172,6 +177,24 @@ void SetSceneCarProvider(std::function<std::vector<SceneCar>(const std::string& 
     g_carProvider = std::move(provider);
 }
 
+void SetSceneZoneProvider(std::function<std::vector<SceneZone>(const std::string& scene)> provider)
+{
+    g_zoneProvider = std::move(provider);
+}
+
+int SceneZoneRecord(const std::string& name)
+{
+    auto it = g_zones.find(name);
+    return it == g_zones.end() ? -1 : it->second;
+}
+
+bool InSceneZone(const std::string& name)
+{
+    int record = SceneZoneRecord(name);
+    uint8_t* routine = record >= 0 ? GeomRoutine(RecordGeom(record), "CheckInside") : nullptr;
+    return routine && IsReadable(routine + kZoneInside, 1) && routine[kZoneInside] != 0;
+}
+
 void SetSceneListProvider(std::function<std::vector<SceneList>(const std::string& scene)> provider)
 {
     g_listProvider = std::move(provider);
@@ -256,10 +279,12 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
 {
     g_made.clear();
     g_groups.clear();
+    g_zones.clear();
     std::vector<SceneNpc> npcs = g_provider ? g_provider(scene) : std::vector<SceneNpc>{};
     std::vector<SceneList> lists = g_listProvider ? g_listProvider(scene) : std::vector<SceneList>{};
     std::vector<SceneCar> cars = g_carProvider ? g_carProvider(scene) : std::vector<SceneCar>{};
-    if (npcs.empty() && lists.empty() && cars.empty())
+    std::vector<SceneZone> zones = g_zoneProvider ? g_zoneProvider(scene) : std::vector<SceneZone>{};
+    if (npcs.empty() && lists.empty() && cars.empty() && zones.empty())
         return false;
     std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
     uint32_t list = U32(gms, 0), count = U32(gms, list);
@@ -442,6 +467,70 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         ++added;
         ++listsAdded;
         inGroup = false;
+    }
+    // zones: copies of one of the scene's CheckInside boxes (its events: that
+    // routine only), at the root (a node of their own: TakeNode), with data
+    // blocks of their own in the game's format
+    if (!zones.empty()) {
+        int box = -1;
+        for (uint32_t i = 0; i < count && box < 0; ++i) {
+            if (recs[i].classId != kBoxClass || !recs[i].events || recs[i].script || recs[i].mesh)
+                continue;
+            uint32_t ev = recs[i].events, n = U32(gms, ev);
+            uint32_t name = U32(gms, ev + 4);
+            if (n == 1 && name < gms.size() &&
+                strncmp(reinterpret_cast<const char*>(&gms[name]), "ZGEOM_CheckInside", gms.size() - name) == 0)
+                box = int(i);
+        }
+        if (box < 0)
+            Log("scene zones: %s has no CheckInside box to copy (goals check distances)", scene.c_str());
+        for (const SceneZone& z : box < 0 ? std::vector<SceneZone>{} : zones) {
+            uint32_t pops = added == 0 ? uint32_t(depth) : inGroup ? 1u : 0u;
+            if (pops > 127 || z.name.empty())
+                break;
+            int index = int(count) + added;
+            // ZBoxPrimitive: half sizes; CheckInside: Hitman (0: HitmanGround), itself, messages
+            // "0" (the scene's first, the game's none), the flags most of the game's have
+            std::vector<uint8_t> d(4);
+            auto tag = [&](uint8_t t, uint32_t v) {
+                d.push_back(t);
+                d.insert(d.end(), reinterpret_cast<uint8_t*>(&v), reinterpret_cast<uint8_t*>(&v) + 4);
+            };
+            for (float h : z.half) {
+                uint32_t bits;
+                memcpy(&bits, &h, 4);
+                tag(0x82, bits);
+            }
+            d.push_back(0x06);
+            tag(0x08, 0);
+            tag(0x88, 0x80000000 | uint32_t(index + 1));
+            tag(0x0A, 0);
+            tag(0x0A, 0);
+            tag(0x03, 1);
+            tag(0x03, 0);
+            tag(0x03, 0);
+            tag(0x03, 0);
+            d.push_back(0x06);
+            d.push_back(0xFF);
+            Put(d, 0, uint32_t(d.size()));  // (not remapped yet)
+            const float mat[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+            std::vector<uint8_t> r(gms.begin() + recordAt(box), gms.begin() + recordAt(box) + kRecord);
+            Put(r, 0x00, AppendString(buf, z.name));
+            Put(r, 0x04, Append(gms, mat, sizeof(mat)));
+            Put(r, 0x08, Append(gms, z.pos, sizeof(z.pos)));
+            Put(r, 0x1C, 0);
+            Put(r, 0x20, Append(gms, d));
+            g_groups.insert(uint32_t((gms.size() + 3) & ~size_t(3)));  // (its node: TakeNode)
+            uint32_t off = Append(gms, r);
+            uint32_t e[2] = {(off / 4) | (pops << 25), recs[box].extra};
+            table.insert(table.end(), reinterpret_cast<uint8_t*>(e), reinterpret_cast<uint8_t*>(e) + 8);
+            ++moreOfClass[U32(r, 0x10)];
+            ++added;
+            inGroup = false;
+            g_zones[z.name] = index;
+            Log("scene zones: %s at (%.0f %.0f %.0f), %.0f x %.0f x %.0f", z.name.c_str(), z.pos[0], z.pos[1], z.pos[2],
+                z.half[0] * 2, z.half[1] * 2, z.half[2] * 2);
+        }
     }
     // vehicles: a ZCar with copies of the model's records, and its spline
     int carsAdded = 0;

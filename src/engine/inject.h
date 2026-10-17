@@ -67,6 +67,24 @@ struct SceneCar {
 };
 void SetSceneCarProvider(std::function<std::vector<SceneCar>(const std::string& scene)> provider);
 
+// A place of the level's goals, watched as the game watches its own (an exit, a
+// room): a box (ZBoxPrimitive, class 0x2000E1, its half sizes) with a
+// CheckInside routine, a copy of one of the scene's, at the root. The routine
+// (ctor 0x48A830, data 0x4FC060: checked geom +0x72 (0: Hitman), receiver
+// +0x76, enter / leave messages +0x7A / +0x7C) checks Hitman every frame
+// (0x48ACA0, the box's vfunc 0x16C) and keeps whether he is inside at +0x88;
+// it tells itself message "0" (the game's none).
+struct SceneZone {
+    std::string name;  // unique in the scene ("H2_Reach_1")
+    float pos[3] = {};
+    float half[3] = {};
+};
+void SetSceneZoneProvider(std::function<std::vector<SceneZone>(const std::string& scene)> provider);
+// The record made for a zone of that name in the scene loaded last (-1: none).
+int SceneZoneRecord(const std::string& name);
+// Whether Hitman is inside it, as its CheckInside routine found (false: no such zone).
+bool InSceneZone(const std::string& name);
+
 // Asked for every scene that loads (its name as GetSceneName gives it).
 void SetSceneNpcProvider(std::function<std::vector<SceneNpc>(const std::string& scene)> provider);
 // The record made for a character of that name in the scene loaded last (-1: none).

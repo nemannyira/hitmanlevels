@@ -2732,6 +2732,36 @@ std::vector<engine::SceneNpc> NpcsFor(const std::string& scene)
     return out;
 }
 
+// the places of the level's goals (its points) as zones of the scene, as the
+// game watches its own (engine/inject.h; mission.cpp reads them)
+std::vector<engine::SceneZone> ZonesFor(const std::string& scene)
+{
+    std::vector<engine::SceneZone> out;
+    if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
+        return out;
+    auto zone = [&](int slot, const std::string& path, float radius) {
+        size_t slash = path.rfind('/');
+        std::string id = slash == std::string::npos ? path : path.substr(slash + 1);
+        if (id.empty() || !(radius > 0.0f))
+            return;
+        for (const SpawnedObject& s : g_level.spawned)
+            if (s.point && s.id == id) {
+                engine::SceneZone z;
+                z.name = GoalZoneName(slot);
+                memcpy(z.pos, s.transform.pos, sizeof(z.pos));
+                z.half[0] = z.half[1] = z.half[2] = radius;
+                out.push_back(z);
+                return;
+            }
+    };
+    for (const MissionObjective& o : g_level.mission.objectives)
+        if (o.goal == MissionObjective::Reach && !o.target.empty())
+            zone(o.slot, o.target, o.radius);
+    if (g_level.mission.endWhenDone && !g_level.mission.exitPath.empty())
+        zone(0, g_level.mission.exitPath, g_level.mission.exitRadius);
+    return out;
+}
+
 std::vector<engine::SceneList> ListsFor(const std::string& scene)
 {
     std::vector<engine::SceneList> out;
@@ -3250,6 +3280,7 @@ void InstallLevelPanel()
     engine::SetImportProvider(ImportsFor);
     engine::SetSceneNpcProvider(NpcsFor);
     engine::SetSceneListProvider(ListsFor);
+    engine::SetSceneZoneProvider(ZonesFor);
     engine::SetShapeProvider([](const std::string& scene) {
         return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene) ? VehicleShapes(g_level.vehicles)
                                                                                  : std::vector<engine::SceneShape>{};

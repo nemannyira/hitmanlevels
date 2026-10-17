@@ -223,6 +223,19 @@ void WorldPosition(ZGEOM* geom, float pos[3])
     game::GetWorldTransform(geom, m, pos);
 }
 
+uint8_t* GeomRoutine(ZGEOM* geom, const char* name)
+{
+    if (!geom || !IsReadable(geom, sizeof(ZGEOM)))
+        return nullptr;
+    __try {
+        void** vt = *reinterpret_cast<void***>(geom);
+        auto fn = reinterpret_cast<void*(__thiscall*)(void*, const char*)>(vt[0xEC / 4]);
+        return static_cast<uint8_t*>(fn(geom, name));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 SceneSnapshot TakeSnapshot(const std::vector<ZBaseGeom*>& extra)
 {
     SceneSnapshot snap;

@@ -14,6 +14,7 @@
 #include "json.hpp"
 
 #include "../engine/game_events.h"
+#include "../engine/inject.h"
 #include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../input/dinput.h"
@@ -707,6 +708,23 @@ bool Delivered(const MissionObjective& o)
     return true;
 }
 
+// Hitman at a goal's place: as its zone's CheckInside routine found him (a box
+// made with the scene, engine/inject.h), or near it while it has no zone (the
+// place was made or moved since the map loaded, or is not one of the level's points)
+bool AtPlace(int slot, engine::ZGEOM* place, float radius)
+{
+    if (!place)
+        return false;
+    std::string zone = GoalZoneName(slot);
+    if (engine::ZGEOM* box = engine::RecordGeom(engine::SceneZoneRecord(zone)); box && IsLive(box)) {
+        Transform a = GetTransform(box), b = GetTransform(place);
+        float d[3] = {a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]};
+        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < 1.0f)
+            return engine::InSceneZone(zone);
+    }
+    return DistanceToPlayer(place) <= radius;
+}
+
 bool Reached(const MissionObjective& o)
 {
     switch (o.goal) {
@@ -716,7 +734,7 @@ bool Reached(const MissionObjective& o)
         return t && (engine::WasKilled(actor ? actor : t) || engine::WasKilled(t));
     }
     case MissionObjective::Reach:
-        return DistanceToPlayer(Target(o)) <= o.radius;
+        return AtPlace(o.slot, Target(o), o.radius);
     case MissionObjective::Take: {
         engine::ZGEOM* t = Target(o);
         return t && (IsItem(t) ? HeldByHitman(t) : g_taken.count(o.target) > 0);
@@ -850,7 +868,7 @@ void Check()
         return;
     if (!Doc().exitPath.empty()) {
         engine::ZGEOM* exit = ResolveTarget(Doc().exitPath);
-        if (!exit || DistanceToPlayer(exit) > Doc().exitRadius)
+        if (!AtPlace(0, exit, Doc().exitRadius))
             return;
     }
     // once: on a blank map the level's MissionCompleted got the end screen up but stopped with an
@@ -2026,6 +2044,8 @@ void OnEditorEvent(const char* /*event*/, const engine::GameEvent& e)
 }
 
 } // namespace
+
+std::string GoalZoneName(int slot) { return slot == 0 ? "H2_Exit" : "H2_Reach_" + std::to_string(slot); }
 
 void InstallMission()
 {

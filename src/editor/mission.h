@@ -18,6 +18,9 @@ struct ZGEOM;
 namespace h2::editor {
 
 void InstallMission();
+// The scene zone (engine/inject.h) made for a goal's place: a "reach" line's
+// (slot 1..6) or the mission's exit (0).
+std::string GoalZoneName(int slot);
 // A text the editor answers in the game's LOC tree (UTF-8), e.g. its main menu entry.
 void SetLocText(const std::string& key, const std::string& text);
 // The inspector's Mission row for the selected object: make it a target to kill,

@@ -39,23 +39,10 @@ uint32_t U32(const uint8_t* p)
 // segment's state as it is then (segment vfunc 0x84, 0x4A7FC0) and sends them
 // to the level's LevelControl (0x4A8470 -> geom vfunc 0x118), which plays them.
 // Its flag +0x1E4 (set by its ctor, cleared after a check) makes the next check
-// take the room as entered anew. A geom's routine by name: vfunc 0xEC.
-constexpr uint32_t kGeom_Routine = 0xEC;
+// take the room as entered anew.
 constexpr uint32_t kSegment_Sound = 0x7A;
 constexpr uint32_t kControl_CheckAnew = 0x1E4;
 
-uint8_t* Routine(engine::ZGEOM* geom, const char* name)
-{
-    if (!geom || !IsLive(geom))
-        return nullptr;
-    __try {
-        void** vt = *reinterpret_cast<void***>(geom);
-        auto fn = reinterpret_cast<void*(__thiscall*)(void*, const char*)>(vt[kGeom_Routine / 4]);
-        return static_cast<uint8_t*>(fn(geom, name));
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 void ReadTracks();
 
@@ -190,14 +177,14 @@ bool InGroup(const std::vector<engine::SceneRecord>& records, int r, int group)
 // told to take the room Hitman is in as entered anew (its segments sent again).
 bool SetSegmentSound(const MusicSlot& s, uint32_t ref)
 {
-    uint8_t* segment = Routine(engine::RecordGeom(s.record), "MusicSegment");
+    uint8_t* segment = engine::GeomRoutine(engine::RecordGeom(s.record), "MusicSegment");
     if (!segment)
         return false;
     memcpy(segment + kSegment_Sound, &ref, 4);
     const auto& records = engine::SceneRecords();
     for (int r = records[s.record].parent; r >= 0; r = records[r].parent)
         if (records[r].name == "MusicControl") {
-            if (uint8_t* control = Routine(engine::RecordGeom(r), "MusicControl"))
+            if (uint8_t* control = engine::GeomRoutine(engine::RecordGeom(r), "MusicControl"))
                 control[kControl_CheckAnew] = 1;
             break;
         }

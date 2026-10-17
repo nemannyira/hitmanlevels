@@ -58,6 +58,24 @@ Addresses are hitman2.exe (Steam build).
   MissionFailed, MissionCompleted, ...); handler 0x504960; **vfunc 0xC4**
   completes the mission (rating / statistics), 0xC0 fails it.
 
+## Places (zones)
+
+* The game's levels watch places with boxes: ZBoxPrimitive (class 0x2000E1,
+  0x44A300; its data: half sizes +0x18..+0x20, inside test vfunc 0x16C =
+  0x44A430 on a point in its frame) with a **CheckInside** routine (record
+  events `{count, {name offset, float}}` naming "ZGEOM_CheckInside"; ctor
+  0x48A830, vtable 0x649A48). Its data (0x4FC060): checked geom +0x72 (0:
+  HitmanGround), receiver +0x76, enter / leave messages +0x7A / +0x7C (scene
+  message indices; "0", the list's first, is the game's none), flags
+  +0x7E..+0x81. Every frame (0x48ACA0 -> 0x4FC480) it tests the checked geom
+  and keeps whether it is inside at **+0x88**, sending enter / leave through
+  the box's vfunc 0x11C (-> SendMessage) when that changes.
+* A level's "reach" places and exit (its points) are such boxes made with the
+  scene (engine/inject.h SceneZone: a copy of one of the scene's CheckInside
+  boxes, half sizes = the radius, its own messages "0"); the goal is reached
+  when the routine has Hitman inside. A place made or moved after the map
+  loaded is checked by distance until the map loads again.
+
 ## Music
 
 * MusicControl (ZGROUP_MusicControl routine, vtable 0x64B8E0, ctor 0x4A81B0)

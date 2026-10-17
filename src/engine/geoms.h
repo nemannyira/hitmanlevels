@@ -110,4 +110,8 @@ bool IsA(const ZGEOM* geom, const char* className);
 
 void WorldPosition(ZGEOM* geom, float pos[3]);
 
+// One of a geom's routines (ZEventBase: "MusicSegment", "CheckInside", ...) by
+// its name, as the game finds them (geom vfunc 0xEC); null: it has none.
+uint8_t* GeomRoutine(ZGEOM* geom, const char* name);
+
 } // namespace h2::engine

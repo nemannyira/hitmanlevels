@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <map>
 #include <string>
@@ -164,6 +165,22 @@ float LongSideTurn(engine::ZGEOM* object)
     if (parts.empty())
         parts.push_back(object);
     float lo[2] = {1e30f, 1e30f}, hi[2] = {-1e30f, -1e30f};
+    // its sides: parts named left / right (the C1-1 Ferrari's "D00r_Left/Door Left") in the frame
+    float side[2] = {0.0f, 0.0f};
+    int sides = 0, named = 0;
+    auto sideOf = [](engine::ZGEOM* p) {
+        for (int up = 0; p && up < 2; ++up) {  // the part's name, then its group's
+            std::string n = engine::SafeString(p->name);
+            for (char& ch : n)
+                ch = char(std::tolower(static_cast<unsigned char>(ch)));
+            bool left = n.find("left") != std::string::npos, right = n.find("right") != std::string::npos;
+            if (left != right)
+                return left ? 1 : -1;
+            const engine::ZBaseGeom* parent = p->node ? p->node->parent : nullptr;
+            p = parent && engine::IsReadable(parent, sizeof(*parent)) ? parent->geom : nullptr;
+        }
+        return 0;
+    };
     for (engine::ZGEOM* p : parts) {
         Transform pt = GetTransform(p);
         const engine::ZBaseGeom* n = p->node;
@@ -182,15 +199,36 @@ float LongSideTurn(engine::ZGEOM* object)
             ez += std::fabs(axis[0] * f[0] + axis[1] * f[1] + axis[2] * f[2]) * half;
         }
         (void)h;
+        if (int s = sideOf(p)) {
+            side[0] += s * x;
+            side[1] += s * z;
+            sides += s;
+            ++named;
+        }
         lo[0] = std::min(lo[0], x - ex);
         hi[0] = std::max(hi[0], x + ex);
         lo[1] = std::min(lo[1], z - ez);
         hi[1] = std::max(hi[1], z + ez);
     }
     float sx = hi[0] - lo[0], sz = hi[1] - lo[1];
-    Log("vehicles: %s is %.0f cm across, %.0f cm long (%d parts)", engine::SafeString(object->name).c_str(), sx, sz,
-        int(parts.size()));
-    return sx > sz * 1.2f ? 90.0f : 0.0f;  // (which end is the front: the C1-1 Ferrari's; "reverse" turns it)
+    bool alongX = sx > sz * 1.2f;
+    // which end is its front: its left side (from the middle) turned to the front, as the game's
+    // cars are made (x right, z forward: their *FrontLeft* wheels at -x, +z). Without named sides:
+    // the long side's +x / +z ("its front is its back" turns it)
+    float turn = alongX ? 90.0f : 0.0f;
+    if (named > 0) {
+        float mid[2] = {(lo[0] + hi[0]) * 0.5f, (lo[1] + hi[1]) * 0.5f};
+        // the left side's direction: the named parts' places, less the middle once for each
+        float left[2] = {side[0] - sides * mid[0], side[1] - sides * mid[1]};
+        float front[2] = {left[1], -left[0]};  // left (-x) turned a quarter: forward (+z)
+        if (alongX)
+            turn = front[0] >= 0.0f ? 90.0f : -90.0f;
+        else
+            turn = front[1] >= 0.0f ? 0.0f : 180.0f;
+    }
+    Log("vehicles: %s is %.0f cm across, %.0f cm long (%d parts, %d named sides): its front turned %.0f",
+        engine::SafeString(object->name).c_str(), sx, sz, int(parts.size()), named, turn);
+    return turn;
 }
 
 // ---- the game's vehicles: their own tracks ----

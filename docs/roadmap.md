@@ -275,3 +275,19 @@ cheats.
   is not drawn as the room's backdrop); a teleport: ZLIST_TeleportList
   (vtable 0x64C550) is a list of places, the actor's own SetWorldTransform
   (vfunc 0x80 = 0x463AC0) is what moves it, already used.
+
+### Direct writes into the game's objects (audit, 2026-10-18)
+
+Every place the editor writes a game object's memory itself instead of calling
+the game (the source scanned for writes through casts, `->` and `memcpy` into
+game pointers; each one looked up in Ghidra):
+
+| Where | What | The game's own way | Verdict |
+|---|---|---|---|
+| editor/model.cpp `SetHidden` | node flag 0x800 set / cleared | **ZGEOM vfunc 0xC0** (0x43B9C0 -> ZBaseGeom 0x5BAEF0 (node, hide)): besides 0x800 (through SetFlags 0x5BAC80) it takes a dynamic node out of its room and the bound / collision lists (0x5B99F0, room vfunc 0x304) and puts it back when shown (room vfunc 0x2FC, 0x5BD1B0, 0x5B96F0); used by ZLIST_CutSequenceShowHide, ZGROUP_HideGroupObjects, ZMoveOnSpline, CheckInside (+0x7E) | **to change** (B15): a hidden object would then stop colliding as the game's do |
+| editor/vehicles.cpp `OwnLightEntries` | light table handle (+0x6C), flag 0x1000000 | SetFlags' 0x8000 branch does the same (light table vfunc 0x24, +0x6C, 0x1000000), but its "clear" half unregisters the shared handle first | as the game's set branch; kept |
+| script/objects_api.cpp `h2.health` | Hitman's hit points +0xD72 | the game writes the field itself (difficulty 0x511BB0, refill 0x5150E1, level boxes 0x4F8B74...); no setter | kept |
+| editor/music.cpp | MusicSegment +0x7A, MusicControl +0x1E4 | the routines' own data load / ctor write them; no setter | kept (B7) |
+| engine/npc.cpp | a script instance's variables; the actor collision's buffers (its init hooked) | to be looked at with the script engine (E5) | open |
+| editor/testtools.cpp | the game's cheat / debug values | the game reads them as they are | kept |
+| fov.cpp, display.cpp | camera fov / far plane around SetupProjection (vfunc 0x258); SysInterface width / height | through the game's SetupProjection; values the game reads | kept (display fixes) |

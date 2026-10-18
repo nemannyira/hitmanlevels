@@ -347,3 +347,12 @@ game pointers; each one looked up in Ghidra):
   "#1"), while the level finds its copies by their own names ("+1"), and a
   name in the engine's heap breaks a saved game (P39): the copies' names (or
   copies as records made with the scene, as the characters are) come first.
+* **B2 / B3 (D16, 2026-10-18)**: the game removes an object with its
+  deleting destructor (geom vfunc 0x1FC (1): ZGEOM_TimeOutDelete; cut
+  sequences send MSG_DELETEOBJECT), as the editor removes its own objects. A
+  character the level placed and the user deleted is not made with the scene
+  any more (the next load: as the game, no record); until then it is hidden.
+  An emptied map hides the scene's characters and items: leaving their
+  records out or making them inert would hand the level's own code (it finds
+  characters by name, e.g. C2-1's target "KGBOfficer_01") something that is
+  not a character. The hiding is the game's own (B15: out of the rooms too).

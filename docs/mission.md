@@ -26,6 +26,13 @@ Addresses are hitman2.exe (Steam build).
 * Hitman: the record of class 0x2003E8. Level control: class 0x2000E1 named
   `LevelControl*` (with LevelControl.sdl).
 
+* Reported deaths (2026-10-18, seen in C1-1): a conscious character's death
+  (also the scripts' instant death) reaches the level routine (Kill vfunc
+  0xB4 with the victim); a knock-out (chloroform: Being2.Unconscious) does
+  not (only "InventoryOwnerDied" goes to the character), nor the death of an
+  unconscious one. The goals and the "death" event take the reports and the
+  game's own state (alive: vfunc 0x544; unconscious: the behaviour's state).
+
 ## Mission objectives (the laptop)
 
 * The briefing menu is a routine of the LaptopBriefing window

@@ -320,7 +320,10 @@ ZGEOM* VictimGeom(uint32_t value)
 
 void QueueVictim(GameEvent::Kind kind, void* level, uint32_t victim, int type)
 {
-    if (ZGEOM* g = VictimGeom(victim)) {
+    ZGEOM* victimGeom = VictimGeom(victim);
+    Log("game events: the level routine was told %s %08X (%s, kind %d)", kind == GameEvent::Kill ? "killed" : "harmed",
+        victim, victimGeom ? SafeString(victimGeom->name).c_str() : "not an object", type);
+    if (ZGEOM* g = victimGeom) {
         if (kind == GameEvent::Kill) {
             if (g_killed.insert(g).second && g_newlyKilled.size() < 1024)
                 g_newlyKilled.push_back(g);

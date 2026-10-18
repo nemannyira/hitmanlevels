@@ -79,6 +79,11 @@ bool WasKilled(ZGEOM* character);
 bool WasHarmed(ZGEOM* character);
 std::vector<ZGEOM*> TakeKilled();  // killed since the last call
 
+// An action's message (messages.h AddUseAction): an object it reaches is kept
+// until TakeUsed (once; the objects a scene had go when it is left).
+void WatchUse(uint16_t msg);
+bool TakeUsed(ZGEOM* geom);
+
 // The events since the last call (at most a few thousand a frame).
 std::vector<GameEvent> TakeGameEvents();
 // Every message name the engine knows now (lower case: as WatchMessages).

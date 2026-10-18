@@ -72,6 +72,11 @@ def at(x, y, z):
     time.sleep(1.5)
 
 
+def face(x, y, z):  # the game offers an action of what Hitman faces
+    lua("h2.player():faceto(%f, %f, %f) return 1" % (x, y, z))
+    time.sleep(0.5)
+
+
 def press_e():
     lua("h2.dev_key(%d, 0.2) return 1" % DIK_E)
     time.sleep(1.5)
@@ -122,6 +127,7 @@ try:
     press_e()
     check("item picked up: objective 1", done() == "1", done())
     at(x - 260, y + 5, z)
+    face(x - 200, y + 10, z)
     press_e()
     gone = lua('local b = h2.find([[%s]]) local _, by = b:pos() return tostring(b:hidden()) .. " " .. math.floor(by)' % books)
     check("model taken: objective 2", done() == "1,2", done())

@@ -76,6 +76,30 @@ Addresses are hitman2.exe (Steam build).
   when the routine has Hitman inside. A place made or moved after the map
   loaded is checked by distance until the map loads again.
 
+## Actions (taking an object)
+
+* An object's actions are ZGEOM_Action routines (ctor 0x487680, vtable
+  0x649770). Entry (vfunc 0xAC = 0x488A10): texts (copied: +0xA4, +0xA0),
+  kind +0x72, message +0x76, receiver +0x78, distance +0x80; its data load
+  (vfunc 0x80) reads nothing for one attached while playing (flag 2). A door
+  attaches "Open door" while playing with 0x488A70 (fastcall: geom, text;
+  then text, kind 2, message "dooropen", receiver 0, distance 400, 0). Saved
+  with the game (texts as strings, the fields); its load sets the entry again.
+* Used (vfunc 0x8C = 0x488860, the user's ref): kind 6 sends its message to
+  its receiver (the user as param) and nothing else; kind 7 also sends
+  PlaceItem2 to the user; other kinds are done by the user (character vfunc
+  0x410). Usable (vfunc 0x84): kind 6 within the distance. The scenes' kinds:
+  6 "use" (Open, PlaceBomb, PoisonWater, DeactivateLaser, OpenSafe,
+  EscapeFerrari...), 13 / 14 climbing, 15 _Place, 16 _Pickup (items), 1.
+* The game offers (HUD line, action key E) the actions of an object Hitman
+  faces, among the objects the scene made: a copy made while playing gets no
+  offer (seen 2026-10-18).
+* A "Hitman takes it" goal of a model the scene made (not an item) gives it a
+  kind-6 "Take" action (engine/messages.h AddUseAction, message
+  "H2Editor_Take", the object its own receiver); the SendMessage hook sees the
+  message reach it (game_events.h TakeUsed) and the model is taken. A copy
+  the level made is taken with E near it.
+
 ## Music
 
 * MusicControl (ZGROUP_MusicControl routine, vtable 0x64B8E0, ctor 0x4A81B0)

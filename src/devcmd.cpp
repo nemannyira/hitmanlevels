@@ -28,7 +28,9 @@ extern "C" {
 #include "editor/playtest.h"
 #include "editor/scene_panel.h"
 #include "editor/vehicles.h"
+#include "engine/game_events.h"
 #include "engine/imports.h"
+#include "engine/messages.h"
 #include "engine/npc.h"
 #include "imgui.h"
 #include "d3d8types.h"
@@ -568,6 +570,25 @@ int TestCmd(lua_State*)
     return 0;
 }
 
+// h2.dev_useaction(path [, distance]): a "use" action on the object (engine/messages.h
+// AddUseAction, message "H2Editor_Take"); h2.dev_used(path): whether Hitman used it since
+int DevUseAction(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    static uint16_t msg;
+    if (!msg && (msg = engine::RegisterMessage("H2Editor_Take")) != 0)
+        engine::WatchUse(msg);
+    lua_pushboolean(L, g && msg && engine::AddUseAction(g, "Take", msg, int(luaL_optinteger(L, 2, 200))));
+    return 1;
+}
+
+int DevUsed(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    lua_pushboolean(L, g && engine::TakeUsed(g));
+    return 1;
+}
+
 // h2.dev_routine(path, routine): a routine's fields (reverse engineering)
 int DevRoutine(lua_State* L)
 {
@@ -924,6 +945,8 @@ void InstallDevCommands()
     script::Register("dev_shot", Shot);
     script::Register("dev_editor", Editor);
     script::Register("dev_routine", DevRoutine);
+    script::Register("dev_useaction", DevUseAction);
+    script::Register("dev_used", DevUsed);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);
     script::Register("dev_setscript", SetScriptCmd);

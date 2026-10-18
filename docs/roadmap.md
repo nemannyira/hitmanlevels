@@ -244,7 +244,10 @@ cheats.
 
 ## 11. The game's own way: what is left (found, not built yet)
 
-* **Taking an object that is not an item** (the Take goal's E key): the game
+* **Taking an object that is not an item**: done 2026-10-18 for the scene's
+  models (a kind-6 "Take" action, docs/mission.md); a copy made while playing
+  still uses E (the game offers no action of it: copies as records made with
+  the scene would, B16). What was found before: the game
   gives objects actions with a ZGEOM_Action routine (ctor 0x487680, vtable
   0x649770; messages Action_GetActionList, CanOperateObject, EnableAction,
   RemoveNamedAction...). Doors add theirs at runtime with 0x488A70 (fastcall:

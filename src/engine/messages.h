@@ -16,6 +16,16 @@ namespace h2::engine {
 
 uint16_t RegisterMessage(const char* name);
 bool SendMessage(ZGEOM* to, ZGEOM* from, uint16_t msg, void* param);
+
+// An action Hitman can use on an object, as a door gets "Open door" while
+// playing (0x488A70: the object's ZGEOM_Action routine found or attached
+// (vfunc 0xE8 / 0xF4), its entry set (routine vfunc 0xAC: texts (copied), kind,
+// message, receiver, distance), started (vfunc 0x50)). Kind 6, the scenes'
+// "use" (Open, PlaceBomb, OpenSafe, EscapeFerrari...): used (vfunc 0x8C, within
+// the distance: vfunc 0x84), it sends `msg` to the receiver (here the object
+// itself, the user as param) and nothing else. Saved with the game (its texts
+// as strings, its fields; its load sets the entry again).
+bool AddUseAction(ZGEOM* geom, const char* text, uint16_t msg, int distance);
 // Characters (ZActor): alive (vfunc 0x544; Hitman, ZHITMAN2: hit points
 // +0xD72 above 0), killing one (its behaviour gets
 // Msg_InstantDeath; without a behaviour: Actor_If's Die, vfunc 0x5F0).

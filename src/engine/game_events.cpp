@@ -156,11 +156,16 @@ void Queue(GameEvent&& e)
     g_queue.push_back(std::move(e));
 }
 
+std::set<uint16_t> g_useMessages;  // AddUseAction's messages (WatchUse)
+std::set<ZGEOM*> g_used;           // objects one of them reached (TakeUsed)
+
 using Send_t = void(__fastcall*)(ZGEOM* self, void* edx, ZGEOM* to, uint32_t msg, void* param);
 Send_t oSend;
 void __fastcall hkSend(ZGEOM* self, void* edx, ZGEOM* to, uint32_t msg, void* param)
 {
     uint32_t id = msg & 0xFFFF;
+    if (to && g_useMessages.count(uint16_t(id)))
+        g_used.insert(to);
     if (g_any && id < kMaxMessages && g_flags[id]) {
         GameEvent e;
         e.name = g_names[id];
@@ -447,6 +452,7 @@ void InstallGameEvents()
     Hook("ZTRACKLNKHM2::DragStart", kDragStart, hkDragStart, &oDragStart);
     Hook("ZTRACKLNKHM2::DragEnd", kDragEnd, hkDragEnd, &oDragEnd);
     OnSceneLeaving([](const std::string&) {
+        g_used.clear();
         g_endsAllowed = true;
         g_allowNext = false;
         g_queue.clear();
@@ -485,6 +491,14 @@ void WatchLevel(void* level)
               PatchEntry(vt, kLevel_Completed, reinterpret_cast<void*>(hkCompleted));
     Log("game events: level routine vtable %p %s", static_cast<void*>(vt), ok ? "watched" : "not writable");
 }
+
+void WatchUse(uint16_t msg)
+{
+    if (msg)
+        g_useMessages.insert(msg);
+}
+
+bool TakeUsed(ZGEOM* geom) { return geom && g_used.erase(geom) != 0; }
 
 bool WasKilled(ZGEOM* character) { return character && g_killed.count(character); }
 bool WasHarmed(ZGEOM* character) { return character && g_harmed.count(character); }

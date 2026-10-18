@@ -17,9 +17,9 @@
 #include "../engine/inject.h"
 #include "../engine/messages.h"
 #include "../engine/npc.h"
-#include "../input/dinput.h"
 #include "../engine/scene_data.h"
 #include "../hook.h"
+#include "../input/dinput.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
@@ -86,14 +86,12 @@ bool g_applied;                            // the mission was applied to this sc
 // kept: its path changes when he picks it up); anything else when he presses
 // the game's pickup key (E) near it: it is taken out of the world.
 engine::ZGEOM* g_takeObject[kSlots + 1];
-bool g_nearTake[kSlots + 1];                 // Hitman is near the object (the hint was shown)
 std::map<std::string, ObjectState> g_taken;  // objects taken out (target -> as they were)
 std::string g_pendingGoals;                  // goals done in a loaded saved game (applied when the mission runs)
 std::set<engine::ZGEOM*> g_knockedOut;       // characters reported unconscious (KnockOut goals)
 bool g_spotted;                              // a guard spotted Hitman (Unseen goals)
 bool g_spottedFailed;                        // ... and the mission was failed for it
 bool g_nearPlace[kSlots + 1];                // Hitman at a Deliver goal's place (the hint was shown)
-constexpr int kDikE = 0x12;                  // the game's pickup key (its default binding)
 constexpr float kAway = -100000.0f;          // a taken object's place: 1 km under the map
 
 MissionDoc& Doc() { return CurrentLevel().mission; }
@@ -777,12 +775,22 @@ void WatchDeaths()
 
 void ApplyPendingGoals();
 
-// Take goals of objects that are not items: the pickup key near them
+// Take goals of objects that are not items. One the scene made gets a "use" action, as the
+// scenes' own (Open, PlaceBomb: kind 6, messages.h AddUseAction); used, it tells the object. The
+// game offers actions only of objects the scene made (a copy made while playing is not among
+// them, found in the game 2026-10-18): a copy is taken with the pickup key near it.
+std::set<engine::ZGEOM*> g_takeActions;  // objects given the action in this scene
+bool g_nearTake[kSlots + 1];             // Hitman is near a copy (the hint was shown)
+constexpr int kDikE = 0x12;              // the game's pickup / action key (its default binding)
+
 void CheckTakes()
 {
     int presses = TakeGameKeyPresses(kDikE);
     if (!ForThisScene() || !engine::SceneDataValid())
         return;
+    static uint16_t msg;
+    if (!msg && (msg = engine::RegisterMessage("H2Editor_Take")) != 0)
+        engine::WatchUse(msg);
     for (const MissionObjective& o : Doc().objectives) {
         if ((o.goal != MissionObjective::Take && o.goal != MissionObjective::Deliver) || g_done[o.slot] ||
             g_taken.count(o.target))
@@ -792,18 +800,31 @@ void CheckTakes()
             g_nearTake[o.slot] = false;
             continue;
         }
-        engine::ZGEOM* hitman = engine::Player();
         float reach = o.goal == MissionObjective::Take ? o.radius : 150.0f;  // (Deliver: radius is the place's)
-        bool inReach = hitman && engine::IsAlive(hitman) && DistanceToPlayer(t) <= reach;
-        if (inReach && !g_nearTake[o.slot])
-            ShowInfo(InfoKind::Hint, "E: take it (" +
-                                         (o.text.empty() ? "objective " + std::to_string(o.slot) : o.text) + ")");
-        g_nearTake[o.slot] = inReach;
-        if (inReach && presses > 0) {
+        bool taken = false;
+        if (engine::RecordOf(t) >= 0 && msg) {  // the scene's: the game's action
+            if (!g_takeActions.count(t)) {
+                if (engine::AddUseAction(t, "Take", msg, int(reach)))
+                    g_takeActions.insert(t);
+                else
+                    Log("mission: objective %d: no action on %s", o.slot, o.target.c_str());
+            }
+            taken = engine::TakeUsed(t);
+        } else {  // a copy: the key near it
+            engine::ZGEOM* hitman = engine::Player();
+            bool inReach = hitman && engine::IsAlive(hitman) && DistanceToPlayer(t) <= reach;
+            if (inReach && !g_nearTake[o.slot])
+                ShowInfo(InfoKind::Hint, "E: take it (" +
+                                             (o.text.empty() ? "objective " + std::to_string(o.slot) : o.text) + ")");
+            g_nearTake[o.slot] = inReach;
+            taken = inReach && presses > 0;
+            if (taken)
+                presses = 0;  // one object a press
+        }
+        if (taken) {
             TakeOut(o.target, t);
             ShowInfo(InfoKind::Info, "Taken.");
             Log("mission: objective %d: Hitman took %s", o.slot, o.target.c_str());
-            presses = 0;  // one object a press
         }
     }
 }
@@ -891,12 +912,13 @@ void OnScene(const std::string&)
     g_applied = false;
     memset(g_done, 0, sizeof(g_done));
     memset(g_takeObject, 0, sizeof(g_takeObject));
+    g_takeActions.clear();
     memset(g_nearTake, 0, sizeof(g_nearTake));
+    TakeGameKeyPresses(kDikE);
     g_taken.clear();
     g_knockedOut.clear();
     g_spotted = g_spottedFailed = false;
     memset(g_nearPlace, 0, sizeof(g_nearPlace));
-    TakeGameKeyPresses(kDikE);
     for (std::string& k : g_lineKeys)
         k.clear();
     g_scriptTexts.clear();

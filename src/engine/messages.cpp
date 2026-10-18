@@ -80,6 +80,20 @@ int SafeRegister(void* engine, const char* name)
     }
 }
 
+constexpr uintptr_t kAddAction = 0x488A70;  // __fastcall (geom, text; text, kind, msg, receiver ref, distance, 0)
+constexpr int kActionUse = 6;
+
+bool SafeAddAction(ZGEOM* geom, const char* text, uint16_t msg, uint32_t receiver, int distance)
+{
+    __try {
+        reinterpret_cast<void*(__fastcall*)(ZGEOM*, const char*, const char*, int, int, uint32_t, int, int)>(
+            kAddAction)(geom, text, text, kActionUse, msg, receiver, distance, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool SafeSend(ZGEOM* to, ZGEOM* from, int msg, void* param)
 {
     __try {
@@ -477,6 +491,14 @@ ZGEOM* LevelControl()
             n += char(std::tolower(static_cast<unsigned char>(c)));
         return n.rfind("levelcontrol", 0) == 0;
     });
+}
+
+bool AddUseAction(ZGEOM* geom, const char* text, uint16_t msg, int distance)
+{
+    if (!geom || !text || !msg || !IsReadable(geom, sizeof(ZGEOM)))
+        return false;
+    uint32_t ref = RefOf(geom);
+    return ref && SafeAddAction(geom, text, msg, ref, distance);
 }
 
 } // namespace h2::engine

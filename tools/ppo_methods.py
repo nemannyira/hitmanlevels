@@ -11,7 +11,12 @@ method number being what the interface's dispatcher gets (call context
 called on: one name can have other numbers on other interfaces (the list
 marks them); calls on the script's own `this` are the sure ones.
 
+After the string pool comes the table of the script's interface slots (a
+u32 count, then {u32 slot, u16 symbol}); the call's operand is that slot, so
+it says which interface the method is on (docs/script_commands.md).
+
   python ppo_methods.py <dir with extracted .ppo files (tools/zgf.py)>
+  python ppo_methods.py --interfaces <dir>   per interface: name, numbers
 """
 import collections
 import os
@@ -52,7 +57,45 @@ def calls(b, names):
     return out
 
 
+def interface_slots(b, names):
+    """{slot: interface name} from the table after the string pool; {} when
+    the script uses no interface itself"""
+    best = {}
+    for m in re.finditer(rb"(?=(.)\x00\x00\x00)", b, re.S):
+        o, n = m.start(), b[m.start()]
+        if not 1 <= n <= 60 or o + 4 + 6 * n > len(b):
+            continue
+        ents = [struct.unpack_from("<IH", b, o + 4 + 6 * i) for i in range(n)]
+        if (n > len(best) and all(s < len(names) and slot < 0x400 and slot % 4 == 0 for slot, s in ents)
+                and any(names[s].lower().endswith("_if") for _, s in ents)):
+            best = {slot: names[s] for slot, s in ents}
+    return best
+
+
+def interfaces(root):
+    seen = collections.defaultdict(collections.Counter)
+    for dirpath, _, fns in os.walk(root):
+        for fn in fns:
+            if not fn.lower().endswith(".ppo"):
+                continue
+            b = open(os.path.join(dirpath, fn), "rb").read()
+            names = symbol_table(b, strings(b))
+            if len(names) < 5:
+                continue
+            slots = interface_slots(b, names)
+            for m in re.finditer(rb"\x97(.)\x00(..)(..)", b, re.S):
+                slot = m.group(1)[0]
+                sym, num = struct.unpack("<HH", m.group(2) + m.group(3))
+                if sym < len(names) and slots.get(slot, "").lower().endswith("_if"):
+                    seen[(slots[slot], names[sym])][num] += 1
+    for (iface, name), c in sorted(seen.items()):
+        print("%-18s %-34s %s" % (iface, name, " ".join("%d:x%d" % kv for kv in sorted(c.items()))))
+
+
 def main():
+    if sys.argv[1] == "--interfaces":
+        interfaces(sys.argv[2])
+        return
     root = sys.argv[1]
     seen = collections.defaultdict(collections.Counter)
     files = 0

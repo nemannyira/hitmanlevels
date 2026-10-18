@@ -6,3 +6,8 @@
 /Hitman2.rep/
 /Hitman2.lock*
 __pycache__/
+# reverse engineering tools (MCP servers and their builds), not part of the editor
+/third_party/apitrace-14.0-win32/
+/third_party/apitrace-mcp-main/
+/third_party/cheatengine-mcp-bridge-main/
+/third_party/frida/

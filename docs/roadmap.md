@@ -291,3 +291,23 @@ game pointers; each one looked up in Ghidra):
 | engine/npc.cpp | a script instance's variables; the actor collision's buffers (its init hooked) | to be looked at with the script engine (E5) | open |
 | editor/testtools.cpp | the game's cheat / debug values | the game reads them as they are | kept |
 | fov.cpp, display.cpp | camera fov / far plane around SetupProjection (vfunc 0x258); SysInterface width / height | through the game's SetupProjection; values the game reads | kept (display fixes) |
+
+### Routines attached while playing (2026-10-18)
+
+* A geom's routines: vfunc 0xE8 / 0xEC find one by class name (0x43C330);
+  0xF0 (0x43BC00) makes one (ZEngineDataBase::AllocRout 0x421000 by class
+  name), sets its owner (routine vfunc 0x7C), adds it to the geom's list and
+  tells the geom (vfunc 0x104); 0xF4 (0x43C1F0) does the same and marks it
+  made while playing (routine flag 2). ReadData2 (geom vfunc 0x130) copies each
+  routine's section of the data block to routine +0x38. A routine's state
+  machine (ZEventBase vfunc 0x50 = 0x42ABB0): 1 init (its data read from
+  +0x38, flag 4), 2 start (flag 8); a door's action is attached this way
+  (0x488A70: vfunc 0xF4, then 0x50 (1, geom, 0), its entry, 0x50 (2)).
+* Seen in the game: a ZBoxPrimitive made with CreateObject with a CheckInside
+  attached by 0xF4 and started by 0x50 (1) / (2) works (Hitman in / out), but a
+  saved game with it does not load: the load makes flag-2 routines again
+  (0x426070) and CheckInside's load (0x48AC40 -> 0x4FC060) reads its data from
+  +0x38, which the save does not keep (0x5C0100 reads from null). The game
+  attaches only routines without data so. **Places are zones only as records
+  made with the scene** (D11): a place made while playing is checked by
+  distance until the map loads again.

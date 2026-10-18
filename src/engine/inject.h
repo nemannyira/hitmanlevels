@@ -20,6 +20,8 @@
 
 namespace h2::engine {
 
+struct ZGEOM;
+
 struct SceneNpc {
     std::string name;      // the actor's object name, unique in the scene ("NPC_Maid_1")
     int record = -1;       // the template character's actor record
@@ -84,6 +86,8 @@ void SetSceneZoneProvider(std::function<std::vector<SceneZone>(const std::string
 int SceneZoneRecord(const std::string& name);
 // Whether Hitman is inside it, as its CheckInside routine found (false: no such zone).
 bool InSceneZone(const std::string& name);
+// Whether Hitman is inside a zone (a box with a CheckInside routine, +0x88).
+bool InZone(ZGEOM* box);
 
 // Asked for every scene that loads (its name as GetSceneName gives it).
 void SetSceneNpcProvider(std::function<std::vector<SceneNpc>(const std::string& scene)> provider);

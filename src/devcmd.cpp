@@ -568,6 +568,28 @@ int TestCmd(lua_State*)
     return 0;
 }
 
+// h2.dev_routine(path, routine): a routine's fields (reverse engineering)
+int DevRoutine(lua_State* L)
+{
+    std::string n = luaL_checkstring(L, 1);
+    engine::ZGEOM* g = editor::Resolve(n);
+    uint8_t* r = g ? engine::GeomRoutine(g, luaL_checkstring(L, 2)) : nullptr;
+    if (!r || !engine::IsReadable(r, 0x90)) {
+        lua_pushstring(L, "none");
+        return 1;
+    }
+    char buf[400];
+    auto u32 = [&](int o) { uint32_t v; memcpy(&v, r + o, 4); return v; };
+    snprintf(buf, sizeof(buf),
+             "geom %p routine %p vt %08X flags+8 %08X int+14 %08X t+18 %08X data+38 %08X owner+6E %08X "
+             "+72 %08X +76 %08X +7A %04X +7C %04X +7E %02X %02X %02X %02X +82 %08X +88 %02X +89 %02X",
+             static_cast<void*>(g), static_cast<void*>(r), u32(0), u32(8), u32(0x14), u32(0x18), u32(0x38), u32(0x6E),
+             u32(0x72), u32(0x76), u32(0x7A) & 0xFFFF, u32(0x7C) & 0xFFFF, r[0x7E], r[0x7F], r[0x80], r[0x81], u32(0x82),
+             r[0x88], r[0x89]);
+    lua_pushstring(L, buf);
+    return 1;
+}
+
 // h2.dev_editor(open): opens / closes the editor overlay
 int Editor(lua_State* L)
 {
@@ -901,6 +923,7 @@ void InstallDevCommands()
     script::Register("dev_viewdistance", ViewDist);
     script::Register("dev_shot", Shot);
     script::Register("dev_editor", Editor);
+    script::Register("dev_routine", DevRoutine);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);
     script::Register("dev_setscript", SetScriptCmd);

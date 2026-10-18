@@ -177,6 +177,46 @@ void SetSceneCarProvider(std::function<std::vector<SceneCar>(const std::string& 
     g_carProvider = std::move(provider);
 }
 
+// (a CheckInside routine cannot be attached while playing: a loaded save makes such a routine
+// again (0x426070) and its load (0x48AC40) reads its data, which the save does not keep: 0x5C0100
+// reads from null. The game attaches only routines without data so, e.g. a door's action.)
+static std::vector<uint8_t> ZoneData(const float half[3])
+{
+    // ZBoxPrimitive: its half sizes; CheckInside (data 0x4FC060): Hitman (0: HitmanGround), the
+    // receiver its load gives (0: TrackLinkObjects, +0x80 set), its enter / leave messages "0" (the
+    // scene's first, remapped when it loads: the game's none, as its own boxes have it), the box
+    // hidden (+0x7E: its vfunc 0xC0)
+    std::vector<uint8_t> d(4);
+    auto tag = [&](uint8_t t, uint32_t v) {
+        d.push_back(t);
+        d.insert(d.end(), reinterpret_cast<uint8_t*>(&v), reinterpret_cast<uint8_t*>(&v) + 4);
+    };
+    for (int k = 0; k < 3; ++k) {
+        uint32_t bits;
+        memcpy(&bits, &half[k], 4);
+        tag(0x82, bits);
+    }
+    d.push_back(0x06);
+    tag(0x08, 0);     // checked
+    tag(0x08, 0);     // receiver
+    tag(0x0A, 0);     // enter
+    tag(0x0A, 0);     // leave
+    tag(0x03, 1);     // +0x7E hidden
+    tag(0x03, 0);     // +0x7F
+    tag(0x03, 1);     // +0x80
+    tag(0x03, 0);  // +0x81
+    d.push_back(0x06);
+    d.push_back(0xFF);
+    Put(d, 0, uint32_t(d.size()));
+    return d;
+}
+
+bool InZone(ZGEOM* box)
+{
+    uint8_t* routine = box ? GeomRoutine(box, "CheckInside") : nullptr;
+    return routine && IsReadable(routine + kZoneInside, 1) && routine[kZoneInside] != 0;
+}
+
 void SetSceneZoneProvider(std::function<std::vector<SceneZone>(const std::string& scene)> provider)
 {
     g_zoneProvider = std::move(provider);
@@ -191,8 +231,7 @@ int SceneZoneRecord(const std::string& name)
 bool InSceneZone(const std::string& name)
 {
     int record = SceneZoneRecord(name);
-    uint8_t* routine = record >= 0 ? GeomRoutine(RecordGeom(record), "CheckInside") : nullptr;
-    return routine && IsReadable(routine + kZoneInside, 1) && routine[kZoneInside] != 0;
+    return record >= 0 && InZone(RecordGeom(record));
 }
 
 void SetSceneListProvider(std::function<std::vector<SceneList>(const std::string& scene)> provider)
@@ -489,30 +528,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             if (pops > 127 || z.name.empty())
                 break;
             int index = int(count) + added;
-            // ZBoxPrimitive: half sizes; CheckInside: Hitman (0: HitmanGround), itself, messages
-            // "0" (the scene's first, the game's none), the flags most of the game's have
-            std::vector<uint8_t> d(4);
-            auto tag = [&](uint8_t t, uint32_t v) {
-                d.push_back(t);
-                d.insert(d.end(), reinterpret_cast<uint8_t*>(&v), reinterpret_cast<uint8_t*>(&v) + 4);
-            };
-            for (float h : z.half) {
-                uint32_t bits;
-                memcpy(&bits, &h, 4);
-                tag(0x82, bits);
-            }
-            d.push_back(0x06);
-            tag(0x08, 0);
-            tag(0x88, 0x80000000 | uint32_t(index + 1));
-            tag(0x0A, 0);
-            tag(0x0A, 0);
-            tag(0x03, 1);
-            tag(0x03, 0);
-            tag(0x03, 0);
-            tag(0x03, 0);
-            d.push_back(0x06);
-            d.push_back(0xFF);
-            Put(d, 0, uint32_t(d.size()));  // (not remapped yet)
+            std::vector<uint8_t> d = ZoneData(z.half);  // (remapped when the scene loads: its messages)
             const float mat[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
             std::vector<uint8_t> r(gms.begin() + recordAt(box), gms.begin() + recordAt(box) + kRecord);
             Put(r, 0x00, AppendString(buf, z.name));

@@ -567,8 +567,25 @@ bool GetBounds(engine::ZGEOM* geom, float center[3], float& radius)
 
 bool IsHidden(engine::ZGEOM* geom) { return (geom->node->flags & g_config.hideFlag) != 0; }
 
+// As the game hides an object (ZGEOM vfunc 0xC0 -> ZBaseGeom 0x5BAEF0, used by its cut
+// sequences' show / hide, ZGROUP_HideGroupObjects, CheckInside...): the node flag 0x800 (set
+// through SetFlags) and the node out of its room's object lists (0x5B99F0; shown: back in,
+// 0x5B96F0). Another flag (H2Fix.ini HideFlag) is only set.
+static bool GameSetHidden(engine::ZGEOM* geom, bool hidden)
+{
+    __try {
+        auto fn = (*reinterpret_cast<void(__thiscall***)(engine::ZGEOM*, bool)>(geom))[0xC0 / 4];
+        fn(geom, hidden);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void SetHidden(engine::ZGEOM* geom, bool hidden)
 {
+    if (g_config.hideFlag == 0x800 && GameSetHidden(geom, hidden))
+        return;
     if (hidden)
         geom->node->flags |= g_config.hideFlag;
     else

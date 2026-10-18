@@ -52,6 +52,16 @@ uint32_t ImportedMesh(const std::string& level, uint32_t mesh);
 // its place. Forgotten when the scene changes.
 void SaveNameAs(const char* heapName, const char* gameName);
 
+// The pointers a save wrote (ZSaveGame::AddSafePointer 0x4297F0), by the kind
+// the game gives them: null, into the static buffer, the animation buffer, a
+// resource; `unplaced` ones become kind 0, which ZLoadGame::GetSafePointer
+// stops at (int3) when the game is loaded. Counted since the last call.
+struct SaveAudit {
+    int null = 0, stat = 0, anim = 0, resource = 0, unplaced = 0;
+    int renamed = 0;  // of `stat`: heap names saved as the scene's own (SaveNameAs)
+};
+SaveAudit SaveAuditTake();
+
 struct LevelModelPart {
     uint32_t mesh = 0;
     bool visible = true;  // drawn (record flag 1); else only its collision is used

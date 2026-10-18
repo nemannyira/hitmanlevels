@@ -1613,22 +1613,36 @@ bool InBlock(const char* block, const void* p)
     return p >= block && p < block + size;
 }
 
+SaveAudit g_audit;  // this save's pointers by kind (SaveAuditTake)
+
 void __fastcall hkAddSafePointer(void* save, void* edx, void* p)
 {
     auto sys = reinterpret_cast<char*>(game::SysInterface());
     char* db = sys ? *reinterpret_cast<char**>(sys + 0x98) : nullptr;
     if (auto it = g_saveNames.find(p); p && it != g_saveNames.end() && db &&
                                        g_saveNamesScene == *reinterpret_cast<void**>(db + 0x1C47)) {
+        ++g_audit.renamed;
+        ++g_audit.stat;
         oAddSafePointer(save, edx, const_cast<char*>(it->second));
         return;
     }
-    if (p && db && g_unplaced < 40) {
+    if (!p)
+        ++g_audit.null;
+    if (p && db) {
         char* stat = *reinterpret_cast<char**>(db + 0x1C47);
         char* anim = *reinterpret_cast<char**>(db + 0x40);
-        if (!InBlock(stat, p) && !InBlock(anim, p)) {
+        if (InBlock(stat, p))
+            ++g_audit.stat;
+        else if (InBlock(anim, p))
+            ++g_audit.anim;
+        else {
             void* rm = *reinterpret_cast<void**>(*reinterpret_cast<char**>(sys + 0x18A0) + 0x18);
             auto owns = (*reinterpret_cast<bool(__thiscall***)(void*, void*)>(rm))[0x14 / 4];
-            if (!owns(rm, p)) {
+            if (owns(rm, p))
+                ++g_audit.resource;
+            else
+                ++g_audit.unplaced;
+            if (!owns(rm, p) && g_unplaced < 40) {
                 ++g_unplaced;
                 const uint32_t* w = static_cast<const uint32_t*>(p);
                 bool rd = IsReadable(w - 2, 32);
@@ -1640,6 +1654,13 @@ void __fastcall hkAddSafePointer(void* save, void* edx, void* p)
         }
     }
     oAddSafePointer(save, edx, p);
+}
+
+SaveAudit SaveAuditTake()
+{
+    SaveAudit a = g_audit;
+    g_audit = SaveAudit{};
+    return a;
 }
 
 void SaveNameAs(const char* heapName, const char* gameName)

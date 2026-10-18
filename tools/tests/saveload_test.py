@@ -81,7 +81,10 @@ try:
     lua("return tostring(h2.dev_savegame(%d))" % SLOT)  # (the game's own result says nothing)
     time.sleep(3)
     check("save", os.path.exists(save_file) and os.path.getmtime(save_file) > before)
-    check("save event", lua("return tostring(h2.state.saved_slot)") == str(SLOT),
+    with open(os.path.join(dev.GAME, "H2Fix.log"), encoding="latin1") as f:
+        audit = [line.strip() for line in f if "save audit: slot %d:" % SLOT in line]
+    check("save audit: every pointer placed", audit and audit[-1].endswith("unplaced 0"), audit[-1] if audit else "no line")
+    check("save event",lua("return tostring(h2.state.saved_slot)") == str(SLOT),
           lua("return tostring(h2.state.saved_slot)"))
     # change the story and the world
     lua('h2.state.stage = 9 h2.state.note = "changed" SAVETEST_RAN = nil SAVETEST_LOADED = nil return true')

@@ -15,6 +15,7 @@ extern "C" {
 
 #include "json.hpp"
 
+#include "../engine/imports.h"
 #include "../game.h"
 #include "../hook.h"
 #include "../log.h"
@@ -364,7 +365,12 @@ SaveGame_t oSaveGame;
 bool __fastcall hkSaveGame(void* engine, void* edx, unsigned slot)
 {
     FireSlotEvent("save", int(slot));  // scripts put what they need into h2.state
+    engine::SaveAuditTake();
     bool ok = oSaveGame(engine, edx, slot);
+    engine::SaveAudit a = engine::SaveAuditTake();
+    Log("save audit: slot %u: pointers null %d, static %d (%d renamed), anim %d, resource %d, unplaced %d%s", slot,
+        a.null, a.stat, a.renamed, a.anim, a.resource, a.unplaced,
+        a.unplaced ? " - THE GAME CANNOT LOAD THIS SAVE" : "");
     if (SlotSaved(slot))
         WriteState(slot);
     else

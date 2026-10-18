@@ -79,7 +79,7 @@ been given stops. Hitman can be moved anywhere too
 | `npc:lookat(obj)`, `npc:lookat(nil)` | turns its head / stops |
 | `npc:faceto(obj)`, `npc:faceto(x, y, z)` | turns it at once |
 | `npc:animation(name [, loop])` | plays one of its animations (names: docs/animations.md); false: it has none of that name |
-| `npc:carry(template [, fn])` | it carries an item: when it dies, a working item of the template (as `h2.item`) lands by its body and `fn(item, npc)` is called; false: it is dead already. `npc:carry(nil)` takes them back, `npc:carrying()` lists the templates |
+| `npc:carry(template [, fn])` | it carries an item: when it dies (the game's report of it, as the `"death"` event), a working item of the template (as `h2.item`) lands by its body and `fn(item, npc)` is called, as a level's own script gives one (the game itself drops only what a dead character holds in its hands); false: it is dead already. `npc:carry(nil)` takes them back, `npc:carrying()` lists the templates |
 | `params = { WeaponTemplate = h2.find("GunBeretta92") }` | (in `h2.npc` / `npc:behaviour`, guard behaviours) the weapon a guard holds: the game's own way of arming one (C1-1's guards: GunBeretta92, RifleShotgun, GunDesertEagle) |
 
 A character's own behaviour may give it other orders: for a scripted scene,

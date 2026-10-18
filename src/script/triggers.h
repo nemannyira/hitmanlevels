@@ -30,9 +30,11 @@
 //                                       "Numpad1", "Space"...), e.vk
 //
 //   npc:carry(template [, function(item, npc) ... end])   the character
-//       carries an item: when it dies, a working item of the template
-//       (h2.item) lands by its body (checked 10 times a game second); false:
-//       it is dead already. npc:carry(nil) takes them back,
+//       carries an item: when it dies (as the game tells its level routine:
+//       CharacterKilled, the "death" event), a working item of the template
+//       (h2.item) lands by its body, as a level's script gives one (the game
+//       drops only what a dead character holds in its hands: Being2's
+//       SlipLeftHandItem / SlipRightHandItem); false: it is dead already. npc:carry(nil) takes them back,
 //       npc:carrying() lists the templates.
 //
 // Timers, zones and carried items of the level's scripts go when they run
@@ -46,5 +48,7 @@ void UpdateTriggers();
 // set are tagged with it.
 void SetTriggerOwner(const std::string& owner);
 void ClearTriggers(const std::string& owner);
+// A character died (as the "death" event): the items it carried land by it.
+void TriggersDeath(const std::string& path);
 
 } // namespace h2::script

@@ -32,7 +32,7 @@ double g_last;      // NowMs of the last update
 std::vector<int> g_keys;
 
 // The Lua part: h2.time, h2.after / every, h2.zone, npc:carry; returns
-// {update, clear, setowner}. Runs in the sandbox like any script (its own functions only).
+// {update, clear, setowner, death}. Runs in the sandbox like any script (its own functions only).
 const char* const kLua = R"lua(
 local report, methods, guard = ...
 local T = {}
@@ -246,22 +246,27 @@ local function drop(c, n)
   call("carry", c.fn, item, c.npc)
 end
 
+-- the items of a character that died (the game told its level routine: CharacterKilled)
+function T.death(path)
+  local n = 0
+  for _, c in ipairs(carried) do
+    if not c._dead then
+      local ok, p = pcall(c.npc.path, c.npc)
+      if ok and p == path then
+        c._dead = true
+        n = n + 1
+        drop(c, n)
+      end
+    end
+  end
+end
+
 local function checkCarried()
-  local keep, n = {}, {}
+  local keep = {}
   for _, c in ipairs(carried) do
     if not c._dead then
       local okValid, valid = pcall(c.npc.valid, c.npc)
-      if not okValid or not valid then
-        c._dead = true  -- gone from the scene
-      else
-        local okAlive, alive = pcall(c.npc.alive, c.npc)
-        if okAlive and not alive then
-          c._dead = true
-          local key = c.npc:path()
-          n[key] = (n[key] or 0) + 1
-          drop(c, n[key])
-        end
-      end
+      if not okValid or not valid then c._dead = true end  -- gone from the scene
     end
     if not c._dead then keep[#keep + 1] = c end
   end  -- (ones the callbacks add are appended to `carried`: this loop sees them)
@@ -515,6 +520,14 @@ void SetTriggerOwner(const std::string& owner)
 {
     CallLua("setowner", [&](lua_State* L) {
         lua_pushstring(L, owner.c_str());
+        return 1;
+    });
+}
+
+void TriggersDeath(const std::string& path)
+{
+    CallLua("death", [&](lua_State* L) {
+        lua_pushstring(L, path.c_str());
         return 1;
     });
 }

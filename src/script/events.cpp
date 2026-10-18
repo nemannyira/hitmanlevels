@@ -488,6 +488,7 @@ void FireScene(const std::string& scene)
 
 void FireDeath(const std::string& path)
 {
+    TriggersDeath(path);  // its carried items first: a handler may look for them
     Fire("death", [&](lua_State* L) {
         PushObjectPath(L, path);
         return 1;

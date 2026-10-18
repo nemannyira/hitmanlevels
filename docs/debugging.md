@@ -56,3 +56,10 @@ its log (the file is locked until stopped).
 hitman2.exe (the game starts through Steam), trace, then remove the wrapper.
 A trace replays frame by frame with every call, buffer and state; two traces'
 frames can be compared (images, state).
+
+## Reference made with these tools
+
+`docs/classes.md` (classes), `docs/structures.md` (fields), `docs/messages.md`
+(messages), `docs/script_commands.md` (the scripts' interfaces),
+`docs/performance.md` (the editor's frame cost), `docs/hooks.md` (the
+editor's hooks).

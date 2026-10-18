@@ -684,6 +684,23 @@ float Distance(engine::ZGEOM* a, engine::ZGEOM* b)
     return std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
 }
 
+// Hitman at a goal's place: as its zone's CheckInside routine found him (a box
+// made with the scene, engine/inject.h), or near it while it has no zone (the
+// place was made or moved since the map loaded, or is not one of the level's points)
+bool AtPlace(int code, engine::ZGEOM* place, float radius)
+{
+    if (!place)
+        return false;
+    std::string zone = GoalZoneName(code);
+    if (engine::ZGEOM* box = engine::RecordGeom(engine::SceneZoneRecord(zone)); box && IsLive(box)) {
+        Transform a = GetTransform(box), b = GetTransform(place);
+        float d[3] = {a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]};
+        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < 1.0f)
+            return engine::InSceneZone(zone);
+    }
+    return DistanceToPlayer(place) <= radius;
+}
+
 // "Bring it to a place": an item laid down there (held by no one), any other
 // object taken (E) and Hitman there with it: it is put down at the place
 bool Delivered(const MissionObjective& o)
@@ -696,7 +713,7 @@ bool Delivered(const MissionObjective& o)
         uint32_t owner = 0;
         return !engine::ItemHolder(t, owner) && Distance(t, place) <= o.radius;
     }
-    if (!g_taken.count(o.target) || DistanceToPlayer(place) > o.radius)
+    if (!g_taken.count(o.target) || !AtPlace(100 + o.slot, place, o.radius))
         return false;
     ObjectState st = g_taken[o.target];  // as it was, at the place now
     st.transform.pos[0] = GetTransform(place).pos[0];
@@ -704,23 +721,6 @@ bool Delivered(const MissionObjective& o)
     st.transform.pos[2] = GetTransform(place).pos[2];
     SetState(t, st);
     return true;
-}
-
-// Hitman at a goal's place: as its zone's CheckInside routine found him (a box
-// made with the scene, engine/inject.h), or near it while it has no zone (the
-// place was made or moved since the map loaded, or is not one of the level's points)
-bool AtPlace(int slot, engine::ZGEOM* place, float radius)
-{
-    if (!place)
-        return false;
-    std::string zone = GoalZoneName(slot);
-    if (engine::ZGEOM* box = engine::RecordGeom(engine::SceneZoneRecord(zone)); box && IsLive(box)) {
-        Transform a = GetTransform(box), b = GetTransform(place);
-        float d[3] = {a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]};
-        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < 1.0f)
-            return engine::InSceneZone(zone);
-    }
-    return DistanceToPlayer(place) <= radius;
 }
 
 bool Reached(const MissionObjective& o)
@@ -2067,7 +2067,12 @@ void OnEditorEvent(const char* /*event*/, const engine::GameEvent& e)
 
 } // namespace
 
-std::string GoalZoneName(int slot) { return slot == 0 ? "H2_Exit" : "H2_Reach_" + std::to_string(slot); }
+std::string GoalZoneName(int code)
+{
+    if (code == 0)
+        return "H2_Exit";
+    return code > 100 ? "H2_Deliver_" + std::to_string(code - 100) : "H2_Reach_" + std::to_string(code);
+}
 
 void InstallMission()
 {

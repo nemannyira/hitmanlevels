@@ -2754,9 +2754,12 @@ std::vector<engine::SceneZone> ZonesFor(const std::string& scene)
                 return;
             }
     };
-    for (const MissionObjective& o : g_level.mission.objectives)
+    for (const MissionObjective& o : g_level.mission.objectives) {
         if (o.goal == MissionObjective::Reach && !o.target.empty())
             zone(o.slot, o.target, o.radius);
+        if (o.goal == MissionObjective::Deliver && !o.place.empty())  // (Hitman bringing a model there)
+            zone(100 + o.slot, o.place, o.radius);
+    }
     if (g_level.mission.endWhenDone && !g_level.mission.exitPath.empty())
         zone(0, g_level.mission.exitPath, g_level.mission.exitRadius);
     return out;

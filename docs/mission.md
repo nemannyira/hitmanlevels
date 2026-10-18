@@ -72,9 +72,13 @@ Addresses are hitman2.exe (Steam build).
   the box's vfunc 0x11C (-> SendMessage) when that changes.
 * A level's "reach" places and exit (its points) are such boxes made with the
   scene (engine/inject.h SceneZone: a copy of one of the scene's CheckInside
-  boxes, half sizes = the radius, its own messages "0"); the goal is reached
-  when the routine has Hitman inside. A place made or moved after the map
-  loaded is checked by distance until the map loads again.
+  boxes, half sizes = the radius, messages "0"); the goal is reached when the
+  routine has Hitman inside. A "bring it" line's place too, for a model Hitman
+  took and carries there; an item laid down there is still checked by
+  distance (a zone would have to check the item, and a level's items are
+  made while playing: no record to point to). A place made or moved after the
+  map loaded is checked by distance until the map loads again (a CheckInside
+  attached while playing breaks a saved game: docs/roadmap.md).
 
 ## Actions (taking an object)
 

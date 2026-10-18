@@ -30,6 +30,7 @@ extern "C" {
 #include "editor/vehicles.h"
 #include "engine/game_events.h"
 #include "engine/imports.h"
+#include "engine/inject.h"
 #include "engine/messages.h"
 #include "engine/npc.h"
 #include "imgui.h"
@@ -589,11 +590,13 @@ int DevUsed(lua_State* L)
     return 1;
 }
 
-// h2.dev_routine(path, routine): a routine's fields (reverse engineering)
+// h2.dev_routine(path or a goal zone's name, routine): a routine's fields (reverse engineering)
 int DevRoutine(lua_State* L)
 {
     std::string n = luaL_checkstring(L, 1);
     engine::ZGEOM* g = editor::Resolve(n);
+    if (!g && engine::SceneZoneRecord(n) >= 0)
+        g = engine::RecordGeom(engine::SceneZoneRecord(n));
     uint8_t* r = g ? engine::GeomRoutine(g, luaL_checkstring(L, 2)) : nullptr;
     if (!r || !engine::IsReadable(r, 0x90)) {
         lua_pushstring(L, "none");

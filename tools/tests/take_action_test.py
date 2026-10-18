@@ -1,7 +1,9 @@
 """A "Hitman takes it" goal of one of the scene's own models (not an item): the
 game offers it as an action ("Take", kind 6: messages.h AddUseAction), Hitman
 uses it with the action key facing it, the goal is done and the model gone; a
-saved game keeps it so and loads. Uses Mods/_TakeActionTest and save slot 9
+saved game keeps it so and loads. A "bring it to a place" goal of another
+model: taken the same way, done when Hitman is in the place's zone (a box with
+a CheckInside routine made with the scene). Uses Mods/_TakeActionTest and save slot 9
 (removed / overwritten: back up the saves first); a running game with dev
 commands.
 
@@ -21,6 +23,7 @@ FOLDER = os.path.join(dev.GAME, "Mods", LEVEL)
 LOG = os.path.join(dev.GAME, "H2Fix.log")
 SLOT = 9
 TREE = "Tree_02_21"  # C1-1's, near Hitman's start
+TREE2 = "Tree_02_20"
 DIK_E = 0x12
 results = []
 
@@ -58,10 +61,10 @@ def done():
     return lua('table.sort(GOALS) return table.concat(GOALS, ",")')
 
 
-def face_tree_and_press():
+def face_tree_and_press(name=TREE):
     lua('local t = h2.find("%s") local tx, ty, tz = t:pos() local p = h2.player() local x, y, z = p:pos() '
         'local dx, dz = tx - x, tz - z local d = math.sqrt(dx * dx + dz * dz) '
-        'p:setpos(tx - dx / d * 120, y, tz - dz / d * 120) p:faceto(tx, ty, tz) return 1' % TREE)
+        'p:setpos(tx - dx / d * 120, y, tz - dz / d * 120) p:faceto(tx, ty, tz) return 1' % name)
     time.sleep(1.5)
     lua("h2.dev_key(%d, 0.3) return 1" % DIK_E)
     time.sleep(1.5)
@@ -73,7 +76,13 @@ try:
     lua('return h2.dev_level("new", "%s")' % LEVEL)
     load()
     tree = lua('return h2.find("%s"):path()' % TREE)
+    tree2 = lua('return h2.find("%s"):path()' % TREE2)
     check("take: the scene's model", "Hitman takes" in lua('return h2.dev_level("take", [[%s]])' % tree))
+    px, py, pz = [float(v) for v in lua('local x, y, z = h2.player():pos() return x .. "," .. y .. "," .. z').split(",")]
+    point = lua('return h2.dev_edit("point", %f, %f, %f)' % (px, py, pz - 400))
+    goal = lua('return h2.dev_level("deliver", [[%s]])' % tree2)
+    slot = int(goal.split()[1].rstrip(":"))
+    check("deliver: place set", "to Point" in lua('return h2.dev_level("place", "%d|%s")' % (slot, point)))
     lua('return h2.dev_level("save")')
     load(LEVEL)
     lua('GOALS = {} if not GOALS_WATCHED then GOALS_WATCHED = true '
@@ -84,6 +93,14 @@ try:
     check("used: objective done", done() != "", done())  # (its line: the first the map's own leave free)
     gone = lua('local t = h2.find([[%s]]) local _, ty = t:pos() return tostring(t:hidden()) .. " " .. math.floor(ty)' % tree)
     check("used: the model out of the world", gone.startswith("true") and int(gone.split()[1]) < -50000, gone)
+    first = done()
+    zone = lua('return h2.dev_routine("H2_Deliver_%d", "CheckInside")' % slot)
+    check("deliver: the place's zone made with the scene", zone != "none", zone[:80])
+    face_tree_and_press(TREE2)
+    check("deliver: taken, not there yet", done() == first, done())
+    lua("h2.player():setpos(%f, %f, %f) return 1" % (px, py, pz - 400))
+    time.sleep(2)
+    check("deliver: brought there, done", done() != first and str(slot) in done().split(","), done())
     save_file = os.path.join(dev.GAME, "Save", "%d.1" % SLOT)
     before = os.path.getmtime(save_file) if os.path.exists(save_file) else 0
     lua("return tostring(h2.dev_savegame(%d))" % SLOT)

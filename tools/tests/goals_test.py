@@ -162,4 +162,5 @@ try:
 finally:
     dev.run('h2.freecam(false) return h2.dev_level("revert")', 10)
     shutil.rmtree(FOLDER, ignore_errors=True)
+    shutil.rmtree(os.path.join(dev.GAME, "Mods", "_GoalsTestBase"), ignore_errors=True)
 print("\n%d passed, %d failed" % (sum(results), len(results) - sum(results)))

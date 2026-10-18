@@ -324,3 +324,9 @@ game pointers; each one looked up in Ghidra):
   attaches only routines without data so. **Places are zones only as records
   made with the scene** (D11): a place made while playing is checked by
   distance until the map loads again.
+* **h2.drive (D14, 2026-10-18)**: stays a script tool (any object along
+  points, by the editor). The game moves objects on paths with ZMoveOnSpline
+  (its vehicles: the level's vehicles are ZCar records already, h2.track
+  drives them); its follow routines are hardly used (ZGEOM_WaypointFollow:
+  C0-1's two pigeons; ZGEOM_FollowShape, ZGEOM_FollowGeom: no scene), and a
+  routine with data cannot be attached while playing (a loaded save).

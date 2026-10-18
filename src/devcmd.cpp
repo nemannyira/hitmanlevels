@@ -590,6 +590,35 @@ int DevUsed(lua_State* L)
     return 1;
 }
 
+// h2.dev_instantiate(path, x, y, z): a copy made as the game makes one while playing (geom
+// vfunc 0x1A8, as ZGEOM_GeomSpawn does: the clone 0x1A4, its init, its routines started) in the
+// source's parent, at a world position; returns its path (reverse engineering)
+engine::ZGEOM* SafeInstantiate(engine::ZGEOM* source, engine::ZGEOM* parent, const float* mat, const float* pos)
+{
+    __try {
+        auto fn = (*reinterpret_cast<engine::ZGEOM*(__thiscall***)(engine::ZGEOM*, engine::ZGEOM*, const float*,
+                                                                    const float*, int, int, int, int)>(source))[0x1A8 / 4];
+        return fn(source, parent, mat, pos, 0, 0, 0, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+int DevInstantiate(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    float pos[3] = {float(luaL_checknumber(L, 2)), float(luaL_checknumber(L, 3)), float(luaL_checknumber(L, 4))};
+    if (!g || !g->node || !g->node->parent)
+        return luaL_error(L, "no such object");
+    editor::Transform t = editor::GetTransform(g);
+    engine::ZGEOM* made = SafeInstantiate(g, g->node->parent->geom, t.mat, pos);
+    if (!made)
+        return luaL_error(L, "not made");
+    std::string path = editor::PathOf(made);  // (PathOf looks into a fresher snapshot for a new one)
+    lua_pushstring(L, path.c_str());
+    return 1;
+}
+
 // h2.dev_routine(path or a goal zone's name, routine): a routine's fields (reverse engineering)
 int DevRoutine(lua_State* L)
 {
@@ -950,6 +979,7 @@ void InstallDevCommands()
     script::Register("dev_routine", DevRoutine);
     script::Register("dev_useaction", DevUseAction);
     script::Register("dev_used", DevUsed);
+    script::Register("dev_instantiate", DevInstantiate);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);
     script::Register("dev_setscript", SetScriptCmd);

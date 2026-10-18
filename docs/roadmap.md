@@ -330,3 +330,20 @@ game pointers; each one looked up in Ghidra):
   drives them); its follow routines are hardly used (ZGEOM_WaypointFollow:
   C0-1's two pigeons; ZGEOM_FollowShape, ZGEOM_FollowGeom: no scene), and a
   routine with data cannot be attached while playing (a loaded save).
+* **B4, characters made while playing (D15, 2026-10-18)**: the game makes
+  none: ZGEOM_GeomSpawn (1848 records) spawns effects (bullet impacts),
+  ZGEOM_CreateInstance is in no scene; every character of the game is a
+  record. h2.npc's characters stay runtime objects (shown until the map
+  loads again); the level's characters are records already.
+* **B16, the level's copies of models (found 2026-10-18, to do)**: the editor
+  builds a copy itself (CloneGeom: the geom table's create, mesh, transform,
+  flags, the parent's AddChild, init); the game offers no action of such a
+  copy. The game copies an object while playing with geom vfunc 0x1A8
+  (0x43B0F0, as GeomSpawn does: (parent, world matrix, world position, 0, 0,
+  0, 0) -> the clone vfunc 0x1A4, Init 0x148, its routines' states 1 / 2
+  (vfunc 0x10C), the initialized flag, PostInit 0x14C; groups are not
+  copied): such a copy gets the action offered (h2.dev_instantiate, seen in
+  C1-1's library). It keeps the source's name (the editor's paths show it as
+  "#1"), while the level finds its copies by their own names ("+1"), and a
+  name in the engine's heap breaks a saved game (P39): the copies' names (or
+  copies as records made with the scene, as the characters are) come first.

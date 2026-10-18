@@ -278,6 +278,16 @@ cheats.
   is not drawn as the room's backdrop); a teleport: ZLIST_TeleportList
   (vtable 0x64C550) is a list of places, the actor's own SetWorldTransform
   (vfunc 0x80 = 0x463AC0) is what moves it, already used.
+* **Teleports (B12, looked at again 2026-10-18)**: ZLIST_TeleportList keeps
+  three fields only (+0x72, +0x76, +0x7A; no engine code reads it by name:
+  the scripts drive it); ZGEOM_CutSequenceMove only reads its data. A
+  character's room is found by the game when a path starts (the editor's walk
+  of no length after a teleport: the game's own way; calling the room setter
+  0x463230 directly hung the game). Hitman's floor contacts (a list around
+  +0x44C, written while walking by 0x60F860 from the character physics step
+  0x610640: velocity, contacts, the floor) are left as they were by a
+  teleport; the game has no "put on the floor" call of its own seen, so the
+  fall guard (P14) stays.
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

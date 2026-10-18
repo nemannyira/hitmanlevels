@@ -139,6 +139,9 @@ Addresses are hitman2.exe (Steam build).
   ("MusicSegment", "MusicControl").
 * The editor gives a zone another track as the game's load would: the
   segment's +0x7A, then MusicControl +0x1E4 (it sends the segments again).
+  Seen in the game (2026-10-18, H2Fix.ini LogFiles: the reads of
+  streams.wav): C1-1's calm track (Hitman2Exploration, 0x042EAD4D..) was
+  read until the change, Chopin's (0x03B66256..) a few seconds after it.
   (Before 2026-10-17 it served the chosen track's Ogg pages in place of the
   original's reads of streams.wav.)
 

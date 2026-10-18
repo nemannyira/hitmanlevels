@@ -356,3 +356,9 @@ game pointers; each one looked up in Ghidra):
   records out or making them inert would hand the level's own code (it finds
   characters by name, e.g. C2-1's target "KGBOfficer_01") something that is
   not a character. The hiding is the game's own (B15: out of the rooms too).
+* **B6, the sky (D17, 2026-10-18)**: giving the map's own backdrop records
+  the other level's models at load would fit only as many as the map has
+  (C1-1: 8 models, C3-1: 42, C4-3: 98; C2-1, C5-x have no backdrop group),
+  and new records cannot go into that group (the indices after it would
+  move). The other level's sky stays made in the map's backdrop group when the
+  level is applied.

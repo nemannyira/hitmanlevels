@@ -114,10 +114,20 @@ A geom's routines are objects of their own, found by name (vfunc 0xEC).
 | +0x72 | kind: 6 use (a message to the receiver), 7 place an item, 13 / 14 climb, 15 _Place, 16 _Pickup |
 | +0x76 | message |
 | +0x78 | receiver |
-| +0x80 | distance |
+| +0x7C | range (vfunc 0xA4; Hitman's choice among near actions weighs it) |
+| +0x80 | reach: a use action (kind 6) can be used while Hitman is within it of the object's box (vfunc 0x84) |
+| +0x84 | flags (1 / 4: off; 2: out of reach) |
+| +0x88 | on |
+| +0x94 / +0x98 | the geoms told they are in range (MSG_ENTERITEMRANGE: Hitman's near list +0x5AD / +0x5B1) |
 | +0xA0 / +0xA4 | the texts |
 
-Set by vfunc 0xAC (0x488A10); use vfunc 0x8C, can-use 0x84.
+Set by vfunc 0xAC (0x488A10: texts, kind, message, receiver, range, reach, +0x130);
+the scenes' data load (vfunc 0x80) gives range and reach the same value, the
+runtime add 0x488A70 leaves the reach 0. Every frame vfunc 0x2C tells Hitman
+(HitmanGround) when he comes within reach; Hitman picks among his near list's
+actions (0x511C50) those his vfunc 0x638 allows (kind 6: the same room and
+within the object's box widened by 90 / 40 / 90, about his chest). Use vfunc
+0x8C, can-use 0x84.
 
 ### CheckInside (ctor 0x48A830, data load 0x4FC060)
 

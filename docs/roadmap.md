@@ -335,7 +335,15 @@ game pointers; each one looked up in Ghidra):
   ZGEOM_CreateInstance is in no scene; every character of the game is a
   record. h2.npc's characters stay runtime objects (shown until the map
   loads again); the level's characters are records already.
-* **B16, the level's copies of models (found 2026-10-18, to do)**: the editor
+* **B16 done (2026-10-19)**: a copy of a plain model of the map keeps its
+  record and is made with the map from then on (engine/inject.h SceneCopy:
+  a copy of the record at the root, as a car's parts), so the game offers its
+  actions and saves it as its own (copies_test). Copies of groups (cars) and of
+  other levels' models are still made while playing. Found with it: the game
+  offers a "use" action only around Hitman's chest (ZHITMAN2 vfunc 0x638: the
+  object's box widened by 90 / 40 / 90, the same room), so a take goal's
+  object on the floor is taken with E near it.
+* **B16, the level's copies of models (found 2026-10-18)**: the editor
   builds a copy itself (CloneGeom: the geom table's create, mesh, transform,
   flags, the parent's AddChild, init); the game offers no action of such a
   copy. The game copies an object while playing with geom vfunc 0x1A8

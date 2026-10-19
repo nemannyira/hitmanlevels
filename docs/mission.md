@@ -104,12 +104,21 @@ Addresses are hitman2.exe (Steam build).
   EscapeFerrari...), 13 / 14 climbing, 15 _Place, 16 _Pickup (items), 1.
 * The game offers (HUD line, action key E) the actions of an object Hitman
   faces, among the objects the scene made: a copy made while playing gets no
-  offer (seen 2026-10-18).
+  offer (seen 2026-10-18). The level's copies of the map's models are made
+  with the map (B16), so they get it from the next load on.
+* How Hitman finds them: an object's Action routine tells him (MSG_ENTERITEMRANGE)
+  when he is within its reach (+0x80; vfunc 0x2C every frame); he picks the
+  best of those he faces (0x511C50), each allowed by his vfunc 0x638: a use
+  action (kind 6) in the same room and within the object's box widened by
+  90 / 40 / 90, about his chest. Nothing on the floor: the game's own floor
+  things are items.
 * A "Hitman takes it" goal of a model the scene made (not an item) gives it a
   kind-6 "Take" action (engine/messages.h AddUseAction, message
-  "H2Editor_Take", the object its own receiver); the SendMessage hook sees the
-  message reach it (game_events.h TakeUsed) and the model is taken. A copy
-  the level made is taken with E near it.
+  "H2Editor_Take", the object its own receiver, its reach set as the scenes'
+  data load sets it); the SendMessage hook sees the message reach it
+  (game_events.h TakeUsed) and the model is taken. E near the object takes it
+  too (an object on the floor, a copy made while playing), with a hint where
+  the game's line does not show.
 
 ## Music
 

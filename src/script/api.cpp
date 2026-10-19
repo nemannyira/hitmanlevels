@@ -13,6 +13,7 @@ extern "C" {
 #include "../editor/freecam.h"
 #include "../editor/playtest.h"
 #include "../editor/testtools.h"
+#include "../engine/messages.h"
 #include "../log.h"
 #include "../scene.h"
 #include "../ui.h"
@@ -21,6 +22,23 @@ extern "C" {
 namespace h2::script {
 
 namespace {
+
+// h2.sound(name) -> id | nil: one of the level's sounds by its name, as the
+// scripts' Sound_If FindWave + Play2DSound play it; h2.stopsound(id)
+int Sound(lua_State* L)
+{
+    uint32_t ref = engine::PlaySound2D(luaL_checkstring(L, 1));
+    if (!ref)
+        return 0;
+    lua_pushinteger(L, lua_Integer(ref));
+    return 1;
+}
+
+int StopSoundFn(lua_State* L)
+{
+    lua_pushboolean(L, engine::StopSound(uint32_t(luaL_checkinteger(L, 1))));
+    return 1;
+}
 
 // h2.fps() -> number
 int Fps(lua_State* L)
@@ -176,6 +194,8 @@ void RegisterApi()
     Register("camlookat", CamLookAt);
     Register("speed", Speed);
     Register("god", God);
+    Register("sound", Sound);
+    Register("stopsound", StopSoundFn);
     Register("invisible", Invisible);
     Register("freeze", Freeze);
 }

@@ -41,6 +41,7 @@ the map is loaded (`obj:valid()`).
 | `obj:pos()`, `obj:setpos(x, y, z)` | world position, centimetres, +Y up |
 | `obj:rot()`, `obj:setrot(yaw [, pitch, roll])` | degrees (yaw 0 = +Z, 90 = +X) |
 | `obj:hide()`, `obj:show()`, `obj:hidden()` | |
+| `obj:active([on])` | in the world or not, as the levels' scripts switch objects (MakeActive / MakeInactive: out of its rooms, its routines stopped, its children too) |
 | `obj:children()`, `obj:parent()` | |
 | `obj:spawn([x, y, z [, yaw]])`, `h2.spawn(source, x, y, z [, yaw])` | a copy of an object's model (runtime only) |
 | `obj:destroy()`, `obj:spawned()` | objects made by scripts |
@@ -78,6 +79,8 @@ been given stops. Hitman can be moved anywhere too
 | `npc:moveset("Run")` | how it moves (`"Walk"`, `"Run"`) |
 | `npc:lookat(obj)`, `npc:lookat(nil)` | turns its head / stops |
 | `npc:faceto(obj)`, `npc:faceto(x, y, z)` | turns it at once |
+| `npc:draggable([on])` | whether Hitman can drag its body (the scripts' EnableDrag / DisableDrag) |
+| `npc:noticed([on])` | whether the characters look out for it as they look out for Hitman (the scripts' MakeActorVisible / MakeActorInvisible) |
 | `npc:animation(name [, loop])` | plays one of its animations (names: docs/animations.md); false: it has none of that name |
 | `npc:carry(template [, fn])` | it carries an item: when it dies (the game's report of it, as the `"death"` event), a working item of the template (as `h2.item`) lands by its body and `fn(item, npc)` is called, as a level's own script gives one (the game itself drops only what a dead character holds in its hands); false: it is dead already. `npc:carry(nil)` takes them back, `npc:carrying()` lists the templates |
 | `params = { WeaponTemplate = h2.find("GunBeretta92") }` | (in `h2.npc` / `npc:behaviour`, guard behaviours) the weapon a guard holds: the game's own way of arming one (C1-1's guards: GunBeretta92, RifleShotgun, GunDesertEagle) |
@@ -91,6 +94,7 @@ place it without one (`h2.npc(..., false)` or in the editor).
 |---|---|
 | `h2.objective(slot [, text [, done]])` | a laptop objective line (1..6); returns the level's own text |
 | `h2.objective(slot, false)` | hides a line (the level's own too) until it gets a text again |
+| `h2.sound(name)` -> id, `h2.stopsound(id)` | one of the level's sounds, as its scripts play one (`"*Male_Whistle1*"`: a part of its name between stars) |
 | `h2.subtitle(text [, seconds])` | a subtitle line at the bottom of the screen (default 5 game seconds; nil / `""` takes it away) |
 | `h2.info(text [, kind])` | the game's own info line ("Info: ...", "Warning:", "Hint:" in its colour, bottom left); `kind`: `"info"` (default), `"warning"`, `"hint"`; one paragraph. A subtitle takes the same place |
 | `h2.briefing(text)` | the laptop's briefing (`""`: the level's own) |
@@ -136,6 +140,9 @@ fails prints its error and the others still run.
 | `"shot"` | `e.silent`; once a second per place (everyone near hears it) |
 | `"hit"`, `"damage"`, `"explosion"`, `"unconscious"` | |
 | `"door"` | `e.open`, `e.to` the door, `e.object` who |
+| `"zone"` | `{object, name, inside}`: Hitman in or out of one of the map's zones (an object with a CheckInside routine: the game's own check), the level's goal places too |
+| `"lock"` | `e.locked`, `e.to` the door: a level's script locked / unlocked it |
+| `"button"`, `"elevator"` | a button pressed, an elevator sent (the levels that have them) |
 | `"drag"` | `{body, by, started}` |
 | `"laptop"`, `"map"`, `"menu"`, `"inventory"` | `e.open` |
 | `"cutscene"` | `e.started` |

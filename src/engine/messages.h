@@ -27,6 +27,30 @@ bool SendMessage(ZGEOM* to, ZGEOM* from, uint16_t msg, void* param);
 // itself, the user as param) and nothing else. Saved with the game (its texts
 // as strings, its fields; its load sets the entry again).
 bool AddUseAction(ZGEOM* geom, const char* text, uint16_t msg, int distance);
+
+// The levels' scripts' commands (docs/script_commands.md), called as their
+// interfaces call the game:
+// Scene_If MakeActive / MakeInactive: geom vfunc 0x30 / 0x2C (0x5B9DD0: out of
+// its rooms, node flag 0x400, its routines stopped (vfunc 0x28(0)), the same
+// for its children), and back.
+bool SetGeomActive(ZGEOM* geom, bool active);
+bool GeomActive(ZGEOM* geom);
+// TrackLnk_HM2_if EnableDrag / DisableDrag (a character of the scenes,
+// ZTRACKLNKHM2): vfunc 0x650(0) (its drag action, +0x7A3 bit 0x10) / 0x65C
+// (let go) and 0x654(1). Draggable: -1 not such a character.
+bool SetDraggable(ZGEOM* actor, bool on);
+int Draggable(ZGEOM* actor);
+// TrackLnk_HM2_if MakeActorVisible / MakeActorInvisible: Msg_ObjectAdd /
+// Msg_ObjectDel with the character's reference to the scene's TrackLinkObjects,
+// whose ZLIST_CheckVisible routine keeps what the characters look out for
+// (Hitman; a character added so). Noticed: -1 unknown.
+bool SetNoticed(ZGEOM* actor, bool on);
+int Noticed(ZGEOM* actor);
+// Sound_If FindWave + Play2DSound: a sound of the level by name (the sound
+// system, sys +0x189C: vfunc 0x6C, 0xFC) -> its reference (0: none);
+// StopSound (0x582ED0).
+uint32_t PlaySound2D(const char* name);
+bool StopSound(uint32_t ref);
 // Characters (ZActor): alive (vfunc 0x544; Hitman, ZHITMAN2: hit points
 // +0xD72 above 0), killing one (its behaviour gets
 // Msg_InstantDeath; without a behaviour: Actor_If's Die, vfunc 0x5F0).

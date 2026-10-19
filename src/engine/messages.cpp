@@ -522,4 +522,178 @@ bool AddUseAction(ZGEOM* geom, const char* text, uint16_t msg, int distance)
     return entry && SafeSetReach(entry, kActionUse);
 }
 
+// ---- the scripts' commands (docs/script_commands.md), as their interfaces call the game ----
+
+namespace {
+
+constexpr int kGeom_Activate = 0x30 / 4;    // Scene_If MakeActive (0x5804F0)
+constexpr int kGeom_Deactivate = 0x2C / 4;  // Scene_If MakeInactive (0x580540): 0x5B9DD0
+constexpr uint32_t kNodeInactive = 0x400;
+constexpr uint32_t kTrackLinkClass = 0x2003E9;  // ZTRACKLNKHM2
+constexpr int kActor_EnableDrag = 0x650 / 4;    // (0) TrackLnk_HM2_if EnableDrag 0x575580: 0x50A5E0
+constexpr int kActor_DragAction = 0x654 / 4;    // (1) its drag action off (0x50A670; 0: Hitman lets go too)
+constexpr int kActor_DragEnd = 0x65C / 4;       // let go (0x50A820)
+constexpr size_t kActor_DragFlags = 0x7A3;      // bit 0x10: the drag action is on
+constexpr size_t kEngine_Finder = 0xAD8;        // vfunc 0x240 (name, 0) -> the scene's object of that name
+constexpr int kFinder_Find = 0x240 / 4;
+constexpr int kSound_FindWave = 0x6C / 4;       // the sound system (sys +0x189C): (name) -> wave
+constexpr int kSound_Play2D = 0xFC / 4;         // (wave) -> sound reference (Play2DSound 0x582A70: 0x43FA80)
+constexpr uintptr_t kSRefToPtr = 0x422A90;      // ZEngineDataBase::SRefToPtr (ref) -> ZSoundObject
+constexpr uintptr_t kSound_Stop = 0x452B80;     // ZSoundObject (thiscall)  (StopSound 0x582ED0)
+constexpr uintptr_t kSound_Release = 0x452B60;  // (object), cdecl: the sound system's vfunc 0xF4
+
+bool SafeVoid(ZGEOM* g, int index)
+{
+    __try {
+        VFunc<void(__thiscall*)(ZGEOM*)>(g, index)(g);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool SafeVoidArg(ZGEOM* g, int index, int arg)
+{
+    __try {
+        VFunc<void(__thiscall*)(ZGEOM*, int)>(g, index)(g, arg);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+ZGEOM* SafeFindByName(void* engine, const char* name)
+{
+    __try {
+        void* finder = *reinterpret_cast<void**>(static_cast<char*>(engine) + kEngine_Finder);
+        return finder ? VFunc<ZGEOM*(__thiscall*)(void*, const char*, int)>(finder, kFinder_Find)(finder, name, 0)
+                      : nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+void* SoundSystem()
+{
+    auto sys = reinterpret_cast<char*>(game::SysInterface());
+    return sys ? *reinterpret_cast<void**>(sys + 0x189C) : nullptr;
+}
+
+uint32_t SafePlay2D(void* snd, const char* name)
+{
+    __try {
+        uint32_t wave = VFunc<uint32_t(__thiscall*)(void*, const char*)>(snd, kSound_FindWave)(snd, name);
+        if (!wave)
+            return 0;
+        return VFunc<uint32_t(__thiscall*)(void*, uint32_t)>(snd, kSound_Play2D)(snd, wave);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+bool SafeStopSound(void* engine, uint32_t ref)
+{
+    __try {
+        void* obj = reinterpret_cast<void*(__thiscall*)(void*, uint32_t)>(kSRefToPtr)(engine, ref);
+        if (!obj)
+            return false;
+        reinterpret_cast<void(__thiscall*)(void*)>(kSound_Stop)(obj);
+        reinterpret_cast<void(__cdecl*)(void*)>(kSound_Release)(obj);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool IsTrackLink(ZGEOM* g) { return Usable(g) && g->classInfo && g->classInfo->id == kTrackLinkClass; }
+
+} // namespace
+
+bool SetGeomActive(ZGEOM* geom, bool active)
+{
+    return Usable(geom) && SafeVoid(geom, active ? kGeom_Activate : kGeom_Deactivate);
+}
+
+bool GeomActive(ZGEOM* geom)
+{
+    return Usable(geom) && IsReadable(geom->node, sizeof(ZBaseGeom)) && !(geom->node->flags & kNodeInactive);
+}
+
+bool SetDraggable(ZGEOM* actor, bool on)
+{
+    if (!IsTrackLink(actor))
+        return false;
+    if (on)
+        return SafeVoidArg(actor, kActor_EnableDrag, 0);
+    return SafeVoid(actor, kActor_DragEnd) && SafeVoidArg(actor, kActor_DragAction, 1);
+}
+
+int Draggable(ZGEOM* actor)
+{
+    if (!IsTrackLink(actor) || !IsReadable(reinterpret_cast<uint8_t*>(actor) + kActor_DragFlags, 1))
+        return -1;
+    return (reinterpret_cast<uint8_t*>(actor)[kActor_DragFlags] & 0x10) ? 1 : 0;
+}
+
+namespace {
+ZGEOM* TrackLinkObjects()
+{
+    void* engine = Engine();
+    ZGEOM* list = engine && SceneDataValid() ? SafeFindByName(engine, "TrackLinkObjects") : nullptr;
+    return Usable(list) ? list : nullptr;
+}
+} // namespace
+
+bool SetNoticed(ZGEOM* actor, bool on)
+{
+    ZGEOM* list = TrackLinkObjects();
+    uint32_t ref = IsTrackLink(actor) ? RefOf(actor) : 0;
+    if (!list || !ref)
+        return false;
+    uint16_t msg = RegisterMessage(on ? "Msg_ObjectAdd" : "Msg_ObjectDel");
+    return msg && SendMessage(list, list, msg, reinterpret_cast<void*>(uintptr_t(ref)));
+}
+
+namespace {
+// The list's ZLIST_CheckVisible routine (vtable 0x649BE0) keeps whom the
+// characters see: 200 entries {ref, flags} at +0x7E (vfunc 0x8C / 0x90 =
+// Msg_ObjectAdd / Msg_ObjectDel: 0x48CDC0 / 0x48CE90)
+constexpr size_t kCheckVisible_Table = 0x7E;
+constexpr int kCheckVisible_Entries = 200;
+
+int SafeInTable(const uint8_t* routine, uint32_t ref)
+{
+    __try {
+        for (int i = 0; i < kCheckVisible_Entries; ++i)
+            if (*reinterpret_cast<const uint32_t*>(routine + kCheckVisible_Table + i * 8) == ref)
+                return 1;
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+} // namespace
+
+int Noticed(ZGEOM* actor)
+{
+    ZGEOM* list = TrackLinkObjects();
+    uint32_t ref = IsTrackLink(actor) ? RefOf(actor) : 0;
+    uint8_t* routine = list ? GeomRoutine(list, "CheckVisible") : nullptr;
+    if (!routine || !ref)
+        return -1;
+    return SafeInTable(routine, ref);
+}
+
+uint32_t PlaySound2D(const char* name)
+{
+    void* snd = SoundSystem();
+    return snd && name && *name ? SafePlay2D(snd, name) : 0;
+}
+
+bool StopSound(uint32_t ref)
+{
+    void* engine = Engine();
+    return engine && ref && SafeStopSound(engine, ref);
+}
+
 } // namespace h2::engine

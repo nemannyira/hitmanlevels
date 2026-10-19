@@ -6,6 +6,8 @@
 #include <set>
 
 #include "../engine/game_events.h"
+#include "../engine/inject.h"
+#include "../engine/scene_data.h"
 #include "../log.h"
 #include "objects_api.h"
 #include "triggers.h"
@@ -86,6 +88,13 @@ const Alias kAliases[] = {
     {"cutscene", "cutsequence_start", "started", 1, Shared},
     {"cutscene", "cutsequence_end", "started", 0, Shared},
     {"restart", "restartlevel", nullptr, 0, Shared},
+    // a door locked / unlocked by a level's script (C2-4, C4-x, C5-x, C6-3, C8-1); a button
+    // pressed (C3-3, C5-3, C6-3); an elevator sent (C4-3)
+    {"lock", "msg_lockdoor", "locked", 1, Always},
+    {"lock", "msg_unlockdoor", "locked", 0, Always},
+    {"button", "msg_buttonpressed", nullptr, 0, Shared},
+    {"button", "pushbutton", nullptr, 0, Shared},
+    {"elevator", "elevmoveto", nullptr, 0, Shared},
 };
 
 // "msg:HitmanSpotted" and "msg:hitmanspotted" are one event
@@ -302,6 +311,49 @@ void FireVictim(const char* event, const engine::GameEvent& e)
     });
 }
 
+// "zone": Hitman entering or leaving one of the scene's zones (an object with a
+// CheckInside routine: the game checks him against its box every frame and keeps
+// whether he is in at +0x88, inject.h InZone), the level's own (H2_Reach_1...) too
+struct ZoneWatch {
+    engine::ZGEOM* box;
+    bool inside;
+};
+std::vector<ZoneWatch> g_zoneWatch;
+const void* g_zoneScene;  // the records they were found in
+
+void FireZones()
+{
+    if (!HasHandlers("zone") || !engine::SceneDataValid()) {
+        g_zoneScene = nullptr;
+        return;
+    }
+    const auto& recs = engine::SceneRecords();
+    if (g_zoneScene != recs.data()) {
+        g_zoneScene = recs.data();
+        g_zoneWatch.clear();
+        for (const engine::SceneRecord& r : recs)
+            if (r.events)
+                if (engine::ZGEOM* g = engine::RecordGeom(r.index); g && engine::GeomRoutine(g, "CheckInside"))
+                    g_zoneWatch.push_back({g, engine::InZone(g)});
+        Log("lua: zone events watch %zu zones", g_zoneWatch.size());
+    }
+    for (ZoneWatch& z : g_zoneWatch) {
+        bool in = engine::InZone(z.box);
+        if (in == z.inside)
+            continue;
+        z.inside = in;
+        Fire("zone", [&](lua_State* L) {
+            lua_createtable(L, 0, 3);
+            PushGeom(L, z.box);
+            lua_setfield(L, -2, "object");
+            lua_pushstring(L, engine::SafeString(z.box->name).c_str());
+            lua_setfield(L, -2, "name");
+            SetBool(L, "inside", in);
+            return 1;
+        });
+    }
+}
+
 std::map<std::string, double> g_recent;  // `once` events fired lately
 
 void FireGameMessage(const engine::GameEvent& e)
@@ -345,6 +397,7 @@ void FireGameMessage(const engine::GameEvent& e)
 
 void FireGameEvents()
 {
+    FireZones();
     std::vector<engine::GameEvent> events = engine::TakeGameEvents();
     if (g_recent.size() > 256) {
         double now = NowMs();

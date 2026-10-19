@@ -1228,6 +1228,42 @@ int Hidden(lua_State* L)
     return 1;
 }
 
+// obj:active([on]) -> on: in the world (the scripts' MakeActive / MakeInactive: taken out of
+// its rooms, its routines stopped, its children too)
+int Active(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    if (!lua_isnoneornil(L, 2) && !engine::SetGeomActive(g, lua_toboolean(L, 2) != 0))
+        return luaL_error(L, "active: refused");
+    lua_pushboolean(L, engine::GeomActive(g));
+    return 1;
+}
+
+// npc:draggable([on]) -> on: Hitman can drag its body (the scripts' EnableDrag / DisableDrag)
+int DraggableFn(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    if (engine::Draggable(g) < 0)
+        return luaL_error(L, "draggable: %s is not one of the scenes' characters", engine::SafeString(g->name).c_str());
+    if (!lua_isnoneornil(L, 2) && !engine::SetDraggable(g, lua_toboolean(L, 2) != 0))
+        return luaL_error(L, "draggable: refused");
+    lua_pushboolean(L, engine::Draggable(g) == 1);
+    return 1;
+}
+
+// npc:noticed([on]) -> on: the other characters take notice of it (the scripts'
+// MakeActorVisible / MakeActorInvisible: the scene's TrackLinkObjects)
+int NoticedFn(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    if (engine::Noticed(g) < 0)
+        return luaL_error(L, "noticed: %s is not one of the scenes' characters", engine::SafeString(g->name).c_str());
+    if (!lua_isnoneornil(L, 2) && !engine::SetNoticed(g, lua_toboolean(L, 2) != 0))
+        return luaL_error(L, "noticed: refused");
+    lua_pushboolean(L, engine::Noticed(g) == 1);
+    return 1;
+}
+
 int ObjSpawn(lua_State* L) { return SpawnFrom(L, Geom(L), 2); }
 
 int Destroy(lua_State* L)
@@ -1276,6 +1312,7 @@ void RegisterObjectsApi()
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
         {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"knockedout", KnockedOutFn}, {"kill", Kill},
         {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet}, {"animation", Animation}, {"faceto", FaceTo},
+        {"active", Active}, {"draggable", DraggableFn}, {"noticed", NoticedFn},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);

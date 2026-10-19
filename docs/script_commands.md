@@ -39,10 +39,10 @@ script names).
 | the mission's end (`"mission"` event, failed) | LevelControl_if MissionFailed (5): LevelControl vfunc 0xC0 |
 | reported deaths (`"kill"` / `"harm"`) | LevelControl_if CharacterKilled (0) / CharacterHarmed (1): LevelControl vfunc 0xB4 / 0xB8 |
 | the items a dying character lets go (Being2's death) | TrackLnk_HM2_if SlipLeftHandItem (25) / SlipRightHandItem (24) |
-| (not yet) sounds | Sound_If FindWave (0), Play2DSound (2), Play3DSound (3), StopSound (5), SetVolume (13), SetLoop (16) |
+| `h2.sound` / `h2.stopsound` | Sound_If FindWave (0), Play2DSound (2), Play3DSound (3), StopSound (5), SetVolume (13), SetLoop (16) |
 | (not yet) texts | Dialog_If ShowText (10), ShowText3D (11), OneLiner (12), RemoveText (13) |
-| (not yet) objects on / off | Scene_If MakeActive (34) / MakeInactive (35) |
-| (not yet) bodies | TrackLnk_HM2_if EnableDrag (39) / DisableDrag (40), SetBodyUnconscious (72), MakeActorInvisible (68) / MakeActorVisible (67) |
+| `obj:active` | Scene_If MakeActive (34) / MakeInactive (35) |
+| `npc:draggable`, `npc:noticed` | TrackLnk_HM2_if EnableDrag (39) / DisableDrag (40), MakeActorVisible (67) / MakeActorInvisible (68): Msg_ObjectAdd / Del to TrackLinkObjects, whose ZLIST_CheckVisible routine keeps what the characters look out for (+0x7E: 200 {ref, flags}); SetBodyUnconscious (72, actor +0x7A4 bit 8) not yet |
 
 A behaviour's parameters (Inspector > NPC) are written into the script
 instance's data by the class's symbol entries (`engine/npc.cpp`

@@ -591,6 +591,28 @@ int DevUsed(lua_State* L)
     return 1;
 }
 
+// h2.dev_copyposdir(target, from): the levels' scripts' teleport (Scene_If CopyObjectPosDir
+// 0x57FCB0): the target's world transform set to the other's (geom vfunc 0x84 -> 0x80)
+bool SafeCopyPosDir(engine::ZGEOM* target, engine::ZGEOM* from)
+{
+    __try {
+        float mat[9], pos[3];
+        (*reinterpret_cast<void(__thiscall***)(engine::ZGEOM*, float*, float*)>(from))[0x84 / 4](from, mat, pos);
+        (*reinterpret_cast<void(__thiscall***)(engine::ZGEOM*, float*, float*)>(target))[0x80 / 4](target, mat, pos);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+int DevCopyPosDir(lua_State* L)
+{
+    engine::ZGEOM* t = editor::Resolve(luaL_checkstring(L, 1));
+    engine::ZGEOM* f = editor::Resolve(luaL_checkstring(L, 2));
+    lua_pushboolean(L, t && f && SafeCopyPosDir(t, f));
+    return 1;
+}
+
 // h2.dev_record(path) -> its record in the scene loaded last (-1: made while playing), "file" /
 // "copy" (a copy of the level made with the map) / "added" (the level's characters, lists, ...)
 int DevRecord(lua_State* L)
@@ -992,6 +1014,7 @@ void InstallDevCommands()
     script::Register("dev_useaction", DevUseAction);
     script::Register("dev_used", DevUsed);
     script::Register("dev_record", DevRecord);
+    script::Register("dev_copyposdir", DevCopyPosDir);
     script::Register("dev_instantiate", DevInstantiate);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);

@@ -288,6 +288,14 @@ cheats.
   0x610640: velocity, contacts, the floor) are left as they were by a
   teleport; the game has no "put on the floor" call of its own seen, so the
   fall guard (P14) stays.
+  Done 2026-10-19: the levels' scripts teleport with Scene_If
+  CopyObjectPosDir (0x57FCB0: the other object's world transform, geom vfunc
+  0x84, set on the target with vfunc 0x80). Done so to Hitman himself
+  (h2.dev_copyposdir) it moves his group with him and he stands on the floor
+  where he lands (C1-1, from the start hill into the mansion: y 500, still
+  there 6 s on); the editor's h2.setpos / player:setpos sets his group's world
+  transform with the same virtual. The floor is the physics' (no call of its
+  own).
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

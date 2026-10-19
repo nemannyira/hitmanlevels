@@ -816,25 +816,31 @@ void CheckTakes()
             continue;
         }
         float reach = o.goal == MissionObjective::Take ? o.radius : 150.0f;  // (Deliver: radius is the place's)
-        bool taken = false;
-        if (engine::RecordOf(t) >= 0 && msg) {  // the scene's: the game's action
+        bool taken = false, action = false;
+        if (engine::RecordOf(t) >= 0 && msg) {  // the scene's (the level's copies made with the map too): the game's action
             if (!g_takeActions.count(t)) {
                 if (engine::AddUseAction(t, "Take", msg, int(reach)))
                     g_takeActions.insert(t);
                 else
                     Log("mission: objective %d: no action on %s", o.slot, o.target.c_str());
             }
+            action = g_takeActions.count(t) > 0;
             taken = engine::TakeUsed(t);
-        } else {  // a copy: the key near it
-            engine::ZGEOM* hitman = engine::Player();
-            bool inReach = hitman && engine::IsAlive(hitman) && DistanceToPlayer(t) <= reach;
-            if (inReach && !g_nearTake[o.slot])
-                ShowInfo(InfoKind::Hint, "E: take it (" +
-                                             (o.text.empty() ? "objective " + std::to_string(o.slot) : o.text) + ")");
-            g_nearTake[o.slot] = inReach;
-            taken = inReach && presses > 0;
-            if (taken)
-                presses = 0;  // one object a press
+        }
+        // The key near it: a copy made while playing has no action, and the game offers a
+        // "use" action (kind 6) only within a band around Hitman's chest (ZHITMAN2 vfunc 0x638:
+        // the object's box widened by 90 / 40 / 90, the same room): nothing on the floor
+        // (the game's own floor things are items, picked up). Hinted where the action is not.
+        engine::ZGEOM* hitman = engine::Player();
+        bool inReach = hitman && engine::IsAlive(hitman) && DistanceToPlayer(t) <= reach;
+        bool low = hitman && GetTransform(t).pos[1] < GetTransform(hitman).pos[1] + 60.0f;
+        if (inReach && !g_nearTake[o.slot] && (!action || low))
+            ShowInfo(InfoKind::Hint, "E: take it (" +
+                                         (o.text.empty() ? "objective " + std::to_string(o.slot) : o.text) + ")");
+        g_nearTake[o.slot] = inReach;
+        if (!taken && inReach && presses > 0) {
+            taken = true;
+            presses = 0;  // one object a press
         }
         if (taken) {
             TakeOut(o.target, t);
@@ -859,7 +865,8 @@ void Check()
         g_applied = true;
         ShowLines();
     }
-    ApplyPendingGoals();
+    if (!LevelApplyPending())  // (the level's copies made with the map are put at their places then)
+        ApplyPendingGoals();
     bool all = true;
     for (const MissionObjective& o : Doc().objectives) {
         if (o.goal == MissionObjective::Level) {

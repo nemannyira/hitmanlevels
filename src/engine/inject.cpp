@@ -52,6 +52,10 @@ std::function<std::vector<SceneList>(const std::string&)> g_listProvider;
 std::function<std::vector<SceneCar>(const std::string&)> g_carProvider;
 std::function<std::vector<SceneZone>(const std::string&)> g_zoneProvider;
 std::map<std::string, int> g_zones;  // name -> its record (scene loaded last)
+std::function<std::vector<SceneCopy>(const std::string&)> g_copyProvider;
+std::map<std::string, int> g_copies;  // name -> its record (scene loaded last)
+std::set<int> g_copyRecords;
+int g_fileRecords = 0;  // the records the scene file had (the scene loaded last)
 constexpr uint32_t kBoxClass = 0x2000E1;  // ZBoxPrimitive (0x44A300)
 constexpr uint32_t kZoneInside = 0x88;    // CheckInside: Hitman inside (0x48ACF0 / 0x4FC480)
 constexpr uint32_t kCarClass = 0x100BBF;    // ZCar (ZGROUP -> ZMoveOnSpline -> ZVehicle -> ZCar)
@@ -176,6 +180,21 @@ void SetSceneCarProvider(std::function<std::vector<SceneCar>(const std::string& 
 {
     g_carProvider = std::move(provider);
 }
+
+void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider)
+{
+    g_copyProvider = std::move(provider);
+}
+
+int SceneCopyRecord(const std::string& name)
+{
+    auto it = g_copies.find(name);
+    return it == g_copies.end() ? -1 : it->second;
+}
+
+bool IsSceneCopyRecord(int index) { return g_copyRecords.count(index) > 0; }
+
+bool IsSceneFileRecord(int index) { return index >= 0 && index < g_fileRecords; }
 
 // (a CheckInside routine cannot be attached while playing: a loaded save makes such a routine
 // again (0x426070) and its load (0x48AC40) reads its data, which the save does not keep: 0x5C0100
@@ -319,11 +338,15 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     g_made.clear();
     g_groups.clear();
     g_zones.clear();
+    g_copies.clear();
+    g_copyRecords.clear();
+    g_fileRecords = int(U32(gms, U32(gms, 0)));
     std::vector<SceneNpc> npcs = g_provider ? g_provider(scene) : std::vector<SceneNpc>{};
     std::vector<SceneList> lists = g_listProvider ? g_listProvider(scene) : std::vector<SceneList>{};
     std::vector<SceneCar> cars = g_carProvider ? g_carProvider(scene) : std::vector<SceneCar>{};
     std::vector<SceneZone> zones = g_zoneProvider ? g_zoneProvider(scene) : std::vector<SceneZone>{};
-    if (npcs.empty() && lists.empty() && cars.empty() && zones.empty())
+    std::vector<SceneCopy> copies = g_copyProvider ? g_copyProvider(scene) : std::vector<SceneCopy>{};
+    if (npcs.empty() && lists.empty() && cars.empty() && zones.empty() && copies.empty())
         return false;
     std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
     uint32_t list = U32(gms, 0), count = U32(gms, list);
@@ -548,9 +571,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                 z.half[0] * 2, z.half[1] * 2, z.half[2] * 2);
         }
     }
-    // vehicles: a ZCar with copies of the model's records, and its spline
-    int carsAdded = 0;
-    if (!cars.empty()) {
+    // vehicles: a ZCar with copies of the model's records, and its spline; the
+    // level's copies of models
+    int carsAdded = 0, copiesAdded = 0;
+    if (!cars.empty() || !copies.empty()) {
         int car = -1, shape = -1;  // the scene's own as templates
         for (uint32_t i = 0; i < count && (car < 0 || shape < 0); ++i) {
             if (recs[i].classId == kCarClass && car < 0)
@@ -601,6 +625,9 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                     emptyLights = h;
             }
         }
+        // a copy at the root: no group's block, a node of its own (TakeNode), these flags too
+        constexpr size_t kAtRoot = SIZE_MAX;
+        uint32_t rootFlags = 0;
         std::function<void(int, int, size_t, const std::array<float, 12>*, int, const char*)> copy =
             [&](int r, int level, size_t block, const std::array<float, 12>* local, int guard, const char* name) {
                 if (guard > 8)
@@ -614,9 +641,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                 }
                 Put(rec, 0x20, recs[r].data ? copyBlock(recs[r].data) : 0);
                 Put(rec, 0x28, 0);  // (no scripts on the copy)
-                Put(rec, 0x18, U32(rec, 0x18) | copyFlags);
+                Put(rec, 0x18, U32(rec, 0x18) | copyFlags | (block == kAtRoot ? rootFlags : 0));
                 bool opens = (U32(gms, entry(r)) & kOpens) != 0;
-                emit(rec, opens, level, copyExtra ? copyExtra : recs[r].extra, &groupBlocks[block], false);
+                emit(rec, opens, level, copyExtra ? copyExtra : recs[r].extra,
+                     block == kAtRoot ? nullptr : &groupBlocks[block], block == kAtRoot);
                 if (recs[r].classId & 0x100000) {
                     groupBlocks.emplace_back(kPools);
                     size_t mine = groupBlocks.size() - 1;
@@ -705,12 +733,37 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             }
             ++carsAdded;
         }
+        // the level's copies of models: as a car's parts, at the root
+        copyFlags = 0x200000;
+        copyExtra = emptyLights;
+        rootFlags = 0x44000;
+        for (const SceneCopy& c : copies) {
+            if (c.record < 0 || uint32_t(c.record) >= count || c.name.empty() || c.name.size() > 64 ||
+                recs[c.record].name != c.source || (recs[c.record].classId & 0x100000) || !recs[c.record].mesh ||
+                recs[c.record].classId == kActorClass) {
+                Log("scene copies: %s: record %d is not the plain model %s (made while playing instead)",
+                    c.name.c_str(), c.record, c.source.c_str());
+                continue;
+            }
+            std::array<float, 12> place;
+            memcpy(place.data(), c.mat, 36);
+            memcpy(place.data() + 9, c.pos, 12);
+            g_copies[c.name] = int(count) + added;
+            g_copyRecords.insert(int(count) + added);
+            copy(c.record, 0, kAtRoot, &place, 0, c.name.c_str());
+            ++copiesAdded;
+        }
+        copyFlags = 0;
+        copyExtra = 0;
+        rootFlags = 0;
         inGroup = open > 0;
     }
     if (!added)
         return false;
     if (carsAdded)
         Log("scene cars: %d vehicles (ZCar) with their splines", carsAdded);
+    if (copiesAdded)
+        Log("scene copies: %d models of the level made with the scene", copiesAdded);
     if (listsAdded)
         Log("scene lists: %d new lists", listsAdded);
     // geom counts (the engine allocates the geoms of each class at once)

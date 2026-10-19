@@ -89,6 +89,30 @@ bool InSceneZone(const std::string& name);
 // Whether Hitman is inside a zone (a box with a CheckInside routine, +0x88).
 bool InZone(ZGEOM* box);
 
+// A copy of one of the scene's models the level placed ("Crate_01+1"), made as
+// the scene's own objects are: a copy of the model's record at the root, with
+// the level's name and place. The game then treats it as its own (the actions
+// its routines offer, saved games: its name is in the scene's strings). As a
+// car's parts, it is a full node (0x200000: a plain model's record without it
+// is a static node that must not move) and an empty light table entry until
+// the level runs; dynamic and drawn with the rooms around it (0x44000, as the
+// game's moving objects: a root object is in no room).
+struct SceneCopy {
+    std::string name;    // unique in the scene
+    int record = -1;     // the model's record (a plain model, not a group)
+    std::string source;  // that record's name (checked: another map version, another record)
+    float mat[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};  // world (rows forward, up, right)
+    float pos[3] = {};
+};
+void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);
+// The record made for a copy of that name in the scene loaded last (-1: none).
+int SceneCopyRecord(const std::string& name);
+// Whether a record of the scene loaded last is one of those copies.
+bool IsSceneCopyRecord(int index);
+// Whether a record of the scene loaded last is the scene file's own (not one
+// the level added: characters, lists, zones, cars, copies).
+bool IsSceneFileRecord(int index);
+
 // Asked for every scene that loads (its name as GetSceneName gives it).
 void SetSceneNpcProvider(std::function<std::vector<SceneNpc>(const std::string& scene)> provider);
 // The record made for a character of that name in the scene loaded last (-1: none).

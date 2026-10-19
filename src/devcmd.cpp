@@ -33,6 +33,7 @@ extern "C" {
 #include "engine/inject.h"
 #include "engine/messages.h"
 #include "engine/npc.h"
+#include "engine/scene_data.h"
 #include "imgui.h"
 #include "d3d8types.h"
 #include "hook.h"
@@ -590,6 +591,17 @@ int DevUsed(lua_State* L)
     return 1;
 }
 
+// h2.dev_record(path) -> its record in the scene loaded last (-1: made while playing), "file" /
+// "copy" (a copy of the level made with the map) / "added" (the level's characters, lists, ...)
+int DevRecord(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    int r = g ? engine::RecordOf(g) : -1;
+    lua_pushinteger(L, r);
+    lua_pushstring(L, r < 0 ? "none" : engine::IsSceneFileRecord(r) ? "file" : engine::IsSceneCopyRecord(r) ? "copy" : "added");
+    return 2;
+}
+
 // h2.dev_instantiate(path, x, y, z): a copy made as the game makes one while playing (geom
 // vfunc 0x1A8, as ZGEOM_GeomSpawn does: the clone 0x1A4, its init, its routines started) in the
 // source's parent, at a world position; returns its path (reverse engineering)
@@ -979,6 +991,7 @@ void InstallDevCommands()
     script::Register("dev_routine", DevRoutine);
     script::Register("dev_useaction", DevUseAction);
     script::Register("dev_used", DevUsed);
+    script::Register("dev_record", DevRecord);
     script::Register("dev_instantiate", DevInstantiate);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);

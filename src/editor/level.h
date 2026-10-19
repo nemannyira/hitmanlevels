@@ -16,7 +16,8 @@
 //       "pos": [x, y, z], "matrix": [9 floats], "hidden": false } ],
 //   "spawned": [                                // new objects: visual clones of a scene object
 //     { "id": "Crate_01+1", "source_scene": "C1-1\C1-1__MAIN",
-//       "source_path": "ROOT/.../Crate_01", "pos": [...], "matrix": [...], "hidden": false },
+//       "source_path": "ROOT/.../Crate_01", "record": 1234,  // (made with the map: SpawnedObject::record)
+//       "pos": [...], "matrix": [...], "hidden": false },
 //     { "id": "Point+1", "kind": "point", "parent": "ROOT/.../Room", "pos": [...], ... } ],  // route point
 //   "npcs": [                                   // characters the level places
 //     { "id": "NPC_Maid_1", "record": 3803, "model": "Maid", "pos": [...], "matrix": [...],
@@ -69,6 +70,11 @@ struct SpawnedObject {
     std::string parentPath;   // room it is placed in ("" = the source's parent)
     Transform transform;
     bool hidden = false;
+    // A copy of a plain model of the map: its record. The copy is then made
+    // with the map, as the map's own objects (engine/inject.h SceneCopy: the
+    // game's actions on it, saved games), at the root; until the map loads
+    // again, and without it, it is made while playing (a clone).
+    int record = -1;
 };
 
 struct LevelNpc {
@@ -274,6 +280,8 @@ void SetSky(const std::string& level);
 void ForgetSky();
 // Applies the level's spawned objects and object edits to the loaded scene; returns how many applied.
 int ApplyLevel();
+// The map loaded and the level is to be applied a few frames on (its objects' places not set yet).
+bool LevelApplyPending();
 // Undoes every edit of the level in the loaded scene (restores originals).
 void RevertLevel();
 // The levels in Mods (folders), the last saved first.

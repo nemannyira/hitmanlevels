@@ -298,20 +298,25 @@ uint32_t RegisterLights(engine::ZBaseGeom* node)
     }
 }
 
+bool OwnLightEntryOf(engine::ZGEOM* g)
+{
+    engine::ZBaseGeom* n = g ? g->node : nullptr;
+    if (!n || !(n->flags & 0x8000))
+        return false;
+    uint32_t h = RegisterLights(n);
+    if (!h)
+        return false;
+    *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(n) + 0x6C) = h;
+    n->flags |= 0x1000000;  // (its lights looked at again, as 0x5BB2C0 does)
+    return true;
+}
+
 // a level's car: its parts (made with the map, with an empty entry shared) get light table entries of their own
 void OwnLightEntries(engine::ZGEOM* car)
 {
     int made = 0;
-    for (engine::ZGEOM* p : VisibleParts(car)) {
-        engine::ZBaseGeom* n = p->node;
-        if (!(n->flags & 0x8000))
-            continue;
-        if (uint32_t h = RegisterLights(n)) {
-            *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(n) + 0x6C) = h;
-            n->flags |= 0x1000000;  // (its lights looked at again, as 0x5BB2C0 does)
-            ++made;
-        }
-    }
+    for (engine::ZGEOM* p : VisibleParts(car))
+        made += OwnLightEntryOf(p);
     Log("vehicles: %s: %d parts with light table entries of their own", engine::SafeString(car->name).c_str(), made);
 }
 
@@ -1083,5 +1088,7 @@ void InstallVehicles()
     });
     g_last = double(GetTickCount64());
 }
+
+bool OwnLightEntry(engine::ZGEOM* model) { return OwnLightEntryOf(model); }
 
 } // namespace h2::editor

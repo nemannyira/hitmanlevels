@@ -94,6 +94,20 @@ bool SafeAddAction(ZGEOM* geom, const char* text, uint16_t msg, uint32_t receive
     }
 }
 
+constexpr uint32_t kActionKind = 0x72, kActionRange = 0x7C, kActionReach = 0x80;
+
+bool SafeSetReach(uint8_t* entry, int kind)
+{
+    __try {
+        if (*reinterpret_cast<int*>(entry + kActionKind) != kind)
+            return false;
+        *reinterpret_cast<int*>(entry + kActionReach) = *reinterpret_cast<int*>(entry + kActionRange);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool SafeSend(ZGEOM* to, ZGEOM* from, int msg, void* param)
 {
     __try {
@@ -498,7 +512,14 @@ bool AddUseAction(ZGEOM* geom, const char* text, uint16_t msg, int distance)
     if (!geom || !text || !msg || !IsReadable(geom, sizeof(ZGEOM)))
         return false;
     uint32_t ref = RefOf(geom);
-    return ref && SafeAddAction(geom, text, msg, ref, distance);
+    if (!ref || !SafeAddAction(geom, text, msg, ref, distance))
+        return false;
+    // Its reach: 0x488A70 gives the entry the distance at +0x7C (vfunc 0xA4) and 0 at
+    // +0x80, which a "use" action's check (vfunc 0x84) measures by: Hitman would
+    // have to touch the object's box (a tree's is wide, a book's not). The
+    // scenes' own actions have both (their data load, vfunc 0x80 at 0x487ADD).
+    uint8_t* entry = GeomRoutine(geom, "Action");
+    return entry && SafeSetReach(entry, kActionUse);
 }
 
 } // namespace h2::engine

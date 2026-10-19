@@ -131,8 +131,8 @@ void BlankScene()
         return;
     for (const auto& g : SceneModel(0).geoms) {
         engine::ZGEOM* geom = g.geom;
-        if (!IsLive(geom) || IsSpawned(geom) || HiddenByTheMap(geom))
-            continue;  // the editor's, or hidden already (templates, cutscenes)
+        if (!IsLive(geom) || IsSpawned(geom) || HiddenByTheMap(geom) || engine::IsSceneCopyRecord(engine::RecordOf(geom)))
+            continue;  // the editor's (the level's copies made with the map too), or hidden already (templates, cutscenes)
         uint32_t mesh = engine::MeshOf(geom);
         if (!mesh || !engine::IsPlainModel(mesh) || InActor(geom) || InItem(geom))
             continue;
@@ -410,11 +410,76 @@ void RetireGroup(const std::string& id, engine::ZGEOM* g)
     }
 }
 
+// A copy made with the map is the map's: taken back (deleted, the level reverted)
+// it is hidden away until the map loads again (as the game's objects stay
+// what saved games point at), and shown again by Materialize.
+bool IsMapCopy(engine::ZGEOM* g) { return g && engine::IsSceneCopyRecord(engine::RecordOf(g)); }
+
+void RetireCopy(engine::ZGEOM* g)
+{
+    ForgetEngineOwned(g);
+    if (IsLive(g)) {
+        Transform t = GetTransform(g);
+        t.pos[1] -= 100000.0f;
+        SetTransform(g, t);
+        SetHidden(g, true);
+    }
+}
+
+// The record of a plain model of the map's file, whose copies are made with the
+// map (engine/inject.h SceneCopy); -1: none (copied while playing).
+int CopyRecordOf(engine::ZGEOM* source)
+{
+    int r = engine::RecordOf(source);
+    if (!engine::IsSceneFileRecord(r) || !engine::MeshOf(source) || InItem(source) || InActor(source))
+        return -1;
+    return r;
+}
+
+bool SameScene(std::string a, std::string b);
+
+// The copies of the level the map makes when it loads.
+std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
+{
+    std::vector<engine::SceneCopy> out;
+    if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
+        return out;
+    for (const SpawnedObject& s : g_level.spawned) {
+        if (s.item || s.point || s.group || s.record < 0 || IsVehicleCopy(g_level.vehicles, s.id) ||
+            !(s.sourceScene.empty() || s.sourceScene == g_level.baseScene ||
+              (!g_level.ownMapOf.empty() && s.sourceScene == g_level.ownMapOf)))
+            continue;
+        engine::SceneCopy c;
+        c.name = s.id;
+        c.record = s.record;
+        size_t slash = s.sourcePath.rfind('/');
+        c.source = s.sourcePath.substr(slash == std::string::npos ? 0 : slash + 1);
+        c.source = c.source.substr(0, c.source.find('#'));  // ("Crate#2": the second of that name)
+        memcpy(c.mat, s.transform.mat, sizeof(c.mat));
+        memcpy(c.pos, s.transform.pos, sizeof(c.pos));
+        out.push_back(c);
+    }
+    return out;
+}
+
 // Creates the object of a spawned entry in the loaded scene (if not there yet).
 engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
 {
     if (engine::ZGEOM* g = LiveSpawned(s.id))
         return g;
+    // made with the map (as its own objects)
+    if (!s.item && !s.point && !s.group && s.record >= 0)
+        if (engine::ZGEOM* g = engine::RecordGeom(engine::SceneCopyRecord(s.id)); g && IsLive(g)) {
+            AdoptEngineOwned(g);
+            OwnLightEntry(g);
+            ShowBlankedMesh(engine::MeshOf(g));
+            g_live[s.id] = g;
+            ObjectState st;
+            st.transform = s.transform;
+            st.hidden = s.hidden;
+            SetState(g, st);
+            return g;
+        }
     if (s.point) {
         engine::ZGEOM* g = nullptr;
         auto it = g_retiredPoints.find(s.id);
@@ -644,6 +709,8 @@ bool RemoveSpawned(const std::string& id)
             RetirePoint(id, g);
         else if (IsGroupEntry(id))
             RetireGroup(id, g);
+        else if (IsMapCopy(g))
+            RetireCopy(g);
         else
             DestroySpawned(g);
     }
@@ -1528,6 +1595,8 @@ bool SaveLevel(std::string* error)
             o["kind"] = "group";
         if (!s.parentPath.empty())
             o["parent"] = s.parentPath;
+        if (s.record >= 0)
+            o["record"] = s.record;
         o["hidden"] = s.hidden;
         j["spawned"].push_back(o);
     }
@@ -1718,6 +1787,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
             s.point = o.value("kind", "") == "point";
             s.group = o.value("kind", "") == "group";
             s.parentPath = o.value("parent", "");
+            s.record = o.value("record", -1);
             L.spawned.push_back(s);
         }
         for (const json& o : j.value("npcs", json::array())) {
@@ -2099,6 +2169,10 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         return fail("only objects with a mesh (or groups of them) can be duplicated");
     if (InActor(source))
         return fail("parts of characters cannot be copied");
+    if (const SpawnedObject* from = EntryOf(source))
+        s.record = from->record;
+    else if (!s.group)
+        s.record = CopyRecordOf(source);
     if (parent)
         s.parentPath = PathOf(parent);
     else if (const SpawnedObject* from = EntryOf(source))
@@ -3139,6 +3213,11 @@ int ApplyLevel()
         ClearScene();
     if (g_level.blankMap && (g_level.baseScene.empty() || g_level.baseScene == CurrentScene()))
         BlankScene();
+    // copies made before their records were kept: made with the map from the next save and load on
+    for (SpawnedObject& s : g_level.spawned)
+        if (s.record < 0 && !s.item && !s.point && !s.group && s.sourceScene == CurrentScene())
+            if (engine::ZGEOM* src = Resolve(s.sourcePath))
+                s.record = CopyRecordOf(src);
     for (const SpawnedObject& s : g_level.spawned)
         if (IsVehicleCopy(g_level.vehicles, s.id)) {
             continue;  // (its car is made with the map instead)
@@ -3197,6 +3276,8 @@ void RevertLevel()
             RetirePoint(id, g);
         else if (IsGroupEntry(id))
             RetireGroup(id, g);
+        else if (IsMapCopy(g))
+            RetireCopy(g);
         else if (IsSpawned(g))
             DestroySpawned(g);
     }
@@ -3284,6 +3365,7 @@ void InstallLevelPanel()
     engine::SetSceneNpcProvider(NpcsFor);
     engine::SetSceneListProvider(ListsFor);
     engine::SetSceneZoneProvider(ZonesFor);
+    engine::SetSceneCopyProvider(CopiesFor);
     engine::SetShapeProvider([](const std::string& scene) {
         return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene) ? VehicleShapes(g_level.vehicles)
                                                                                  : std::vector<engine::SceneShape>{};
@@ -3295,5 +3377,7 @@ void InstallLevelPanel()
 }
 
 void UseBlankedMesh(uint32_t mesh) { ShowBlankedMesh(mesh); }
+
+bool LevelApplyPending() { return g_applyPending; }
 
 } // namespace h2::editor

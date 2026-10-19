@@ -22,7 +22,8 @@ bool SendMessage(ZGEOM* to, ZGEOM* from, uint16_t msg, void* param);
 // (vfunc 0xE8 / 0xF4), its entry set (routine vfunc 0xAC: texts (copied), kind,
 // message, receiver, distance), started (vfunc 0x50)). Kind 6, the scenes'
 // "use" (Open, PlaceBomb, OpenSafe, EscapeFerrari...): used (vfunc 0x8C, within
-// the distance: vfunc 0x84), it sends `msg` to the receiver (here the object
+// the distance of the object's box: vfunc 0x84, +0x80; the entry gets it as the
+// scenes' data load gives it, 0x488A70 leaves it 0), it sends `msg` to the receiver (here the object
 // itself, the user as param) and nothing else. Saved with the game (its texts
 // as strings, its fields; its load sets the entry again).
 bool AddUseAction(ZGEOM* geom, const char* text, uint16_t msg, int distance);

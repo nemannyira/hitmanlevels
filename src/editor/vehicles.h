@@ -64,6 +64,10 @@ bool DriveTrack(engine::ZGEOM* vehicle, float to, float speed, std::string* erro
 bool StopTrack(engine::ZGEOM* vehicle);
 // Where it is on its track (0 .. 1); -1: not a vehicle of the game.
 float TrackPlace(engine::ZGEOM* vehicle);
+// A model made with the map with an empty light table entry (a car's part, a
+// level's copy: engine/inject.h) gets one of its own, as the game gives the
+// nodes it makes while playing; false: not a lit model.
+bool OwnLightEntry(engine::ZGEOM* model);
 // A car of several models (its group: body, wheels, doors) when `part` is one
 // of them (clicking a car in the world picks one part); null otherwise.
 engine::ZGEOM* WholeVehicle(engine::ZGEOM* part);

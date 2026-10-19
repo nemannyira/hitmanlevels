@@ -684,6 +684,27 @@ int Noticed(ZGEOM* actor)
     return SafeInTable(routine, ref);
 }
 
+namespace {
+constexpr int kGeom_SendByRef = 0x11C / 4;  // (target ref, msg, param): Geom_If SendCommand 0x58B0D0
+
+bool SafeSendByRef(ZGEOM* from, uint32_t to, uint16_t msg, uint32_t value)
+{
+    __try {
+        VFunc<void(__thiscall*)(ZGEOM*, uint32_t, uint32_t, uint32_t)>(from, kGeom_SendByRef)(from, to, msg, value);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+} // namespace
+
+bool SendCommand(ZGEOM* to, const char* message, uint32_t value)
+{
+    uint32_t ref = Usable(to) ? RefOf(to) : 0;
+    uint16_t msg = ref && message && *message ? RegisterMessage(message) : 0;
+    return msg && SafeSendByRef(to, ref, msg, value);
+}
+
 uint32_t PlaySound2D(const char* name)
 {
     void* snd = SoundSystem();

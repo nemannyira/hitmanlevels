@@ -1239,6 +1239,15 @@ int Active(lua_State* L)
     return 1;
 }
 
+// obj:send(message [, number]) -> sent: a message as the levels' scripts send one
+// (SendCommand / SendCommand_i: "Msg_LockDoor", "Msg_UnlockDoor", "DoorOpen"...)
+int Send(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    lua_pushboolean(L, engine::SendCommand(g, luaL_checkstring(L, 2), uint32_t(luaL_optinteger(L, 3, 0))));
+    return 1;
+}
+
 // npc:draggable([on]) -> on: Hitman can drag its body (the scripts' EnableDrag / DisableDrag)
 int DraggableFn(lua_State* L)
 {
@@ -1312,7 +1321,7 @@ void RegisterObjectsApi()
         {"children", Children}, {"parent", Parent}, {"flags", Flags}, {"mesh", Mesh}, {"addr", Addr}, {"select", SelectObj},
         {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"knockedout", KnockedOutFn}, {"kill", Kill},
         {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet}, {"animation", Animation}, {"faceto", FaceTo},
-        {"active", Active}, {"draggable", DraggableFn}, {"noticed", NoticedFn},
+        {"active", Active}, {"draggable", DraggableFn}, {"noticed", NoticedFn}, {"send", Send},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);

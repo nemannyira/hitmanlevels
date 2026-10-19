@@ -46,6 +46,10 @@ int Draggable(ZGEOM* actor);
 // (Hitman; a character added so). Noticed: -1 unknown.
 bool SetNoticed(ZGEOM* actor, bool on);
 int Noticed(ZGEOM* actor);
+// Geom_If SendCommand / SendCommand_i: a message by name (registered as the
+// scripts' are) with a number, sent to the object by its reference (geom vfunc
+// 0x11C; the object itself the sender here, the script's object there).
+bool SendCommand(ZGEOM* to, const char* message, uint32_t value);
 // Sound_If FindWave + Play2DSound: a sound of the level by name (the sound
 // system, sys +0x189C: vfunc 0x6C, 0xFC) -> its reference (0: none);
 // StopSound (0x582ED0).

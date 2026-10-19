@@ -41,6 +41,7 @@ the map is loaded (`obj:valid()`).
 | `obj:pos()`, `obj:setpos(x, y, z)` | world position, centimetres, +Y up |
 | `obj:rot()`, `obj:setrot(yaw [, pitch, roll])` | degrees (yaw 0 = +Z, 90 = +X) |
 | `obj:hide()`, `obj:show()`, `obj:hidden()` | |
+| `obj:send(message [, number])` | a message as the levels' scripts send one (`"Msg_LockDoor"`, `"Msg_UnlockDoor"`, ...: their SendCommand) |
 | `obj:active([on])` | in the world or not, as the levels' scripts switch objects (MakeActive / MakeInactive: out of its rooms, its routines stopped, its children too) |
 | `obj:children()`, `obj:parent()` | |
 | `obj:spawn([x, y, z [, yaw]])`, `h2.spawn(source, x, y, z [, yaw])` | a copy of an object's model (runtime only) |

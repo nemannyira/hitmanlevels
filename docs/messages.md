@@ -47,6 +47,19 @@ script event (`hitman_dead`, `msg_changemusictoactionmode`, ...). The zones
 (`checkinsideenter` / `checkinsideleave`) are read from the routine's +0x88
 instead.
 
+## Made Lua events (2026-10-19)
+
+* `"zone"`: from the game's CheckInside state of every zone (+0x88; the
+  messages `checkinsideenter` / `checkinsideleave` are a scene's own names,
+  not sent on C1-1): seen for C1-1's ExitBox and a level's H2_Reach zone.
+* `"button"` (`pushbutton`, `msg_buttonpressed`) and `"elevator"`
+  (`elevmoveto`): seen on C5-3, Hitman using a lift's button with the game's
+  action.
+* `"lock"` (`msg_lockdoor`, `msg_unlockdoor`): seen with `obj:send` (the
+  scripts' SendCommand) on a C1-1 door; the door's MultiDoor routine keeps it
+  locked (its part at +0x72, +0x261), unlocked again.
+* Not made: choices, offers, near, aim: no level's scripts use them.
+
 ## Candidates for Lua events
 
 Messages the game has whose events would be useful for level scripts (none

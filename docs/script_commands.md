@@ -42,7 +42,10 @@ script names).
 | `h2.sound` / `h2.stopsound` | Sound_If FindWave (0), Play2DSound (2), Play3DSound (3), StopSound (5), SetVolume (13), SetLoop (16) |
 | (not yet) texts | Dialog_If ShowText (10), ShowText3D (11), OneLiner (12), RemoveText (13) |
 | `obj:active` | Scene_If MakeActive (34) / MakeInactive (35) |
-| `npc:draggable`, `npc:noticed` | TrackLnk_HM2_if EnableDrag (39) / DisableDrag (40), MakeActorVisible (67) / MakeActorInvisible (68): Msg_ObjectAdd / Del to TrackLinkObjects, whose ZLIST_CheckVisible routine keeps what the characters look out for (+0x7E: 200 {ref, flags}); SetBodyUnconscious (72, actor +0x7A4 bit 8) not yet |
+| `npc:draggable`, `npc:noticed` | TrackLnk_HM2_if EnableDrag (39) / DisableDrag (40), MakeActorVisible (67) / MakeActorInvisible (68): Msg_ObjectAdd / Del to TrackLinkObjects, whose ZLIST_CheckVisible routine keeps what the characters look out for (+0x7E: 200 {ref, flags}); `npc:unconsciousbody`: SetBodyUnconscious (72, actor +0x7A4 bit 8, asked with 73 IsBodyUnconscious) |
+| `obj:send` | Geom_If SendCommand (21) / SendCommand_i (22): geom vfunc 0x11C (target ref, message, number) |
+| `obj:sound` | Sound_If Play3dSound (3): the object's room (vfunc 0x24) plays the wave at its world transform (0x43FAA0) |
+| (not made) voiced dialogs | Dialog_If ShowText (10): the dialog's two characters, the line's sound and subtitle (MSG_WRITESUBTITLE, as `h2.subtitle` sends it), the dialog camera: the level's own dialog material |
 
 A behaviour's parameters (Inspector > NPC) are written into the script
 instance's data by the class's symbol entries (`engine/npc.cpp`

@@ -63,7 +63,7 @@ been given stops. Hitman can be moved anywhere too
 | call | |
 |---|---|
 | `h2.player()` | Hitman |
-| `h2.give(item | template [, character])` | the item goes to the character (default Hitman: into his inventory, as if picked up; a weapon can be drawn, a key is carried out of sight); a template name makes the item first. A character keeps it (it is not dropped when it dies: for that `npc:carry`). Not ammunition (it counts only when picked up: lay it down with `h2.item`); not a weapon of which a copy lies on the map (drawing the given one crashed the game: let Hitman pick that one up). A given weapon has an empty clip |
+| `h2.give(item | template [, character])` | the item goes to the character (default Hitman: into his inventory, as if picked up; a weapon can be drawn, a key is carried out of sight); a template name makes the item first. A character keeps it (it is not dropped when it dies: for that `npc:carry`). Not ammunition (it counts only when picked up: lay it down with `h2.item`); A given weapon has an empty clip |
 | `h2.outfit(model)` | Hitman in the clothes of a character model of the map (`"Postman"`, `"BodyguardMafia_01"`): one is made under the map, gives its clothes and stays out of sight. A level's own: Level tab > *Hitman starts in* (`"start_outfit"` in level.json) |
 | `h2.disguise(character | clothes item)` | Hitman takes its clothes (as from a body: the character is left in underwear) |
 | `h2.health([points])` | Hitman's hit points (and the health bar); a new value above 0 (C1-1 on this difficulty: 60 at most) |
@@ -81,6 +81,7 @@ been given stops. Hitman can be moved anywhere too
 | `npc:lookat(obj)`, `npc:lookat(nil)` | turns its head / stops |
 | `npc:faceto(obj)`, `npc:faceto(x, y, z)` | turns it at once |
 | `npc:draggable([on])` | whether Hitman can drag its body (the scripts' EnableDrag / DisableDrag) |
+| `npc:unconsciousbody([on])` | the scripts' mark that its body is an unconscious one (SetBodyUnconscious): the characters' scripts ask it when they find a body |
 | `npc:noticed([on])` | whether the characters look out for it as they look out for Hitman (the scripts' MakeActorVisible / MakeActorInvisible) |
 | `npc:animation(name [, loop])` | plays one of its animations (names: docs/animations.md); false: it has none of that name |
 | `npc:carry(template [, fn])` | it carries an item: when it dies (the game's report of it, as the `"death"` event), a working item of the template (as `h2.item`) lands by its body and `fn(item, npc)` is called, as a level's own script gives one (the game itself drops only what a dead character holds in its hands); false: it is dead already. `npc:carry(nil)` takes them back, `npc:carrying()` lists the templates |
@@ -95,7 +96,8 @@ place it without one (`h2.npc(..., false)` or in the editor).
 |---|---|
 | `h2.objective(slot [, text [, done]])` | a laptop objective line (1..6); returns the level's own text |
 | `h2.objective(slot, false)` | hides a line (the level's own too) until it gets a text again |
-| `h2.sound(name)` -> id, `h2.stopsound(id)` | one of the level's sounds, as its scripts play one (`"*Male_Whistle1*"`: a part of its name between stars) |
+| `h2.sound(name)` -> id, `h2.stopsound(id)` | one of the level's sounds, as its scripts play one: a part of its name between stars, the first sound whose name has it (`"*\Male_Whistle1*"`; `"*Male_Whistle1*"` finds Female_Whistle1 first) |
+| `obj:sound(name)` -> id | the same played at the object (the scripts' Play3dSound) |
 | `h2.subtitle(text [, seconds])` | a subtitle line at the bottom of the screen (default 5 game seconds; nil / `""` takes it away) |
 | `h2.info(text [, kind])` | the game's own info line ("Info: ...", "Warning:", "Hint:" in its colour, bottom left); `kind`: `"info"` (default), `"warning"`, `"hint"`; one paragraph. A subtitle takes the same place |
 | `h2.briefing(text)` | the laptop's briefing (`""`: the level's own) |

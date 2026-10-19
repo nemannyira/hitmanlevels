@@ -711,6 +711,51 @@ uint32_t PlaySound2D(const char* name)
     return snd && name && *name ? SafePlay2D(snd, name) : 0;
 }
 
+namespace {
+constexpr int kGeom_Room = 0x24 / 4;            // its room (the parent's, 0x43D5A0)
+constexpr uintptr_t kNode_World = 0x5BB980;     // ZBaseGeom (mat*, pos*): its world transform
+constexpr uintptr_t kSound_Play3D = 0x43FAA0;   // room (mat*, pos*, wave, 0, 0, 0) -> sound reference
+constexpr size_t kActor_ScriptFlags = 0x7A4;    // bit 8: SetBodyUnconscious (method 73 asks it)
+
+uint32_t SafePlay3D(void* snd, const char* name, ZGEOM* at)
+{
+    __try {
+        uint32_t wave = VFunc<uint32_t(__thiscall*)(void*, const char*)>(snd, kSound_FindWave)(snd, name);
+        if (!wave)
+            return 0;
+        float mat[9], pos[3];
+        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, float*, float*)>(kNode_World)(at->node, mat, pos);
+        void* room = VFunc<void*(__thiscall*)(ZGEOM*)>(at, kGeom_Room)(at);
+        if (!room)
+            return 0;
+        return reinterpret_cast<uint32_t(__thiscall*)(void*, float*, float*, uint32_t, int, int, int)>(kSound_Play3D)(
+            room, mat, pos, wave, 0, 0, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+} // namespace
+
+uint32_t PlaySound3D(const char* name, ZGEOM* at)
+{
+    void* snd = SoundSystem();
+    return snd && name && *name && Usable(at) ? SafePlay3D(snd, name, at) : 0;
+}
+
+bool SetBodyUnconscious(ZGEOM* actor, bool on)
+{
+    if (!IsTrackLink(actor))
+        return false;
+    uint8_t& f = reinterpret_cast<uint8_t*>(actor)[kActor_ScriptFlags];
+    f = on ? uint8_t(f | 8) : uint8_t(f & ~8);
+    return true;
+}
+
+int BodyUnconscious(ZGEOM* actor)
+{
+    return IsTrackLink(actor) ? (reinterpret_cast<uint8_t*>(actor)[kActor_ScriptFlags] & 8 ? 1 : 0) : -1;
+}
+
 bool StopSound(uint32_t ref)
 {
     void* engine = Engine();

@@ -54,7 +54,15 @@ bool SendCommand(ZGEOM* to, const char* message, uint32_t value);
 // system, sys +0x189C: vfunc 0x6C, 0xFC) -> its reference (0: none);
 // StopSound (0x582ED0).
 uint32_t PlaySound2D(const char* name);
+// Sound_If Play3dSound (0x582B20): at an object (its room, geom vfunc 0x24, plays
+// it at the object's world transform: 0x43FAA0).
+uint32_t PlaySound3D(const char* name, ZGEOM* at);
 bool StopSound(uint32_t ref);
+// TrackLnk_HM2_if SetBodyUnconscious (0x56FC90): a mark of the scripts only
+// (actor +0x7A4 bit 8, written by the command itself; the others' scripts ask
+// it of a body with method 73 0x56FD10). -1: not one of the scenes' characters.
+bool SetBodyUnconscious(ZGEOM* actor, bool on);
+int BodyUnconscious(ZGEOM* actor);
 // Characters (ZActor): alive (vfunc 0x544; Hitman, ZHITMAN2: hit points
 // +0xD72 above 0), killing one (its behaviour gets
 // Msg_InstantDeath; without a behaviour: Actor_If's Die, vfunc 0x5F0).

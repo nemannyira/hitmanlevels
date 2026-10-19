@@ -521,21 +521,9 @@ int Give(lua_State* L)
             return luaL_error(L, "give: ammunition is added only when Hitman picks it up: lay it down "
                                  "with h2.item(\"%s\", x, y, z)",
                               engine::SafeString(tmpl->name).c_str());
-        // A weapon given while copies of it lie on the map takes the game down when it is
-        // drawn (RenderD3D, found playing levels 2026-10-12): those are for picking up.
-        if (engine::IsA(tmpl, "ZItemTemplateWeapon") || engine::SafeString(tmpl->name).rfind("Rifle", 0) == 0 ||
-            engine::SafeString(tmpl->name).rfind("Gun", 0) == 0 || engine::SafeString(tmpl->name).rfind("Smg", 0) == 0) {
-            std::string name = engine::SafeString(tmpl->name);
-            for (int k : editor::SceneModel().FindName(name)) {
-                engine::ZGEOM* other = editor::SceneModel().geoms[k].geom;
-                uint32_t holder = 0;
-                if (other != tmpl && editor::IsLive(other) && engine::IsA(other, "ZItem") &&
-                    !engine::ItemHolder(other, holder))
-                    return luaL_error(L, "give: a %s lies on the map: a given copy of it would crash the game "
-                                         "when drawn; let Hitman pick that one up",
-                                      name.c_str());
-            }
-        }
+        // (A weapon given while copies of it lay on the map took the game down when drawn (P5,
+        // 2026-10-12): the game's loop placing a weapon's parts used a dead part reference; the
+        // editor sends that loop on (engine/npc.cpp kPartsNext), seen in the game 2026-10-19.)
         std::string err;
         item = editor::SpawnItem(tmpl, &err);
         if (!item)
@@ -1248,6 +1236,29 @@ int Send(lua_State* L)
     return 1;
 }
 
+// npc:unconsciousbody([on]) -> on: the scripts' mark that its body is an unconscious one (SetBodyUnconscious;
+// the other characters' scripts ask it when they find a body)
+int UnconsciousBody(lua_State* L)
+{
+    engine::ZGEOM* g = Geom(L);
+    if (engine::BodyUnconscious(g) < 0)
+        return luaL_error(L, "unconsciousbody: %s is not one of the scenes' characters", engine::SafeString(g->name).c_str());
+    if (!lua_isnoneornil(L, 2))
+        engine::SetBodyUnconscious(g, lua_toboolean(L, 2) != 0);
+    lua_pushboolean(L, engine::BodyUnconscious(g) == 1);
+    return 1;
+}
+
+// obj:sound(name) -> id | nil: one of the level's sounds played at the object (the scripts' Play3dSound)
+int ObjSound(lua_State* L)
+{
+    uint32_t ref = engine::PlaySound3D(luaL_checkstring(L, 2), Geom(L));
+    if (!ref)
+        return 0;
+    lua_pushinteger(L, lua_Integer(ref));
+    return 1;
+}
+
 // npc:draggable([on]) -> on: Hitman can drag its body (the scripts' EnableDrag / DisableDrag)
 int DraggableFn(lua_State* L)
 {
@@ -1322,6 +1333,7 @@ void RegisterObjectsApi()
         {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"knockedout", KnockedOutFn}, {"kill", Kill},
         {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet}, {"animation", Animation}, {"faceto", FaceTo},
         {"active", Active}, {"draggable", DraggableFn}, {"noticed", NoticedFn}, {"send", Send},
+        {"unconsciousbody", UnconsciousBody}, {"sound", ObjSound},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);

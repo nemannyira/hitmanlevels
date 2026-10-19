@@ -338,8 +338,11 @@ game pointers; each one looked up in Ghidra):
 * **B16 done (2026-10-19)**: a copy of a plain model of the map keeps its
   record and is made with the map from then on (engine/inject.h SceneCopy:
   a copy of the record at the root, as a car's parts), so the game offers its
-  actions and saves it as its own (copies_test). Copies of groups (cars) and of
-  other levels' models are still made while playing. Found with it: the game
+  actions and saves it as its own (copies_test). Copies of groups (a car
+  model: an empty group with copies of its models' records, as a level's car)
+  and of other levels' models (a plain model record of the map with that
+  model) are made with the map too (copies2_test, 2026-10-19); a blank map's
+  floor stays made while playing (put into the room it is in). Found with it: the game
   offers a "use" action only around Hitman's chest (ZHITMAN2 vfunc 0x638: the
   object's box widened by 90 / 40 / 90, the same room), so a take goal's
   object on the floor is taken with E near it.

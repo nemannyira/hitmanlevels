@@ -75,6 +75,13 @@ struct SpawnedObject {
     // game's actions on it, saved games), at the root; until the map loads
     // again, and without it, it is made while playing (a clone).
     int record = -1;
+    // A copy of a group of the map's models (a car model): its models' records
+    // and places in its frame, made with the map as a group of copies.
+    std::vector<std::pair<int, std::array<float, 12>>> parts;
+    // A copy of a model of another level (ROOT/EditorImports): made with the
+    // map as a model of the map with that level's model.
+    std::string importLevel;
+    uint32_t importMesh = 0;
 };
 
 struct LevelNpc {

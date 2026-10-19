@@ -103,6 +103,14 @@ struct SceneCopy {
     std::string source;  // that record's name (checked: another map version, another record)
     float mat[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};  // world (rows forward, up, right)
     float pos[3] = {};
+    // A copy of a group of models (a car model of the map): an empty group here
+    // with copies of these models' records in it, in its frame (mat 9, pos 3),
+    // as a level's car's parts (record and source are not used then).
+    std::vector<std::pair<int, std::array<float, 12>>> parts;
+    // A copy of a model of another level (imports.h): a plain model record of
+    // the scene with this model (its mesh in the loaded map) and node flags.
+    uint32_t mesh = 0;
+    uint32_t nodeFlags = 0;
 };
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);
 // The record made for a copy of that name in the scene loaded last (-1: none).

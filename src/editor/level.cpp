@@ -417,8 +417,15 @@ bool IsMapCopy(engine::ZGEOM* g) { return g && engine::IsSceneCopyRecord(engine:
 
 void RetireCopy(engine::ZGEOM* g)
 {
+    std::vector<engine::ZGEOM*> parts = VisibleParts(g);  // (a group's models; while it is the editor's)
     ForgetEngineOwned(g);
     if (IsLive(g)) {
+        for (engine::ZGEOM* p : parts) {
+            if (p == g)
+                continue;
+            ForgetEngineOwned(p);
+            SetHidden(p, true);
+        }
         Transform t = GetTransform(g);
         t.pos[1] -= 100000.0f;
         SetTransform(g, t);
@@ -437,6 +444,54 @@ int CopyRecordOf(engine::ZGEOM* source)
 }
 
 bool SameScene(std::string a, std::string b);
+std::string LibraryName(const ImportedModel& m);
+constexpr const char* kLibraryPath = "ROOT/EditorImports/";
+
+// A group's copy made with the map: its models' records and places in its frame
+// (empty: not all of them are the map's own plain models)
+std::vector<std::pair<int, std::array<float, 12>>> GroupCopyParts(engine::ZGEOM* source)
+{
+    std::vector<std::pair<int, std::array<float, 12>>> out;
+    Transform from = GroupFrame(source);
+    for (engine::ZGEOM* p : VisibleParts(source)) {
+        int r = CopyRecordOf(p);
+        if (r < 0 || out.size() >= 64)
+            return {};
+        Transform l = Relative(from, GetTransform(p));
+        std::array<float, 12> a;
+        memcpy(a.data(), l.mat, 36);
+        memcpy(a.data() + 9, l.pos, 12);
+        out.emplace_back(r, a);
+    }
+    return out;
+}
+
+// The model of another level a model of the library is (false: not one)
+bool ImportOf(const std::string& sourcePath, std::string& level, uint32_t& mesh)
+{
+    if (sourcePath.rfind(kLibraryPath, 0) != 0)
+        return false;
+    std::string name = sourcePath.substr(strlen(kLibraryPath));
+    for (const ImportedModel& m : g_level.imports)
+        if (!m.character && LibraryName(m) == name) {
+            level = m.level;
+            mesh = m.mesh;
+            return true;
+        }
+    return false;
+}
+
+// What makes a copy of the level with the map: the record of the map's model, a group's models,
+// another level's model (the floor of a blank map stays made while playing: put into its room)
+void FillCopySource(SpawnedObject& s, engine::ZGEOM* source)
+{
+    if (s.item || s.point || s.id == g_level.floorObject)
+        return;
+    if (s.group)
+        s.parts = GroupCopyParts(source);
+    else if (!ImportOf(s.sourcePath, s.importLevel, s.importMesh))
+        s.record = CopyRecordOf(source);
+}
 
 // The copies of the level the map makes when it loads.
 std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
@@ -445,18 +500,34 @@ std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
     if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
         return out;
     for (const SpawnedObject& s : g_level.spawned) {
-        if (s.item || s.point || s.group || s.record < 0 || IsVehicleCopy(g_level.vehicles, s.id) ||
+        if (s.item || s.point || s.id == g_level.floorObject || IsVehicleCopy(g_level.vehicles, s.id) ||
             !(s.sourceScene.empty() || s.sourceScene == g_level.baseScene ||
               (!g_level.ownMapOf.empty() && s.sourceScene == g_level.ownMapOf)))
             continue;
         engine::SceneCopy c;
         c.name = s.id;
-        c.record = s.record;
-        size_t slash = s.sourcePath.rfind('/');
-        c.source = s.sourcePath.substr(slash == std::string::npos ? 0 : slash + 1);
-        c.source = c.source.substr(0, c.source.find('#'));  // ("Crate#2": the second of that name)
         memcpy(c.mat, s.transform.mat, sizeof(c.mat));
         memcpy(c.pos, s.transform.pos, sizeof(c.pos));
+        if (s.group) {
+            if (s.parts.empty())
+                continue;
+            c.parts = s.parts;
+        } else if (s.importMesh) {
+            c.mesh = engine::ImportedMesh(s.importLevel, s.importMesh);
+            if (!c.mesh)
+                continue;  // (the map is loaded without it)
+            c.nodeFlags = 0x200F3;
+            for (const engine::LevelModel& lm : engine::LevelModels(s.importLevel))
+                if (lm.mesh == s.importMesh)  // the flags of the library's model (BuildImportLibrary)
+                    c.nodeFlags = lm.flags | (lm.collision ? 0x8008 : 0);
+        } else {
+            if (s.record < 0)
+                continue;
+            c.record = s.record;
+            size_t slash = s.sourcePath.rfind('/');
+            c.source = s.sourcePath.substr(slash == std::string::npos ? 0 : slash + 1);
+            c.source = c.source.substr(0, c.source.find('#'));  // ("Crate#2": the second of that name)
+        }
         out.push_back(c);
     }
     return out;
@@ -468,11 +539,18 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
     if (engine::ZGEOM* g = LiveSpawned(s.id))
         return g;
     // made with the map (as its own objects)
-    if (!s.item && !s.point && !s.group && s.record >= 0)
+    if (!s.item && !s.point && (s.record >= 0 || !s.parts.empty() || s.importMesh))
         if (engine::ZGEOM* g = engine::RecordGeom(engine::SceneCopyRecord(s.id)); g && IsLive(g)) {
             AdoptEngineOwned(g);
             OwnLightEntry(g);
             ShowBlankedMesh(engine::MeshOf(g));
+            if (s.group)
+                for (engine::ZGEOM* p : VisibleParts(g)) {
+                    AdoptEngineOwned(p);
+                    SetHidden(p, false);  // (taken back before: RetireCopy)
+                    OwnLightEntry(p);
+                    ShowBlankedMesh(engine::MeshOf(p));
+                }
             g_live[s.id] = g;
             ObjectState st;
             st.transform = s.transform;
@@ -707,10 +785,10 @@ bool RemoveSpawned(const std::string& id)
     if (engine::ZGEOM* g = LiveSpawned(id)) {
         if (IsPointEntry(id))
             RetirePoint(id, g);
-        else if (IsGroupEntry(id))
-            RetireGroup(id, g);
         else if (IsMapCopy(g))
             RetireCopy(g);
+        else if (IsGroupEntry(id))
+            RetireGroup(id, g);
         else
             DestroySpawned(g);
     }
@@ -1597,6 +1675,13 @@ bool SaveLevel(std::string* error)
             o["parent"] = s.parentPath;
         if (s.record >= 0)
             o["record"] = s.record;
+        if (!s.parts.empty()) {
+            o["parts"] = json::array();
+            for (const auto& [r, local] : s.parts)
+                o["parts"].push_back({{"record", r}, {"place", std::vector<float>(local.begin(), local.end())}});
+        }
+        if (s.importMesh)
+            o["import"] = {{"level", s.importLevel}, {"mesh", s.importMesh}};
         o["hidden"] = s.hidden;
         j["spawned"].push_back(o);
     }
@@ -1788,6 +1873,20 @@ bool LoadLevel(const std::string& folder, std::string* error)
             s.group = o.value("kind", "") == "group";
             s.parentPath = o.value("parent", "");
             s.record = o.value("record", -1);
+            for (const json& p : o.value("parts", json::array())) {
+                std::vector<float> v = p.value("place", std::vector<float>{});
+                if (p.value("record", -1) < 0 || v.size() != 12 || s.parts.size() >= 64) {
+                    s.parts.clear();
+                    break;
+                }
+                std::array<float, 12> local;
+                std::copy(v.begin(), v.end(), local.begin());
+                s.parts.emplace_back(p.value("record", -1), local);
+            }
+            if (o.contains("import") && o["import"].is_object()) {
+                s.importLevel = o["import"].value("level", "").substr(0, 16);
+                s.importMesh = o["import"].value("mesh", 0u);
+            }
             L.spawned.push_back(s);
         }
         for (const json& o : j.value("npcs", json::array())) {
@@ -2169,10 +2268,12 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         return fail("only objects with a mesh (or groups of them) can be duplicated");
     if (InActor(source))
         return fail("parts of characters cannot be copied");
-    if (const SpawnedObject* from = EntryOf(source))
+    if (const SpawnedObject* from = EntryOf(source)) {
         s.record = from->record;
-    else if (!s.group)
-        s.record = CopyRecordOf(source);
+        s.parts = from->parts;
+        s.importLevel = from->importLevel;
+        s.importMesh = from->importMesh;
+    }
     if (parent)
         s.parentPath = PathOf(parent);
     else if (const SpawnedObject* from = EntryOf(source))
@@ -2181,6 +2282,8 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         base = "Object";
     s.id = UniqueId(base);
     s.sourceScene = CurrentScene();
+    if (!EntryOf(source))
+        FillCopySource(s, source);
     if (at) {
         s.transform = *at;
     } else {
@@ -3215,9 +3318,9 @@ int ApplyLevel()
         BlankScene();
     // copies made before their records were kept: made with the map from the next save and load on
     for (SpawnedObject& s : g_level.spawned)
-        if (s.record < 0 && !s.item && !s.point && !s.group && s.sourceScene == CurrentScene())
+        if (s.record < 0 && s.parts.empty() && !s.importMesh && s.sourceScene == CurrentScene())
             if (engine::ZGEOM* src = Resolve(s.sourcePath))
-                s.record = CopyRecordOf(src);
+                FillCopySource(s, src);
     for (const SpawnedObject& s : g_level.spawned)
         if (IsVehicleCopy(g_level.vehicles, s.id)) {
             continue;  // (its car is made with the map instead)
@@ -3274,10 +3377,10 @@ void RevertLevel()
     for (auto& [id, g] : g_live) {
         if (IsPointEntry(id) && IsLive(g))
             RetirePoint(id, g);
-        else if (IsGroupEntry(id))
-            RetireGroup(id, g);
         else if (IsMapCopy(g))
             RetireCopy(g);
+        else if (IsGroupEntry(id))
+            RetireGroup(id, g);
         else if (IsSpawned(g))
             DestroySpawned(g);
     }

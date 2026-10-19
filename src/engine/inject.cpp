@@ -737,20 +737,74 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         copyFlags = 0x200000;
         copyExtra = emptyLights;
         rootFlags = 0x44000;
+        auto plainModel = [&](int r) {
+            return r >= 0 && uint32_t(r) < count && !(recs[r].classId & 0x100000) && recs[r].mesh &&
+                   recs[r].classId != kActorClass;
+        };
+        int groupTemplate = -1, modelTemplate = -1;  // an empty group's and a plain model's records of the scene
+        for (uint32_t i = 0; i < count && (groupTemplate < 0 || modelTemplate < 0); ++i) {
+            if (groupTemplate < 0 && recs[i].classId == 0x100001 && !recs[i].script)
+                groupTemplate = int(i);
+            if (modelTemplate < 0 && recs[i].classId == kHelperClass && plainModel(int(i)) && !recs[i].script &&
+                !recs[i].events)
+                modelTemplate = int(i);
+        }
         for (const SceneCopy& c : copies) {
-            if (c.record < 0 || uint32_t(c.record) >= count || c.name.empty() || c.name.size() > 64 ||
-                recs[c.record].name != c.source || (recs[c.record].classId & 0x100000) || !recs[c.record].mesh ||
-                recs[c.record].classId == kActorClass) {
-                Log("scene copies: %s: record %d is not the plain model %s (made while playing instead)",
-                    c.name.c_str(), c.record, c.source.c_str());
+            if (c.name.empty() || c.name.size() > 64)
                 continue;
-            }
             std::array<float, 12> place;
             memcpy(place.data(), c.mat, 36);
             memcpy(place.data() + 9, c.pos, 12);
-            g_copies[c.name] = int(count) + added;
-            g_copyRecords.insert(int(count) + added);
-            copy(c.record, 0, kAtRoot, &place, 0, c.name.c_str());
+            int index = int(count) + added;
+            if (!c.parts.empty()) {  // a group: an empty group with copies of the models
+                bool ok = groupTemplate >= 0 && c.parts.size() <= 64;
+                for (const auto& [r, local] : c.parts)
+                    ok = ok && plainModel(r);
+                if (!ok) {
+                    Log("scene copies: %s: its models are not the map's plain models (made while playing instead)",
+                        c.name.c_str());
+                    continue;
+                }
+                std::vector<uint8_t> g(gms.begin() + recordAt(groupTemplate),
+                                       gms.begin() + recordAt(groupTemplate) + kRecord);
+                Put(g, 0x00, AppendString(buf, c.name));
+                Put(g, 0x04, Append(gms, c.mat, sizeof(c.mat)));
+                Put(g, 0x08, Append(gms, c.pos, sizeof(c.pos)));
+                Put(g, 0x0C, 0);
+                Put(g, 0x14, 0);  // (no routines)
+                Put(g, 0x18, (U32(g, 0x18) & ~0xFFFFFu) | 0x44000);  // dynamic, drawn with the rooms around it
+                Put(g, 0x20, 0);
+                Put(g, 0x28, 0);
+                int first = c.parts.front().first;
+                g[0x2D] = gms[recordAt(recs[first].parent >= 0 ? recs[first].parent : first) + 0x2D];
+                emit(g, true, 0, recs[groupTemplate].extra, nullptr, true);
+                groupBlocks.emplace_back(kPools);
+                size_t block = groupBlocks.size() - 1;
+                g_copies[c.name] = index;
+                g_copyRecords.insert(index);
+                for (const auto& [r, local] : c.parts)
+                    copy(r, 1, block, &local, 0, nullptr);
+            } else if (c.mesh) {  // a model of another level: a plain model record of the scene with it
+                if (modelTemplate < 0) {
+                    Log("scene copies: %s: this scene has no plain model record to copy", c.name.c_str());
+                    continue;
+                }
+                g_copies[c.name] = index;
+                g_copyRecords.insert(index);
+                copy(modelTemplate, 0, kAtRoot, &place, 0, c.name.c_str());
+                size_t rec = gms.size() - kRecord;  // (its record is the last thing appended)
+                Put(gms, rec + 0x0C, c.mesh);
+                Put(gms, rec + 0x18, (U32(gms, rec + 0x18) & ~0xFFFFFu) | (c.nodeFlags & 0xFFFFF) | 0x44000);
+            } else {
+                if (!plainModel(c.record) || recs[c.record].name != c.source) {
+                    Log("scene copies: %s: record %d is not the plain model %s (made while playing instead)",
+                        c.name.c_str(), c.record, c.source.c_str());
+                    continue;
+                }
+                g_copies[c.name] = index;
+                g_copyRecords.insert(index);
+                copy(c.record, 0, kAtRoot, &place, 0, c.name.c_str());
+            }
             ++copiesAdded;
         }
         copyFlags = 0;

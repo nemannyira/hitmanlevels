@@ -635,6 +635,36 @@ int DevSetting(lua_State* L)
     return 0;
 }
 
+// h2.dev_recordpaths() -> how many of the scene file's records the path inject.cpp builds for
+// them (a settings' reference while the scene loads) names otherwise than the editor, and the first ones
+int DevRecordPaths(lua_State* L)
+{
+    const auto& recs = engine::SceneRecords();
+    std::vector<std::string> paths(recs.size());
+    std::map<std::pair<int, std::string>, int> seen;
+    int checked = 0, differ = 0;
+    std::string first;
+    for (size_t i = 0; i < recs.size() && engine::IsSceneFileRecord(int(i)); ++i) {
+        int k = seen[{recs[i].parent, recs[i].name}]++;
+        std::string base = recs[i].parent >= 0 && size_t(recs[i].parent) < i ? paths[recs[i].parent] : "ROOT";
+        paths[i] = base + "/" + recs[i].name + (k ? "#" + std::to_string(k) : "");
+        engine::ZGEOM* g = engine::RecordGeom(int(i));
+        if (!g || !editor::IsLive(g))
+            continue;
+        ++checked;
+        std::string real = editor::PathOf(g);
+        if (real != paths[i]) {
+            ++differ;
+            if (real.find("ZWINDOWS") == std::string::npos && real.find("GuiSetup") == std::string::npos)
+                first += paths[i] + " | " + real + "\n";  // (the interface's windows are put elsewhere at init)
+        }
+    }
+    lua_pushinteger(L, checked);
+    lua_pushinteger(L, differ);
+    lua_pushstring(L, first.c_str());
+    return 3;
+}
+
 // h2.dev_record(path) -> its record in the scene loaded last (-1: made while playing), "file" /
 // "copy" (a copy of the level made with the map) / "added" (the level's characters, lists, ...)
 int DevRecord(lua_State* L)
@@ -1038,6 +1068,7 @@ void InstallDevCommands()
     script::Register("dev_record", DevRecord);
     script::Register("dev_copyposdir", DevCopyPosDir);
     script::Register("dev_setting", DevSetting);
+    script::Register("dev_recordpaths", DevRecordPaths);
     script::Register("dev_instantiate", DevInstantiate);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);

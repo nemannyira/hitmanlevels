@@ -63,3 +63,21 @@ frames can be compared (images, state).
 (messages), `docs/script_commands.md` (the scripts' interfaces),
 `docs/performance.md` (the editor's frame cost), `docs/hooks.md` (the
 editor's hooks).
+
+## Sweep of 2026-10-20
+
+* Exceptions: H2Fix.log (crash.py) none; Frida's exception handler counted 0
+  first-chance exceptions in 10 s of editing a level with every kind of object
+  and in 20 s of the API suite.
+* Hooks: every one of `docs/hooks.md` starts with a jmp into the editor (Frida,
+  39 / 39).
+* Memory: 8 loads of C1-1 without a level 259 -> 260 MB private, 8 with a
+  level of copies, an imported model, points and a character 268 -> 272 MB,
+  two runs of imports_save_test leave nothing: no leak per load. A game that
+  ran a whole test session before the stress suite ran out of its 32-bit
+  address space (RenderD3D's abort at 1.6 GB); the suite fills the engine on
+  purpose and wants a freshly started game.
+* The paths inject.cpp builds for the scene's records (a character's settings'
+  references while the scene loads: h2.dev_recordpaths) are the editor's for
+  every object of the world; 602 of 6105 differ, all the interface's windows
+  (put elsewhere at init), which no behaviour setting names.

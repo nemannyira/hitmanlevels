@@ -613,6 +613,28 @@ int DevCopyPosDir(lua_State* L)
     return 1;
 }
 
+// h2.dev_setting(path, name) -> a behaviour setting of a character as its running script has it
+// (a reference as the object's path)
+int DevSetting(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    std::string name = luaL_checkstring(L, 2);
+    engine::ScriptInfo s;
+    if (!g || !editor::CurrentBehaviour(g, s))
+        return 0;
+    for (const engine::ScriptParam& p : s.params)
+        if (p.name == name) {
+            if (p.type == engine::ParamType::Ref) {
+                engine::ZGEOM* t = p.bits ? engine::GeomOfRef(p.bits) : nullptr;
+                lua_pushstring(L, t ? editor::PathOf(t).c_str() : "");
+            } else {
+                lua_pushinteger(L, lua_Integer(p.bits));
+            }
+            return 1;
+        }
+    return 0;
+}
+
 // h2.dev_record(path) -> its record in the scene loaded last (-1: made while playing), "file" /
 // "copy" (a copy of the level made with the map) / "added" (the level's characters, lists, ...)
 int DevRecord(lua_State* L)
@@ -1015,6 +1037,7 @@ void InstallDevCommands()
     script::Register("dev_used", DevUsed);
     script::Register("dev_record", DevRecord);
     script::Register("dev_copyposdir", DevCopyPosDir);
+    script::Register("dev_setting", DevSetting);
     script::Register("dev_instantiate", DevInstantiate);
     script::Register("dev_place_npc", PlaceNpcCmd);
     script::Register("dev_test", TestCmd);

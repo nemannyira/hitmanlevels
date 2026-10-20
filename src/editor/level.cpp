@@ -755,11 +755,49 @@ LevelNpc* NpcEntryOf(engine::ZGEOM* actor)
     return nullptr;
 }
 
+// the settings the scene was loaded with (made part of the characters' records: ScriptEditsFor)
+std::map<int, std::vector<ParamValue>> g_loadedEdits;
+
+bool SameParams(const std::vector<ParamValue>& a, const std::vector<ParamValue>& b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].name != b[i].name || a[i].type != b[i].type || a[i].value != b[i].value)
+            return false;
+    return true;
+}
+
+bool SameScene(std::string a, std::string b);
+
+// The scene's characters' new settings, made with the map (its script engine reads them when it
+// makes them); changed while playing they are written into the running scripts (ApplyNpcEdit).
+std::vector<engine::SceneScriptEdit> ScriptEditsFor(const std::string& scene)
+{
+    g_loadedEdits.clear();
+    std::vector<engine::SceneScriptEdit> out;
+    if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
+        return out;
+    for (const auto& [record, e] : g_level.npcEdits) {
+        engine::SceneScriptEdit s;
+        s.record = record;
+        s.script = e.behaviour;
+        for (const ParamValue& v : e.params)
+            s.values.push_back({v.name, v.type, v.value});
+        out.push_back(s);
+        g_loadedEdits[record] = e.params;
+    }
+    return out;
+}
+
 bool ApplyNpcEdit(const NpcEditEntry& e)
 {
     engine::ZGEOM* actor = engine::RecordGeom(e.record);
     if (!actor || !IsLive(actor))
         return false;
+    if (engine::IsSceneScriptEdited(e.record) && g_loadedEdits.count(e.record) &&
+        SameParams(g_loadedEdits[e.record], e.params))
+        return true;  // made with the map so
     engine::ScriptInfo s;
     if (!CurrentBehaviour(actor, s))
         return false;
@@ -3479,6 +3517,7 @@ void InstallLevelPanel()
     engine::SetSceneListProvider(ListsFor);
     engine::SetSceneZoneProvider(ZonesFor);
     engine::SetSceneCopyProvider(CopiesFor);
+    engine::SetSceneScriptEditProvider(ScriptEditsFor);
     engine::SetShapeProvider([](const std::string& scene) {
         return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene) ? VehicleShapes(g_level.vehicles)
                                                                                  : std::vector<engine::SceneShape>{};

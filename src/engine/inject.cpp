@@ -1,5 +1,6 @@
 #include "inject.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
@@ -56,6 +57,8 @@ std::function<std::vector<SceneCopy>(const std::string&)> g_copyProvider;
 std::map<std::string, int> g_copies;  // name -> its record (scene loaded last)
 std::set<int> g_copyRecords;
 int g_fileRecords = 0;  // the records the scene file had (the scene loaded last)
+std::function<std::vector<SceneScriptEdit>(const std::string&)> g_scriptEditProvider;
+std::set<int> g_scriptEdited;
 constexpr uint32_t kBoxClass = 0x2000E1;  // ZBoxPrimitive (0x44A300)
 constexpr uint32_t kZoneInside = 0x88;    // CheckInside: Hitman inside (0x48ACF0 / 0x4FC480)
 constexpr uint32_t kCarClass = 0x100BBF;    // ZCar (ZGROUP -> ZMoveOnSpline -> ZVehicle -> ZCar)
@@ -195,6 +198,13 @@ int SceneCopyRecord(const std::string& name)
 bool IsSceneCopyRecord(int index) { return g_copyRecords.count(index) > 0; }
 
 bool IsSceneFileRecord(int index) { return index >= 0 && index < g_fileRecords; }
+
+void SetSceneScriptEditProvider(std::function<std::vector<SceneScriptEdit>(const std::string& scene)> provider)
+{
+    g_scriptEditProvider = std::move(provider);
+}
+
+bool IsSceneScriptEdited(int record) { return g_scriptEdited.count(record) > 0; }
 
 // (a CheckInside routine cannot be attached while playing: a loaded save makes such a routine
 // again (0x426070) and its load (0x48AC40) reads its data, which the save does not keep: 0x5C0100
@@ -341,12 +351,14 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     g_copies.clear();
     g_copyRecords.clear();
     g_fileRecords = int(U32(gms, U32(gms, 0)));
+    g_scriptEdited.clear();
+    std::vector<SceneScriptEdit> edits = g_scriptEditProvider ? g_scriptEditProvider(scene) : std::vector<SceneScriptEdit>{};
     std::vector<SceneNpc> npcs = g_provider ? g_provider(scene) : std::vector<SceneNpc>{};
     std::vector<SceneList> lists = g_listProvider ? g_listProvider(scene) : std::vector<SceneList>{};
     std::vector<SceneCar> cars = g_carProvider ? g_carProvider(scene) : std::vector<SceneCar>{};
     std::vector<SceneZone> zones = g_zoneProvider ? g_zoneProvider(scene) : std::vector<SceneZone>{};
     std::vector<SceneCopy> copies = g_copyProvider ? g_copyProvider(scene) : std::vector<SceneCopy>{};
-    if (npcs.empty() && lists.empty() && cars.empty() && zones.empty() && copies.empty())
+    if (npcs.empty() && lists.empty() && cars.empty() && zones.empty() && copies.empty() && edits.empty())
         return false;
     std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
     uint32_t list = U32(gms, 0), count = U32(gms, list);
@@ -831,8 +843,88 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         rootFlags = 0;
         inGroup = open > 0;
     }
+    // the scene's characters' new settings: in their records' script blocks
+    int edited = 0;
+    if (!edits.empty()) {
+        // a record's path as the editor names objects ("ROOT/<group>/<name>", "#k" for the k-th
+        // child of that name), and the level's own records by their names
+        std::vector<std::string> paths(count);
+        std::map<std::string, int> byPath, byName;
+        std::map<std::pair<int, std::string>, int> seen;
+        for (uint32_t i = 0; i < count; ++i) {
+            int k = seen[{recs[i].parent, recs[i].name}]++;
+            std::string base = recs[i].parent >= 0 && uint32_t(recs[i].parent) < i ? paths[recs[i].parent] : "ROOT";
+            paths[i] = base + "/" + recs[i].name + (k ? "#" + std::to_string(k) : "");
+            byPath[paths[i]] = int(i);
+            auto n = byName.find(recs[i].name);
+            if (n == byName.end())
+                byName[recs[i].name] = int(i);
+            else
+                n->second = -1;  // (a name of several: by its path only)
+        }
+        for (auto& [name, index] : g_copies)
+            byName[name] = index;
+        for (auto& [name, index] : g_made)
+            byName[name] = index;
+        auto refTo = [&](const std::string& path) -> uint32_t {
+            if (path.empty())
+                return 0;
+            auto it = byPath.find(path);
+            int index = it != byPath.end() ? it->second : -1;
+            if (index < 0) {
+                std::string name = path.substr(path.rfind('/') + 1);
+                auto n = byName.find(name.substr(0, name.find('#')));
+                index = n != byName.end() ? n->second : -1;
+            }
+            return index >= 0 ? 0x80000000u | uint32_t(index + 1) : 0;
+        };
+        for (const SceneScriptEdit& e : edits) {
+            ScriptInfo info;
+            if (e.record < 0 || uint32_t(e.record) >= count || !recs[e.record].script ||
+                !ParseScriptIn(gms, recs[e.record].script, info) ||
+                LowerCase(ScriptShortName(info.name)) != LowerCase(ScriptShortName(e.script))) {
+                Log("scene scripts: record %d: not its own behaviour (set while playing instead)", e.record);
+                continue;
+            }
+            bool ok = true;
+            for (const SceneScriptEdit::Value& v : e.values)
+                for (ScriptParam& p : info.params) {
+                    if (p.name != v.name)
+                        continue;
+                    if (v.type == "LONG" && p.type == ParamType::Long) {
+                        p.bits = uint32_t(std::atoi(v.value.c_str()));
+                    } else if (v.type == "FLOAT" && p.type == ParamType::Float) {
+                        float f = float(std::atof(v.value.c_str()));
+                        memcpy(&p.bits, &f, 4);
+                    } else if (v.type == "ZGEOMREF" && p.type == ParamType::Ref) {
+                        p.bits = refTo(v.value);
+                        if (!p.bits && !v.value.empty()) {
+                            Log("scene scripts: record %d: %s %s not found", e.record, v.name.c_str(), v.value.c_str());
+                            ok = false;
+                        }
+                    } else if (v.type == "STRING" && p.type == ParamType::String) {
+                        p.text = v.value;
+                    } else if (v.type == "RAW" && p.type == ParamType::Other) {
+                        std::vector<uint8_t> raw;
+                        for (size_t i = 0; i + 1 < v.value.size(); i += 2)
+                            raw.push_back(uint8_t(std::strtoul(v.value.substr(i, 2).c_str(), nullptr, 16)));
+                        if (!raw.empty())
+                            p.raw = raw;
+                    }
+                }
+            if (!ok)
+                continue;  // (the settings as they were: set while playing)
+            std::vector<uint8_t> block = BuildScriptBlock(info);
+            Put(block, 0, U32(block, 0) & 0x7FFFFFFF);  // file references: remapped when the scene loads
+            Put(gms, recordAt(e.record) + 0x28, Append(gms, block));
+            g_scriptEdited.insert(e.record);
+            ++edited;
+        }
+        if (edited)
+            Log("scene scripts: settings of %d characters made with the scene", edited);
+    }
     if (!added)
-        return false;
+        return edited > 0;
     if (carsAdded)
         Log("scene cars: %d vehicles (ZCar) with their splines", carsAdded);
     if (copiesAdded)

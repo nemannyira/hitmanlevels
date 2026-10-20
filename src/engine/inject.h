@@ -124,6 +124,24 @@ bool IsSceneCopyRecord(int index);
 // the level added: characters, lists, zones, cars, copies).
 bool IsSceneFileRecord(int index);
 
+// New behaviour settings of one of the scene's characters, made part of its
+// record's script block while the scene loads: the script engine reads them as
+// it reads the scene's own when it makes the character (its parameter parse).
+// Values as the level keeps them: LONG / FLOAT numbers, STRING text, ZGEOMREF
+// an object's path ("ROOT/.../Lobby"; the level's own objects made with the
+// scene by their names), RAW hex.
+struct SceneScriptEdit {
+    int record = -1;      // the character's record (its script block)
+    std::string script;   // its behaviour (the record's own; another is not made so)
+    struct Value {
+        std::string name, type, value;
+    };
+    std::vector<Value> values;
+};
+void SetSceneScriptEditProvider(std::function<std::vector<SceneScriptEdit>(const std::string& scene)> provider);
+// Whether a record's settings were made with the scene loaded last.
+bool IsSceneScriptEdited(int record);
+
 // Asked for every scene that loads (its name as GetSceneName gives it).
 void SetSceneNpcProvider(std::function<std::vector<SceneNpc>(const std::string& scene)> provider);
 // The record made for a character of that name in the scene loaded last (-1: none).

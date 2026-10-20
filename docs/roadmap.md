@@ -311,6 +311,17 @@ cheats.
   the same, and the Problems list and the Mission row compare objects, not
   paths.
 
+* **The scene's characters' settings** (npc_edits) are made part of their
+  records' script blocks while the scene loads (inject.h SceneScriptEdit: the
+  references by the objects' paths, the level's own by their names), so the
+  script engine reads them as the scene's own when it makes the character
+  (seen: a C1-1 guard made with WeaponTemplate GunDesertEagle instead of
+  GunBeretta92). Changed while playing they are still written into the running
+  script until the map loads again: replacing a running script leaves the
+  guard groups and the level control holding the old one (a crash), and the
+  game has no setter of a running script's members (its scripts write them in
+  place too).
+
 ### Direct writes into the game's objects (audit, 2026-10-18)
 
 Every place the editor writes a game object's memory itself instead of calling
@@ -323,7 +334,7 @@ game pointers; each one looked up in Ghidra):
 | editor/vehicles.cpp `OwnLightEntries` | light table handle (+0x6C), flag 0x1000000 | SetFlags' 0x8000 branch does the same (light table vfunc 0x24, +0x6C, 0x1000000), but its "clear" half unregisters the shared handle first | as the game's set branch; kept |
 | script/objects_api.cpp `h2.health` | Hitman's hit points +0xD72 | the game writes the field itself (difficulty 0x511BB0, refill 0x5150E1, level boxes 0x4F8B74...); no setter | kept |
 | editor/music.cpp | MusicSegment +0x7A, MusicControl +0x1E4 | the routines' own data load / ctor write them; no setter | kept (B7) |
-| engine/npc.cpp | a script instance's variables; the actor collision's buffers (its init hooked) | to be looked at with the script engine (E5) | open |
+| engine/npc.cpp | a script instance's variables; the actor collision's buffers (its init hooked) | settings made with the map since 2026-10-20 (the scene's script blocks); changed while playing: written in place, as the scripts write their members (no setter; a new instance crashes the guard groups) | done / kept |
 | editor/testtools.cpp | the game's cheat / debug values | the game reads them as they are | kept |
 | fov.cpp, display.cpp | camera fov / far plane around SetupProjection (vfunc 0x258); SysInterface width / height | through the game's SetupProjection; values the game reads | kept (display fixes) |
 

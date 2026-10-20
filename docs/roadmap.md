@@ -297,6 +297,20 @@ cheats.
   transform with the same virtual. The floor is the physics' (no call of its
   own).
 
+### Game way, third round (2026-10-20)
+
+* **Characters moved** (npc:setpos, the editor's gizmo, the start guard):
+  ZActor's own SetWorldTransform (vfunc 0x80 = 0x463B10: its mover +0x54B and
+  its group), as the levels' scripts' CopyObjectPosDir; the editor no longer
+  writes the actor's point (+0x57C), which follows the mover (seen: a C1-1
+  guard sent into the library walks on from there).
+* **The level's points** are made with the map (inject.h SceneCopy::point: a
+  copy of the characters' aim helper record, ZAIMTHINGY, at the root), as the
+  maps' own waypoints are records. Paths of goals and routes set while the
+  point was in a room find it at the root by its name (Resolve); h2.find does
+  the same, and the Problems list and the Mission row compare objects, not
+  paths.
+
 ### Direct writes into the game's objects (audit, 2026-10-18)
 
 Every place the editor writes a game object's memory itself instead of calling

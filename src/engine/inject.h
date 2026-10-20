@@ -111,6 +111,9 @@ struct SceneCopy {
     // the scene with this model (its mesh in the loaded map) and node flags.
     uint32_t mesh = 0;
     uint32_t nodeFlags = 0;
+    // A point of the level (characters walk to it): a copy of the characters'
+    // aim helper record (ZAIMTHINGY: not drawn, not collided) at the root.
+    bool point = false;
 };
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);
 // The record made for a copy of that name in the scene loaded last (-1: none).

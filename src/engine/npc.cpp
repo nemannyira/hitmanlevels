@@ -588,18 +588,14 @@ int SetScriptVariables(ZGEOM* geom, const ScriptInfo& values, std::string* error
 
 bool TeleportActor(ZGEOM* actor, const float pos[3], const float* newMat)
 {
-    constexpr size_t kActorPos = 0x57C;
-    if (!actor || !IsReadable(actor, kActorPos + 12) || !IsA(actor, "ZActor"))
+    if (!actor || !IsReadable(actor, sizeof(ZGEOM)) || !IsA(actor, "ZActor"))
         return false;
-    auto p = reinterpret_cast<float*>(reinterpret_cast<char*>(actor) + kActorPos);
+    // ZActor's own SetWorldTransform (vfunc 0x80 = 0x463B10), as the levels' scripts teleport
+    // (Scene_If CopyObjectPosDir): the place goes into its mover (+0x54B: position, matrix,
+    // the last place +0x38) and its group is moved with it; the actor's own point (+0x57C, a
+    // little above) follows from the mover (seen 2026-10-20)
     float mat[9], cur[3];
     game::GetWorldTransform(actor, mat, cur);
-    float above = p[1] - cur[1];  // the actor's point is a little above its node
-    if (!(above > -500.0f && above < 500.0f))
-        above = 0.0f;
-    p[0] = pos[0];
-    p[1] = pos[1] + above;
-    p[2] = pos[2];
     game::SetWorldTransform(actor, newMat ? newMat : mat, pos);
     for (StartGuard& g : g_guards)  // moved by the editor: kept there
         if (g.actor == actor) {

@@ -742,6 +742,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                    recs[r].classId != kActorClass;
         };
         int groupTemplate = -1, modelTemplate = -1;  // an empty group's and a plain model's records of the scene
+        int pointTemplate = -1;                      // the characters' aim helper (a point)
+        for (uint32_t i = 0; i < count && pointTemplate < 0; ++i)
+            if (recs[i].name == kAimHelper && recs[i].classId == kHelperClass && !recs[i].mesh && !recs[i].script)
+                pointTemplate = int(i);
         for (uint32_t i = 0; i < count && (groupTemplate < 0 || modelTemplate < 0); ++i) {
             if (groupTemplate < 0 && recs[i].classId == 0x100001 && !recs[i].script)
                 groupTemplate = int(i);
@@ -756,7 +760,22 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             memcpy(place.data(), c.mat, 36);
             memcpy(place.data() + 9, c.pos, 12);
             int index = int(count) + added;
-            if (!c.parts.empty()) {  // a group: an empty group with copies of the models
+            if (c.point) {  // a point: the aim helper's record, as it is (not drawn, not collided)
+                if (pointTemplate < 0) {
+                    Log("scene copies: %s: this scene has no aim helper record to copy", c.name.c_str());
+                    continue;
+                }
+                uint32_t flags = copyFlags, extra = copyExtra, root = rootFlags;
+                copyFlags = 0;
+                copyExtra = 0;
+                rootFlags = 0;
+                g_copies[c.name] = index;
+                g_copyRecords.insert(index);
+                copy(pointTemplate, 0, kAtRoot, &place, 0, c.name.c_str());
+                copyFlags = flags;
+                copyExtra = extra;
+                rootFlags = root;
+            } else if (!c.parts.empty()) {  // a group: an empty group with copies of the models
                 bool ok = groupTemplate >= 0 && c.parts.size() <= 64;
                 for (const auto& [r, local] : c.parts)
                     ok = ok && plainModel(r);

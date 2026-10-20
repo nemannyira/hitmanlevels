@@ -124,6 +124,9 @@ int FindIndex(const std::string& key)
 {
     const auto& snap = editor::SceneModel();
     int i = snap.FindPath(key);
+    if (i < 0 && key.find('/') != std::string::npos)  // an object of the level in another room after a load (Resolve)
+        if (engine::ZGEOM* g = editor::Resolve(key))
+            i = snap.Find(g);
     if (i < 0) {
         std::string name = key;
         int k = 0;

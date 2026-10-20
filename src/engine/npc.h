@@ -46,9 +46,10 @@ void InstallNpc();
 // Removes an NPC made by SpawnNpc (its script stopped, the actor, its group).
 // NOT safe at runtime: the engine keeps pointers to actors (crash right after).
 bool DestroyNpc(ZGEOM* actor, std::string* error = nullptr);
-// Moves a character: actors keep their own position (actor+0x57C, a little
-// above the node) and write it into their node every frame. The room it is
-// drawn with does not change (it stays invisible in another room).
+// Moves a character with its own SetWorldTransform (ZActor vfunc 0x80, as the
+// levels' scripts' CopyObjectPosDir: its mover +0x54B and its group; its own
+// point +0x57C follows). The room it is drawn with is found when it moves
+// (editor/model.cpp SettleActor).
 bool TeleportActor(ZGEOM* actor, const float pos[3], const float* mat = nullptr);
 
 // A behaviour starting may put its character elsewhere at once (on its

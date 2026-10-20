@@ -500,7 +500,16 @@ std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
     if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
         return out;
     for (const SpawnedObject& s : g_level.spawned) {
-        if (s.item || s.point || s.id == g_level.floorObject || IsVehicleCopy(g_level.vehicles, s.id) ||
+        if (s.point) {  // the level's points: copies of the characters' aim helper record
+            engine::SceneCopy c;
+            c.name = s.id;
+            c.point = true;
+            memcpy(c.mat, s.transform.mat, sizeof(c.mat));
+            memcpy(c.pos, s.transform.pos, sizeof(c.pos));
+            out.push_back(c);
+            continue;
+        }
+        if (s.item || s.id == g_level.floorObject || IsVehicleCopy(g_level.vehicles, s.id) ||
             !(s.sourceScene.empty() || s.sourceScene == g_level.baseScene ||
               (!g_level.ownMapOf.empty() && s.sourceScene == g_level.ownMapOf)))
             continue;
@@ -539,7 +548,7 @@ engine::ZGEOM* Materialize(const SpawnedObject& s, std::string* error = nullptr)
     if (engine::ZGEOM* g = LiveSpawned(s.id))
         return g;
     // made with the map (as its own objects)
-    if (!s.item && !s.point && (s.record >= 0 || !s.parts.empty() || s.importMesh))
+    if (!s.item && (s.point || s.record >= 0 || !s.parts.empty() || s.importMesh))
         if (engine::ZGEOM* g = engine::RecordGeom(engine::SceneCopyRecord(s.id)); g && IsLive(g)) {
             AdoptEngineOwned(g);
             OwnLightEntry(g);
@@ -1056,11 +1065,12 @@ std::vector<Problem> FindProblems()
         for (const SpawnedObject& s : L.spawned)
             if (s.point && engine::OnPathNetwork(s.transform.pos) == 0) {
                 engine::ZGEOM* g = LiveSpawned(s.id);
-                std::string path = g ? PathOf(g) : "";
-                bool missionPlace = !path.empty() && path == L.mission.exitPath;  // Hitman goes there, not characters
+                // Hitman goes there, not characters (the goals' paths resolved: a point made with
+                // the map is at the root, its path when the goal was set had its room then)
+                bool missionPlace = g && !L.mission.exitPath.empty() && ResolveTarget(L.mission.exitPath) == g;
                 for (const MissionObjective& o : L.mission.objectives)
-                    missionPlace |= !path.empty() && ((o.goal == MissionObjective::Reach && o.target == path) ||
-                                                       (o.goal == MissionObjective::Deliver && o.place == path));
+                    missionPlace |= g && ((o.goal == MissionObjective::Reach && ResolveTarget(o.target) == g) ||
+                                          (o.goal == MissionObjective::Deliver && ResolveTarget(o.place) == g));
                 if (missionPlace)
                     continue;
                 out.push_back({"point " + s.id.substr(0, s.id.find('+')) +

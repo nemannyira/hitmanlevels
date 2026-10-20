@@ -83,7 +83,8 @@ ZActor and its classes (ZTRACKLNKHM2 0x2003E9 the scene's NPCs, ZHITMAN2
 |---|---|
 | +0x564 | the look-at target (vfunc 0x610) |
 | +0x574 | 0 with the death animation (vfunc 0x540) |
-| +0x57C | float pos[3]: the actor's own place, a little above the node, written into it every frame (seen: 1511.5, 502.8, -449.9 with the node at y 500) |
+| +0x54B | its mover: position (+0x00), matrix (+0x0C), the last place (+0x38); set by the actor's SetWorldTransform (vfunc 0x80 = 0x463B10, which moves its group too) |
+| +0x57C | float pos[3]: the actor's own point, a little above the node, following the mover (seen: 1511.5, 502.8, -449.9 with the node at y 500) |
 | +0x67E | the room it is drawn with |
 | +0x762 | the dragger's reference while dragged |
 | Hitman +0x490 | his physics contacts (0x60F860, in the step 0x610640) |

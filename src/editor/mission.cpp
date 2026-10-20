@@ -1752,11 +1752,21 @@ engine::ZGEOM* CharacterOf(engine::ZGEOM* geom)
     return nullptr;
 }
 
+// the same object (a point or a copy of the level made with the map is at the root, its path
+// when the goal was set had its room)
+bool SameTarget(const std::string& a, const std::string& b)
+{
+    if (a == b)
+        return true;
+    engine::ZGEOM* g = a.empty() ? nullptr : ResolveTarget(a);
+    return g && g == ResolveTarget(b);
+}
+
 // the line already having this target with this goal, 0 if none
 int LineWith(MissionObjective::Goal goal, const std::string& path)
 {
     for (const MissionObjective& o : Doc().objectives)
-        if (o.goal == goal && o.target == path)
+        if (o.goal == goal && SameTarget(o.target, path))
             return o.slot;
     return 0;
 }
@@ -1931,7 +1941,7 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
             return;
     }
     int line = LineWith(MissionObjective::Reach, path);
-    bool exit = Doc().endWhenDone && Doc().exitPath == path;
+    bool exit = Doc().endWhenDone && SameTarget(Doc().exitPath, path);
     if (line) {
         ImGui::TextDisabled("the place of objective %d", line);
         ImGui::SameLine();

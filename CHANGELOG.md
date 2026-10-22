@@ -59,6 +59,8 @@ New, all calling what the levels' own scripts call:
   levels' scripts teleport them.
 * Music zones get another track the game's way; hiding an object takes it out
   of its rooms as the game does.
+* The Problems list offers *onto the paths* for a character or point off the
+  path network when a place of it is within 8 m (undoable).
 * Fixed: the Problems list no longer says a vehicle's route point is off the
   characters' path network (cars drive their own splines).
 * Fixed: an object whose own name has a `#` (a copy of an imported

@@ -1083,7 +1083,17 @@ void OnFrame()
 struct Problem {
     std::string text;
     std::string path;
+    bool onto = false;  // off the path network: the nearest walkable place (8 m at most)
+    float to[3] = {};
 };
+
+// a problem of an object off the path network, with where it can go (NearestWalkable, as h2.walkable)
+Problem OffNetwork(const std::string& text, const std::string& path, const float pos[3])
+{
+    Problem p{text, path};
+    p.onto = !path.empty() && engine::NearestWalkable(pos, 800.0f, p.to);
+    return p;
+}
 
 std::vector<Problem> FindProblems()
 {
@@ -1097,8 +1107,8 @@ std::vector<Problem> FindProblems()
         for (const LevelNpc& n : L.npcs)
             if (engine::OnPathNetwork(n.transform.pos) == 0) {
                 std::vector<int> at = snap.FindName(n.id);
-                out.push_back({"character " + n.id + " stands off the path network: it cannot walk",
-                               at.empty() ? "" : snap.geoms[at[0]].path});
+                out.push_back(OffNetwork("character " + n.id + " stands off the path network: it cannot walk",
+                                         at.empty() ? "" : snap.geoms[at[0]].path, n.transform.pos));
             }
         for (const SpawnedObject& s : L.spawned)
             if (s.point && engine::OnPathNetwork(s.transform.pos) == 0) {
@@ -1115,9 +1125,9 @@ std::vector<Problem> FindProblems()
                         missionPlace |= g && Resolve(r) == g;
                 if (missionPlace)
                     continue;
-                out.push_back({"point " + s.id.substr(0, s.id.find('+')) +
-                                   " is off the path network: characters do not reach it",
-                               g ? PathOf(g) : ""});
+                out.push_back(OffNetwork("point " + s.id.substr(0, s.id.find('+')) +
+                                             " is off the path network: characters do not reach it",
+                                         g ? PathOf(g) : "", s.transform.pos));
             }
         for (const MissionObjective& o : L.mission.objectives)
         {
@@ -1190,6 +1200,7 @@ void DrawProblems()
 {
     const std::vector<Problem>& problems = Problems();
     ImGui::SeparatorText(problems.empty() ? "No problems found" : "Problems");
+    bool refresh = false;  // (after the list is drawn: it is the one being drawn)
     for (size_t i = 0; i < problems.size(); ++i) {
         ImGui::PushID(int(i));
         if (!problems[i].path.empty()) {
@@ -1197,6 +1208,18 @@ void DrawProblems()
             ImGui::BeginDisabled(!g);
             if (ImGui::SmallButton("select") && g)
                 Select(g);
+            if (problems[i].onto) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("onto the paths") && g) {  // as the editor moves it (undoable, kept in the level)
+                    ObjectState before = GetState(g), after = before;
+                    memcpy(after.transform.pos, problems[i].to, sizeof(after.transform.pos));
+                    Change(g, before, after, "onto the paths");
+                    refresh = true;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Moves it to the nearest place of the path network (%.0f %.0f %.0f)",
+                                      problems[i].to[0], problems[i].to[1], problems[i].to[2]);
+            }
             ImGui::EndDisabled();
             ImGui::SameLine();
         }
@@ -1205,6 +1228,8 @@ void DrawProblems()
         ImGui::PopTextWrapPos();
         ImGui::PopID();
     }
+    if (refresh)
+        g_problems = FindProblems();
 }
 
 // The steps of making a level, each with its state; a click goes where the step is done.

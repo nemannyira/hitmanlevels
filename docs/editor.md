@@ -87,7 +87,10 @@ with Hitman where he is, where the camera looks or at the level's start. The
 network (a mission completed after god mode, invisible Hitman or another
 speed was on says so over the statistics: not a real rating). The Level tab's *Problems* list shows what would go wrong: characters
 and route points off the path network, objectives whose target is gone,
-missing script files, the scripts' errors since they last ran.
+missing script files, the scripts' errors since they last ran. A character
+or point off the path network with a place of it within 8 m gets an *onto the
+paths* button: it moves there (undoable, kept in the level). A vehicle's route
+points are not listed (cars drive their own splines).
 
 **Save**: Ctrl+S or *Save* in the toolbar.
 

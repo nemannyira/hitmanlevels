@@ -301,6 +301,48 @@ check("state", function()
   return h2.state.suite.list[3] == 3
 end)
 
+-- the scripts' own commands (docs/script_commands.md)
+local guard
+for _, n in ipairs(h2.npcs()) do
+  if n.object and n.object:class() == "ZTRACKLNKHM2" then guard = n.object break end
+end
+check("obj:active off / on", function()
+  local tree = h2.find("Tree_02_21")
+  local a, b, c = tree:active(), tree:active(false), tree:active(true)
+  return a and not b and c, tostring(a) .. tostring(b) .. tostring(c)
+end)
+check("npc:draggable", function()
+  local a, b, c = guard:draggable(), guard:draggable(true), guard:draggable(false)
+  return b and not c, tostring(a) .. tostring(b) .. tostring(c)
+end)
+check("npc:noticed", function()
+  local a, b, c = guard:noticed(), guard:noticed(true), guard:noticed(false)
+  return b and not c and not a, tostring(a) .. tostring(b) .. tostring(c)
+end)
+check("npc:unconsciousbody", function()
+  local a, b, c = guard:unconsciousbody(), guard:unconsciousbody(true), guard:unconsciousbody(false)
+  return b and not c and not a, tostring(a) .. tostring(b) .. tostring(c)
+end)
+check("h2.sound / obj:sound / h2.stopsound", function()
+  local a = h2.sound("*/Male_Whistle1*")
+  local b = h2.find("Tree_02_21"):sound("*Female_Humming1*")
+  return a ~= nil and b ~= nil and h2.stopsound(a) and h2.sound("no_such_sound_xyz") == nil, tostring(a) .. " " .. tostring(b)
+end)
+rejects("draggable of a model", function() h2.find("Tree_02_21"):draggable(true) end)
+-- "lock": a door locked / unlocked as the scripts lock one (obj:send)
+local locks = {}
+h2.on("lock", function(e) locks[#locks + 1] = tostring(e.locked) end)
+local door
+for _, o in ipairs(h2.findall("DDoor_04_01")) do if o:path():find("Garden") then door = o end end
+check("obj:send", function() return door:send("Msg_LockDoor") and door:send("Msg_UnlockDoor") end)
+later(1, "lock events", function() return table.concat(locks, ",") == "true,false", table.concat(locks, ",") end)
+-- "zone": Hitman into and out of the map's own ExitBox (the game's CheckInside), after the zone checks above
+local zones = {}
+h2.on("zone", function(e) if e.name == "ExitBox" then zones[#zones + 1] = tostring(e.inside) end end)
+h2.after(3, function() hitman:setpos(hx, hy, hz - 400) end)
+h2.after(4.5, function() hitman:setpos(hx, hy, hz) end)
+later(6.5, "zone events (the map's ExitBox)", function() return table.concat(zones, ",") == "true,false", table.concat(zones, ",") end)
+
 -- the end
 later(10, "suite end", function() return true end)
 h2.after(10.5, function() R.done = true end)

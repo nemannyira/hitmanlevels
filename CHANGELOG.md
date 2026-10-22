@@ -45,7 +45,7 @@ New, all calling what the levels' own scripts call:
 |---|---|
 | `obj:active([on])` | an object in or out of the world |
 | `obj:send(message [, number])` | a message as the scripts send one (`"Msg_LockDoor"`, ...) |
-| `obj:sound(name)`, `h2.sound(name)`, `h2.stopsound(id)` | the level's sounds (`"*\\Male_Whistle1*"`) |
+| `obj:sound(name)`, `h2.sound(name)`, `h2.stopsound(id)` | the level's sounds (`"*/Male_Whistle1*"`) |
 | `npc:draggable([on])` | whether Hitman can drag its body |
 | `npc:noticed([on])` | whether the characters look out for it as for Hitman |
 | `npc:unconsciousbody([on])` | the scripts' mark of an unconscious body |

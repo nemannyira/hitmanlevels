@@ -96,7 +96,7 @@ place it without one (`h2.npc(..., false)` or in the editor).
 |---|---|
 | `h2.objective(slot [, text [, done]])` | a laptop objective line (1..6); returns the level's own text |
 | `h2.objective(slot, false)` | hides a line (the level's own too) until it gets a text again |
-| `h2.sound(name)` -> id, `h2.stopsound(id)` | one of the level's sounds, as its scripts play one: a part of its name between stars, the first sound whose name has it (`"*\Male_Whistle1*"`; `"*Male_Whistle1*"` finds Female_Whistle1 first) |
+| `h2.sound(name)` -> id, `h2.stopsound(id)` | one of the level's sounds, as its scripts play one: a part of its name between stars, the first sound whose name has it (`"*/Male_Whistle1*"`: the names are paths, `Streams/FX/Male_Whistle1.wav`; `"*Male_Whistle1*"` finds Female_Whistle1 first) |
 | `obj:sound(name)` -> id | the same played at the object (the scripts' Play3dSound) |
 | `h2.subtitle(text [, seconds])` | a subtitle line at the bottom of the screen (default 5 game seconds; nil / `""` takes it away) |
 | `h2.info(text [, kind])` | the game's own info line ("Info: ...", "Warning:", "Hint:" in its colour, bottom left); `kind`: `"info"` (default), `"warning"`, `"hint"`; one paragraph. A subtitle takes the same place |

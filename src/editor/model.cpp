@@ -634,7 +634,9 @@ engine::ZGEOM* Resolve(const std::string& path)
     // A renamed point ("Garage") is the editor's too.
     size_t slash = path.rfind('/');
     std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
-    if (name.empty() || name.find('#') != std::string::npos)
+    // "Crate#2" is the third of that name, but a level's object may have a '#' in its own name
+    // (a copy of another level's model "Truck_Body#0.C2-1.33DFFE+1"): such a name is looked up as it is
+    if (name.empty() || (name.find('#') != std::string::npos && name.find('+') == std::string::npos))
         return nullptr;
     std::vector<int> same = snap.FindName(name);
     if (same.size() != 1)

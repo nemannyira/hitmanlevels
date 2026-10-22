@@ -873,7 +873,9 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             int index = it != byPath.end() ? it->second : -1;
             if (index < 0) {
                 std::string name = path.substr(path.rfind('/') + 1);
-                auto n = byName.find(name.substr(0, name.find('#')));
+                auto n = byName.find(name);  // (a level's object: '#' may be part of its name)
+                if (n == byName.end())
+                    n = byName.find(name.substr(0, name.find('#')));
                 index = n != byName.end() ? n->second : -1;
             }
             return index >= 0 ? 0x80000000u | uint32_t(index + 1) : 0;

@@ -25,6 +25,9 @@ LOG = os.path.join(dev.GAME, "H2Fix.log")
 SLOT = 9
 IMPORT = {"level": "C3-3", "mesh": 6341746, "name": "Yard_06-7-8"}  # the blank maps' floor
 LIBRARY = "ROOT/EditorImports/Yard_06-7-8.C3-3.60C472"
+# a model whose name has a '#' of its own (its copies' names too)
+IMPORT2 = {"level": "C2-1", "mesh": 3399678, "name": "Truck_Body#0"}
+LIBRARY2 = "ROOT/EditorImports/Truck_Body#0.C2-1.33DFFE"
 GROUP = "CarFerrari"  # C1-1's garage car: a group of models
 results = []
 
@@ -91,7 +94,7 @@ if os.path.isdir(FOLDER):
 try:
     os.makedirs(FOLDER)
     json.dump({"format": "h2level", "version": 1, "name": LEVEL, "base_scene": "C1-1\\C1-1__MAIN",
-               "imports": [IMPORT]}, open(os.path.join(FOLDER, "level.json"), "w", encoding="utf-8"))
+               "imports": [IMPORT, IMPORT2]}, open(os.path.join(FOLDER, "level.json"), "w", encoding="utf-8"))
     load(LEVEL)
     px, py, pz = place(lua("return h2.player():path()"))
     car = lua('return h2.find("%s"):path()' % GROUP)
@@ -100,6 +103,9 @@ try:
     car_copy = lua('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (car, *car_at))
     yard_at = [px + 5000.0, py - 3000.0, pz]
     yard_copy = lua('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (LIBRARY, *yard_at))
+    truck_at = [px + 900.0, py, pz - 400.0]
+    truck_copy = lua('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (LIBRARY2, *truck_at))
+    truck_id = truck_copy.rsplit("/", 1)[-1]
     check("copies made while editing", record(car_copy)[1] == "none" and record(yard_copy)[1] == "none",
           "%s | %s" % (car_copy, yard_copy))
     lua('return h2.dev_level("save")')
@@ -113,7 +119,7 @@ try:
     mark = log_size()
     load(LEVEL)
     made = log_since(mark)
-    check("made with the map", "scene copies: 2 models" in made,
+    check("made with the map", "scene copies: 3 models" in made,
           [line for line in made.splitlines() if "scene copies" in line][-1:] or "no line")
     car_copy = lua('return h2.find("%s"):path()' % car_id)
     yard_copy = lua('return h2.find("%s"):path()' % yard_id)
@@ -126,6 +132,8 @@ try:
     check("the other level's model: its model",
           lua('return tostring(h2.find([[%s]]):mesh() == h2.find([[%s]]):mesh())' % (yard_copy, LIBRARY)) == "true")
     check("the other level's model: at its place", near(place(yard_copy), yard_at), str(place(yard_copy)))
+    found = lua('local a = h2.find("%s") local b = h2.find([[%s]]) return tostring(a and a:path()) .. " | " .. tostring(b and b:path())' % (truck_id, truck_copy))
+    check("a name with its own '#': found by its name and by its path while editing", found.count("ROOT/" + truck_id) == 2, found)
     save_file = os.path.join(dev.GAME, "Save", "%d.1" % SLOT)
     before = os.path.getmtime(save_file) if os.path.exists(save_file) else 0
     mark = log_size()

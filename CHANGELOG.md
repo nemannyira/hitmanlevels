@@ -59,6 +59,8 @@ New, all calling what the levels' own scripts call:
   levels' scripts teleport them.
 * Music zones get another track the game's way; hiding an object takes it out
   of its rooms as the game does.
+* Fixed: the Problems list no longer says a vehicle's route point is off the
+  characters' path network (cars drive their own splines).
 * Fixed: an object whose own name has a `#` (a copy of an imported
   "Truck_Body#0") was not found after it was made with the map.
 

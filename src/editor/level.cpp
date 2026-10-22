@@ -1109,6 +1109,10 @@ std::vector<Problem> FindProblems()
                 for (const MissionObjective& o : L.mission.objectives)
                     missionPlace |= g && ((o.goal == MissionObjective::Reach && ResolveTarget(o.target) == g) ||
                                           (o.goal == MissionObjective::Deliver && ResolveTarget(o.place) == g));
+                // a vehicle's route point: cars drive their own splines, not the characters' network
+                for (const LevelVehicle& v : L.vehicles)
+                    for (const std::string& r : v.route)
+                        missionPlace |= g && Resolve(r) == g;
                 if (missionPlace)
                     continue;
                 out.push_back({"point " + s.id.substr(0, s.id.find('+')) +

@@ -32,6 +32,9 @@ add_library(imgui STATIC
     third_party/imgui/backends/imgui_impl_win32.cpp
     third_party/imguizmo/src/ImGuizmo.cpp)
 target_include_directories(imgui PUBLIC third_party/imgui third_party/imguizmo/src)
+# ImGui's test engine hooks (src/devcmd.cpp h2.dev_press: an editor control by its label, for
+# tests); they are called only while a press is asked for (ImGuiContext::TestEngineHookItems)
+target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_TEST_ENGINE)
 
 # dinput8.dll proxy: hitman2.exe imports DINPUT8 statically, so the packer stub
 # loads us right after it has decompressed .text and before the game's OEP runs.

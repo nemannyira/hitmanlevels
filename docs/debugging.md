@@ -57,6 +57,38 @@ hitman2.exe (the game starts through Steam), trace, then remove the wrapper.
 A trace replays frame by frame with every call, buffer and state; two traces'
 frames can be compared (images, state).
 
+## Tests
+
+`tools/tests`, against the installed DLL in a running game with
+`DevCommands=1` (H2Fix.ini [Debug]; `tools/dev.py` sends Lua to it).
+
+* `python tools/tests/run_all.py`: all of them in one go. It backs up Save
+  (into `dumps/test_runs/<time>/save_backup`, put back as it was at the end),
+  turns DevCommands and LuaMemory on for the run (H2Fix.ini put back after),
+  starts the game through Steam (`tools/start_game.ps1`: Steam's launch dialog
+  and a "Steam Service Error" box answered; the intros skipped with Esc), runs
+  each test on a freshly loaded C1-1, starts the game again when a test took it
+  down and before the stress suite (which fills the map). Report:
+  `dumps/test_runs/<time>/report.md`, each test's output next to it.
+  `--only api,gui`, `--skip maps_gameway,fuzz,run_maps`, `--keep-game`,
+  `--list`.
+* The Lua suites (`api_suite.lua`, `security_suite.lua`, `stress_suite.lua`)
+  run through `run_suite.py`; the others are Python scripts ending with
+  "N passed, M failed".
+* `maps_gameway_test.py [C2-1 ...]`: a level's copy of a plain model, a point
+  and another weapon for an armed guard on other maps (one of each chapter by
+  default), made with the map, kept by a saved game. What a map does not have
+  (no plain model near Hitman, no point template) is a NOTE, not a failure.
+* `gui_test.py`: the editor's own controls pressed by their labels.
+  `h2.dev_press(label [, n])` finds the control through ImGui's test engine
+  hooks (`IMGUI_ENABLE_TEST_ENGINE`; on only while a press is asked for) and
+  clicks its middle (the n-th control of that label; "##id" not part of the
+  label); a panel is scrolled to a control out of sight. `h2.dev_press_status()`:
+  `"looking"`, `"pressed x y"` or `"not found"` (after about 120 frames). The
+  editor must be open and the control's panel shown (`h2.dev_editor(true)`,
+  `h2.dev_panel(name)`). `h2.dev_selected()`: the selection's path (a copy
+  just made by Duplicate is selected).
+
 ## Reference made with these tools
 
 `docs/classes.md` (classes), `docs/structures.md` (fields), `docs/messages.md`

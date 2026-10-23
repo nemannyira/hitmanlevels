@@ -35,6 +35,7 @@ extern "C" {
 #include "engine/npc.h"
 #include "engine/scene_data.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "d3d8types.h"
 #include "hook.h"
 #include "fov.h"
@@ -65,6 +66,25 @@ struct UiStep {
     int button;
 };
 std::vector<UiStep> g_ui;
+
+struct PressRequest {
+    std::string label;       // as shown (an id after "##" not part of it)
+    int nth = 1;             // the n-th control of that label in the frame
+    bool active = false;
+    int seen = 0, frames = 0;
+    bool found = false;
+    float x = 0, y = 0;
+    std::string status = "none";
+};
+PressRequest g_press;
+std::map<ImGuiID, ImRect> g_pressRects;  // the frame's items so far
+
+void SetItemHooks(bool on)
+{
+    if (ImGuiContext* ctx = ImGui::GetCurrentContext())
+        ctx->TestEngineHookItems = on;
+}
+
 double g_nextPoll;
 
 std::string ModsPath(const char* name) { return GameDir() + "Mods\\" + name; }
@@ -321,6 +341,30 @@ int Type(lua_State* L)
     return 0;
 }
 
+// h2.dev_press(label [, n]): presses the editor's control (button, checkbox, tab, menu item) of
+// that label (the n-th of it in a frame; the editor open, its panel shown; panels scrolled to
+// it when it is out of sight) in the next frames;
+// h2.dev_press_status() -> "looking", "pressed x y" or "not found"
+int Press(lua_State* L)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_press = PressRequest{};
+    g_press.label = luaL_checkstring(L, 1);
+    g_press.nth = int(luaL_optinteger(L, 2, 1));
+    g_press.active = true;
+    g_press.status = "looking";
+    g_pressRects.clear();
+    SetItemHooks(true);
+    return 0;
+}
+
+int PressStatus(lua_State* L)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    lua_pushstring(L, g_press.status.c_str());
+    return 1;
+}
+
 // h2.dev_uikey(imguiKey): presses an ImGui key in the editor (e.g. 525 = Enter)
 int UiKey(lua_State* L)
 {
@@ -475,6 +519,16 @@ int SelectCmd(lua_State* L)
         return luaL_error(L, "no such object");
     editor::Select(g);
     return 0;
+}
+
+// h2.dev_selected() -> the editor's selection's path (nil: none)
+int SelectedCmd(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Selected();
+    if (!g || !editor::IsLive(g))
+        return 0;
+    lua_pushstring(L, editor::PathOf(g).c_str());
+    return 1;
 }
 
 // h2.dev_complete(path, partial, method) -> the console's Tab choices, joined by spaces
@@ -1075,12 +1129,15 @@ void InstallDevCommands()
     script::Register("dev_setscript", SetScriptCmd);
     script::Register("dev_panel", Panel);
     script::Register("dev_select", SelectCmd);
+    script::Register("dev_selected", SelectedCmd);
     script::Register("dev_complete", CompleteCmd);
     script::Register("dev_level", Level);
     script::Register("dev_click", Click);
     script::Register("dev_hover", Hover);
     script::Register("dev_type", Type);
     script::Register("dev_uikey", UiKey);
+    script::Register("dev_press", Press);
+    script::Register("dev_press_status", PressStatus);
     script::Register("dev_callers", Callers);
     script::Register("dev_callers_dump", CallersDump);
     script::Register("dev_coll", Coll);
@@ -1141,11 +1198,86 @@ void DevInjectMouse(long* dx, long* dy, unsigned char* buttons, long* wheel)
 float g_holdX, g_holdY;
 double g_holdUntil;
 
+// ---- an editor control pressed by its label (h2.dev_press), through ImGui's test engine hooks:
+// while a press is asked for, every item of a frame reports its box (ItemAdd) and its label
+// (ItemInfo); the one asked for gets a click in its middle, as h2.dev_click gives one
+void PressItemAdd(ImGuiID id, const ImRect& bb)
+{
+    if (g_press.active && !g_press.found)
+        g_pressRects[id] = bb;
+}
+
+void PressItemInfo(ImGuiID id, const char* label)
+{
+    if (!g_press.active || g_press.found || !label)
+        return;
+    std::string shown = label;
+    shown = shown.substr(0, shown.find("##"));
+    if (shown != g_press.label || ++g_press.seen != g_press.nth)
+        return;
+    auto it = g_pressRects.find(id);
+    if (it == g_pressRects.end())
+        return;
+    ImVec2 mid = it->second.GetCenter();
+    if (!GImGui->CurrentWindow->ClipRect.Contains(mid))  // (half out of its panel: scrolled on)
+        return;
+    g_press.found = true;
+    g_press.x = mid.x;
+    g_press.y = mid.y;
+}
+
+// a control below a panel's visible part is not drawn (ImGui clips it before its label is
+// given): the scrollable windows go over their contents, top to bottom, two frames a step
+bool PressScroll(int frame)
+{
+    bool more = false;
+    for (ImGuiWindow* w : GImGui->Windows) {
+        if (!w->Active || w->ScrollMax.y <= 0)
+            continue;
+        if (frame == 3) {
+            ImGui::SetScrollY(w, 0);
+            more = true;
+        } else if (w->Scroll.y < w->ScrollMax.y) {
+            ImGui::SetScrollY(w, ImMin(w->ScrollMax.y, w->Scroll.y + w->InnerRect.GetHeight() * 0.7f));
+            more = true;
+        }
+    }
+    return more;
+}
+
+// at the start of the editor's frame: the last frame's search done -> the click, or one more frame
+void PressFrame()
+{
+    if (!g_press.active)
+        return;
+    if (g_press.found) {
+        g_ui.push_back({0, g_press.x, g_press.y, 0});
+        g_ui.push_back({0, g_press.x, g_press.y, 0});
+        g_ui.push_back({1, g_press.x, g_press.y, 0});
+        g_ui.push_back({2, g_press.x, g_press.y, 0});
+        char buf[64];
+        snprintf(buf, sizeof(buf), "pressed %.0f %.0f", g_press.x, g_press.y);
+        g_press.status = buf;
+        g_press.active = false;
+        SetItemHooks(false);
+    } else if (++g_press.frames > 120 ||  // (a panel being shown may take a frame or two)
+               (g_press.frames >= 3 && g_press.frames % 2 == 1 && !PressScroll(g_press.frames))) {
+        g_press.status = "not found";
+        g_press.active = false;
+        SetItemHooks(false);
+    } else {
+        SetItemHooks(true);
+    }
+    g_press.seen = 0;
+    g_pressRects.clear();
+}
+
 void DevUiStep()
 {
     if (!g_config.devCommands || !ImGui::GetCurrentContext())
         return;
     std::lock_guard<std::mutex> lock(g_mutex);
+    PressFrame();
     ImGuiIO& io = ImGui::GetIO();
     if (NowMs() < g_holdUntil)
         io.AddMousePosEvent(g_holdX, g_holdY);
@@ -1183,3 +1315,16 @@ void DevOnPresent(void* device)
 }
 
 } // namespace h2
+
+// ImGui's test engine hooks (CMakeLists: IMGUI_ENABLE_TEST_ENGINE): only h2.dev_press turns them on
+void ImGuiTestEngineHook_ItemAdd(ImGuiContext*, ImGuiID id, const ImRect& bb, const ImGuiLastItemData*)
+{
+    h2::PressItemAdd(id, bb);
+}
+void ImGuiTestEngineHook_ItemInfo(ImGuiContext*, ImGuiID id, const char* label, ImGuiItemStatusFlags)
+{
+    h2::PressItemInfo(id, label);
+}
+void ImGuiTestEngineHook_Log(ImGuiContext*, const char*, ...) {}
+const char* ImGuiTestEngine_FindItemDebugLabel(ImGuiContext*, ImGuiID) { return nullptr; }
+

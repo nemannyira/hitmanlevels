@@ -3,6 +3,20 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
+## 2026-10-23: tests
+
+For those who work on the editor (docs/debugging.md, Tests):
+
+* `tools/tests/run_all.py` runs every test in one go: the saves backed up and
+  put back, the dev commands on for the run only, the game started (and started
+  again) as needed, a report in `dumps/test_runs`.
+* `tools/tests/maps_gameway_test.py`: copies, points and character settings
+  made with the map on other maps than C1-1.
+* `tools/tests/gui_test.py` and `h2.dev_press(label)`: the editor's own buttons
+  pressed by their labels.
+
+Not yet run in the game.
+
 ## 2026-10-17 .. 2026-10-22: the game's own way
 
 The editor now does what the game itself does wherever the game has a way of

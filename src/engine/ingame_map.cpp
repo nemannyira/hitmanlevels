@@ -16,6 +16,7 @@ constexpr uintptr_t kFloorOf = 0x540C50;      // window->(ZGEOM*) -> floor entry
 constexpr uintptr_t kDefaultFloor = 0x53EDA0; // window->() -> floor entry
 constexpr int kGroup_AddChild = 0x26C / 4;    // group->(ZGEOM* child, int, int)
 constexpr size_t kRoutine_Owner = 0x6E;       // a routine's object (ZEventBase)
+constexpr size_t kMapObject_Shown = 0x76;     // ZGEOM_MapObject: its icon in the map's set (bool)
 constexpr size_t kMap_IconDraw = 0x1AE;       // CMapIconDraw*: +0x18 count, +0x1C {icon, object} refs
 constexpr size_t kMap_ShownFloor = 0x2F3;     // the floor entry shown last
 constexpr size_t kFloor_Group = 0x04;         // a floor entry: its group's ref,
@@ -119,6 +120,28 @@ ZGEOM* MapFloorOf(ZGEOM* geom)
         return nullptr;
     ZGEOM* floor = FloorGroup(SafeFloorOf(map, geom));
     return floor ? floor : FloorGroup(SafeDefaultFloor(map));
+}
+
+int MapIconShown(ZGEOM* geom)
+{
+    uint8_t* routine = Usable(geom) ? GeomRoutine(geom, "MapObject") : nullptr;
+    if (!routine || !IsReadable(routine + kMapObject_Shown, 1))
+        return -1;
+    return routine[kMapObject_Shown] ? 1 : 0;
+}
+
+ZGEOM* MapIconOwner(ZGEOM* geom)
+{
+    if (MapIconShown(geom) >= 0)
+        return geom;
+    ZBaseGeom* parent = Usable(geom) ? geom->node->parent : nullptr;
+    ZGEOM* group = parent && IsReadable(parent, sizeof(ZBaseGeom)) ? parent->geom : nullptr;
+    return MapIconShown(group) >= 0 ? group : nullptr;
+}
+
+bool ShowMapIcon(ZGEOM* geom, bool on)
+{
+    return MapIconShown(geom) >= 0 && SendCommand(geom, "ShowMapIcon", on ? 1 : 0);
 }
 
 bool AddToMapFloor(ZGEOM* floor, ZGEOM* model)

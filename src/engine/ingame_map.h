@@ -32,6 +32,19 @@ bool IsMapFloor(ZGEOM* geom);
 // game's maps, else the first). Null: no map, or it has no floors.
 ZGEOM* MapFloorOf(ZGEOM* geom);
 
+// An object's icon on the map (its ZGEOM_MapObject routine, +0x76): 1 shown, 0
+// not, -1 it has none.
+int MapIconShown(ZGEOM* geom);
+// The object whose icon stands for this one: itself or its group (the game's
+// characters have theirs on their groups' records); null: none.
+ZGEOM* MapIconOwner(ZGEOM* geom);
+// Its icon shown or not: the routine's own message ShowMapIcon with 1 / 0
+// (0x541520: the object into the map's set or out of it; kept with a saved
+// game), as the levels' scripts send it. The map leaves out only objects that
+// are inactive (node flag 0x400), not hidden ones: an object taken out of the
+// world is taken off the map so.
+bool ShowMapIcon(ZGEOM* geom, bool on);
+
 // A model put onto a floor of the map: a child of the floor's group, by the
 // group's own AddChild (ZGROUP vfunc 0x26C (child, 0, 1) -> 0x43E6C0: out of its
 // parent, into the group), as the window puts its icon drawer onto the floor it

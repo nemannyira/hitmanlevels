@@ -368,6 +368,12 @@ cheats.
   window and legend: before, it took them out with the buildings, so the map
   showed nothing) and takes out only its floors' plans and fixed icons.
   `h2.dev_mapicons()` reads what the map draws.
+* An icon goes off the map with the routine's own message ShowMapIcon 0
+  (its handler 0x541520: out of the window's set; 1 back; the flag +0x76 is
+  saved with the game): the map leaves out only inactive objects (node flag
+  0x400), not hidden ones (0x800), so an empty map's characters (their
+  icons are on their groups' records) and a blank map's fixed icons are taken
+  off it so, and shown again when the level is reverted.
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

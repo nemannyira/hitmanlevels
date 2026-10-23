@@ -23,6 +23,8 @@ For those who work on the editor (docs/debugging.md, Tests):
   takes out only the old floor plans and draws the level's floor and models
   instead. On other maps the level's models can be drawn on it too (Level >
   *The level's models on the map*).
+* *Empty map*: the characters taken out are off the game's map too (they were
+  still drawn there at their old places).
 
 Not yet run in the game.
 

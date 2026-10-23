@@ -13,6 +13,7 @@
 
 #include "../config.h"
 #include "../engine/imports.h"
+#include "../engine/ingame_map.h"
 #include "../engine/inject.h"
 #include "../engine/lists.h"
 #include "../engine/messages.h"
@@ -56,7 +57,16 @@ struct Cleared {
     engine::ZGEOM* geom;
     ObjectState state;
     bool actor;
+    engine::ZGEOM* mapIcon = nullptr;  // its icon taken off the in-game map (its own or its group's)
 };
+
+// an object's icon off the in-game map (the map leaves out inactive objects only, not hidden ones):
+// the object carrying it, to be shown again (null: it had none shown)
+engine::ZGEOM* TakeOffMap(engine::ZGEOM* geom)
+{
+    engine::ZGEOM* owner = engine::MapIconOwner(geom);
+    return owner && engine::MapIconShown(owner) == 1 && engine::ShowMapIcon(owner, false) ? owner : nullptr;
+}
 std::vector<Cleared> g_cleared;
 
 constexpr float kAway = -50000.0f;  // where taken out objects go (below the world)
@@ -69,7 +79,7 @@ void ClearScene()
         engine::ZGEOM* actor = engine::RecordGeom(rec);
         if (!actor || !IsLive(actor))
             continue;
-        g_cleared.push_back({actor, GetState(actor), true});
+        g_cleared.push_back({actor, GetState(actor), true, TakeOffMap(actor)});
         Transform t = GetTransform(actor);
         t.pos[1] = kAway;
         engine::TeleportActor(actor, t.pos);
@@ -79,7 +89,7 @@ void ClearScene()
         if (!IsLive(g.geom) || !engine::IsA(g.geom, "ZItem") || engine::IsA(g.geom, "ZItemTemplate") ||
             IsSpawned(g.geom) || InActor(g.geom))
             continue;
-        g_cleared.push_back({g.geom, GetState(g.geom), false});
+        g_cleared.push_back({g.geom, GetState(g.geom), false, TakeOffMap(g.geom)});
         ObjectState st = g_cleared.back().state;
         st.transform.pos[1] = kAway;
         st.hidden = true;
@@ -92,9 +102,10 @@ void ClearScene()
 // blank map: the scene's models hidden and stopping nothing, as they were
 struct Blanked {
     engine::ZGEOM* geom;
-    uint32_t mesh;        // 0: not a model's object (the in-game map's fixed icons)
+    uint32_t mesh;        // 0: the in-game map's, not taken out of the world (no collision to stop)
     bool moved = false;   // under the map: a copy of its model is used (UseBlankedMesh)
     Transform original{};
+    bool mapIcon = false; // a fixed icon of the in-game map's floors: taken off the map (not hidden)
 };
 std::vector<Blanked> g_blanked;
 
@@ -136,7 +147,12 @@ void BlankScene()
         if (!IsLive(geom) || IsSpawned(geom) || HiddenByTheMap(geom) || engine::IsSceneCopyRecord(engine::RecordOf(geom)))
             continue;  // the editor's (the level's copies made with the map too), or hidden already (templates, cutscenes)
         if (map.Contains(geom)) {  // the in-game map: its window and legend stay, its floors' plans and fixed
-            if (map.OnFloor(geom)) {  // icons go with the buildings (the level's models are drawn there instead)
+            if (!map.OnFloor(geom))   // icons go with the buildings (the level's models are drawn there instead)
+                continue;
+            if (engine::MapIconShown(geom) == 1) {
+                if (engine::ShowMapIcon(geom, false))
+                    g_blanked.push_back({geom, 0, false, Transform{}, true});
+            } else if (engine::MeshOf(geom)) {  // (the map's camera draws its floor's shown models)
                 g_blanked.push_back({geom, 0});
                 SetHidden(geom, true);
             }
@@ -174,6 +190,10 @@ void RestoreBlank()
     for (const Blanked& b : g_blanked) {
         if (!IsLive(b.geom))
             continue;
+        if (b.mapIcon) {
+            engine::ShowMapIcon(b.geom, true);
+            continue;
+        }
         if (b.moved)
             SetTransform(b.geom, b.original);
         SetHidden(b.geom, false);
@@ -258,6 +278,8 @@ void RestoreScene()
         } else {
             SetState(c.geom, c.state);
         }
+        if (c.mapIcon && IsLive(c.mapIcon))
+            engine::ShowMapIcon(c.mapIcon, true);
     }
     g_cleared.clear();
     InvalidateSceneModel();

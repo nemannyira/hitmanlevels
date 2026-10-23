@@ -3,8 +3,9 @@
 * a level on C1-1 that asks for its models on the map: a copy of one of the
   map's models is drawn there (its "<id>_Map" plan model, made with the map,
   put onto the floor the map shows the copy on);
-* a map without buildings (the launcher's New level): the map's window and its
-  legend's icons stay, its floors' plans and fixed icons are taken out, the
+* a map without buildings (the launcher's New level, emptied too): the map's
+  window and its legend's icons stay, its floors' plans are taken out and
+  their fixed icons and the map's characters off the map (ShowMapIcon), the
   level's floor is drawn instead, and the map draws Hitman's icon.
 
 Screenshots of the open map go to dumps/shots (map_models_*.png). Uses
@@ -132,7 +133,6 @@ try:
     check("blank: the map's legend stays", hidden("Icon_Hero") == "false", hidden("Icon_Hero"))
     check("blank: the map's frame stays", hidden("Frame_Outer") == "false", hidden("Frame_Outer"))
     check("blank: the floor plans taken out", hidden("Text_Garage") == "true", hidden("Text_Garage"))
-    check("blank: the floors' fixed icons taken out", hidden("MapIcon_Exit") == "true", hidden("MapIcon_Exit"))
     check("blank: the floors stay", hidden("MAP_Basement") == "false")  # (the floor's group: the first of that name)
     floor = on_floor(floor_id + "_Map")
     check("blank: the level's floor drawn on a floor of the map", floor != "", floor)
@@ -140,6 +140,8 @@ try:
     check("blank: the map shows a floor", drawn.startswith("floor ") and drawn != "floor \n", drawn.splitlines()[:1])
     check("blank: Hitman's icon drawn", "Icon_Hero" in drawn, drawn.splitlines()[:3])
     check("blank: no fixed icon of the old plans", "MapIcon_" not in drawn, [l for l in drawn.splitlines() if "MapIcon_" in l][:2])
+    check("blank: none of the map's characters (an empty map)", "Icon_Enemy" not in drawn and "Icon_Innocent" not in drawn,
+          [l for l in drawn.splitlines() if "Icon_Enemy" in l or "Icon_Innocent" in l][:2])
 finally:
     dev.run('return h2.dev_level("revert")', 10)
     for level in LEVELS:

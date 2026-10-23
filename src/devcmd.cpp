@@ -1245,29 +1245,41 @@ double g_holdUntil;
 // ---- an editor control pressed by its label (h2.dev_press), through ImGui's test engine hooks:
 // while a press is asked for, every item of a frame reports its box (ItemAdd) and its label
 // (ItemInfo); the one asked for gets a click in its middle, as h2.dev_click gives one
-void PressItemAdd(ImGuiID id, const ImRect& bb)
+// the n-th control of the label: its middle (half out of its panel: not yet, scrolled on)
+void PressMatch(const ImRect& rect)
 {
-    if (g_press.active && !g_press.found)
-        g_pressRects[id] = bb;
-}
-
-void PressItemInfo(ImGuiID id, const char* label)
-{
-    if (!g_press.active || g_press.found || !label)
+    if (++g_press.seen != g_press.nth)
         return;
-    std::string shown = label;
-    shown = shown.substr(0, shown.find("##"));
-    if (shown != g_press.label || ++g_press.seen != g_press.nth)
-        return;
-    auto it = g_pressRects.find(id);
-    if (it == g_pressRects.end())
-        return;
-    ImVec2 mid = it->second.GetCenter();
-    if (!GImGui->CurrentWindow->ClipRect.Contains(mid))  // (half out of its panel: scrolled on)
+    ImVec2 mid = rect.GetCenter();
+    if (!GImGui->CurrentWindow->ClipRect.Contains(mid))
         return;
     g_press.found = true;
     g_press.x = mid.x;
     g_press.y = mid.y;
+}
+
+// a control of the label's own id in its window (the id ImGui gives that label there: every control
+// added, a combo too, which gives no label to the hooks below)
+void PressItemAdd(ImGuiID id, const ImRect& bb)
+{
+    if (!g_press.active || g_press.found)
+        return;
+    g_pressRects[id] = bb;
+    if (id == GImGui->CurrentWindow->GetID(g_press.label.c_str()))
+        PressMatch(bb);
+}
+
+// a control whose label shows it ("edit##take": "edit") under another id
+void PressItemInfo(ImGuiID id, const char* label)
+{
+    if (!g_press.active || g_press.found || !label || id == GImGui->CurrentWindow->GetID(g_press.label.c_str()))
+        return;  // (counted when it was added)
+    std::string shown = label;
+    shown = shown.substr(0, shown.find("##"));
+    if (shown != g_press.label)
+        return;
+    if (auto it = g_pressRects.find(id); it != g_pressRects.end())
+        PressMatch(it->second);
 }
 
 // a control below a panel's visible part is not drawn (ImGui clips it before its label is

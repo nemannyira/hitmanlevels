@@ -117,9 +117,9 @@ bool IsMapFloor(ZGEOM* geom)
 ZGEOM* MapFloorOf(ZGEOM* geom)
 {
     void* map = IngameMap();
-    if (!map || !Usable(geom))
+    if (!map)
         return nullptr;
-    ZGEOM* floor = FloorGroup(SafeFloorOf(map, geom));
+    ZGEOM* floor = Usable(geom) ? FloorGroup(SafeFloorOf(map, geom)) : nullptr;
     return floor ? floor : FloorGroup(SafeDefaultFloor(map));
 }
 

@@ -884,7 +884,8 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                 if (!c.mapIcon.empty() && std::find(icons.begin(), icons.end(), c.mapIcon) != icons.end()) {
                     if (iconTemplate < 0) {
                         Log("scene copies: %s: this scene has no map icon record to copy", c.name.c_str());
-                    } else {  // its icon: a map icon record at the point, put into its room (dynamic, auto-assign)
+                    } else {  // its icon: a map icon record at the point, as the map's own (static: the editor
+                              // puts it onto the floor of its place once the map has loaded)
                         std::string icon = c.name + "_MapIcon";
                         std::vector<uint8_t> r(gms.begin() + recordAt(iconTemplate),
                                                gms.begin() + recordAt(iconTemplate) + kRecord);
@@ -894,7 +895,6 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                         Put(r, 0x1C, 0);
                         Put(r, 0x20, Append(gms, MapIconData(c.mapIcon)));
                         Put(r, 0x28, 0);
-                        Put(r, 0x18, U32(r, 0x18) | 0x44000);
                         g_copies[icon] = int(count) + added;
                         g_copyRecords.insert(int(count) + added);
                         emit(r, false, 0, recs[iconTemplate].extra, nullptr, true);

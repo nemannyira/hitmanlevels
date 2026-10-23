@@ -73,6 +73,13 @@ def since(at):
         return f.read()
 
 
+def icon_of(find):
+    """h2.dev_mapicon of the object found by that Lua expression: (icon, floor)"""
+    out = lua('local o = %s if not o then return "missing|" end local a, b = h2.dev_mapicon(o:path()) '
+              'return a .. "|" .. b' % find)
+    return tuple(out.split("|", 1))
+
+
 def map_icons():
     """the map opened with M, what it draws, closed again"""
     lua("h2.dev_key(%d, 0.1) return 1" % DIK_M)
@@ -101,8 +108,8 @@ try:
     lua('return h2.dev_level("target", [[%s]])' % guard)
     placed = lua('return h2.dev_place_npc(%d, %s)' % (GUARD, at))
     lua('return h2.dev_level("target", h2.find("%s"):path())' % placed)
-    boss = lua('for _, n in ipairs(h2.npcs()) do if n.object and n.object:name() == "MafiaBoss" then '
-               'return n.record end end return -1')
+    boss = lua('for _, n in ipairs(h2.npcs()) do if n.object and n.object:path():find("/MafiaBoss/") then '
+               'return n.record end end return -1')  # (its actor is "Ground" in its group)
     boss_copy = lua('return h2.dev_place_npc(%s, %s)' % (boss, at)) if boss != "-1" else ""
     try:
         lua('return h2.dev_level("mapicon", [[%s|Icon_Nonsense]])' % other)
@@ -127,20 +134,22 @@ try:
     check("the icon made with the map", rec == "copy", rec)
     check("none for the point without an icon",
           lua('return tostring(h2.find("%s_MapIcon") == nil)' % other_name) == "true")
-    exit_icon = lua('return h2.dev_mapicon("%s_MapIcon")' % exit_point.rsplit("/", 1)[-1])
-    check("the mission's exit: Exit", exit_icon == "Icon_Exit shown", exit_icon)
-    target = lua(GUARD_LUA + 'return h2.dev_mapicon(g:path())')
+    icon, floor = icon_of('h2.find("%s_MapIcon")' % name)
+    check("the point's icon on the floor of its place (Outside)", floor == "MAP_Outside", "%s %s" % (icon, floor))
+    exit_icon = icon_of('h2.find("%s_MapIcon")' % exit_point.rsplit("/", 1)[-1])
+    check("the mission's exit: Exit", exit_icon[0] == "Icon_Exit shown", exit_icon)
+    target = lua(GUARD_LUA + 'return (h2.dev_mapicon(g:path()))')
     check("the map's guard to kill: Target", target == "Icon_Target shown", target)
-    target = lua('return h2.dev_mapicon("%s")' % placed)
-    check("the placed character to kill: Target", target == "Icon_Target shown", target)
+    target = icon_of('h2.find("%s")' % placed)
+    check("the placed character to kill: Target", target[0] == "Icon_Target shown", target)
     other_guard = lua('for _, n in ipairs(h2.npcs()) do if n.record ~= %d and n.object then '
-                      'local i = h2.dev_mapicon(n.object:path()) '
+                      'local i = (h2.dev_mapicon(n.object:path())) '
                       'if i ~= "none" and i:sub(1, 11) ~= "Icon_Target" then return i end end end return "none"' % GUARD)
     check("the others keep their own (not all targets)", other_guard != "none", other_guard)
-    check("the base level's target, its mission no longer counting: Enemy",
-          lua('return h2.dev_mapicon("MafiaBoss")') == "Icon_Enemy shown", lua('return h2.dev_mapicon("MafiaBoss")'))
-    check("a placed copy of the base level's target: Enemy", boss_copy != "" and
-          lua('return h2.dev_mapicon("%s")' % boss_copy) == "Icon_Enemy shown", boss_copy)
+    boss_icon = icon_of('h2.find("MafiaBoss")')
+    check("the base level's target, its mission no longer counting: Enemy", boss_icon[0] == "Icon_Enemy shown", boss_icon)
+    copy_icon = icon_of('h2.find("%s")' % boss_copy) if boss_copy else ("no copy", "")
+    check("a placed copy of the base level's target: Enemy", copy_icon[0] == "Icon_Enemy shown", (boss_copy, copy_icon))
     routine = lua('return h2.dev_routine(h2.find("%s_MapIcon"):path(), "MapObject")' % name)
     check("its ZGEOM_MapObject routine", routine != "none", routine[:60])
     drawn = map_icons()

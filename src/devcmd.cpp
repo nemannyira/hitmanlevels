@@ -729,29 +729,36 @@ int DevRecordPaths(lua_State* L)
 }
 
 // h2.dev_mapicons() -> what the in-game map draws, after it was opened with M (engine/ingame_map.h):
-// "floor <name>", then a line per icon: the legend's model and its object's path
+// "floor <name>", then a line per icon: the legend's model and its object's path; 2nd value: the
+// window's path
 int DevMapIcons(lua_State* L)
 {
     if (!engine::IngameMap()) {
         lua_pushstring(L, "none");
         return 1;
     }
+    engine::ZGEOM* window = engine::IngameMapWindow();
     std::string out = "floor " + engine::MapShownFloor() + "\n";
     for (const engine::MapIconDrawn& d : engine::MapIconsDrawn())
         out += (d.icon ? engine::SafeString(d.icon->name) : std::string("?")) + " " +
                (d.object ? editor::PathOf(d.object) : std::string("?")) + "\n";
     lua_pushstring(L, out.c_str());
-    return 1;
+    lua_pushstring(L, window ? editor::PathOf(window).c_str() : "no window");
+    return 2;
 }
 
 // h2.dev_mapicon(path) -> the object's icon on the in-game map, its own or its group's (a character's):
-// "<icon> shown" / "<icon> off" ("none": it has no map routine)
+// "<icon> shown" / "<icon> off" ("none": it has no map routine); 2nd value: the floor the map shows
+// the object on (its group's name; "": none)
 int DevMapIcon(lua_State* L)
 {
-    engine::ZGEOM* owner = engine::MapIconOwner(editor::Resolve(luaL_checkstring(L, 1)));
+    engine::ZGEOM* geom = editor::Resolve(luaL_checkstring(L, 1));
+    engine::ZGEOM* owner = engine::MapIconOwner(geom);
     std::string out = owner ? engine::MapIconName(owner) + (engine::MapIconShown(owner) == 1 ? " shown" : " off") : "none";
+    engine::ZGEOM* floor = geom ? engine::MapFloorOf(geom) : nullptr;
     lua_pushstring(L, out.c_str());
-    return 1;
+    lua_pushstring(L, floor ? engine::SafeString(floor->name).c_str() : "");
+    return 2;
 }
 
 // h2.dev_record(path) -> its record in the scene loaded last (-1: made while playing), "file" /

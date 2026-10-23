@@ -19,11 +19,12 @@ namespace {
 // level's models are drawn flattened (from above they look the same) to stay under them
 constexpr float kFlatten = 0.02f;
 constexpr int kMaxDepth = 64;  // (a walk up the scene's tree)
+constexpr uint32_t kRoomClass = 0x100021;  // ZROOM
 
 // A model the map draws and the level object it stands for (the map draws it on that object's floor)
 struct PlanModel {
     engine::SceneMapModel model;  // its place in the world (not flattened)
-    std::string object;           // the level object's id
+    float at[3] = {};             // where its object stands (the floor is that place's)
 };
 
 void Place(engine::SceneMapModel& m, const Transform& t)
@@ -47,7 +48,7 @@ std::vector<PlanModel> PlanModels()
               (!L.ownMapOf.empty() && s.sourceScene == L.ownMapOf)))
             continue;
         PlanModel p;
-        p.object = s.id;
+        memcpy(p.at, s.transform.pos, sizeof(p.at));
         p.model.name = s.id + "_Map";
         if (s.group) {
             for (size_t k = 0; k < s.parts.size(); ++k) {
@@ -76,8 +77,18 @@ std::vector<PlanModel> PlanModels()
     return out;
 }
 
-// the plan models put onto the map's floors (the scene loaded last)
-std::vector<std::string> g_placed;
+// what the level put onto the map's floors (the scene loaded last): plan models, points' icons
+struct Placed {
+    std::string name;
+    bool icon = false;
+};
+std::vector<Placed> g_placed;
+
+// the floor the map shows a place on: the floor of the room the editor puts objects there into
+// (RoomAt: the smallest of the map's models around it), as the map finds an object's (0x540C50),
+// else the map's default floor. (Not the engine's room of a dynamic object there: its rooms are
+// large boxes, a point on C1-1's hill outside was in a room of the mansion's 2nd floor.)
+engine::ZGEOM* FloorAt(const float pos[3]) { return engine::MapFloorOf(RoomAt(pos)); }
 
 // the last part of a goal's path (an object's name; "Crate#2": "Crate")
 std::string NameOf(const std::string& path)
@@ -174,45 +185,69 @@ void PlaceMapModels()
     if (!engine::IngameMap())
         return;
     int made = 0;
-    for (const PlanModel& p : PlanModels()) {
-        engine::ZGEOM* model = engine::RecordGeom(engine::SceneCopyRecord(p.model.name));
-        if (!model || !IsLive(model))
-            continue;  // (not made with the map: the level changed since it loaded)
+    auto put = [&](const std::string& name, const float at[3], bool icon) {
+        engine::ZGEOM* g = engine::RecordGeom(engine::SceneCopyRecord(name));
+        if (!g || !IsLive(g))
+            return;  // (not made with the map: the level changed since it loaded)
         ++made;
-        engine::ZGEOM* object = LevelObject(p.object);
-        engine::ZGEOM* floor = engine::MapFloorOf(object && IsLive(object) ? object : model);
-        SetHidden(model, false);
-        if (floor && engine::AddToMapFloor(floor, model))
-            g_placed.push_back(p.model.name);
-    }
+        engine::ZGEOM* floor = FloorAt(at);
+        if (!floor || !engine::AddToMapFloor(floor, g))
+            return;
+        if (!icon)
+            SetHidden(g, false);
+        else if (engine::MapIconShown(g) == 0)
+            engine::ShowMapIcon(g, true);
+        g_placed.push_back({name, icon});
+    };
+    for (const PlanModel& p : PlanModels())
+        put(p.model.name, p.at, false);
+    for (const SpawnedObject& s : CurrentLevel().spawned)  // (SceneCopy::mapIcon: its own, else the mission's)
+        if (s.point && !(s.mapIcon.empty() && MissionMapIcon(s.id).empty()))
+            put(s.id + "_MapIcon", s.transform.pos, true);
     if (made)
-        Log("level: %d/%d of its models on the in-game map's floors", int(g_placed.size()), made);
+        Log("level: %d/%d of its models and icons on the in-game map's floors", int(g_placed.size()), made);
 }
 
 void HideMapModels()
 {
-    for (const std::string& name : g_placed)
-        if (engine::ZGEOM* model = engine::RecordGeom(engine::SceneCopyRecord(name)); model && IsLive(model))
-            SetHidden(model, true);
+    for (const Placed& p : g_placed) {
+        engine::ZGEOM* g = engine::RecordGeom(engine::SceneCopyRecord(p.name));
+        if (!g || !IsLive(g))
+            continue;
+        if (p.icon)
+            engine::ShowMapIcon(g, false);
+        else
+            SetHidden(g, true);
+    }
     g_placed.clear();
 }
 
 IngameMapParts::IngameMapParts()
 {
-    engine::ZGEOM* window = engine::IngameMapWindow();
-    if (!window)
-        return;
+    // the window's group as the scene file has it (the window itself is put among the interface's at
+    // init: GuiSetup/MenuSetup/ZWINDOWS), with its parts and the legend: "<map>__MAP.zip/.../MapSetup.zip"
     const auto& recs = engine::SceneRecords();
-    for (size_t i = 0; i < recs.size(); ++i)
-        if (recs[i].classId & 0x100000)  // (a floor is a group)
-            if (engine::ZGEOM* g = engine::RecordGeom(int(i)); g && engine::IsMapFloor(g))
-                floors_.push_back(g->node);
-    // the map's group: the smallest around its window and its floors (the game's maps: "<map>__MAP.zip")
-    std::vector<engine::ZBaseGeom*> chain = Ancestors(window->node);
-    if (floors_.empty()) {  // (a map without floors: its window's group)
-        roots_.push_back(chain[chain.size() > 1 ? 1 : 0]);
+    int window = engine::RecordOf(engine::IngameMapWindow());
+    if (window < 0 || size_t(window) >= recs.size())
         return;
+    engine::ZGEOM* setup = engine::RecordGeom(recs[size_t(window)].parent);
+    if (!setup || !IsLive(setup))
+        return;
+    std::vector<engine::ZGEOM*> rooms;
+    for (size_t i = 0; i < recs.size(); ++i) {
+        if (!(recs[i].classId & 0x100000))
+            continue;  // (floors and rooms are groups)
+        engine::ZGEOM* g = engine::RecordGeom(int(i));
+        if (!g || !IsLive(g))
+            continue;
+        if (recs[i].classId == kRoomClass)
+            rooms.push_back(g);
+        else if (engine::IsMapFloor(g))
+            floors_.push_back(g->node);
     }
+    // the map's group: the smallest around the window's group and the floors (the game's maps:
+    // "<map>__MAP.zip"), unless it holds rooms of the world (then those groups themselves)
+    std::vector<engine::ZBaseGeom*> chain = Ancestors(setup->node);
     size_t common = 0;
     for (engine::ZBaseGeom* floor : floors_) {
         std::vector<engine::ZBaseGeom*> up = Ancestors(floor);
@@ -220,13 +255,14 @@ IngameMapParts::IngameMapParts()
         common = meet == up.end() ? chain.size()
                                   : std::max(common, size_t(std::find(chain.begin(), chain.end(), *meet) - chain.begin()));
     }
-    if (common + 1 < chain.size()) {
+    if (common < chain.size()) {
         roots_.push_back(chain[common]);
-    } else {  // (around the whole scene: the window's own group and the floors instead)
-        if (chain.size() > 1)
-            roots_.push_back(chain[1]);
-        roots_.insert(roots_.end(), floors_.begin(), floors_.end());
+        if (std::none_of(rooms.begin(), rooms.end(), [&](engine::ZGEOM* room) { return Under(room, roots_, true); }))
+            return;
+        roots_.clear();
     }
+    roots_.push_back(setup->node);
+    roots_.insert(roots_.end(), floors_.begin(), floors_.end());
 }
 
 bool IngameMapParts::Contains(engine::ZGEOM* geom) const { return Under(geom, roots_, true); }

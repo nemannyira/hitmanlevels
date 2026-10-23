@@ -149,20 +149,22 @@ void BlankScene()
     const IngameMapParts map;
     for (const auto& g : SceneModel(0).geoms) {
         engine::ZGEOM* geom = g.geom;
-        if (!IsLive(geom) || IsSpawned(geom) || HiddenByTheMap(geom) || engine::IsSceneCopyRecord(engine::RecordOf(geom)))
-            continue;  // the editor's (the level's copies made with the map too), or hidden already (templates, cutscenes)
+        if (!IsLive(geom) || IsSpawned(geom) || engine::IsSceneCopyRecord(engine::RecordOf(geom)))
+            continue;  // the editor's (the level's copies made with the map too)
         if (map.Contains(geom)) {  // the in-game map: its window and legend stay, its floors' plans and fixed
-            if (!map.OnFloor(geom))   // icons go with the buildings (the level's models are drawn there instead)
-                continue;
+            if (!map.OnFloor(geom))   // icons go with the buildings (the level's models are drawn there instead;
+                continue;             // the window shows and hides its floors, its icons are drawn hidden)
             if (engine::MapIconOwner(geom) == geom) {
                 if (TakeOffMap(geom))
                     g_blanked.push_back({geom, 0, false, Transform{}, true});
-            } else if (engine::MeshOf(geom)) {  // (the map's camera draws its floor's shown models)
-                g_blanked.push_back({geom, 0});
+            } else if (engine::MeshOf(geom) && !HiddenByTheMap(geom)) {  // (the map's camera draws its
+                g_blanked.push_back({geom, 0});                           //  floor's shown models)
                 SetHidden(geom, true);
             }
             continue;
         }
+        if (HiddenByTheMap(geom))
+            continue;  // hidden already (templates, cutscenes)
         uint32_t mesh = engine::MeshOf(geom);
         if (!mesh || !engine::IsPlainModel(mesh) || InActor(geom) || InItem(geom))
             continue;
@@ -2917,8 +2919,6 @@ bool LevelIsFor(const std::string& scene)
     return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene);
 }
 
-engine::ZGEOM* LevelObject(const std::string& id) { return LiveSpawned(id); }
-
 bool ImportedModelOf(const std::string& sourcePath, std::string& level, uint32_t& mesh)
 {
     return ImportOf(sourcePath, level, mesh);
@@ -3256,11 +3256,13 @@ engine::ZGEOM* RoomAt(const float p[3])
 {
     engine::ZGEOM* best = nullptr;
     float bestScore = 1e30f;
+    const IngameMapParts map;
     for (const auto& g : SceneModel(0).geoms) {
         if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom) || !engine::MeshOf(g.geom) ||
             g.name.rfind("SkyDome", 0) == 0 || g.path.find("HeroSetup") != std::string::npos ||
-            g.path.find("GuiSetup") != std::string::npos)
-            continue;  // the sky, Hitman's own setup (camera, binoculars) and the interface are not places
+            g.path.find("GuiSetup") != std::string::npos || map.Contains(g.geom))
+            continue;  // the sky, Hitman's own setup (camera, binoculars), the interface and the in-game map
+                       // (its floor plans lie at the world's places) are not places
         float c[3], r = 0.0f;
         if (!GetBounds(g.geom, c, r))
             continue;

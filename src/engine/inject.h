@@ -120,8 +120,11 @@ struct SceneCopy {
     // A point's icon on the in-game map (M): one of the map's legend's
     // (AllLevels/Interface/Map/Legend: "Icon_Exit", ...). A copy of one of the
     // map's own icon records (a ZBoxPrimitive with a ZGEOM_MapObject routine)
-    // named "<name>_MapIcon" at the point, put into its room by its place: the
-    // map shows it on the floor of that room (as a character's).
+    // named "<name>_MapIcon" at the point, at the root; the editor puts it onto
+    // the floor of its place once the map has loaded (as the map's own icons
+    // are in their floors' groups). Not put into a room by its place: the
+    // engine's rooms are large boxes (a point on C1-1's hill outside was in a
+    // room of the mansion's 2nd floor).
     std::string mapIcon;
 };
 // The icons a point can have on the in-game map (the legend's, but Hitman's).

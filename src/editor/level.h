@@ -306,8 +306,6 @@ bool LevelApplyPending();
 void RevertLevel();
 // The current level is for that scene (its base scene, by its name).
 bool LevelIsFor(const std::string& scene);
-// The object of a level object (a spawned entry's id) in the loaded scene (null: not made).
-engine::ZGEOM* LevelObject(const std::string& id);
 // The model of another level a model of the import library is ("ROOT/EditorImports/...":
 // its level and its mesh there); false: not one.
 bool ImportedModelOf(const std::string& sourcePath, std::string& level, uint32_t& mesh);

@@ -29,7 +29,8 @@ bool IsMapFloor(ZGEOM* geom);
 // The floor the map shows an object on: the floor of its room (the window's own
 // lookup, 0x540C50: the room's parents, or the object's, up to a floor's group
 // or location), else the map's default floor (0x53EDA0: an outside floor of the
-// game's maps, else the first). Null: no map, or it has no floors.
+// game's maps, else the first; also for no object). Null: no map, or it has
+// no floors.
 ZGEOM* MapFloorOf(ZGEOM* geom);
 
 // An object's icon on the map (its ZGEOM_MapObject routine, +0x76): 1 shown, 0

@@ -28,8 +28,8 @@ std::string MissionMapIcon(const std::string& name);
 // (the engine::SceneMapIcon provider; the level's characters: MissionMapIcon).
 std::vector<engine::SceneMapIcon> MapIconsFor(const std::string& scene);
 
-// After the level is applied: each of them onto the floor of its object (shown);
-// when it is reverted: hidden.
+// After the level is applied: each of them, and the level's points' icons, onto
+// the floor of its place (shown); when it is reverted: hidden, off the map.
 void PlaceMapModels();
 void HideMapModels();
 

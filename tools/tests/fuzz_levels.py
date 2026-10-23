@@ -65,6 +65,14 @@ CASES = {
     "new lists bogus": case(new_lists=[{"name": n, "record": r, "copy_of": 5}
                                        for n, r in (("A", -1), ("B", 999999), ("C", 0), ("../x", 2350),
                                                     ("x" * 300, 5246), ("D", 2 ** 31 - 1))] + [7, "x", None]),
+    "many placed": case(spawned=[{"id": "P%d" % i, "kind": "point", "parent": "ROOT", "pos": [-4076.0 + i % 50, -20.0,
+                                                                                         -6282.0 + i // 50],
+                                  "matrix": M, "source_scene": r"C1-1\C1-1__MAIN", "map_icon": "Icon_Exit"}
+                                 for i in range(2600)],  # (under the 16 MB a level file may have)
+                        map_models=True, npc_edits=[{"record": r, "behaviour": "x", "params": []} for r in range(400)],
+                        lists=[{"path": "ROOT/L%d" % i, "points": ["ROOT"] * 300} for i in range(300)]),
+    "script names": case(scripts=["CON.lua", "nul.LUA", "COM1.lua", "a b.lua", "x.lua.txt", "scripts/x.lua",
+                                  "x" * 40 + ".lua", ".lua", "main.lua"]),
     "scene bogus": case(base_scene=r"MainMenu\MainMenu"),
     "scene outside": case(base_scene=r"..\..\..\Windows\win"),
     "behaviour bogus": case(npcs=[{"id": "A", "record": 2350, "pos": [-4176, -20, -6682], "matrix": M,

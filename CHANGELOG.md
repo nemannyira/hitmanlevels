@@ -31,7 +31,20 @@ For those who work on the editor (docs/debugging.md, Tests):
   longer end the mission, and a character placed from a target is not a
   target unless the level's mission makes it one.
 
-Not yet run in the game.
+* A character's body can no longer be duplicated as a model (the copy took
+  the game down: Hitman himself, some characters' bodies at the root).
+* A level file is cut to what a level may hold (2000 placed objects, 5000
+  object edits, 256 changed lists, 16 scripts named `name.lua`; the levels
+  made so far hold far less). Still open: a file with 2000 points with map
+  icons takes the game down while the map loads; the engine's capacity is to
+  be measured (docs/online_levels.md, section 5).
+
+Run in the game 2026-10-23: the map on C1-1, C2-1, C3-3, C4-1, C6-1, C7-1, a
+blank map, a map of its own, saved games, and the Inspector's and Level
+panel's controls through the GUI; the whole test set (run_all). Found and
+open: a saved game of a level on C5-1 crashes when it is loaded (older than
+these changes; docs/roadmap.md). Levels online, a design:
+docs/online_levels.md.
 
 ## 2026-10-17 .. 2026-10-22: the game's own way
 

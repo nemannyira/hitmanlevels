@@ -1,6 +1,8 @@
 """All the tests in one go, with the game: the saves backed up (and put back
-exactly as they were at the end), H2Fix.ini's DevCommands / LuaMemory on for
-the run (put back after), the game started through Steam (tools/start_game.ps1,
+exactly as they were at the end), H2Fix.ini's DevCommands on for the run and
+LuaMemory only for the tests that need it, LuaMemory last (put back after; the
+security suite checks that h2.mem is not there without it), the game started
+through Steam (tools/start_game.ps1,
 the intros skipped with Esc), each test on a freshly loaded C1-1, the game
 started again when a test took it down (and for the stress suite first, which
 fills the map's buffers). The installed DLL is what is tested: build and copy
@@ -29,7 +31,7 @@ LOG = os.path.join(dev.GAME, "H2Fix.log")
 START = os.path.join(ROOT, "tools", "start_game.ps1")
 C11 = r"C1-1\C1-1__MAIN"
 
-# (name, command after "python", timeout in seconds, a fresh game first)
+# (name, command after "python", timeout in seconds, a fresh game first[, LuaMemory on])
 TESTS = [
     ("stress", ["run_suite.py", "stress_suite.lua", "240"], 400, True),
     ("api", ["run_suite.py", "api_suite.lua", "120"], 300, True),
@@ -48,11 +50,11 @@ TESTS = [
     ("map_maps", ["map_maps_test.py"], 2400, False),
     ("map_own", ["map_own_test.py"], 900, False),
     ("killswitch", ["killswitch_test.py"], 300, False),
-    ("profile", ["profile_test.py"], 600, False),
     ("gui", ["gui_test.py"], 600, False),
     ("maps_gameway", ["maps_gameway_test.py"], 3600, False),
     ("fuzz", ["fuzz_levels.py"], 1800, False),
     ("run_maps", ["run_maps.py"], 3600, True),
+    ("profile", ["profile_test.py"], 600, False, True),  # (reads the game's globals: h2.mem)
 ]
 
 
@@ -171,7 +173,7 @@ def main():
     ap.add_argument("--list", action="store_true", help="the tests' names")
     args = ap.parse_args()
     if args.list:
-        for name, cmd, timeout, fresh in TESTS:
+        for name, cmd, *_ in TESTS:
             print("%-14s %s" % (name, " ".join(cmd)))
         return 0
     only = [n for n in args.only.split(",") if n]
@@ -194,11 +196,15 @@ def main():
     rows = []
     t0 = time.time()
     try:
-        with open(INI, "w", encoding="latin1", newline="") as f:
-            f.write(set_ini(ini, {"DevCommands": 1, "LuaMemory": 1}))
-        restart = True  # (the ini is read when the game starts)
-        for name, cmd, timeout, fresh in tests:
+        memory = None  # LuaMemory as the game was started with it
+        restart = True
+        for name, cmd, timeout, fresh, *rest in tests:
             log("== " + name)
+            wanted = bool(rest and rest[0])
+            if wanted != memory:  # (the ini is read when the game starts)
+                with open(INI, "w", encoding="latin1", newline="") as f:
+                    f.write(set_ini(ini, {"DevCommands": 1, "LuaMemory": int(wanted)}))
+                memory, restart = wanted, True
             if not ready(fresh or restart):
                 rows.append((name, 0, 1, "the game did not start / load C1-1", 0, ""))
                 log("   the game did not start / load C1-1")
@@ -235,13 +241,13 @@ def main():
             kill()
         with open(INI, "w", encoding="latin1", newline="") as f:
             f.write(ini)
-        if dev.running():
-            log("the game still runs: the saves are put back after it is closed")
-            while dev.running():
-                time.sleep(2)
-        shutil.rmtree(SAVE)
-        shutil.copytree(save_backup, SAVE)
-        log("saves and H2Fix.ini put back")
+        # (a game left running writes saves only when asked; the files are put back now, not after it)
+        for name in os.listdir(SAVE):
+            os.remove(os.path.join(SAVE, name))
+        for name in os.listdir(save_backup):
+            shutil.copy2(os.path.join(save_backup, name), os.path.join(SAVE, name))
+        log("saves and H2Fix.ini put back" + (" (the game still runs: H2Fix.ini counts from its next start)"
+                                               if dev.running() else ""))
 
     total_p = sum(r[1] for r in rows)
     total_f = sum(r[2] for r in rows)

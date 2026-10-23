@@ -51,6 +51,14 @@ level* / *File > Open level* loads a saved one.
   `h2.track`); a copy of one drives a route of its own.
 * A placed character is real (behaviour, collision, can be shot) only after
   the map loads again: *Test now (save and reload)*.
+* Duplicate copies models, not characters: a character's body (Hitman's,
+  or a character's model lying at the root of a map) is refused, as its copy
+  took the game down; place a character from the NPCs tab instead.
+* A level holds at most 2000 placed objects (copies, items, points), 200
+  characters, 5000 changed objects of the map and 16 scripts (named
+  `name.lua`); a level file from elsewhere is cut to this when it loads.
+  (Far fewer are safe while the map loads: 2000 points with map icons were
+  too many for the engine; the levels made so far have 15 at most.)
 
 **Mission**:
 

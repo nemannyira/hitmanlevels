@@ -34,12 +34,14 @@ PLAIN_MODEL = r"""
 local x, y, z = h2.player():pos()
 local found = {}
 for _, o in ipairs(h2.objects("ZSTDOBJ")) do
-  if o:mesh() ~= 0 and not o:isa("ZActor") and not o:isa("ZItem") and not o:hidden() and #o:children() == 0
-     and not o:path():find("HeroSetup") and not o:path():find("__MAP.zip") then
-    local ox, oy, oz = o:pos()
-    local d = (ox - x) ^ 2 + (oy - y) ^ 2 + (oz - z) ^ 2
-    if d < 2500 * 2500 then found[#found + 1] = {d, o:path()} end
-  end
+  pcall(function()  -- (an object gone from the scene meanwhile raises)
+    if o:mesh() ~= 0 and not o:isa("ZActor") and not o:isa("ZItem") and not o:hidden() and #o:children() == 0
+       and not o:path():find("HeroSetup") and not o:path():find("__MAP.zip") then
+      local ox, oy, oz = o:pos()
+      local d = (ox - x) ^ 2 + (oy - y) ^ 2 + (oz - z) ^ 2
+      if d < 2500 * 2500 then found[#found + 1] = {d, o:path()} end
+    end
+  end)
 end
 table.sort(found, function(a, b) return a[1] < b[1] end)
 local out = {}

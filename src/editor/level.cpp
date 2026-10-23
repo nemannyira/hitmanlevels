@@ -308,6 +308,33 @@ std::string g_saveStatus;
 double g_saveStatusTime;
 
 constexpr size_t kMaxLevelNpcs = 200;  // characters a level adds to the scene file
+// What else a level may hold: a level file from elsewhere is cut to it when it loads, and the editor makes
+// no more. Placed objects and lists become records of the scene while it loads, and the engine's buffers
+// are sized then (stress_suite: full, the game goes down). The levels made so far hold far fewer (15
+// placed objects at most).
+constexpr size_t kMaxLevelSpawned = 2000;  // placed objects (copies, items, points)
+constexpr size_t kMaxLevelEdits = 5000;    // objects of the map changed
+constexpr size_t kMaxLevelLists = 256;     // lists changed
+constexpr size_t kMaxListPoints = 256;     //   points of one
+constexpr size_t kMaxLevelScripts = 16;
+
+// a script of the level: a file of its folder, by a plain name ("main.lua", "script2.lua"; no
+// folders, drives, device names such as CON)
+bool ValidScriptName(const std::string& s)
+{
+    if (s.size() < 5 || s.size() > 36 || _stricmp(s.c_str() + s.size() - 4, ".lua") != 0)
+        return false;
+    std::string base = s.substr(0, s.size() - 4);
+    for (const char* device : {"CON", "PRN", "AUX", "NUL"})  // (Windows' devices, with any extension too)
+        if (_stricmp(base.c_str(), device) == 0)
+            return false;
+    if (base.size() == 4 && (_strnicmp(base.c_str(), "COM", 3) == 0 || _strnicmp(base.c_str(), "LPT", 3) == 0) &&
+        isdigit(static_cast<unsigned char>(base[3])))
+        return false;
+    return std::all_of(base.begin(), base.end(), [](char c) {
+        return isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-';
+    });
+}
 
 std::string Sanitize(const std::string& name)
 {
@@ -1030,10 +1057,8 @@ void RunLevelScripts()
     script::DestroyScriptObjects();
     DressHitman();
     for (const std::string& s : g_level.scripts) {
-        // a file of the level's folder (a level from elsewhere names no other)
-        if (s.empty() || s.find("..") != std::string::npos || s.find(':') != std::string::npos || s[0] == '\\' ||
-            s[0] == '/') {
-            script::ConsolePrint(script::LineKind::Error, "level script skipped (not in the level's folder): " + s);
+        if (!ValidScriptName(s)) {  // (a level from elsewhere names no other file)
+            script::ConsolePrint(script::LineKind::Error, "level script skipped (not a .lua file of the level's folder): " + s);
             continue;
         }
         std::string path = ModsDir() + g_level.folder + "\\" + s;
@@ -1986,12 +2011,16 @@ bool LoadLevel(const std::string& folder, std::string* error)
         for (const json& o : j.value("objects", json::array())) {
             ObjectEdit e;
             e.className = o.value("class", "");
-            if (StateFromJson(o, e.state) && o.contains("path"))
+            if (StateFromJson(o, e.state) && o.contains("path") && L.objects.size() < kMaxLevelEdits)
                 L.objects[o["path"].get<std::string>()] = e;
         }
         for (const json& o : j.value("spawned", json::array())) {
             SpawnedObject s;
             ObjectState st;
+            if (L.spawned.size() >= kMaxLevelSpawned) {
+                Log("level: placed objects beyond %zu left out", kMaxLevelSpawned);
+                break;
+            }
             if (!StateFromJson(o, st))
                 continue;
             s.transform = st.transform;
@@ -2051,7 +2080,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
             e.path = o.value("path", "");
             e.behaviour = o.value("behaviour", "");
             e.params = ParamsFromJson(o.value("params", json::array()));
-            if (e.record >= 0)
+            if (e.record >= 0 && L.npcEdits.size() < kMaxLevelNpcs)
                 L.npcEdits[e.record] = e;
         }
         if (j.contains("mission") && j["mission"].is_object()) {
@@ -2150,9 +2179,17 @@ bool LoadLevel(const std::string& folder, std::string* error)
                     L.newLists.push_back(l);
                 }
         for (const json& o : j.value("lists", json::array()))
-            if (o.contains("path"))
-                L.lists[o["path"].get<std::string>()] = o.value("points", std::vector<std::string>{});
-        L.scripts = j.value("scripts", std::vector<std::string>{});
+            if (o.contains("path") && L.lists.size() < kMaxLevelLists) {
+                std::vector<std::string> points = o.value("points", std::vector<std::string>{});
+                points.resize(std::min(points.size(), kMaxListPoints));
+                L.lists[o["path"].get<std::string>()] = points;
+            }
+        for (const std::string& name : j.value("scripts", std::vector<std::string>{}))
+            if (ValidScriptName(name) && L.scripts.size() < kMaxLevelScripts)
+                L.scripts.push_back(name);
+            else
+                Log("level: script %s left out (a plain .lua name of its folder, %zu at most)", name.substr(0, 64).c_str(),
+                    kMaxLevelScripts);
         for (const json& o : j.value("imports", json::array())) {
             ImportedModel m;
             m.level = o.value("level", "");
@@ -2379,6 +2416,8 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
     };
     if (!IsLive(source))
         return fail("nothing selected");
+    if (g_level.spawned.size() >= kMaxLevelSpawned)
+        return fail("the level holds " + std::to_string(kMaxLevelSpawned) + " placed objects, as many as a level may");
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();
     if (g_level.baseScene != CurrentScene())
@@ -2460,6 +2499,8 @@ engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::
     };
     if (!IsLive(itemTemplate) || !engine::IsA(itemTemplate, "ZItemTemplate"))
         return fail("not an item template");
+    if (g_level.spawned.size() >= kMaxLevelSpawned)
+        return fail("the level holds " + std::to_string(kMaxLevelSpawned) + " placed objects, as many as a level may");
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();
     if (g_level.baseScene != CurrentScene())
@@ -2829,6 +2870,8 @@ engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string*
     };
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();
+    if (g_level.spawned.size() >= kMaxLevelSpawned)
+        return fail("the level holds " + std::to_string(kMaxLevelSpawned) + " placed objects, as many as a level may");
     if (g_level.baseScene != CurrentScene())
         return fail("the level is for scene " + g_level.baseScene);
     if (!room || !IsLive(room))

@@ -358,7 +358,8 @@ cheats.
   original.
 * Done (2026-10-23, editor/ingame_map.h): a level's point gets an icon
   (inject.h SceneCopy::mapIcon: a copy of a map icon record at the point,
-  dynamic so it is put into its room by its place; level.json `"map_icon"`).
+  static, put onto the floor of its place once the map has loaded;
+  level.json `"map_icon"`).
   The level's models are drawn on the map (Level > *The level's models on
   the map*, `"map_models"`; always on a blank map): copies of one of the
   map's floor plan records with the level's models (SceneMapModel, made with
@@ -388,9 +389,56 @@ cheats.
   mission* off: their deaths count no more; SceneMapIcon `from`), and so does
   a character the level places from a target's template unless the level's
   mission makes it one.
+* Found in the game (2026-10-23, all checked by map_icon_test, map_models_test,
+  map_maps_test, map_own_test, gui_test):
+  * The engine's rooms are large boxes: a dynamic object at the root put into
+    a room by its place got a room of C1-1's 2nd floor for a point on the hill
+    outside. The floor of a place is the map's floor of the editor's room
+    there (RoomAt, which skips the in-game map's own models: its floor plans
+    lie flat at the world's places), and icons and plan models are put onto
+    it after loading, as the map's own icons are in their floors' groups.
+  * The window is put among the interface's at init (GuiSetup / MenuSetup /
+    ZWINDOWS): the map's group is found from its record's group (MapSetup.zip
+    in `<map>__MAP.zip`), not from the window object.
+  * The window hides the floors it does not show, and the map draws hidden
+    icons (it leaves out inactive ones only): a blank map looks at the map's
+    parts before it skips hidden objects.
+  * A floor's AddChild keeps the child's local transform, and C2-1's and
+    C7-1's mansion floors are moved (-18333, 7007) and turned (45 degrees,
+    mirrored): the world place is set again after it (geom vfunc 0x84 / 0x80).
+  * A copy whose source has no record the editor knows (C6-1's cutscene parts
+    moved to the root) is made while playing: its plan models are made while
+    playing too (engine::CreateObject in the floor's group, the flags of the
+    floor's plan models).
+  * The map opens only once a level's start is over (C4-1: about 20 s after
+    loading; C6-1: after its arrival cutscene).
+  * Not the map's, found with it: a character's body could be duplicated as a
+    model (Hitman's object is his body; C6-1's RegularMaleIndian at the root)
+    and the copy took the renderer down. DuplicateObject refuses models that
+    are not plain (engine::IsPlainModel), InActor counts Hitman (ZPlayer).
 * An icon taken off the map (empty map, blank map) is shown again on revert
   as the scene file has it (its routine's data, `MapIconShownInFile`), also
   when a saved game had taken it off already.
+
+### Open: a saved game of a level on C5-1 crashes when it is loaded (found 2026-10-23)
+
+* Found by maps_gameway_test (its first run on C5-1). Reproduced: a level for
+  C5-1, even an empty one (no objects, no scripts), a saved game made and
+  loaded: the game goes down in its first frame drawn (RenderD3D+0x1F90D,
+  hitman2 0x5C782E / 0x43B47E: a group's children drawn). Without a level for
+  the scene the same save / load lives (5 times in one session). Not from the
+  in-game map work: the DLL of the morning (master) does it too.
+* Not the cause: the profile guard (off: still), applying the level
+  (ApplyLevel skipped: still), the level's scripts (none: still), the level's
+  objects (the save audit: every pointer placed).
+* At the crash (x32dbg): a packed array of 29-byte entries on the stack
+  (a flag byte, a pointer into an array of 36-byte items, the float 314.53);
+  the code read an entry at an odd address and called through the float as
+  a pointer (eip 0x439D4360). Next: find who fills that array (RenderD3D,
+  Ghidra) and what a level present for the scene changes before the load
+  (the mission's hooks, the scene providers, the Hitman start).
+* C1-1 and C2-1 saved games with levels load (saveload, copies, gameway3,
+  imports_save, map_icon, map_own tests).
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

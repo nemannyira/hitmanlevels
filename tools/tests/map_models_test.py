@@ -122,6 +122,10 @@ try:
     check("C1-1: the map draws its icons", drawn.startswith("floor ") and "Icon_Hero" in drawn, drawn.splitlines()[:2])
     lua('return h2.dev_level("revert")')
     check("C1-1: reverted: hidden", hidden(copy + "_Map") == "true")
+    lua('return h2.dev_level("apply")')
+    check("C1-1: applied again: shown on its floor", hidden(copy + "_Map") == "false" and on_floor(copy + "_Map") != "",
+          on_floor(copy + "_Map"))
+    lua('return h2.dev_level("revert")')
 
     # a map without buildings (the launcher's New level), loaded twice (the floor is made the first time)
     load()

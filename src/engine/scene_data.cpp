@@ -515,6 +515,67 @@ std::vector<uint8_t> WithRoutineString(const std::vector<uint8_t>& b, int sectio
     return out;
 }
 
+namespace {
+
+// the `index`-th value of a section of a record's data block (its first byte; null: none)
+const uint8_t* SectionValue(const std::vector<uint8_t>& b, int section, int index, const uint8_t** end)
+{
+    if (b.size() < 4)
+        return nullptr;
+    const uint8_t* p = b.data() + 4;
+    *end = b.data() + b.size();
+    int at = 0, k = 0;
+    while (p < *end) {
+        size_t len = ValueLength(p, *end);
+        if (!len || p + len > *end)
+            return nullptr;
+        if (*p == 0x06) {
+            ++at;
+        } else if (at == section && k++ == index) {
+            return p;
+        }
+        p += len;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+bool RoutineString(const std::vector<uint8_t>& b, int section, int index, std::string& out)
+{
+    const uint8_t* end = nullptr;
+    const uint8_t* p = SectionValue(b, section, index, &end);
+    if (!p || ((*p & 0x3F) != 4 && (*p & 0x3F) != 5))
+        return false;
+    out.assign(reinterpret_cast<const char*>(p + 1), strnlen(reinterpret_cast<const char*>(p + 1), end - p - 1));
+    return true;
+}
+
+bool RoutineValue(const std::vector<uint8_t>& b, int section, int index, uint32_t& out)
+{
+    const uint8_t* end = nullptr;
+    const uint8_t* p = SectionValue(b, section, index, &end);
+    if (!p || ValueLength(p, end) != 5)
+        return false;
+    memcpy(&out, p + 1, 4);
+    return true;
+}
+
+int RoutineSection(int record, const char* routine)
+{
+    if (record < 0 || size_t(record) >= g_records.size() || !routine)
+        return 0;
+    uint32_t events = g_records[record].events;
+    uint32_t n = events ? U32(g_gms, events) : 0;
+    for (uint32_t i = 0; i < n && i < 64; ++i) {
+        uint32_t name = U32(g_gms, events + 4 + size_t(i) * 8);
+        if (name < g_gms.size() &&
+            strncmp(reinterpret_cast<const char*>(&g_gms[name]), routine, g_gms.size() - name) == 0)
+            return int(i) + 1;
+    }
+    return 0;
+}
+
 bool ParseScript(uint32_t offset, ScriptInfo& out) { return ParseScriptIn(g_gms, offset, out); }
 
 bool ParseScriptIn(const std::vector<uint8_t>& gms, uint32_t offset, ScriptInfo& out)

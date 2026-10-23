@@ -26,7 +26,10 @@ For those who work on the editor (docs/debugging.md, Tests):
 * *Empty map*: the characters taken out are off the game's map too (they were
   still drawn there at their old places).
 * The game's map marks the level's mission: its targets (the map's own
-  characters and the level's) as targets, its exit's point as an exit.
+  characters and the level's) as targets, its exit's point as an exit. The
+  base level's targets are marked as enemies when the base level can no
+  longer end the mission, and a character placed from a target is not a
+  target unless the level's mission makes it one.
 
 Not yet run in the game.
 

@@ -153,6 +153,10 @@ std::vector<engine::SceneMapIcon> MapIconsFor(const std::string& scene)
     if (!LevelIsFor(scene))
         return out;
     const LevelDocument& L = CurrentLevel();
+    // the base level's own targets, when its scripts no longer end the mission (their deaths count no
+    // more): marked as the game marks its other hostile characters (C1-1's MafiaSon, MafiaLawyer)
+    if (!L.mission.baseEnds)
+        out.push_back({"", "Icon_Enemy", "Icon_Target"});
     for (const MissionObjective& o : L.mission.objectives) {
         if (!IsTargetGoal(o) || o.target.empty())
             continue;

@@ -61,11 +61,16 @@ struct Cleared {
 };
 
 // an object's icon off the in-game map (the map leaves out inactive objects only, not hidden ones):
-// the object carrying it, to be shown again (null: it had none shown)
+// the object carrying it, to be shown again when the scene is restored, as the scene file has it
+// (null: the file has none shown; a saved game may have taken it off already)
 engine::ZGEOM* TakeOffMap(engine::ZGEOM* geom)
 {
     engine::ZGEOM* owner = engine::MapIconOwner(geom);
-    return owner && engine::MapIconShown(owner) == 1 && engine::ShowMapIcon(owner, false) ? owner : nullptr;
+    if (!owner || engine::MapIconShownInFile(owner) != 1)
+        return nullptr;
+    if (engine::MapIconShown(owner) == 1)
+        engine::ShowMapIcon(owner, false);
+    return owner;
 }
 std::vector<Cleared> g_cleared;
 
@@ -149,8 +154,8 @@ void BlankScene()
         if (map.Contains(geom)) {  // the in-game map: its window and legend stay, its floors' plans and fixed
             if (!map.OnFloor(geom))   // icons go with the buildings (the level's models are drawn there instead)
                 continue;
-            if (engine::MapIconShown(geom) == 1) {
-                if (engine::ShowMapIcon(geom, false))
+            if (engine::MapIconOwner(geom) == geom) {
+                if (TakeOffMap(geom))
                     g_blanked.push_back({geom, 0, false, Transform{}, true});
             } else if (engine::MeshOf(geom)) {  // (the map's camera draws its floor's shown models)
                 g_blanked.push_back({geom, 0});

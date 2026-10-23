@@ -381,6 +381,16 @@ cheats.
   SceneNpc::mapIcon), the exit's point `Icon_Exit` unless it has an icon of
   its own. `h2.dev_mapicon(path)`: an object's icon and whether it is on the
   map.
+* The game's other hostile important characters are `Icon_Enemy` (C1-1's
+  MafiaSon, MafiaBrother, MafiaLawyer; `Icon_VIP` marks allies and people to
+  meet: Vittorio, Sergei, the Ambassador): the base level's targets get it when
+  its scripts no longer end the mission (Mission > *The base level can end the
+  mission* off: their deaths count no more; SceneMapIcon `from`), and so does
+  a character the level places from a target's template unless the level's
+  mission makes it one.
+* An icon taken off the map (empty map, blank map) is shown again on revert
+  as the scene file has it (its routine's data, `MapIconShownInFile`), also
+  when a saved game had taken it off already.
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

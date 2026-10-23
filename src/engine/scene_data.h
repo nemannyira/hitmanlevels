@@ -52,6 +52,14 @@ std::vector<uint8_t> WithStrings(const std::vector<uint8_t>& block, const std::v
 // record's data: its object's own values, then each routine's, in the order of
 // its events, each after a 0x06); empty when that section has no string.
 std::vector<uint8_t> WithRoutineString(const std::vector<uint8_t>& block, int section, const std::string& value);
+// A value of one of those sections, its `index`-th: a string, or a number /
+// reference (its 4 bytes); false: not there or not such a value.
+bool RoutineString(const std::vector<uint8_t>& block, int section, int index, std::string& out);
+bool RoutineValue(const std::vector<uint8_t>& block, int section, int index, uint32_t& out);
+// The section of a record's data a routine's values are in (its place in the
+// record's events + 1; 0: the record has no such routine), by the events' name
+// ("ZGEOM_MapObject"); of the scene loaded last.
+int RoutineSection(int record, const char* routine);
 
 // ---- scripts (behaviour) ----
 

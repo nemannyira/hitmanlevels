@@ -8,9 +8,11 @@
   their fixed icons and the map's characters off the map (ShowMapIcon), the
   level's floor is drawn instead, and the map draws Hitman's icon.
 
-Screenshots of the open map go to dumps/shots (map_models_*.png). Uses
-Mods/_MapModelsTest and Mods/_MapModelsBlank (removed); a running game with
-dev commands.
+A saved game of the emptied map loaded and the level reverted, the map's
+characters are on the map again (as the scene file has them). Screenshots of
+the open map go to dumps/shots (map_models_*.png). Uses Mods/_MapModelsTest
+and Mods/_MapModelsBlank (removed) and save slot 9 (overwritten: back up the
+saves first); a running game with dev commands.
 
   python tools/tests/map_models_test.py
 """
@@ -28,6 +30,8 @@ LEVELS = ["_MapModelsTest", "_MapModelsBlank"]
 LOG = os.path.join(dev.GAME, "H2Fix.log")
 SOURCE = "Tree_02_21"  # C1-1's, near Hitman's start
 DIK_M = 0x32
+SLOT = 9
+GUARD_NAME = "BodyguardMafia_Bedroom_00"  # one of C1-1's characters (its icon on its group)
 results = []
 
 
@@ -142,6 +146,16 @@ try:
     check("blank: no fixed icon of the old plans", "MapIcon_" not in drawn, [l for l in drawn.splitlines() if "MapIcon_" in l][:2])
     check("blank: none of the map's characters (an empty map)", "Icon_Enemy" not in drawn and "Icon_Innocent" not in drawn,
           [l for l in drawn.splitlines() if "Icon_Enemy" in l or "Icon_Innocent" in l][:2])
+    check("blank: a character's icon off", lua('return h2.dev_mapicon("%s")' % GUARD_NAME) == "Icon_Enemy off")
+    lua("return tostring(h2.dev_savegame(%d))" % SLOT)
+    time.sleep(3)
+    lua("return tostring(h2.dev_loadgame(%d))" % SLOT)
+    wait_map()
+    icon = lua('return h2.dev_mapicon("%s")' % GUARD_NAME)
+    check("saved game: the icon still off", icon == "Icon_Enemy off", icon)
+    lua('return h2.dev_level("revert")')
+    icon = lua('return h2.dev_mapicon("%s")' % GUARD_NAME)
+    check("reverted after the saved game: the icon back", icon == "Icon_Enemy shown", icon)
 finally:
     dev.run('return h2.dev_level("revert")', 10)
     for level in LEVELS:

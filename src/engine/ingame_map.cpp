@@ -149,6 +149,16 @@ std::string MapIconName(ZGEOM* geom)
     return name ? SafeString(name) : std::string();
 }
 
+int MapIconShownInFile(ZGEOM* geom)
+{
+    int r = Usable(geom) ? RecordOf(geom) : -1;
+    int section = RoutineSection(r, "ZGEOM_MapObject");
+    if (!section)
+        return -1;
+    uint32_t shown = 0;  // (its values: the icon's name, shown)
+    return RoutineValue(RawBlock(SceneRecords()[size_t(r)].data), section, 1, shown) ? (shown ? 1 : 0) : -1;
+}
+
 bool ShowMapIcon(ZGEOM* geom, bool on)
 {
     return MapIconShown(geom) >= 0 && SendCommand(geom, "ShowMapIcon", on ? 1 : 0);

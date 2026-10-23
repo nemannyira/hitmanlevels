@@ -570,8 +570,14 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         Put(g, 0x00, AppendString(buf, npc.name + "_Group"));
         Put(g, 0x04, Append(gms, npc.mat, sizeof(npc.mat)));
         Put(g, 0x08, Append(gms, npc.pos, sizeof(npc.pos)));
-        if (!npc.mapIcon.empty()) {
-            if (uint32_t icon = withMapIcon(actor.parent, npc.mapIcon))
+        // its icon on the map: the level's (its mission's target), else its template's, but a copy of
+        // the base level's target is not one (hostile: as the game marks its other important characters)
+        std::string mapIcon = npc.mapIcon, own;
+        if (mapIcon.empty() && group.data && RoutineString(Block(gms, group.data), 1, 0, own) &&
+            OnlyRoutine(gms, group, "ZGEOM_MapObject") && LowerCase(own) == "icon_target")
+            mapIcon = "Icon_Enemy";
+        if (!mapIcon.empty()) {
+            if (uint32_t icon = withMapIcon(actor.parent, mapIcon))
                 Put(g, 0x20, icon);
             else
                 Log("scene npcs: %s: no icon of its own on the map (its template's group has none)", npc.name.c_str());
@@ -1021,9 +1027,25 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         }
         return index >= 0 ? 0x80000000u | uint32_t(index + 1) : 0;
     };
-    // the scene's characters' icons on the in-game map: in their groups' data
+    // the scene's characters' icons on the in-game map: in their groups' data (those of an icon first)
     int iconsEdited = 0;
     for (const SceneMapIcon& m : mapIcons) {
+        if (m.from.empty())
+            continue;
+        for (uint32_t r = 0; r < count; ++r) {
+            std::string icon;
+            if (recs[r].classId == kBoxClass || !OnlyRoutine(gms, recs[r], "ZGEOM_MapObject") ||
+                !RoutineString(Block(gms, recs[r].data), 1, 0, icon) || LowerCase(icon) != LowerCase(m.from))
+                continue;  // (the map's fixed icons are boxes; the characters' are on their groups)
+            if (uint32_t block = withMapIcon(int(r), m.icon)) {
+                Put(gms, recordAt(int(r)) + 0x20, block);
+                ++iconsEdited;
+            }
+        }
+    }
+    for (const SceneMapIcon& m : mapIcons) {
+        if (!m.from.empty())
+            continue;
         int r = int(refTo(m.object) & 0x7FFFFFFF) - 1;
         if (r >= 0 && uint32_t(r) < count && recs[r].classId == kActorClass)
             r = recs[r].parent;  // (a character's icon is on its group)

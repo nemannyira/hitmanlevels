@@ -40,6 +40,9 @@ int MapIconShown(ZGEOM* geom);
 ZGEOM* MapIconOwner(ZGEOM* geom);
 // The legend's icon an object's map routine names ("Icon_Enemy"; "": none).
 std::string MapIconName(ZGEOM* geom);
+// Its icon as the scene file has it (the routine's data: shown): 1 shown, 0
+// not, -1 no such record or routine. A saved game may have it otherwise.
+int MapIconShownInFile(ZGEOM* geom);
 // Its icon shown or not: the routine's own message ShowMapIcon with 1 / 0
 // (0x541520: the object into the map's set or out of it; kept with a saved
 // game), as the levels' scripts send it. The map leaves out only objects that

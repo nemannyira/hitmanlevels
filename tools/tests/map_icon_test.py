@@ -6,12 +6,15 @@ the map, and the map opened with M draws it on the floor it shows (Outside:
 Hitman stands there), with the map's own icons; a saved game keeps it. A
 point without an icon gets none, unless it is the mission's exit (Exit); the
 mission's targets, one of the map's guards and a character the level places,
-are marked as targets (their groups' map routines). Uses Mods/_MapIconTest
+are marked as targets (their groups' map routines); with the base level's
+mission no longer counting, its own target, and a placed copy of it, as an
+enemy. Uses Mods/_MapIconTest
 and save slot 9 (removed / overwritten: back up the saves first); a running
 game with dev commands.
 
   python tools/tests/map_icon_test.py
 """
+import json
 import os
 import shutil
 import sys
@@ -98,12 +101,18 @@ try:
     lua('return h2.dev_level("target", [[%s]])' % guard)
     placed = lua('return h2.dev_place_npc(%d, %s)' % (GUARD, at))
     lua('return h2.dev_level("target", h2.find("%s"):path())' % placed)
+    boss = lua('for _, n in ipairs(h2.npcs()) do if n.object and n.object:name() == "MafiaBoss" then '
+               'return n.record end end return -1')
+    boss_copy = lua('return h2.dev_place_npc(%s, %s)' % (boss, at)) if boss != "-1" else ""
     try:
         lua('return h2.dev_level("mapicon", [[%s|Icon_Nonsense]])' % other)
         check("an unknown icon refused", False)
     except RuntimeError as e:
         check("an unknown icon refused", "no map icon" in str(e), str(e)[:80])
     lua('return h2.dev_level("save")')
+    doc = json.load(open(os.path.join(FOLDER, "level.json"), encoding="utf-8"))
+    doc["mission"]["base_ends"] = False  # (Mission > The base level can end the mission: off)
+    json.dump(doc, open(os.path.join(FOLDER, "level.json"), "w", encoding="utf-8"), indent=1)
     saved = open(os.path.join(FOLDER, "level.json"), encoding="utf-8").read()
     check("level.json keeps the icon", '"map_icon": "Icon_Exit"' in saved)
     name = point.rsplit("/", 1)[-1]
@@ -128,6 +137,10 @@ try:
                       'local i = h2.dev_mapicon(n.object:path()) '
                       'if i ~= "none" and i:sub(1, 11) ~= "Icon_Target" then return i end end end return "none"' % GUARD)
     check("the others keep their own (not all targets)", other_guard != "none", other_guard)
+    check("the base level's target, its mission no longer counting: Enemy",
+          lua('return h2.dev_mapicon("MafiaBoss")') == "Icon_Enemy shown", lua('return h2.dev_mapicon("MafiaBoss")'))
+    check("a placed copy of the base level's target: Enemy", boss_copy != "" and
+          lua('return h2.dev_mapicon("%s")' % boss_copy) == "Icon_Enemy shown", boss_copy)
     routine = lua('return h2.dev_routine(h2.find("%s_MapIcon"):path(), "MapObject")' % name)
     check("its ZGEOM_MapObject routine", routine != "none", routine[:60])
     drawn = map_icons()

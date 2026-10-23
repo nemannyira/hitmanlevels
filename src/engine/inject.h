@@ -141,13 +141,16 @@ struct SceneMapModel {
 };
 void SetSceneMapModelProvider(std::function<std::vector<SceneMapModel>(const std::string& scene)> provider);
 
-// Another icon on the in-game map for one of the scene's own characters (a
-// level's mission target: "Icon_Target"), made with the map: its group's
-// ZGEOM_MapObject data with that icon. `object`: the character's path as the
-// editor names it (or its group's).
+// Another icon on the in-game map for the scene's own characters, made with
+// the map: their groups' ZGEOM_MapObject data with that icon. Either one of
+// them (`object`: the character's path as the editor names it, or its
+// group's: a level's mission target, "Icon_Target"), or every one the scene
+// file marks with the icon `from` (the base level's targets: "Icon_Enemy"
+// when its mission no longer counts); these first.
 struct SceneMapIcon {
     std::string object;
     std::string icon;
+    std::string from;
 };
 void SetSceneMapIconProvider(std::function<std::vector<SceneMapIcon>(const std::string& scene)> provider);
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);

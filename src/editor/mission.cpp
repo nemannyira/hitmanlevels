@@ -1487,7 +1487,8 @@ void DrawEnd()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Off: the base level's own scripts (its target killed, ...) no longer complete or fail\n"
-                          "the mission; your goals and scripts (h2.mission) do. Hitman's death still fails it.");
+                          "the mission; your goals and scripts (h2.mission) do. Hitman's death still fails it.\n"
+                          "The game's map (M) then marks its targets as enemies, from the map's next load.");
     if (ImGui::Checkbox("Completed when every objective is done", &m.endWhenDone))
         Changed();
     if (ImGui::IsItemHovered())

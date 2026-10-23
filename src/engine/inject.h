@@ -114,7 +114,15 @@ struct SceneCopy {
     // A point of the level (characters walk to it): a copy of the characters'
     // aim helper record (ZAIMTHINGY: not drawn, not collided) at the root.
     bool point = false;
+    // A point's icon on the in-game map (M): one of the map's legend's
+    // (AllLevels/Interface/Map/Legend: "Icon_Exit", ...). A copy of one of the
+    // map's own icon records (a ZBoxPrimitive with a ZGEOM_MapObject routine)
+    // named "<name>_MapIcon" at the point, put into its room by its place: the
+    // map shows it on the floor of that room (as a character's).
+    std::string mapIcon;
 };
+// The icons a point can have on the in-game map (the legend's, but Hitman's).
+const std::vector<std::string>& MapIconNames();
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);
 // The record made for a copy of that name in the scene loaded last (-1: none).
 int SceneCopyRecord(const std::string& name);

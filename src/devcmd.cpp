@@ -385,7 +385,7 @@ int Shot(lua_State* L)
 }
 
 // h2.dev_panel(name): shows an editor panel (left tab / right section)
-// h2.dev_level(op [, arg]): "new" name | "save" | "load" folder | "apply" | "revert" | "undo" | "redo" | "info"
+// h2.dev_level(op [, arg]): "new" name | "save" | "load" folder | "apply" | "revert" | "undo" | "redo" | "info" | ...
 int Level(lua_State* L)
 {
     std::string op = luaL_checkstring(L, 1);
@@ -488,6 +488,11 @@ int Level(lua_State* L)
                op == "exit") {  // the Inspector's Mission row
         lua_pushstring(L, editor::MissionGoalFor(editor::Resolve(arg), op).c_str());
         return 1;
+    } else if (op == "mapicon") {  // "<point path>|<icon>": the Inspector's On the map ("" none)
+        size_t bar = arg.find('|');
+        if (!editor::SetPointMapIcon(editor::Resolve(arg.substr(0, bar)),
+                                     bar == std::string::npos ? "" : arg.substr(bar + 1), &err))
+            return luaL_error(L, "mapicon: %s", err.c_str());
     } else if (op == "blank") {  // the Level panel's No buildings, now ("on" / "off")
         editor::SetBlankMap(arg == "on");
     } else if (op == "solid") {  // "<mesh hex> on|off": a model's collision (reverse engineering)
@@ -717,6 +722,40 @@ int DevRecordPaths(lua_State* L)
     lua_pushinteger(L, differ);
     lua_pushstring(L, first.c_str());
     return 3;
+}
+
+// h2.dev_mapicons() -> what the in-game map draws (the floor shown last, then an icon and its object
+// a line; after the map was opened with M): ZWINDOW_IngameMap's floor entry (+0x2F3: +8 its name)
+// and its CMapIconDraw (+0x1AE: +0x18 count, +0x1C {icon ref, object ref} pairs, 0x540920)
+int DevMapIcons(lua_State* L)
+{
+    std::string out = "none";
+    const auto& recs = engine::SceneRecords();
+    for (size_t i = 0; i < recs.size(); ++i) {
+        if (recs[i].name != "IngameMap" || recs[i].classId != 0x100031)
+            continue;
+        engine::ZGEOM* window = engine::RecordGeom(int(i));
+        uint8_t* map = window ? engine::GeomRoutine(window, "IngameMap") : nullptr;
+        if (!map || !engine::IsReadable(map + 0x2F3, 4) || !engine::IsReadable(map + 0x1AE, 4))
+            break;
+        uint8_t* floor = *reinterpret_cast<uint8_t**>(map + 0x2F3);
+        const char* name = floor && engine::IsReadable(floor + 8, 4) ? *reinterpret_cast<const char**>(floor + 8) : nullptr;
+        out = "floor " + (name && engine::IsReadable(name, 1) ? engine::SafeString(name) : std::string("?")) + "\n";
+        uint8_t* draw = *reinterpret_cast<uint8_t**>(map + 0x1AE);
+        if (!draw || !engine::IsReadable(draw + 0x18, 4))
+            break;
+        uint32_t n = std::min<uint32_t>(*reinterpret_cast<uint32_t*>(draw + 0x18), 256);
+        for (uint32_t k = 0; k < n && engine::IsReadable(draw + 0x1C + k * 8, 8); ++k) {
+            const uint32_t* pair = reinterpret_cast<const uint32_t*>(draw + 0x1C + k * 8);
+            engine::ZGEOM* icon = engine::GeomOfRef(pair[0]);
+            engine::ZGEOM* object = engine::GeomOfRef(pair[1]);
+            out += (icon ? engine::SafeString(icon->name) : std::string("?")) + " " +
+                   (object ? editor::PathOf(object) : std::string("?")) + "\n";
+        }
+        break;
+    }
+    lua_pushstring(L, out.c_str());
+    return 1;
 }
 
 // h2.dev_record(path) -> its record in the scene loaded last (-1: made while playing), "file" /
@@ -1120,6 +1159,7 @@ void InstallDevCommands()
     script::Register("dev_useaction", DevUseAction);
     script::Register("dev_used", DevUsed);
     script::Register("dev_record", DevRecord);
+    script::Register("dev_mapicons", DevMapIcons);
     script::Register("dev_copyposdir", DevCopyPosDir);
     script::Register("dev_setting", DevSetting);
     script::Register("dev_recordpaths", DevRecordPaths);

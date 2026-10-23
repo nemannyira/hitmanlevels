@@ -322,6 +322,30 @@ cheats.
   game has no setter of a running script's members (its scripts write them in
   place too).
 
+### The in-game map (M) (2026-10-23)
+
+* The map is the scene's own: `<map>__MAP.zip` has a group per floor
+  (`MAP_Outside`, `MAP_1stFloor`, ...: a ZGROUP_MapGroup routine with the
+  floor's name, `C1-1/IngameMap/Outside`, and the location group of its
+  rooms) with the floor plan as flat models, the texts as models and the
+  fixed icons (stairs, exits: ZBoxPrimitive with ZGEOM_MapObject); the window
+  (`AllLevels/IngameMap.zip`, ZWINDOW_IngameMap) shows a floor through a
+  camera, its legend (`AllLevels/Interface/Map/Legend`) has the icon models.
+* ZGEOM_MapObject (data 0x541320: an icon name, shown; ShowMapIcon switches
+  it) adds its object to the window's set at init (0x541370; on the hardest
+  difficulty not icon_enemy / icon_innocent / icon_police). The characters'
+  and some doors' records have it.
+* Opened (vfAC), the map shows the floor of Hitman's room (0x540C50: the
+  room's parents, or the object's parent, up to a floor's group or location)
+  and draws, for each object of the set on that floor and not hidden
+  (0x540920), the legend's icon of its name at its place (CMapIconDraw:
+  {icon, object} pairs, vfDC).
+* Nothing follows a level's changes of the map's models (the plan is a
+  picture). Done: a level's point gets an icon (inject.h SceneCopy::mapIcon:
+  a copy of a map icon record at the point, dynamic so it is put into its
+  room by its place; level.json `"map_icon"`). `h2.dev_mapicons()` reads
+  what the map draws.
+
 ### Direct writes into the game's objects (audit, 2026-10-18)
 
 Every place the editor writes a game object's memory itself instead of calling

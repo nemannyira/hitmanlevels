@@ -76,6 +76,12 @@ level* / *File > Open level* loads a saved one.
 * Points have names of their own: select one, type a name in the Inspector
   (e.g. *Hideout*) and *Rename*. Routes, goals and characters' settings
   follow it; scripts find it with `h2.find("Hideout")`.
+* A point can be shown on the game's map (M): Inspector > *On the map* takes
+  an icon of the map's legend (Exit, Point of interest, Pickup, Target, ...).
+  It is shown from the map's next load (*Test*), on the floor the map shows
+  for the point's room. The map's picture itself (the floor plans, their
+  texts) is part of the map and does not change with the level; characters
+  have their icons as before (a level's own characters too).
 * A story of your own: Lua scripts. *Level > Scripts > New script from a
   template* writes one with the usual parts; *Run now* runs the scripts again
   without loading the map. The whole API: [lua.md](lua.md). The console

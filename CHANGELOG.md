@@ -3,7 +3,7 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
-## 2026-10-23: tests
+## 2026-10-23: tests, icons on the map
 
 For those who work on the editor (docs/debugging.md, Tests):
 
@@ -14,6 +14,10 @@ For those who work on the editor (docs/debugging.md, Tests):
   made with the map on other maps than C1-1.
 * `tools/tests/gui_test.py` and `h2.dev_press(label)`: the editor's own buttons
   pressed by their labels.
+
+* A point of the level can be shown on the game's map (M): Inspector > *On
+  the map*, an icon of the map's legend; made with the map as the map's own
+  icons are (docs/roadmap.md, The in-game map).
 
 Not yet run in the game.
 

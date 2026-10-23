@@ -10,6 +10,7 @@
 
 #include "../display.h"
 #include "../engine/geoms.h"
+#include "../engine/inject.h"
 #include "../engine/spawn.h"
 #include "../fov.h"
 #include "../game.h"
@@ -264,6 +265,21 @@ void DrawInspector()
                                   "scripts find it by the new name: h2.find(\"Garage\").");
             if (!renameError.empty())
                 ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", renameError.c_str());
+            // its icon on the in-game map (M): made with the map
+            const auto& icons = engine::MapIconNames();
+            std::string shown = spawned->mapIcon.empty() ? "none" : spawned->mapIcon.substr(5);  // ("Icon_")
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+            if (ImGui::BeginCombo("On the map (M)", shown.c_str())) {
+                if (ImGui::Selectable("none", spawned->mapIcon.empty()))
+                    SetPointMapIcon(geom, "");
+                for (const std::string& icon : icons)
+                    if (ImGui::Selectable(icon.substr(5).c_str(), spawned->mapIcon == icon))
+                        SetPointMapIcon(geom, icon);
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("An icon of the game's map legend at this point, on the floor the map\n"
+                                  "shows for its room. Shown from the map's next load (Test).");
         } else if (spawned->item)
             ImGui::TextDisabled("item placed by the level (%s)", spawned->sourcePath.c_str());
         else

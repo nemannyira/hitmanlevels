@@ -504,6 +504,7 @@ std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
             engine::SceneCopy c;
             c.name = s.id;
             c.point = true;
+            c.mapIcon = s.mapIcon;
             memcpy(c.mat, s.transform.mat, sizeof(c.mat));
             memcpy(c.pos, s.transform.pos, sizeof(c.pos));
             out.push_back(c);
@@ -1759,6 +1760,8 @@ bool SaveLevel(std::string* error)
         }
         if (s.importMesh)
             o["import"] = {{"level", s.importLevel}, {"mesh", s.importMesh}};
+        if (!s.mapIcon.empty())
+            o["map_icon"] = s.mapIcon;
         o["hidden"] = s.hidden;
         j["spawned"].push_back(o);
     }
@@ -1964,6 +1967,9 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 s.importLevel = o["import"].value("level", "").substr(0, 16);
                 s.importMesh = o["import"].value("mesh", 0u);
             }
+            const auto& icons = engine::MapIconNames();
+            if (std::string icon = o.value("map_icon", ""); s.point && std::find(icons.begin(), icons.end(), icon) != icons.end())
+                s.mapIcon = icon;
             L.spawned.push_back(s);
         }
         for (const json& o : j.value("npcs", json::array())) {
@@ -2540,6 +2546,45 @@ engine::ZGEOM* RenamePoint(engine::ZGEOM* geom, const std::string& name, std::st
         "rename", [oldId, name] { return DoRenamePoint(name, oldId, nullptr) != nullptr; },
         [oldId, name] { return DoRenamePoint(oldId, name, nullptr) != nullptr; });
     return g;
+}
+
+namespace {
+
+bool DoSetMapIcon(const std::string& id, const std::string& icon)
+{
+    for (SpawnedObject& s : g_level.spawned)
+        if (s.point && s.id == id) {
+            s.mapIcon = icon;
+            g_level.dirty = true;
+            return true;
+        }
+    return false;
+}
+
+} // namespace
+
+bool SetPointMapIcon(engine::ZGEOM* geom, const std::string& icon, std::string* error)
+{
+    auto fail = [&](const std::string& why) {
+        if (error)
+            *error = why;
+        return false;
+    };
+    const SpawnedObject* e = EntryOf(geom);
+    if (!e || !e->point)
+        return fail("only points the level made get an icon on the map");
+    const auto& icons = engine::MapIconNames();
+    if (!icon.empty() && std::find(icons.begin(), icons.end(), icon) == icons.end())
+        return fail("no map icon " + icon);
+    if (e->mapIcon == icon)
+        return true;
+    std::string id = e->id, before = e->mapIcon;
+    DoSetMapIcon(id, icon);
+    PushAction(
+        "map icon", [id, before] { return DoSetMapIcon(id, before); },
+        [id, icon] { return DoSetMapIcon(id, icon); });
+    Log("level: point %s on the map: %s", id.c_str(), icon.empty() ? "none" : icon.c_str());
+    return true;
 }
 
 std::string TargetFor(engine::ZGEOM* geom)

@@ -1,5 +1,6 @@
 #include "inject.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -234,6 +235,48 @@ static std::vector<uint8_t> ZoneData(const float half[3])
     tag(0x03, 0);     // +0x7F
     tag(0x03, 1);     // +0x80
     tag(0x03, 0);  // +0x81
+    d.push_back(0x06);
+    d.push_back(0xFF);
+    Put(d, 0, uint32_t(d.size()));
+    return d;
+}
+
+// The in-game map (ZWINDOW_IngameMap, gui/ingamemap.cpp): each ZGEOM_MapObject routine adds its
+// object to the map's set at init (0x541370; on the hardest difficulty not those with
+// icon_enemy / icon_innocent / icon_police); opened, the map shows the floor (a MAP_* group with a
+// ZGROUP_MapGroup routine: its name and the location group of its rooms) of Hitman's room
+// (0x540C50: the room's parents up to a floor's group or location), and draws the icon named by
+// each object whose room is on that floor and which is not hidden (0x540920 -> CMapIconDraw).
+// A level's point gets an icon so: a copy of a map icon record, put into its room by its place.
+const std::vector<std::string>& MapIconNames()
+{
+    static const std::vector<std::string> names = {
+        "Icon_Exit",        "Icon_PointOfInterest", "Icon_Pickup",       "Icon_Target",      "Icon_VIP",
+        "Icon_Enemy",       "Icon_Innocent",        "Icon_Police",       "Icon_Stairs",      "Icon_StairsUP",
+        "Icon_StairsDOWN",  "Icon_LadderUP",        "Icon_LadderDOWN",   "Icon_SewerHatchUP", "Icon_SewerHatchDOWN",
+        "Icon_Elevator",    "Icon_Vehicle",         "Icon_Generator"};
+    return names;
+}
+
+// ZBoxPrimitive: its half sizes (1 m, as the maps' own icons); ZGEOM_MapObject (data 0x541320):
+// the legend's icon of that name, shown (+0x76: ShowMapIcon switches it)
+static std::vector<uint8_t> MapIconData(const std::string& icon)
+{
+    std::vector<uint8_t> d(4);
+    auto tag = [&](uint8_t t, uint32_t v) {
+        d.push_back(t);
+        d.insert(d.end(), reinterpret_cast<uint8_t*>(&v), reinterpret_cast<uint8_t*>(&v) + 4);
+    };
+    const float half = 100.0f;
+    uint32_t bits;
+    memcpy(&bits, &half, 4);
+    for (int k = 0; k < 3; ++k)
+        tag(0x82, bits);
+    d.push_back(0x06);
+    d.push_back(0x84);  // a string, in place
+    d.insert(d.end(), icon.begin(), icon.end());
+    d.push_back(0);
+    tag(0x03, 1);
     d.push_back(0x06);
     d.push_back(0xFF);
     Put(d, 0, uint32_t(d.size()));
@@ -758,6 +801,16 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         for (uint32_t i = 0; i < count && pointTemplate < 0; ++i)
             if (recs[i].name == kAimHelper && recs[i].classId == kHelperClass && !recs[i].mesh && !recs[i].script)
                 pointTemplate = int(i);
+        int iconTemplate = -1;  // one of the in-game map's icons (a box with a ZGEOM_MapObject routine only)
+        for (uint32_t i = 0; i < count && iconTemplate < 0; ++i) {
+            if (recs[i].classId != kBoxClass || !recs[i].events || recs[i].script || recs[i].mesh)
+                continue;
+            uint32_t ev = recs[i].events, n = U32(gms, ev);
+            uint32_t name = U32(gms, ev + 4);
+            if (n == 1 && name < gms.size() &&
+                strncmp(reinterpret_cast<const char*>(&gms[name]), "ZGEOM_MapObject", gms.size() - name) == 0)
+                iconTemplate = int(i);
+        }
         for (uint32_t i = 0; i < count && (groupTemplate < 0 || modelTemplate < 0); ++i) {
             if (groupTemplate < 0 && recs[i].classId == 0x100001 && !recs[i].script)
                 groupTemplate = int(i);
@@ -787,6 +840,26 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                 copyFlags = flags;
                 copyExtra = extra;
                 rootFlags = root;
+                const auto& icons = MapIconNames();
+                if (!c.mapIcon.empty() && std::find(icons.begin(), icons.end(), c.mapIcon) != icons.end()) {
+                    if (iconTemplate < 0) {
+                        Log("scene copies: %s: this scene has no map icon record to copy", c.name.c_str());
+                    } else {  // its icon: a map icon record at the point, put into its room (dynamic, auto-assign)
+                        std::string icon = c.name + "_MapIcon";
+                        std::vector<uint8_t> r(gms.begin() + recordAt(iconTemplate),
+                                               gms.begin() + recordAt(iconTemplate) + kRecord);
+                        Put(r, 0x00, AppendString(buf, icon));
+                        Put(r, 0x04, Append(gms, c.mat, sizeof(c.mat)));
+                        Put(r, 0x08, Append(gms, c.pos, sizeof(c.pos)));
+                        Put(r, 0x1C, 0);
+                        Put(r, 0x20, Append(gms, MapIconData(c.mapIcon)));
+                        Put(r, 0x28, 0);
+                        Put(r, 0x18, U32(r, 0x18) | 0x44000);
+                        g_copies[icon] = int(count) + added;
+                        g_copyRecords.insert(int(count) + added);
+                        emit(r, false, 0, recs[iconTemplate].extra, nullptr, true);
+                    }
+                }
             } else if (!c.parts.empty()) {  // a group: an empty group with copies of the models
                 bool ok = groupTemplate >= 0 && c.parts.size() <= 64;
                 for (const auto& [r, local] : c.parts)

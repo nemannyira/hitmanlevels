@@ -82,6 +82,9 @@ struct SpawnedObject {
     // map as a model of the map with that level's model.
     std::string importLevel;
     uint32_t importMesh = 0;
+    // A point's icon on the in-game map (engine::MapIconNames(); "": none),
+    // made with the map (engine/inject.h SceneCopy::mapIcon).
+    std::string mapIcon;
 };
 
 struct LevelNpc {
@@ -257,6 +260,9 @@ engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string*
 // again under it and the level's routes, goals and behaviour settings follow it
 // (scripts naming it by its old name do not). Returns the renamed point.
 engine::ZGEOM* RenamePoint(engine::ZGEOM* point, const std::string& name, std::string* error = nullptr);
+// A point's icon on the in-game map (M) ("": none; undoable): shown from the
+// map's next load on (it is made with the map), on the floor of its room.
+bool SetPointMapIcon(engine::ZGEOM* point, const std::string& icon, std::string* error = nullptr);
 // New elements of a list (a route: the points in walking order).
 // Where an object stands: a group of models (a car) by its parts (their
 // middle, at the bottom of their boxes; a map's group is often at the world's

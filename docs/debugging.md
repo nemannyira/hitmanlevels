@@ -88,6 +88,9 @@ frames can be compared (images, state).
   editor must be open and the control's panel shown (`h2.dev_editor(true)`,
   `h2.dev_panel(name)`). `h2.dev_selected()`: the selection's path (a copy
   just made by Duplicate is selected).
+* `map_icon_test.py`: a point's icon on the in-game map; `h2.dev_mapicons()`
+  is what the map draws (after M: the floor, then an icon and its object a
+  line).
 
 ## Reference made with these tools
 

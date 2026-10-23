@@ -28,6 +28,7 @@
 #include "../script/objects_api.h"
 #include "../script/state.h"
 #include "history.h"
+#include "ingame_map.h"
 #include "mission.h"
 #include "own_map.h"
 #include "profile_guard.h"
@@ -91,7 +92,7 @@ void ClearScene()
 // blank map: the scene's models hidden and stopping nothing, as they were
 struct Blanked {
     engine::ZGEOM* geom;
-    uint32_t mesh;
+    uint32_t mesh;        // 0: not a model's object (the in-game map's fixed icons)
     bool moved = false;   // under the map: a copy of its model is used (UseBlankedMesh)
     Transform original{};
 };
@@ -129,10 +130,18 @@ void BlankScene()
 {
     if (!g_blanked.empty())
         return;
+    const IngameMapParts map;
     for (const auto& g : SceneModel(0).geoms) {
         engine::ZGEOM* geom = g.geom;
         if (!IsLive(geom) || IsSpawned(geom) || HiddenByTheMap(geom) || engine::IsSceneCopyRecord(engine::RecordOf(geom)))
             continue;  // the editor's (the level's copies made with the map too), or hidden already (templates, cutscenes)
+        if (map.Contains(geom)) {  // the in-game map: its window and legend stay, its floors' plans and fixed
+            if (map.OnFloor(geom)) {  // icons go with the buildings (the level's models are drawn there instead)
+                g_blanked.push_back({geom, 0});
+                SetHidden(geom, true);
+            }
+            continue;
+        }
         uint32_t mesh = engine::MeshOf(geom);
         if (!mesh || !engine::IsPlainModel(mesh) || InActor(geom) || InItem(geom))
             continue;
@@ -168,7 +177,8 @@ void RestoreBlank()
         if (b.moved)
             SetTransform(b.geom, b.original);
         SetHidden(b.geom, false);
-        engine::SetModelSolid(b.mesh, true);
+        if (b.mesh)
+            engine::SetModelSolid(b.mesh, true);
     }
     g_blanked.clear();
     InvalidateSceneModel();
@@ -1498,6 +1508,15 @@ void DrawPanel()
             L.floorObject.clear();  // (deleted by hand; not just not made yet)
         }
     }
+    bool onMap = MapShowsModels();
+    ImGui::BeginDisabled(L.blankMap);
+    if (ImGui::Checkbox("The level's models on the map (M)", &onMap))
+        SetMapModels(onMap);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("The game's map (M) draws the level's models (copies, other levels' models, the floor)\n"
+                          "from above on the floor of their place, from the map's next load (Test).%s",
+                          L.blankMap ? "\nAlways so with No buildings: the map's own floor plans go with the buildings." : "");
 
     // the sky
     std::string skyLabel = L.skyLevel.empty() ? "the map's own" : L.skyLevel;
@@ -1718,6 +1737,8 @@ bool SaveLevel(std::string* error)
         j["empty_map"] = true;
     if (g_level.blankMap)
         j["blank_map"] = true;
+    if (g_level.mapModels)
+        j["map_models"] = true;
     if (!g_level.ownMapOf.empty())
         j["own_map_of"] = g_level.ownMapOf;
     if (!g_level.startOutfit.empty())
@@ -1919,6 +1940,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         }
         L.emptyMap = j.value("empty_map", false);
         L.blankMap = j.value("blank_map", false);
+        L.mapModels = j.value("map_models", false);
         if (j.contains("own_map_of") && j["own_map_of"].is_string() && j["own_map_of"].get<std::string>().size() < 128)
             L.ownMapOf = j["own_map_of"].get<std::string>();
         L.startOutfit = j.value("start_outfit", "");
@@ -2853,6 +2875,28 @@ void SetBlankMap(bool blank)
         RestoreBlank();
 }
 
+bool MapShowsModels() { return g_level.mapModels || g_level.blankMap; }
+
+void SetMapModels(bool on)
+{
+    if (g_level.mapModels == on)
+        return;
+    g_level.mapModels = on;
+    g_level.dirty = true;
+}
+
+bool LevelIsFor(const std::string& scene)
+{
+    return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene);
+}
+
+engine::ZGEOM* LevelObject(const std::string& id) { return LiveSpawned(id); }
+
+bool ImportedModelOf(const std::string& sourcePath, std::string& level, uint32_t& mesh)
+{
+    return ImportOf(sourcePath, level, mesh);
+}
+
 void SetFloor(const std::string& level, uint32_t mesh, const std::string& name)
 {
     SetImported(level, mesh, name, true);
@@ -3480,6 +3524,7 @@ int ApplyLevel()
     ApplyMission();
     ApplyMusic();
     PlaceFloor();
+    PlaceMapModels();  // (after the floor: it is one of them)
     ApplySky();
     ApplyVehicles(g_level.vehicles);
     return n;
@@ -3488,6 +3533,7 @@ int ApplyLevel()
 void RevertLevel()
 {
     StopDrives("level");
+    HideMapModels();
     RestoreSky();
     RestoreScene();
     RestoreBlank();
@@ -3591,6 +3637,7 @@ void InstallLevelPanel()
     engine::SetSceneListProvider(ListsFor);
     engine::SetSceneZoneProvider(ZonesFor);
     engine::SetSceneCopyProvider(CopiesFor);
+    engine::SetSceneMapModelProvider(MapModelsFor);
     engine::SetSceneScriptEditProvider(ScriptEditsFor);
     engine::SetShapeProvider([](const std::string& scene) {
         return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene) ? VehicleShapes(g_level.vehicles)

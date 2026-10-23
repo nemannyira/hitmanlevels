@@ -51,6 +51,7 @@ add_library(h2fix SHARED
     src/editor/freecam.cpp
     src/editor/guides.cpp
     src/editor/highlight.cpp
+    src/editor/ingame_map.cpp
     src/editor/history.cpp
     src/editor/level.cpp
     src/editor/model.cpp
@@ -79,6 +80,7 @@ add_library(h2fix SHARED
     src/engine/scene_data.cpp
     src/engine/script_files.cpp
     src/engine/imports.cpp
+    src/engine/ingame_map.cpp
     src/engine/inject.cpp
     src/engine/zip.cpp
     src/screenshot.cpp

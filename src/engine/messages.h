@@ -113,8 +113,11 @@ bool NearestWalkable(const float pos[3], float radius, float out[3]);
 // handler 0x5142BC, id at +0xF90), the param pointing at {geom, 0} as he
 // sends it himself (0x513E81).
 bool HitmanChangeClothes(ZGEOM* source);
-// An object the scene names (its com values: "rOSD", "rEnemyPathFinder3"...).
+// An object the scene names (its com values: "rOSD", "rEnemyPathFinder3"...);
+// SceneComRef: the reference itself (0: none), for one that is not a geom (a
+// routine: "rIngameMap").
 ZGEOM* SceneComGeom(const char* name);
+uint32_t SceneComRef(const char* name);
 // Hitman (the player's character, class 0x2003E8), the level control object.
 ZGEOM* Player();
 ZGEOM* LevelControl();

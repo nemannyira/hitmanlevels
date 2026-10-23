@@ -123,6 +123,20 @@ struct SceneCopy {
 };
 // The icons a point can have on the in-game map (the legend's, but Hitman's).
 const std::vector<std::string>& MapIconNames();
+
+// A model of the level drawn on the in-game map (ingame_map.h): a copy of one
+// of the map's floor plan records (a plain model there: not in a room, so the
+// world's cameras do not draw it and nothing collides with it) with this model,
+// at the root, made with the map; once the map has loaded, the editor puts it
+// onto the floor the map shows its object on, where the map's camera draws it.
+struct SceneMapModel {
+    std::string name;  // unique in the scene
+    int record = -1;   // a plain model record of the scene whose model it has, or
+    uint32_t mesh = 0; // a model of another level imported into this one (record -1)
+    float mat[9] = {0, 0, 1, 0, 1, 0, 1, 0, 0};  // the map's space (rows forward, up, right)
+    float pos[3] = {};
+};
+void SetSceneMapModelProvider(std::function<std::vector<SceneMapModel>(const std::string& scene)> provider);
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);
 // The record made for a copy of that name in the scene loaded last (-1: none).
 int SceneCopyRecord(const std::string& name);

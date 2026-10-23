@@ -474,12 +474,15 @@ static uint32_t SafeSceneComRef(void* engine, const char* name)
     }
 }
 
-ZGEOM* SceneComGeom(const char* name)
+uint32_t SceneComRef(const char* name)
 {
     void* engine = Engine();
-    if (!engine || !name || !SceneDataValid())
-        return nullptr;
-    uint32_t ref = SafeSceneComRef(engine, name);
+    return engine && name && SceneDataValid() ? SafeSceneComRef(engine, name) : 0;
+}
+
+ZGEOM* SceneComGeom(const char* name)
+{
+    uint32_t ref = SceneComRef(name);
     ZGEOM* g = ref ? GeomOfRef(ref) : nullptr;
     return Usable(g) ? g : nullptr;
 }

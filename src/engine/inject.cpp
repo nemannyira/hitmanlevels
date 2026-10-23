@@ -55,7 +55,8 @@ std::function<std::vector<SceneCar>(const std::string&)> g_carProvider;
 std::function<std::vector<SceneZone>(const std::string&)> g_zoneProvider;
 std::map<std::string, int> g_zones;  // name -> its record (scene loaded last)
 std::function<std::vector<SceneCopy>(const std::string&)> g_copyProvider;
-std::map<std::string, int> g_copies;  // name -> its record (scene loaded last)
+std::function<std::vector<SceneMapModel>(const std::string&)> g_mapModelProvider;
+std::map<std::string, int> g_copies;  // name -> its record (scene loaded last; map models too)
 std::set<int> g_copyRecords;
 int g_fileRecords = 0;  // the records the scene file had (the scene loaded last)
 std::function<std::vector<SceneScriptEdit>(const std::string&)> g_scriptEditProvider;
@@ -149,6 +150,15 @@ std::vector<uint8_t> Block(const std::vector<uint8_t>& gms, uint32_t at)
     return std::vector<uint8_t>(gms.begin() + at, gms.begin() + at + size);
 }
 
+// Whether a record's routines are that one only (its events block: {count, {name offset, float}})
+bool OnlyRoutine(const std::vector<uint8_t>& gms, const SceneRecord& r, const char* routine)
+{
+    if (!r.events || size_t(r.events) + 12 > gms.size() || U32(gms, r.events) != 1)
+        return false;
+    uint32_t name = U32(gms, r.events + 4);
+    return name < gms.size() && strncmp(reinterpret_cast<const char*>(&gms[name]), routine, gms.size() - name) == 0;
+}
+
 // the first reference array (tag 9: u32 bytes, then references) of a block
 bool FindArray(const std::vector<uint8_t>& b, size_t& at, uint32_t& bytes)
 {
@@ -188,6 +198,11 @@ void SetSceneCarProvider(std::function<std::vector<SceneCar>(const std::string& 
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider)
 {
     g_copyProvider = std::move(provider);
+}
+
+void SetSceneMapModelProvider(std::function<std::vector<SceneMapModel>(const std::string& scene)> provider)
+{
+    g_mapModelProvider = std::move(provider);
 }
 
 int SceneCopyRecord(const std::string& name)
@@ -401,7 +416,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     std::vector<SceneCar> cars = g_carProvider ? g_carProvider(scene) : std::vector<SceneCar>{};
     std::vector<SceneZone> zones = g_zoneProvider ? g_zoneProvider(scene) : std::vector<SceneZone>{};
     std::vector<SceneCopy> copies = g_copyProvider ? g_copyProvider(scene) : std::vector<SceneCopy>{};
-    if (npcs.empty() && lists.empty() && cars.empty() && zones.empty() && copies.empty() && edits.empty())
+    std::vector<SceneMapModel> mapModels =
+        g_mapModelProvider ? g_mapModelProvider(scene) : std::vector<SceneMapModel>{};
+    if (npcs.empty() && lists.empty() && cars.empty() && zones.empty() && copies.empty() && edits.empty() &&
+        mapModels.empty())
         return false;
     std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
     uint32_t list = U32(gms, 0), count = U32(gms, list);
@@ -590,15 +608,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     // blocks of their own in the game's format
     if (!zones.empty()) {
         int box = -1;
-        for (uint32_t i = 0; i < count && box < 0; ++i) {
-            if (recs[i].classId != kBoxClass || !recs[i].events || recs[i].script || recs[i].mesh)
-                continue;
-            uint32_t ev = recs[i].events, n = U32(gms, ev);
-            uint32_t name = U32(gms, ev + 4);
-            if (n == 1 && name < gms.size() &&
-                strncmp(reinterpret_cast<const char*>(&gms[name]), "ZGEOM_CheckInside", gms.size() - name) == 0)
+        for (uint32_t i = 0; i < count && box < 0; ++i)
+            if (recs[i].classId == kBoxClass && !recs[i].script && !recs[i].mesh &&
+                OnlyRoutine(gms, recs[i], "ZGEOM_CheckInside"))
                 box = int(i);
-        }
         if (box < 0)
             Log("scene zones: %s has no CheckInside box to copy (goals check distances)", scene.c_str());
         for (const SceneZone& z : box < 0 ? std::vector<SceneZone>{} : zones) {
@@ -628,8 +641,8 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     }
     // vehicles: a ZCar with copies of the model's records, and its spline; the
     // level's copies of models
-    int carsAdded = 0, copiesAdded = 0;
-    if (!cars.empty() || !copies.empty()) {
+    int carsAdded = 0, copiesAdded = 0, mapModelsAdded = 0;
+    if (!cars.empty() || !copies.empty() || !mapModels.empty()) {
         int car = -1, shape = -1;  // the scene's own as templates
         for (uint32_t i = 0; i < count && (car < 0 || shape < 0); ++i) {
             if (recs[i].classId == kCarClass && car < 0)
@@ -802,15 +815,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             if (recs[i].name == kAimHelper && recs[i].classId == kHelperClass && !recs[i].mesh && !recs[i].script)
                 pointTemplate = int(i);
         int iconTemplate = -1;  // one of the in-game map's icons (a box with a ZGEOM_MapObject routine only)
-        for (uint32_t i = 0; i < count && iconTemplate < 0; ++i) {
-            if (recs[i].classId != kBoxClass || !recs[i].events || recs[i].script || recs[i].mesh)
-                continue;
-            uint32_t ev = recs[i].events, n = U32(gms, ev);
-            uint32_t name = U32(gms, ev + 4);
-            if (n == 1 && name < gms.size() &&
-                strncmp(reinterpret_cast<const char*>(&gms[name]), "ZGEOM_MapObject", gms.size() - name) == 0)
+        for (uint32_t i = 0; i < count && iconTemplate < 0; ++i)
+            if (recs[i].classId == kBoxClass && !recs[i].script && !recs[i].mesh &&
+                OnlyRoutine(gms, recs[i], "ZGEOM_MapObject"))
                 iconTemplate = int(i);
-        }
         for (uint32_t i = 0; i < count && (groupTemplate < 0 || modelTemplate < 0); ++i) {
             if (groupTemplate < 0 && recs[i].classId == 0x100001 && !recs[i].script)
                 groupTemplate = int(i);
@@ -911,6 +919,40 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             }
             ++copiesAdded;
         }
+        // the level's models on the in-game map: copies of a floor plan model record of the map (one of
+        // a ZGROUP_MapGroup's models) with the level's model, at the root as it is (no room: not drawn by
+        // the world's cameras, not colliding)
+        int planTemplate = -1;
+        if (!mapModels.empty()) {
+            std::vector<bool> onFloor(count, false);  // in a floor's group (records follow their groups)
+            for (uint32_t i = 0; i < count; ++i)
+                onFloor[i] = (recs[i].parent >= 0 && uint32_t(recs[i].parent) < i &&
+                              (onFloor[recs[i].parent] || OnlyRoutine(gms, recs[recs[i].parent], "ZGROUP_MapGroup")));
+            for (uint32_t i = 0; i < count && planTemplate < 0; ++i)
+                if (onFloor[i] && plainModel(int(i)) && recs[i].classId == kHelperClass && !recs[i].events &&
+                    !recs[i].script)
+                    planTemplate = int(i);
+            if (planTemplate < 0)
+                Log("scene map: %s has no floor plan model to copy (the level's models are not drawn on its map)",
+                    scene.c_str());
+        }
+        for (const SceneMapModel& m : planTemplate < 0 ? std::vector<SceneMapModel>{} : mapModels) {
+            uint32_t mesh = m.record >= 0 ? (plainModel(m.record) ? recs[m.record].mesh : 0) : m.mesh;
+            if (m.name.empty() || m.name.size() > 64 || !mesh) {
+                Log("scene map: %s: no model (record %d) to draw", m.name.c_str(), m.record);
+                continue;
+            }
+            std::vector<uint8_t> r(gms.begin() + recordAt(planTemplate), gms.begin() + recordAt(planTemplate) + kRecord);
+            Put(r, 0x00, AppendString(buf, m.name));
+            Put(r, 0x04, Append(gms, m.mat, sizeof(m.mat)));
+            Put(r, 0x08, Append(gms, m.pos, sizeof(m.pos)));
+            Put(r, 0x0C, mesh);
+            Put(r, 0x20, recs[planTemplate].data ? copyBlock(recs[planTemplate].data) : 0);
+            g_copies[m.name] = int(count) + added;
+            g_copyRecords.insert(int(count) + added);
+            emit(r, false, 0, recs[planTemplate].extra, nullptr, true);
+            ++mapModelsAdded;
+        }
         copyFlags = 0;
         copyExtra = 0;
         rootFlags = 0;
@@ -1004,6 +1046,8 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         Log("scene cars: %d vehicles (ZCar) with their splines", carsAdded);
     if (copiesAdded)
         Log("scene copies: %d models of the level made with the scene", copiesAdded);
+    if (mapModelsAdded)
+        Log("scene map: %d models of the level drawn on the map", mapModelsAdded);
     if (listsAdded)
         Log("scene lists: %d new lists", listsAdded);
     // geom counts (the engine allocates the geoms of each class at once)

@@ -82,6 +82,11 @@ level* / *File > Open level* loads a saved one.
   for the point's room. The map's picture itself (the floor plans, their
   texts) is part of the map and does not change with the level; characters
   have their icons as before (a level's own characters too).
+* The game's map draws the level's models from above (copies, other levels'
+  models, the floor) on the floor of their place: Level > *The level's
+  models on the map*, always so with *No buildings*, whose map loses its old
+  floor plans with the buildings (its window, legend and the characters'
+  icons stay). From the map's next load.
 * A story of your own: Lua scripts. *Level > Scripts > New script from a
   template* writes one with the usual parts; *Run now* runs the scripts again
   without loading the map. The whole API: [lua.md](lua.md). The console

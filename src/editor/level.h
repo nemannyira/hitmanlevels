@@ -154,6 +154,8 @@ struct LevelDocument {
     std::string floorLevel;
     uint32_t floorMesh = 0;
     std::string floorObject;  // the placed floor (a spawned object's id): offered out when the buildings come back
+    // the level's models drawn on the in-game map (always so on a blank map: editor/ingame_map.h)
+    bool mapModels = false;
     // the sky of another level instead of the map's own (its backdrop's models, imported)
     std::string skyLevel;
     std::map<std::string, ObjectEdit> objects;  // by path
@@ -280,6 +282,11 @@ void SetEmptyMap(bool empty);
 void SetBlankMap(bool blank);
 // A copy of one of the map's models was made (shown also when the blank map took the model out).
 void UseBlankedMesh(uint32_t mesh);
+// The level's models on the in-game map (editor/ingame_map.h): asked for by the
+// level, or a map without buildings (whose floor plans are taken out). From the
+// map's next load on.
+bool MapShowsModels();
+void SetMapModels(bool on);
 // The level gets a model of another level as its floor: under Hitman, once
 // the map is loaded with it.
 void SetFloor(const std::string& level, uint32_t mesh, const std::string& name);
@@ -297,6 +304,13 @@ int ApplyLevel();
 bool LevelApplyPending();
 // Undoes every edit of the level in the loaded scene (restores originals).
 void RevertLevel();
+// The current level is for that scene (its base scene, by its name).
+bool LevelIsFor(const std::string& scene);
+// The object of a level object (a spawned entry's id) in the loaded scene (null: not made).
+engine::ZGEOM* LevelObject(const std::string& id);
+// The model of another level a model of the import library is ("ROOT/EditorImports/...":
+// its level and its mesh there); false: not one.
+bool ImportedModelOf(const std::string& sourcePath, std::string& level, uint32_t& mesh);
 // The levels in Mods (folders), the last saved first.
 std::vector<std::string> ListLevels();
 // When a level was last saved: its level.json's time, local ("2026-10-06 14:32"; "" unknown).

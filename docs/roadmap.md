@@ -340,11 +340,34 @@ cheats.
   and draws, for each object of the set on that floor and not hidden
   (0x540920), the legend's icon of its name at its place (CMapIconDraw:
   {icon, object} pairs, vfDC).
-* Nothing follows a level's changes of the map's models (the plan is a
-  picture). Done: a level's point gets an icon (inject.h SceneCopy::mapIcon:
-  a copy of a map icon record at the point, dynamic so it is put into its
-  room by its place; level.json `"map_icon"`). `h2.dev_mapicons()` reads
-  what the map draws.
+* A floor's data: the group's own, then the routine's name (`0x84`, a LOC
+  key: `C1-1/IngameMap/Outside`) and location (`0x88`: a 1-based record
+  reference, e.g. `C1-1_LOC_Outside.zip`; C6-1's one floor "City" has the
+  whole `C6-1_LOCATIONS.zip`). Every scene has its map under one
+  `<map>__MAP.zip` group (C6-1's inside its CHARACTERS group, C0-2 uses
+  C0-1's); 1 to 11 floors, 4 to 42 fixed icons.
+* The window's camera (ZCAMERA +0x1C: the geom it draws, 0: the world)
+  draws the shown floor's group; the window puts its icon drawer onto that
+  floor with the group's AddChild (vfunc 0x26C (child, 0, 1) -> 0x43E6C0).
+  The floor plans are models at the world's places (the camera frames the
+  floor's bounds), not in rooms: no world camera draws them and nothing
+  collides with them (static models collide through the rooms' trees).
+* Without a floor for Hitman's room the window shows an outside floor of
+  the game's maps by name (0x53EDA0), else its first: a map copied as a map
+  of its own keeps its floors (their names are LOC keys) and works as the
+  original.
+* Done (2026-10-23, editor/ingame_map.h): a level's point gets an icon
+  (inject.h SceneCopy::mapIcon: a copy of a map icon record at the point,
+  dynamic so it is put into its room by its place; level.json `"map_icon"`).
+  The level's models are drawn on the map (Level > *The level's models on
+  the map*, `"map_models"`; always on a blank map): copies of one of the
+  map's floor plan records with the level's models (SceneMapModel, made with
+  the map at the root, flattened to stay under the icons), put onto the floor
+  the window's own lookup gives for their objects (0x540C50, else 0x53EDA0)
+  with the floor group's AddChild. A blank map keeps the map's group (its
+  window and legend: before, it took them out with the buildings, so the map
+  showed nothing) and takes out only its floors' plans and fixed icons.
+  `h2.dev_mapicons()` reads what the map draws.
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

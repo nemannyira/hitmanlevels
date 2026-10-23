@@ -18,6 +18,11 @@ For those who work on the editor (docs/debugging.md, Tests):
 * A point of the level can be shown on the game's map (M): Inspector > *On
   the map*, an icon of the map's legend; made with the map as the map's own
   icons are (docs/roadmap.md, The in-game map).
+* The game's map works on every level: with *No buildings* it showed
+  nothing (its window and legend went with the buildings); now it keeps them,
+  takes out only the old floor plans and draws the level's floor and models
+  instead. On other maps the level's models can be drawn on it too (Level >
+  *The level's models on the map*).
 
 Not yet run in the game.
 

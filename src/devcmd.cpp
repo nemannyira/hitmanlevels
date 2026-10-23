@@ -30,6 +30,7 @@ extern "C" {
 #include "editor/vehicles.h"
 #include "engine/game_events.h"
 #include "engine/imports.h"
+#include "engine/ingame_map.h"
 #include "engine/inject.h"
 #include "engine/messages.h"
 #include "engine/npc.h"
@@ -488,6 +489,8 @@ int Level(lua_State* L)
                op == "exit") {  // the Inspector's Mission row
         lua_pushstring(L, editor::MissionGoalFor(editor::Resolve(arg), op).c_str());
         return 1;
+    } else if (op == "mapmodels") {  // "on" / "off": the Level panel's The level's models on the map
+        editor::SetMapModels(arg == "on");
     } else if (op == "mapicon") {  // "<point path>|<icon>": the Inspector's On the map ("" none)
         size_t bar = arg.find('|');
         if (!editor::SetPointMapIcon(editor::Resolve(arg.substr(0, bar)),
@@ -508,10 +511,11 @@ int Level(lua_State* L)
     } else if (op != "info") {
         return luaL_error(L, "unknown op %s", op.c_str());
     }
-    char buf[256];
-    snprintf(buf, sizeof(buf), "%s folder=%s scene=%s objects=%d spawned=%d npcs=%d npc_edits=%d lists=%d%s",
+    char buf[512];
+    snprintf(buf, sizeof(buf), "%s folder=%s scene=%s objects=%d spawned=%d npcs=%d npc_edits=%d lists=%d floor=%s%s",
              d.name.c_str(), d.folder.c_str(), d.baseScene.c_str(), int(d.objects.size()), int(d.spawned.size()),
-             int(d.npcs.size()), int(d.npcEdits.size()), int(d.lists.size()), d.dirty ? " (unsaved)" : "");
+             int(d.npcs.size()), int(d.npcEdits.size()), int(d.lists.size()),
+             d.floorObject.empty() ? "-" : d.floorObject.c_str(), d.dirty ? " (unsaved)" : "");
     lua_pushstring(L, buf);
     return 1;
 }
@@ -724,36 +728,18 @@ int DevRecordPaths(lua_State* L)
     return 3;
 }
 
-// h2.dev_mapicons() -> what the in-game map draws (the floor shown last, then an icon and its object
-// a line; after the map was opened with M): ZWINDOW_IngameMap's floor entry (+0x2F3: +8 its name)
-// and its CMapIconDraw (+0x1AE: +0x18 count, +0x1C {icon ref, object ref} pairs, 0x540920)
+// h2.dev_mapicons() -> what the in-game map draws, after it was opened with M (engine/ingame_map.h):
+// "floor <name>", then a line per icon: the legend's model and its object's path
 int DevMapIcons(lua_State* L)
 {
-    std::string out = "none";
-    const auto& recs = engine::SceneRecords();
-    for (size_t i = 0; i < recs.size(); ++i) {
-        if (recs[i].name != "IngameMap" || recs[i].classId != 0x100031)
-            continue;
-        engine::ZGEOM* window = engine::RecordGeom(int(i));
-        uint8_t* map = window ? engine::GeomRoutine(window, "IngameMap") : nullptr;
-        if (!map || !engine::IsReadable(map + 0x2F3, 4) || !engine::IsReadable(map + 0x1AE, 4))
-            break;
-        uint8_t* floor = *reinterpret_cast<uint8_t**>(map + 0x2F3);
-        const char* name = floor && engine::IsReadable(floor + 8, 4) ? *reinterpret_cast<const char**>(floor + 8) : nullptr;
-        out = "floor " + (name && engine::IsReadable(name, 1) ? engine::SafeString(name) : std::string("?")) + "\n";
-        uint8_t* draw = *reinterpret_cast<uint8_t**>(map + 0x1AE);
-        if (!draw || !engine::IsReadable(draw + 0x18, 4))
-            break;
-        uint32_t n = std::min<uint32_t>(*reinterpret_cast<uint32_t*>(draw + 0x18), 256);
-        for (uint32_t k = 0; k < n && engine::IsReadable(draw + 0x1C + k * 8, 8); ++k) {
-            const uint32_t* pair = reinterpret_cast<const uint32_t*>(draw + 0x1C + k * 8);
-            engine::ZGEOM* icon = engine::GeomOfRef(pair[0]);
-            engine::ZGEOM* object = engine::GeomOfRef(pair[1]);
-            out += (icon ? engine::SafeString(icon->name) : std::string("?")) + " " +
-                   (object ? editor::PathOf(object) : std::string("?")) + "\n";
-        }
-        break;
+    if (!engine::IngameMap()) {
+        lua_pushstring(L, "none");
+        return 1;
     }
+    std::string out = "floor " + engine::MapShownFloor() + "\n";
+    for (const engine::MapIconDrawn& d : engine::MapIconsDrawn())
+        out += (d.icon ? engine::SafeString(d.icon->name) : std::string("?")) + " " +
+               (d.object ? editor::PathOf(d.object) : std::string("?")) + "\n";
     lua_pushstring(L, out.c_str());
     return 1;
 }

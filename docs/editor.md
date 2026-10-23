@@ -76,6 +76,8 @@ level* / *File > Open level* loads a saved one.
 * Points have names of their own: select one, type a name in the Inspector
   (e.g. *Hideout*) and *Rename*. Routes, goals and characters' settings
   follow it; scripts find it with `h2.find("Hideout")`.
+* The game's map (M) marks the mission as the game's missions are: its
+  characters to kill or knock out as targets, its exit's point as an exit.
 * A point can be shown on the game's map (M): Inspector > *On the map* takes
   an icon of the map's legend (Exit, Point of interest, Pickup, Target, ...).
   It is shown from the map's next load (*Test*), on the floor the map shows

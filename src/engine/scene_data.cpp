@@ -478,6 +478,43 @@ std::vector<uint8_t> WithStrings(const std::vector<uint8_t>& b, const std::vecto
     return out;
 }
 
+std::vector<uint8_t> WithRoutineString(const std::vector<uint8_t>& b, int section, const std::string& value)
+{
+    if (b.size() < 4)
+        return {};
+    std::vector<uint8_t> out(b.begin(), b.begin() + 4);
+    const uint8_t* p = b.data() + 4;
+    const uint8_t* end = b.data() + b.size();
+    int at = 0;
+    bool replaced = false;
+    while (p < end) {
+        size_t len = ValueLength(p, end);
+        if (!len || p + len > end) {
+            out.insert(out.end(), p, end);  // the end mark
+            break;
+        }
+        uint8_t tag = *p & 0x3F;
+        if (*p == 0x06)
+            ++at;  // (the next routine's values)
+        if ((tag == 4 || tag == 5) && at == section && !replaced) {
+            out.push_back(*p);
+            out.insert(out.end(), value.begin(), value.end());
+            out.push_back(0);
+            replaced = true;
+        } else {
+            out.insert(out.end(), p, p + len);
+        }
+        p += len;
+    }
+    if (!replaced)
+        return {};
+    uint32_t header;
+    memcpy(&header, b.data(), 4);
+    header = (header & 0xFF000000) | (uint32_t(out.size()) & 0xFFFFFF);
+    memcpy(out.data(), &header, 4);
+    return out;
+}
+
 bool ParseScript(uint32_t offset, ScriptInfo& out) { return ParseScriptIn(g_gms, offset, out); }
 
 bool ParseScriptIn(const std::vector<uint8_t>& gms, uint32_t offset, ScriptInfo& out)

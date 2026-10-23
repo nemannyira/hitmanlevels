@@ -19,6 +19,15 @@ namespace h2::editor {
 // engine::SceneMapModel provider).
 std::vector<engine::SceneMapModel> MapModelsFor(const std::string& scene);
 
+// The icon the level's mission gives one of its objects on the map, as the
+// game's missions mark theirs ("" none): "Icon_Target" for a character to kill
+// or knock out, "Icon_Exit" for the exit's point. `name`: its name (the last
+// part of a goal's path).
+std::string MissionMapIcon(const std::string& name);
+// The map's own characters the level's mission makes targets, with their icon
+// (the engine::SceneMapIcon provider; the level's characters: MissionMapIcon).
+std::vector<engine::SceneMapIcon> MapIconsFor(const std::string& scene);
+
 // After the level is applied: each of them onto the floor of its object (shown);
 // when it is reverted: hidden.
 void PlaceMapModels();

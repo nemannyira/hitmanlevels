@@ -79,6 +79,18 @@ std::vector<PlanModel> PlanModels()
 // the plan models put onto the map's floors (the scene loaded last)
 std::vector<std::string> g_placed;
 
+// the last part of a goal's path (an object's name; "Crate#2": "Crate")
+std::string NameOf(const std::string& path)
+{
+    std::string name = path.substr(path.rfind('/') + 1);
+    return name.substr(0, name.find('#'));
+}
+
+bool IsTargetGoal(const MissionObjective& o)
+{
+    return o.goal == MissionObjective::Kill || o.goal == MissionObjective::KnockOut;
+}
+
 // a node and its parents (the scene's root last)
 std::vector<engine::ZBaseGeom*> Ancestors(engine::ZBaseGeom* node)
 {
@@ -120,6 +132,34 @@ std::vector<engine::SceneMapModel> MapModelsFor(const std::string& scene)
             m.mat[row * 3 + 1] *= kFlatten;  // (rows: the model's axes in the world; y is up)
         m.pos[1] = (m.pos[1] - ground) * kFlatten;
         out.push_back(m);
+    }
+    return out;
+}
+
+std::string MissionMapIcon(const std::string& name)
+{
+    const MissionDoc& m = CurrentLevel().mission;
+    if (name.empty())
+        return "";
+    for (const MissionObjective& o : m.objectives)
+        if (IsTargetGoal(o) && NameOf(o.target) == name)
+            return "Icon_Target";
+    return !m.exitPath.empty() && NameOf(m.exitPath) == name ? "Icon_Exit" : "";
+}
+
+std::vector<engine::SceneMapIcon> MapIconsFor(const std::string& scene)
+{
+    std::vector<engine::SceneMapIcon> out;
+    if (!LevelIsFor(scene))
+        return out;
+    const LevelDocument& L = CurrentLevel();
+    for (const MissionObjective& o : L.mission.objectives) {
+        if (!IsTargetGoal(o) || o.target.empty())
+            continue;
+        std::string name = NameOf(o.target);
+        bool own = std::any_of(L.npcs.begin(), L.npcs.end(), [&](const LevelNpc& n) { return n.id == name; });
+        if (!own)  // (the level's characters get theirs as they are made: NpcsFor)
+            out.push_back({o.target, "Icon_Target"});
     }
     return out;
 }

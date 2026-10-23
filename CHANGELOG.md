@@ -25,6 +25,8 @@ For those who work on the editor (docs/debugging.md, Tests):
   *The level's models on the map*).
 * *Empty map*: the characters taken out are off the game's map too (they were
   still drawn there at their old places).
+* The game's map marks the level's mission: its targets (the map's own
+  characters and the level's) as targets, its exit's point as an exit.
 
 Not yet run in the game.
 

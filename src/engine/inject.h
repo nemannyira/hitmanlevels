@@ -35,6 +35,9 @@ struct SceneNpc {
     // bodies, named <importName>_HMas / _Nude (0: the template's kept).
     uint32_t outfitMesh = 0, nudeMesh = 0;
     std::string importName;
+    // Another icon on the in-game map ("Icon_Target"; "": the template's): its
+    // group's ZGEOM_MapObject data (the game's characters' icons are there).
+    std::string mapIcon;
 };
 
 // A new list of the scene (a route of a character's own): a copy of a list
@@ -137,6 +140,16 @@ struct SceneMapModel {
     float pos[3] = {};
 };
 void SetSceneMapModelProvider(std::function<std::vector<SceneMapModel>(const std::string& scene)> provider);
+
+// Another icon on the in-game map for one of the scene's own characters (a
+// level's mission target: "Icon_Target"), made with the map: its group's
+// ZGEOM_MapObject data with that icon. `object`: the character's path as the
+// editor names it (or its group's).
+struct SceneMapIcon {
+    std::string object;
+    std::string icon;
+};
+void SetSceneMapIconProvider(std::function<std::vector<SceneMapIcon>(const std::string& scene)> provider);
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);
 // The record made for a copy of that name in the scene loaded last (-1: none).
 int SceneCopyRecord(const std::string& name);

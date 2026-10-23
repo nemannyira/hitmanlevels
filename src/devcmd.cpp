@@ -744,6 +744,16 @@ int DevMapIcons(lua_State* L)
     return 1;
 }
 
+// h2.dev_mapicon(path) -> the object's icon on the in-game map, its own or its group's (a character's):
+// "<icon> shown" / "<icon> off" ("none": it has no map routine)
+int DevMapIcon(lua_State* L)
+{
+    engine::ZGEOM* owner = engine::MapIconOwner(editor::Resolve(luaL_checkstring(L, 1)));
+    std::string out = owner ? engine::MapIconName(owner) + (engine::MapIconShown(owner) == 1 ? " shown" : " off") : "none";
+    lua_pushstring(L, out.c_str());
+    return 1;
+}
+
 // h2.dev_record(path) -> its record in the scene loaded last (-1: made while playing), "file" /
 // "copy" (a copy of the level made with the map) / "added" (the level's characters, lists, ...)
 int DevRecord(lua_State* L)
@@ -1146,6 +1156,7 @@ void InstallDevCommands()
     script::Register("dev_used", DevUsed);
     script::Register("dev_record", DevRecord);
     script::Register("dev_mapicons", DevMapIcons);
+    script::Register("dev_mapicon", DevMapIcon);
     script::Register("dev_copyposdir", DevCopyPosDir);
     script::Register("dev_setting", DevSetting);
     script::Register("dev_recordpaths", DevRecordPaths);

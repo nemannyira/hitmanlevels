@@ -18,6 +18,7 @@
 #include "../scene.h"
 #include "freecam.h"
 #include "history.h"
+#include "ingame_map.h"
 #include "level.h"
 #include "mission.h"
 #include "model.h"
@@ -267,10 +268,12 @@ void DrawInspector()
                 ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", renameError.c_str());
             // its icon on the in-game map (M): made with the map
             const auto& icons = engine::MapIconNames();
-            std::string shown = spawned->mapIcon.empty() ? "none" : spawned->mapIcon.substr(5);  // ("Icon_")
+            std::string mission = MissionMapIcon(spawned->id);  // (the exit's, when it has none of its own)
+            std::string none = mission.empty() ? "none" : "the mission's (" + mission.substr(5) + ")";
+            std::string shown = spawned->mapIcon.empty() ? none : spawned->mapIcon.substr(5);  // ("Icon_")
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
             if (ImGui::BeginCombo("On the map (M)", shown.c_str())) {
-                if (ImGui::Selectable("none", spawned->mapIcon.empty()))
+                if (ImGui::Selectable(none.c_str(), spawned->mapIcon.empty()))
                     SetPointMapIcon(geom, "");
                 for (const std::string& icon : icons)
                     if (ImGui::Selectable(icon.substr(5).c_str(), spawned->mapIcon == icon))

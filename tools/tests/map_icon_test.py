@@ -1,11 +1,14 @@
-"""A level point's icon on the in-game map (engine/inject.h SceneCopy::mapIcon):
-on C1-1 a point near Hitman's start gets "Exit"; the level saved and the map
-loaded again, its icon record ("<point>_MapIcon", a copy of one of the map's
-own icon records) is made with the map, and the map opened with M draws it
-on the floor it shows (Outside: Hitman stands there), with the map's own
-icons; a saved game keeps it. Without an icon none is made. Uses
-Mods/_MapIconTest and save slot 9 (removed / overwritten: back up the saves
-first); a running game with dev commands.
+"""Icons of a level on the in-game map (engine/inject.h SceneCopy::mapIcon,
+SceneNpc::mapIcon, SceneMapIcon): on C1-1 a point near Hitman's start gets
+"Exit"; the level saved and the map loaded again, its icon record
+("<point>_MapIcon", a copy of one of the map's own icon records) is made with
+the map, and the map opened with M draws it on the floor it shows (Outside:
+Hitman stands there), with the map's own icons; a saved game keeps it. A
+point without an icon gets none, unless it is the mission's exit (Exit); the
+mission's targets, one of the map's guards and a character the level places,
+are marked as targets (their groups' map routines). Uses Mods/_MapIconTest
+and save slot 9 (removed / overwritten: back up the saves first); a running
+game with dev commands.
 
   python tools/tests/map_icon_test.py
 """
@@ -23,6 +26,8 @@ FOLDER = os.path.join(dev.GAME, "Mods", LEVEL)
 LOG = os.path.join(dev.GAME, "H2Fix.log")
 SLOT = 9
 DIK_M = 0x32
+GUARD = 2350  # C1-1's BodyguardMafia_Bedroom_00
+GUARD_LUA = 'local g for _, n in ipairs(h2.npcs()) do if n.record == %d then g = n.object end end ' % GUARD
 results = []
 
 
@@ -86,7 +91,13 @@ try:
     at = lua('local x, y, z = h2.player():pos() return string.format("%.0f, %.0f, %.0f", x + 300, y, z)')
     point = lua('return h2.dev_edit("point", %s)' % at)
     other = lua('return h2.dev_edit("point", %s)' % at)  # (no icon)
+    exit_point = lua('return h2.dev_edit("point", %s)' % at)  # (no icon of its own: the mission's exit)
     lua('return h2.dev_level("mapicon", [[%s|Icon_Exit]])' % point)
+    lua('return h2.dev_level("exit", [[%s]])' % exit_point)
+    guard = lua(GUARD_LUA + 'return g:path()')
+    lua('return h2.dev_level("target", [[%s]])' % guard)
+    placed = lua('return h2.dev_place_npc(%d, %s)' % (GUARD, at))
+    lua('return h2.dev_level("target", h2.find("%s"):path())' % placed)
     try:
         lua('return h2.dev_level("mapicon", [[%s|Icon_Nonsense]])' % other)
         check("an unknown icon refused", False)
@@ -107,6 +118,16 @@ try:
     check("the icon made with the map", rec == "copy", rec)
     check("none for the point without an icon",
           lua('return tostring(h2.find("%s_MapIcon") == nil)' % other_name) == "true")
+    exit_icon = lua('return h2.dev_mapicon("%s_MapIcon")' % exit_point.rsplit("/", 1)[-1])
+    check("the mission's exit: Exit", exit_icon == "Icon_Exit shown", exit_icon)
+    target = lua(GUARD_LUA + 'return h2.dev_mapicon(g:path())')
+    check("the map's guard to kill: Target", target == "Icon_Target shown", target)
+    target = lua('return h2.dev_mapicon("%s")' % placed)
+    check("the placed character to kill: Target", target == "Icon_Target shown", target)
+    other_guard = lua('for _, n in ipairs(h2.npcs()) do if n.record ~= %d and n.object then '
+                      'local i = h2.dev_mapicon(n.object:path()) '
+                      'if i ~= "none" and i:sub(1, 11) ~= "Icon_Target" then return i end end end return "none"' % GUARD)
+    check("the others keep their own (not all targets)", other_guard != "none", other_guard)
     routine = lua('return h2.dev_routine(h2.find("%s_MapIcon"):path(), "MapObject")' % name)
     check("its ZGEOM_MapObject routine", routine != "none", routine[:60])
     drawn = map_icons()

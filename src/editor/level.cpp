@@ -536,7 +536,7 @@ std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
             engine::SceneCopy c;
             c.name = s.id;
             c.point = true;
-            c.mapIcon = s.mapIcon;
+            c.mapIcon = s.mapIcon.empty() ? MissionMapIcon(s.id) : s.mapIcon;  // (its own, else the exit's)
             memcpy(c.mat, s.transform.mat, sizeof(c.mat));
             memcpy(c.pos, s.transform.pos, sizeof(c.pos));
             out.push_back(c);
@@ -3078,6 +3078,7 @@ std::vector<engine::SceneNpc> NpcsFor(const std::string& scene)
         engine::SceneNpc s;
         s.name = n.id;
         s.record = n.record;
+        s.mapIcon = MissionMapIcon(n.id);  // (a target of the mission's)
         memcpy(s.mat, n.transform.mat, sizeof(s.mat));
         memcpy(s.pos, n.transform.pos, sizeof(s.pos));
         if (n.importMesh) {
@@ -3660,6 +3661,7 @@ void InstallLevelPanel()
     engine::SetSceneZoneProvider(ZonesFor);
     engine::SetSceneCopyProvider(CopiesFor);
     engine::SetSceneMapModelProvider(MapModelsFor);
+    engine::SetSceneMapIconProvider(MapIconsFor);
     engine::SetSceneScriptEditProvider(ScriptEditsFor);
     engine::SetShapeProvider([](const std::string& scene) {
         return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene) ? VehicleShapes(g_level.vehicles)

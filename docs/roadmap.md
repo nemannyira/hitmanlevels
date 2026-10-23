@@ -374,6 +374,13 @@ cheats.
   0x400), not hidden ones (0x800), so an empty map's characters (their
   icons are on their groups' records) and a blank map's fixed icons are taken
   off it so, and shown again when the level is reverted.
+* The mission's icons, made with the map as the game's missions have theirs:
+  a character to kill or knock out gets `Icon_Target` (its group's
+  ZGEOM_MapObject data with that icon: the map's characters' groups by their
+  paths, SceneMapIcon; the level's characters as they are made,
+  SceneNpc::mapIcon), the exit's point `Icon_Exit` unless it has an icon of
+  its own. `h2.dev_mapicon(path)`: an object's icon and whether it is on the
+  map.
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

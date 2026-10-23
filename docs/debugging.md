@@ -90,7 +90,8 @@ frames can be compared (images, state).
   just made by Duplicate is selected).
 * `map_models_test.py`: the level's models on the in-game map, on C1-1 and on
   a map without buildings (screenshots of the open map: dumps/shots).
-* `map_icon_test.py`: a point's icon on the in-game map; `h2.dev_mapicons()`
+* `map_icon_test.py`: a point's icon and the mission's (targets, exit) on the
+  in-game map; `h2.dev_mapicon(path)`: an object's icon; `h2.dev_mapicons()`
   is what the map draws (after M: the floor, then an icon and its object a
   line).
 

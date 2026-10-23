@@ -56,6 +56,7 @@ std::function<std::vector<SceneZone>(const std::string&)> g_zoneProvider;
 std::map<std::string, int> g_zones;  // name -> its record (scene loaded last)
 std::function<std::vector<SceneCopy>(const std::string&)> g_copyProvider;
 std::function<std::vector<SceneMapModel>(const std::string&)> g_mapModelProvider;
+std::function<std::vector<SceneMapIcon>(const std::string&)> g_mapIconProvider;
 std::map<std::string, int> g_copies;  // name -> its record (scene loaded last; map models too)
 std::set<int> g_copyRecords;
 int g_fileRecords = 0;  // the records the scene file had (the scene loaded last)
@@ -203,6 +204,11 @@ void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string
 void SetSceneMapModelProvider(std::function<std::vector<SceneMapModel>(const std::string& scene)> provider)
 {
     g_mapModelProvider = std::move(provider);
+}
+
+void SetSceneMapIconProvider(std::function<std::vector<SceneMapIcon>(const std::string& scene)> provider)
+{
+    g_mapIconProvider = std::move(provider);
 }
 
 int SceneCopyRecord(const std::string& name)
@@ -418,8 +424,9 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     std::vector<SceneCopy> copies = g_copyProvider ? g_copyProvider(scene) : std::vector<SceneCopy>{};
     std::vector<SceneMapModel> mapModels =
         g_mapModelProvider ? g_mapModelProvider(scene) : std::vector<SceneMapModel>{};
+    std::vector<SceneMapIcon> mapIcons = g_mapIconProvider ? g_mapIconProvider(scene) : std::vector<SceneMapIcon>{};
     if (npcs.empty() && lists.empty() && cars.empty() && zones.empty() && copies.empty() && edits.empty() &&
-        mapModels.empty())
+        mapModels.empty() && mapIcons.empty())
         return false;
     std::vector<SceneRecord> recs = ParseSceneRecords(gms, buf);
     uint32_t list = U32(gms, 0), count = U32(gms, list);
@@ -449,6 +456,19 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     int added = 0;
     auto copyBlock = [&](uint32_t at) -> uint32_t {
         std::vector<uint8_t> b = Block(gms, at);
+        if (b.empty())
+            return 0;
+        Put(b, 0, U32(b, 0) & 0x7FFFFFFF);  // not remapped yet
+        return Append(gms, b);
+    };
+    // a record's data with another icon on the in-game map (its routine a ZGEOM_MapObject only: the
+    // game's characters' groups) -> the new block (0: not such a record, not an icon of the legend)
+    const auto& iconNames = MapIconNames();
+    auto withMapIcon = [&](int r, const std::string& icon) -> uint32_t {
+        if (r < 0 || uint32_t(r) >= count || !recs[r].data || !OnlyRoutine(gms, recs[r], "ZGEOM_MapObject") ||
+            std::find(iconNames.begin(), iconNames.end(), icon) == iconNames.end())
+            return 0;
+        std::vector<uint8_t> b = WithRoutineString(Block(gms, recs[r].data), 1, icon);
         if (b.empty())
             return 0;
         Put(b, 0, U32(b, 0) & 0x7FFFFFFF);  // not remapped yet
@@ -550,6 +570,12 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         Put(g, 0x00, AppendString(buf, npc.name + "_Group"));
         Put(g, 0x04, Append(gms, npc.mat, sizeof(npc.mat)));
         Put(g, 0x08, Append(gms, npc.pos, sizeof(npc.pos)));
+        if (!npc.mapIcon.empty()) {
+            if (uint32_t icon = withMapIcon(actor.parent, npc.mapIcon))
+                Put(g, 0x20, icon);
+            else
+                Log("scene npcs: %s: no icon of its own on the map (its template's group has none)", npc.name.c_str());
+        }
         Put(a, 0x00, AppendString(buf, npc.name));
         if (npc.mesh)
             Put(a, 0x0C, npc.mesh);
@@ -958,13 +984,12 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         rootFlags = 0;
         inGroup = open > 0;
     }
-    // the scene's characters' new settings: in their records' script blocks
-    int edited = 0;
-    if (!edits.empty()) {
-        // a record's path as the editor names objects ("ROOT/<group>/<name>", "#k" for the k-th
-        // child of that name), and the level's own records by their names
+    // the scene's records by the editor's names for them: a record's path as the editor names objects
+    // ("ROOT/<group>/<name>", "#k" for the k-th child of that name), and the level's own records by
+    // their names (for the characters' settings and icons below)
+    std::map<std::string, int> byPath, byName;
+    if (!edits.empty() || !mapIcons.empty()) {
         std::vector<std::string> paths(count);
-        std::map<std::string, int> byPath, byName;
         std::map<std::pair<int, std::string>, int> seen;
         for (uint32_t i = 0; i < count; ++i) {
             int k = seen[{recs[i].parent, recs[i].name}]++;
@@ -981,20 +1006,41 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             byName[name] = index;
         for (auto& [name, index] : g_made)
             byName[name] = index;
-        auto refTo = [&](const std::string& path) -> uint32_t {
-            if (path.empty())
-                return 0;
-            auto it = byPath.find(path);
-            int index = it != byPath.end() ? it->second : -1;
-            if (index < 0) {
-                std::string name = path.substr(path.rfind('/') + 1);
-                auto n = byName.find(name);  // (a level's object: '#' may be part of its name)
-                if (n == byName.end())
-                    n = byName.find(name.substr(0, name.find('#')));
-                index = n != byName.end() ? n->second : -1;
-            }
-            return index >= 0 ? 0x80000000u | uint32_t(index + 1) : 0;
-        };
+    }
+    auto refTo = [&](const std::string& path) -> uint32_t {
+        if (path.empty())
+            return 0;
+        auto it = byPath.find(path);
+        int index = it != byPath.end() ? it->second : -1;
+        if (index < 0) {
+            std::string name = path.substr(path.rfind('/') + 1);
+            auto n = byName.find(name);  // (a level's object: '#' may be part of its name)
+            if (n == byName.end())
+                n = byName.find(name.substr(0, name.find('#')));
+            index = n != byName.end() ? n->second : -1;
+        }
+        return index >= 0 ? 0x80000000u | uint32_t(index + 1) : 0;
+    };
+    // the scene's characters' icons on the in-game map: in their groups' data
+    int iconsEdited = 0;
+    for (const SceneMapIcon& m : mapIcons) {
+        int r = int(refTo(m.object) & 0x7FFFFFFF) - 1;
+        if (r >= 0 && uint32_t(r) < count && recs[r].classId == kActorClass)
+            r = recs[r].parent;  // (a character's icon is on its group)
+        uint32_t icon = r >= 0 && uint32_t(r) < count ? withMapIcon(r, m.icon) : 0;
+        if (!icon) {
+            Log("scene map: %s: no icon of its own on the map (not one of the scene's characters with one)",
+                m.object.c_str());
+            continue;
+        }
+        Put(gms, recordAt(r) + 0x20, icon);
+        ++iconsEdited;
+    }
+    if (iconsEdited)
+        Log("scene map: %d characters with another icon on the map", iconsEdited);
+    // the scene's characters' new settings: in their records' script blocks
+    int edited = 0;
+    if (!edits.empty()) {
         for (const SceneScriptEdit& e : edits) {
             ScriptInfo info;
             if (e.record < 0 || uint32_t(e.record) >= count || !recs[e.record].script ||
@@ -1041,7 +1087,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             Log("scene scripts: settings of %d characters made with the scene", edited);
     }
     if (!added)
-        return edited > 0;
+        return edited > 0 || iconsEdited > 0;
     if (carsAdded)
         Log("scene cars: %d vehicles (ZCar) with their splines", carsAdded);
     if (copiesAdded)

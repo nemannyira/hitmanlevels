@@ -16,7 +16,8 @@ constexpr uintptr_t kFloorOf = 0x540C50;      // window->(ZGEOM*) -> floor entry
 constexpr uintptr_t kDefaultFloor = 0x53EDA0; // window->() -> floor entry
 constexpr int kGroup_AddChild = 0x26C / 4;    // group->(ZGEOM* child, int, int)
 constexpr size_t kRoutine_Owner = 0x6E;       // a routine's object (ZEventBase)
-constexpr size_t kMapObject_Shown = 0x76;     // ZGEOM_MapObject: its icon in the map's set (bool)
+constexpr size_t kMapObject_Icon = 0x72;      // ZGEOM_MapObject: the legend's icon's name (char*)
+constexpr size_t kMapObject_Shown = 0x76;     //   its icon in the map's set (bool)
 constexpr size_t kMap_IconDraw = 0x1AE;       // CMapIconDraw*: +0x18 count, +0x1C {icon, object} refs
 constexpr size_t kMap_ShownFloor = 0x2F3;     // the floor entry shown last
 constexpr size_t kFloor_Group = 0x04;         // a floor entry: its group's ref,
@@ -137,6 +138,15 @@ ZGEOM* MapIconOwner(ZGEOM* geom)
     ZBaseGeom* parent = Usable(geom) ? geom->node->parent : nullptr;
     ZGEOM* group = parent && IsReadable(parent, sizeof(ZBaseGeom)) ? parent->geom : nullptr;
     return MapIconShown(group) >= 0 ? group : nullptr;
+}
+
+std::string MapIconName(ZGEOM* geom)
+{
+    uint8_t* routine = Usable(geom) ? GeomRoutine(geom, "MapObject") : nullptr;
+    const char* name = nullptr;
+    if (routine && IsReadable(routine + kMapObject_Icon, 4))
+        memcpy(&name, routine + kMapObject_Icon, 4);
+    return name ? SafeString(name) : std::string();
 }
 
 bool ShowMapIcon(ZGEOM* geom, bool on)

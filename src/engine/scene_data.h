@@ -48,6 +48,10 @@ std::vector<uint8_t> RawBlock(uint32_t offset);
 std::vector<size_t> BlockRefOffsets(const std::vector<uint8_t>& block);
 // The block with its first string values (tag 4 / 5) replaced by `strings`.
 std::vector<uint8_t> WithStrings(const std::vector<uint8_t>& block, const std::vector<std::string>& strings);
+// The block with the first string value of one of its sections replaced (a
+// record's data: its object's own values, then each routine's, in the order of
+// its events, each after a 0x06); empty when that section has no string.
+std::vector<uint8_t> WithRoutineString(const std::vector<uint8_t>& block, int section, const std::string& value);
 
 // ---- scripts (behaviour) ----
 

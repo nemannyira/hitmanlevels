@@ -2402,6 +2402,12 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         return fail("only objects with a mesh (or groups of them) can be duplicated");
     if (InActor(source))
         return fail("parts of characters cannot be copied");
+    // a character's body (skinned records: engine::IsPlainModel) is drawn with its animations; a copy of it
+    // as a model took the renderer down (C2-1's Hitman, C6-1's RegularMaleIndian at the root)
+    std::vector<engine::ZGEOM*> models = s.group ? VisibleParts(source) : std::vector<engine::ZGEOM*>{source};
+    for (engine::ZGEOM* m : models)
+        if (!EntryOf(source) && !engine::IsPlainModel(engine::MeshOf(m)))
+            return fail("a character's body: place a character instead (NPCs tab)");
     if (const SpawnedObject* from = EntryOf(source)) {
         s.record = from->record;
         s.parts = from->parts;
@@ -2918,6 +2924,8 @@ bool LevelIsFor(const std::string& scene)
 {
     return !g_level.baseScene.empty() && SameScene(scene, g_level.baseScene);
 }
+
+engine::ZGEOM* LevelObject(const std::string& id) { return LiveSpawned(id); }
 
 bool ImportedModelOf(const std::string& sourcePath, std::string& level, uint32_t& mesh)
 {
@@ -3656,6 +3664,7 @@ void InstallLevelPanel()
     OnSceneLeaving([](const std::string&) {
         g_hiddenAtLoad.clear();
         g_hiddenAtLoadKnown = false;
+        ForgetMapModels();
     });
     overlay::AddPanel({"Level", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     overlay::AddMenu("File", FileMenu);

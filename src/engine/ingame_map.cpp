@@ -15,6 +15,8 @@ constexpr uintptr_t kHandleToPtr = 0x40CAC0;  // (ecx: handle) -> the object (th
 constexpr uintptr_t kFloorOf = 0x540C50;      // window->(ZGEOM*) -> floor entry or null
 constexpr uintptr_t kDefaultFloor = 0x53EDA0; // window->() -> floor entry
 constexpr int kGroup_AddChild = 0x26C / 4;    // group->(ZGEOM* child, int, int)
+constexpr int kGeom_GetWorld = 0x84 / 4;      // (float mat[9], float pos[3]): its world transform
+constexpr int kGeom_SetWorld = 0x80 / 4;      // (const float mat[9], const float pos[3]): set (CopyObjectPosDir)
 constexpr size_t kRoutine_Owner = 0x6E;       // a routine's object (ZEventBase)
 constexpr size_t kMapObject_Icon = 0x72;      // ZGEOM_MapObject: the legend's icon's name (char*)
 constexpr size_t kMapObject_Shown = 0x76;     //   its icon in the map's set (bool)
@@ -58,10 +60,15 @@ uint8_t* SafeDefaultFloor(void* map)
     }
 }
 
+// the child into the group, where it was in the world: the group's AddChild keeps its local transform
+// (the floors of C2-1's and C7-1's mansion are moved and turned), so its world one is set again after
 bool SafeAddChild(ZGEOM* group, ZGEOM* child)
 {
     __try {
+        float mat[9], pos[3];
+        VFunc<void(__thiscall*)(ZGEOM*, float*, float*)>(child, kGeom_GetWorld)(child, mat, pos);
         VFunc<void(__thiscall*)(ZGEOM*, ZGEOM*, int, int)>(group, kGroup_AddChild)(group, child, 0, 1);
+        VFunc<void(__thiscall*)(ZGEOM*, const float*, const float*)>(child, kGeom_SetWorld)(child, mat, pos);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;

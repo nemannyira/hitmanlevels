@@ -10,6 +10,7 @@
 
 #include "../display.h"
 #include "../engine/geoms.h"
+#include "../engine/imports.h"
 #include "../engine/inject.h"
 #include "../engine/spawn.h"
 #include "../fov.h"
@@ -219,7 +220,7 @@ void DrawInspector()
     if (ImGui::Button("Fly camera here (F)")) {
         FlyCameraTo(t.pos);
     }
-    ImGui::BeginDisabled(actor || !engine::MeshOf(geom));
+    ImGui::BeginDisabled(actor || InActor(geom) || !engine::IsPlainModel(engine::MeshOf(geom)));  // (a body: NPCs tab)
     if (ImGui::Button("Duplicate (Ctrl+D)"))
         DuplicateSelection();
     ImGui::EndDisabled();

@@ -54,7 +54,9 @@ bool ShowMapIcon(ZGEOM* geom, bool on);
 // A model put onto a floor of the map: a child of the floor's group, by the
 // group's own AddChild (ZGROUP vfunc 0x26C (child, 0, 1) -> 0x43E6C0: out of its
 // parent, into the group), as the window puts its icon drawer onto the floor it
-// shows. True when it is there.
+// shows, where it was in the world (geom vfunc 0x84 / 0x80: AddChild keeps the
+// local transform, and C2-1's and C7-1's mansion floors are moved and turned).
+// True when it is there.
 bool AddToMapFloor(ZGEOM* floor, ZGEOM* model);
 
 // What the map draws (it fills this when it shows a floor, 0x540920): that

@@ -29,9 +29,12 @@ std::string MissionMapIcon(const std::string& name);
 std::vector<engine::SceneMapIcon> MapIconsFor(const std::string& scene);
 
 // After the level is applied: each of them, and the level's points' icons, onto
-// the floor of its place (shown); when it is reverted: hidden, off the map.
+// the floor of its place (shown; a copy made while playing gets its models made
+// while playing there too); when it is reverted: hidden, off the map (those made
+// while playing destroyed); the scene left: forgotten (gone with it).
 void PlaceMapModels();
 void HideMapModels();
+void ForgetMapModels();
 
 // The map's own objects of the loaded scene: its group (the window, the legend's
 // icons, the floors) and, in it, the floors' contents (plans, texts, fixed icons).

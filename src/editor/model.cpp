@@ -356,7 +356,8 @@ bool InActor(engine::ZGEOM* geom)
     for (int depth = 0; node && depth < 64; ++depth) {
         if (!engine::IsReadable(node, sizeof(*node)))
             return false;
-        if (node->geom && IsLive(node->geom) && engine::IsA(node->geom, "ZActor"))
+        if (node->geom && IsLive(node->geom) &&
+            (engine::IsA(node->geom, "ZActor") || engine::IsA(node->geom, "ZPlayer")))  // (Hitman: ZHITMAN2)
             return true;
         node = node->parent;
     }

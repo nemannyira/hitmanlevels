@@ -32,16 +32,32 @@ notes = []
 # within 25 m -> its path
 PLAIN_MODEL = r"""
 local x, y, z = h2.player():pos()
-local best, bestd
+local found = {}
 for _, o in ipairs(h2.objects("ZSTDOBJ")) do
-  if o:mesh() ~= 0 and not o:isa("ZActor") and not o:isa("ZItem") and not o:hidden() and #o:children() == 0 then
+  if o:mesh() ~= 0 and not o:isa("ZActor") and not o:isa("ZItem") and not o:hidden() and #o:children() == 0
+     and not o:path():find("HeroSetup") and not o:path():find("__MAP.zip") then
     local ox, oy, oz = o:pos()
     local d = (ox - x) ^ 2 + (oy - y) ^ 2 + (oz - z) ^ 2
-    if d < 2500 * 2500 and (not bestd or d < bestd) then best, bestd = o, d end
+    if d < 2500 * 2500 then found[#found + 1] = {d, o:path()} end
   end
 end
-return best and best:path() or "none"
+table.sort(found, function(a, b) return a[1] < b[1] end)
+local out = {}
+for i = 1, math.min(#found, 10) do out[i] = found[i][2] end
+return table.concat(out, "\n")
 """
+
+
+def copy_near(dx, dz):
+    """a copy of the nearest of the map's models the editor copies (not a character's body) beside it
+    -> (its name, its place) or (None, None)"""
+    for source in [p for p in lua(PLAIN_MODEL).splitlines() if p]:
+        x, y, z = (float(v) for v in lua('local x, y, z = h2.find([[%s]]):pos() return x .. " " .. y .. " " .. z'
+                                         % source).split())
+        out = dev.run('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (source, x + dx, y, z + dz), 30)
+        if not out.startswith("error") and "timeout" not in out:
+            return out.rsplit("/", 1)[-1], [x + dx, y, z + dz]
+    return None, None
 
 # an armed guard of the map and another weapon template -> "record|its weapon|another" or "none"
 ARMED_GUARD = r"""
@@ -128,14 +144,9 @@ def run_map(scene):
     print("\n== " + scene)
     load(scene)
     lua('return h2.dev_level("new", "%s")' % LEVEL)
-    source = lua(PLAIN_MODEL)
-    copy = at = None
-    if source == "none":
+    copy, at = copy_near(300.0, 100.0)
+    if not copy:
         note("%s: no plain model within 25 m of Hitman" % scene)
-    else:
-        sx, sy, sz = place(source)
-        at = [sx + 300.0, sy, sz + 100.0]
-        copy = lua('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (source, *at)).rsplit("/", 1)[-1]
     point = point_at = None
     px, py, pz = (float(v) for v in lua('local x, y, z = h2.player():pos() return x .. " " .. y .. " " .. z').split())
     point_at = [px + 150.0, py, pz]

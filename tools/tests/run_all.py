@@ -45,6 +45,7 @@ TESTS = [
     ("gameway3", ["gameway3_test.py"], 600, False),
     ("map_icon", ["map_icon_test.py"], 600, False),
     ("map_models", ["map_models_test.py"], 900, False),
+    ("map_maps", ["map_maps_test.py"], 2400, False),
     ("killswitch", ["killswitch_test.py"], 300, False),
     ("profile", ["profile_test.py"], 600, False),
     ("gui", ["gui_test.py"], 600, False),

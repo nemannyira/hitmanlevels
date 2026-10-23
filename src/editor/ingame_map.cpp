@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
 
 #include "../engine/imports.h"
 #include "../engine/ingame_map.h"
 #include "../engine/scene_data.h"
+#include "../engine/spawn.h"
 #include "../log.h"
 #include "level.h"
 #include "model.h"
@@ -21,10 +23,14 @@ constexpr float kFlatten = 0.02f;
 constexpr int kMaxDepth = 64;  // (a walk up the scene's tree)
 constexpr uint32_t kRoomClass = 0x100021;  // ZROOM
 
-// A model the map draws and the level object it stands for (the map draws it on that object's floor)
+constexpr uint32_t kPlanFlags = 0x20000;  // a floor plan model's node flags (the game's maps' own)
+
+// A model the map draws for one of the level's objects (on the floor of that object's place)
 struct PlanModel {
-    engine::SceneMapModel model;  // its place in the world (not flattened)
+    engine::SceneMapModel model;  // its place in the world (not flattened); its record / mesh, made with the map
     float at[3] = {};             // where its object stands (the floor is that place's)
+    std::string object;           // a copy made while playing (no record): the level object, drawn
+                                  // as it is (its models made while playing too)
 };
 
 void Place(engine::SceneMapModel& m, const Transform& t)
@@ -34,8 +40,8 @@ void Place(engine::SceneMapModel& m, const Transform& t)
 }
 
 // The level's models the map draws: a copy of one of the map's models, each model of a copy of a
-// group, a model of another level (a blank map's floor too); not items, points, cars (they move) or
-// hidden ones, nor copies made before their records were kept (made with the map from the next save)
+// group, a model of another level (a blank map's floor too), a copy made while playing (its object);
+// not items, points, cars (they move) or hidden ones
 std::vector<PlanModel> PlanModels()
 {
     std::vector<PlanModel> out;
@@ -65,16 +71,38 @@ std::vector<PlanModel> PlanModels()
         }
         std::string level = s.importLevel;
         uint32_t mesh = s.importMesh;
-        if (s.record >= 0 && !mesh)
+        bool imported = mesh || ImportedModelOf(s.sourcePath, level, mesh);
+        if (s.record >= 0 && !imported)
             p.model.record = s.record;
-        else if (mesh || ImportedModelOf(s.sourcePath, level, mesh))
+        else if (imported)
             p.model.mesh = engine::ImportedMesh(level, mesh);
-        if (p.model.record < 0 && !p.model.mesh)
+        else
+            p.object = s.id;  // (its source has no record the editor knows: a copy made while playing)
+        if (p.model.record < 0 && !p.model.mesh && p.object.empty())
             continue;  // (another level's model the map is loaded without)
         Place(p.model, s.transform);
         out.push_back(p);
     }
     return out;
+}
+
+// the lowest of the models' places: the map's floor plans' height
+float Ground(const std::vector<PlanModel>& plan)
+{
+    float ground = plan.empty() ? 0.0f : plan.front().model.pos[1];
+    for (const PlanModel& p : plan)
+        ground = std::min(ground, p.model.pos[1]);
+    return ground;
+}
+
+// a world place flattened onto the floor plans (rows: the model's axes in the world; y is up)
+Transform Flatten(const Transform& world, float ground)
+{
+    Transform t = world;
+    for (int row = 0; row < 3; ++row)
+        t.mat[row * 3 + 1] *= kFlatten;
+    t.pos[1] = (t.pos[1] - ground) * kFlatten;
+    return t;
 }
 
 // what the level put onto the map's floors (the scene loaded last): plan models, points' icons
@@ -83,6 +111,8 @@ struct Placed {
     bool icon = false;
 };
 std::vector<Placed> g_placed;
+// plan models made while playing (of copies made while playing), by name: in their floors' groups
+std::map<std::string, engine::ZGEOM*> g_madeWhilePlaying;
 
 // the floor the map shows a place on: the floor of the room the editor puts objects there into
 // (RoomAt: the smallest of the map's models around it), as the map finds an object's (0x540C50),
@@ -132,16 +162,15 @@ std::vector<engine::SceneMapModel> MapModelsFor(const std::string& scene)
     if (!LevelIsFor(scene))
         return out;
     std::vector<PlanModel> plan = PlanModels();
-    if (plan.empty())
-        return out;
-    float ground = plan.front().model.pos[1];
-    for (const PlanModel& p : plan)
-        ground = std::min(ground, p.model.pos[1]);
+    float ground = Ground(plan);
     for (const PlanModel& p : plan) {
+        if (!p.object.empty())
+            continue;  // (made while playing)
+        Transform world;
+        memcpy(world.mat, p.model.mat, sizeof(world.mat));
+        memcpy(world.pos, p.model.pos, sizeof(world.pos));
         engine::SceneMapModel m = p.model;
-        for (int row = 0; row < 3; ++row)
-            m.mat[row * 3 + 1] *= kFlatten;  // (rows: the model's axes in the world; y is up)
-        m.pos[1] = (m.pos[1] - ground) * kFlatten;
+        Place(m, Flatten(world, ground));
         out.push_back(m);
     }
     return out;
@@ -179,12 +208,58 @@ std::vector<engine::SceneMapIcon> MapIconsFor(const std::string& scene)
     return out;
 }
 
+namespace {
+
+// the node flags the map's floor plan models have (one of a floor's), the game's maps' own else
+uint32_t PlanFlags(engine::ZGEOM* floor)
+{
+    for (engine::ZGEOM* m : VisibleParts(floor))
+        if (engine::IsPlainModel(engine::MeshOf(m)))
+            return m->node->flags & 0xFFFFF;
+    return kPlanFlags;
+}
+
+// a copy made while playing drawn on the map: its models made while playing too, as the loader makes a
+// floor plan model (engine::CreateObject), in the floor's group -> how many
+int MakeWhilePlaying(const PlanModel& p, engine::ZGEOM* floor, float ground)
+{
+    engine::ZGEOM* object = LevelObject(p.object);
+    if (!object || !IsLive(object))
+        return 0;
+    std::vector<engine::ZGEOM*> models =
+        engine::MeshOf(object) ? std::vector<engine::ZGEOM*>{object} : VisibleParts(object);
+    Transform frame = GetTransform(floor);
+    uint32_t flags = PlanFlags(floor);
+    int made = 0;
+    for (size_t k = 0; k < models.size(); ++k) {
+        uint32_t mesh = engine::MeshOf(models[k]);
+        if (!engine::IsPlainModel(mesh))
+            continue;  // (only models: the renderer reads it as one)
+        std::string name = p.model.name + (k ? std::to_string(k) : "");
+        if (auto it = g_madeWhilePlaying.find(name); it != g_madeWhilePlaying.end() && IsLive(it->second)) {
+            ++made;  // (made already: this map load)
+            continue;
+        }
+        Transform local = Relative(frame, Flatten(GetTransform(models[k]), ground));
+        std::string err;
+        if (engine::ZGEOM* g = engine::CreateObject(name, floor, "ZSTDOBJ", mesh, flags, local.mat, local.pos, {}, &err)) {
+            g_madeWhilePlaying[name] = g;
+            ++made;
+        } else {
+            Log("level: %s not drawn on the in-game map: %s", name.c_str(), err.c_str());
+        }
+    }
+    return made;
+}
+
+} // namespace
+
 void PlaceMapModels()
 {
     g_placed.clear();
     if (!engine::IngameMap())
         return;
-    int made = 0;
+    int made = 0, placed = 0;
     auto put = [&](const std::string& name, const float at[3], bool icon) {
         engine::ZGEOM* g = engine::RecordGeom(engine::SceneCopyRecord(name));
         if (!g || !IsLive(g))
@@ -198,14 +273,24 @@ void PlaceMapModels()
         else if (engine::MapIconShown(g) == 0)
             engine::ShowMapIcon(g, true);
         g_placed.push_back({name, icon});
+        ++placed;
     };
-    for (const PlanModel& p : PlanModels())
-        put(p.model.name, p.at, false);
+    std::vector<PlanModel> plan = PlanModels();
+    float ground = Ground(plan);
+    for (const PlanModel& p : plan) {
+        if (p.object.empty()) {
+            put(p.model.name, p.at, false);
+        } else if (engine::ZGEOM* floor = FloorAt(p.at)) {
+            int n = MakeWhilePlaying(p, floor, ground);
+            made += n;
+            placed += n;
+        }
+    }
     for (const SpawnedObject& s : CurrentLevel().spawned)  // (SceneCopy::mapIcon: its own, else the mission's)
         if (s.point && !(s.mapIcon.empty() && MissionMapIcon(s.id).empty()))
             put(s.id + "_MapIcon", s.transform.pos, true);
     if (made)
-        Log("level: %d/%d of its models and icons on the in-game map's floors", int(g_placed.size()), made);
+        Log("level: %d/%d of its models and icons on the in-game map's floors", placed, made);
 }
 
 void HideMapModels()
@@ -220,6 +305,16 @@ void HideMapModels()
             SetHidden(g, true);
     }
     g_placed.clear();
+    for (auto& [name, g] : g_madeWhilePlaying)
+        if (IsLive(g))
+            engine::DestroyGeom(g);
+    g_madeWhilePlaying.clear();
+}
+
+void ForgetMapModels()
+{
+    g_placed.clear();
+    g_madeWhilePlaying.clear();  // (gone with the scene, as the other objects in its groups)
 }
 
 IngameMapParts::IngameMapParts()

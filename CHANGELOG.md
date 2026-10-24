@@ -3,6 +3,18 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
+## 2026-10-24 (night): key backup, the Hub's client
+
+* *Level > Share > Back up my key...* / *Restore a key...*: your author key in
+  a password-locked file, so a new Windows or another PC keeps your
+  fingerprint (`h2level_pack author backup|restore` too).
+* Exported previews keep only the picture (no text or EXIF data); names and
+  titles may not hold invisible or direction-changing characters; the export
+  notes when a file mentions your Windows user name.
+* The downloader for hitmanlevels.com is ready on the client side
+  (`h2level_pack hub list|install`, docs/site_api.md): it stays off until the
+  site and its signing key exist.
+
 ## 2026-10-24 (evening): levels passed on as one file
 
 * *Level > Share > Export package*: the level as one signed file

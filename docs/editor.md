@@ -155,6 +155,13 @@ level goes to `Mods\Online\<id>` and plays like a downloaded one: its scripts
 with less memory and time, no console; *Save as a level of your own* makes an
 editable copy (with a new id: shared, it is your level).
 
+*Back up my key...* writes your key, locked with a password, to
+`Mods\Packages\author_<fingerprint>.h2key`; keep it and the password somewhere else too. *Restore a
+key...* (shown while there is no key, or with *Change...*) brings it back on a new Windows or another
+PC, so your next packages keep your fingerprint. The exported `preview.png` keeps only the picture
+(its text and EXIF data stay home); names and titles may not hold invisible or direction-changing
+characters; the export says so when a file mentions your Windows user name.
+
 ## Good to know (from playing levels through)
 
 * The game offers "Pick up" for an item only while its own point is above

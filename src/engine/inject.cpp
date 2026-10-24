@@ -204,7 +204,8 @@ uint32_t RoutineClassSize(const std::string& name)
     using GetClassInfo_t = ZClassInfo*(__fastcall*)(void* db, void* edx, const char* name, int kind);
     ZClassInfo* ci = reinterpret_cast<GetClassInfo_t>(kGetClassInfoByName)(nullptr, nullptr, name.c_str(), 1);
     uint32_t size = ci && IsReadable(&ci->objectSize, 4) ? ci->objectSize : 0;
-    if (size == 0 || size > 0x10000) {
+    // (the largest: ZLIST_CheckVisible, 0x1586E, one on every map; issue #9)
+    if (size == 0 || size > 0x100000) {
         Log("scene: routine class %s not found: counted as 0x400 bytes of the routines' arena", name.c_str());
         size = 0x400;
     }

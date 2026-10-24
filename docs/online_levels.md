@@ -300,7 +300,10 @@ version must be newer than the installed one.
    installer becomes the Hub's. `tools/tests/package_test.py` (no game: the
    RFC 8032 vectors, Python's Ed25519 both ways, hostile packages) and a
    libFuzzer target (`package_fuzz`, `-DH2_FUZZ=ON`).
-4. **The Hub**: browsing and downloading with signatures, installing.
+4. **The Hub**: browsing and downloading with signatures, installing. The client side is built
+   (2026-10-24, issue #6: `src/levelfmt/hub.h`, `h2level_pack hub list|install`, `site keygen|sign`;
+   the site's contract in [site_api.md](site_api.md)); the site (hitmanlevels.com) and its key are
+   to come: until a site key is built in, the Hub is off.
 5. **Accounts and uploads.**
 6. **Play records and rankings** (section 9), after the server's checks are
    designed with them.

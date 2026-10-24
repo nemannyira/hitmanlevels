@@ -2,7 +2,8 @@
 Export package (h2.dev_export, Level > Share) writes Mods\\Packages\\<level>_v1.h2lvl, h2level_pack
 installs it into Mods\\Online\\<id>, and the game loads it as a downloaded level (strictly checked,
 its script untrusted). The author files in %LOCALAPPDATA%\\H2LevelEditor are put aside for the test
-and back after. Starts the game itself (tools/tests/run_all.py's start).
+and back after. Starts the game itself (tools/tests/run_all.py's start). Run it from a shell outside any
+sandbox: the author key it makes in %LOCALAPPDATA% must be the one the game (started through Steam) sees.
 
   python tools/tests/package_game_test.py
 """

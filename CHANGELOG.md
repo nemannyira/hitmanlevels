@@ -14,6 +14,11 @@ game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
   package of an installed level and about older versions, refuses changed or
   odd packages. Installed levels are downloaded levels (`Mods\Online\<id>`)
   and show their author in the launcher and the File menu.
+* Very big levels could take the game down while the map loaded (or the
+  load never ended): the level's objects used up the room the game keeps
+  for the routines made while playing, such as the doors' actions. The
+  editor now gives the map room for the level's own routines (found with
+  about 1800 points shown on the map; docs/roadmap.md, Engine limits).
 
 ## 2026-10-24: big levels, downloaded levels
 

@@ -23,9 +23,8 @@ constexpr size_t kMaxScripts = 16;
 constexpr size_t kMaxVehicles = 64;
 constexpr size_t kMaxObjectives = 6;   // the laptop's lines
 constexpr size_t kMaxImports = 256;    // models of other levels
-// points shown on the in-game map: the map draws 256 icons on a floor (engine::InstallIngameMap), and a
-// level of 1800 of them on C1-1 never finished loading (the scene's routine list went round in a circle
-// in InitializeGeoms, 0x41E9F6; 1500 loaded)
+// points shown on the in-game map: the map draws 256 icons on a floor (engine::InstallIngameMap). (1800
+// of them on C1-1 overran the routines' arena once: fixed in engine/inject.cpp, RoutineArenaBytes.)
 constexpr size_t kMaxMapIcons = 256;
 constexpr size_t kMaxFileBytes = 16u << 20;  // level.json
 

@@ -186,6 +186,47 @@ bool OnlyRoutine(const std::vector<uint8_t>& gms, const SceneRecord& r, const ch
     return name < gms.size() && strncmp(reinterpret_cast<const char*>(&gms[name]), routine, gms.size() - name) == 0;
 }
 
+// The routines' arena (GeomTable's ctor 0x424150 -> 0x427270: [GMS +0x1C] + 0x46000 bytes, made before
+// the records): each routine takes align16(its class's size + 4) of it (GeomTable vf44 0x427380, the 4 its
+// handle), downwards, unchecked. The scene file's +0x1C counts its own records' routines; the 0x46000
+// are for those made while playing (a door's ZGEOM_Action at InitializeGeoms). The level's records ate
+// those, and past them a door's action was built below the arena (issue #1: ~1800 icon points on C1-1:
+// a crash in the door's routine 0x4CC4C0, or the routine list going round in a circle).
+constexpr uintptr_t kGetClassInfoByName = 0x4213F0;  // ZEngineDataBase::GetClassInfo(name, kind): `this` unused
+constexpr size_t kRoutineArenaField = 0x1C;
+
+uint32_t RoutineClassSize(const std::string& name)
+{
+    static std::map<std::string, uint32_t> sizes;
+    auto it = sizes.find(name);
+    if (it != sizes.end())
+        return it->second;
+    using GetClassInfo_t = ZClassInfo*(__fastcall*)(void* db, void* edx, const char* name, int kind);
+    ZClassInfo* ci = reinterpret_cast<GetClassInfo_t>(kGetClassInfoByName)(nullptr, nullptr, name.c_str(), 1);
+    uint32_t size = ci && IsReadable(&ci->objectSize, 4) ? ci->objectSize : 0;
+    if (size == 0 || size > 0x10000) {
+        Log("scene: routine class %s not found: counted as 0x400 bytes of the routines' arena", name.c_str());
+        size = 0x400;
+    }
+    return sizes[name] = size;
+}
+
+// what a record's routines (its events block: {count, {name offset, float}}) take of the arena
+uint32_t RoutineArenaBytes(const std::vector<uint8_t>& gms, const SceneRecord& r)
+{
+    if (!r.events || size_t(r.events) + 4 > gms.size())
+        return 0;
+    uint32_t n = U32(gms, r.events), bytes = 0;
+    for (uint32_t k = 0; k < n && size_t(r.events) + 4 + (k + 1) * 8 <= gms.size(); ++k) {
+        uint32_t name = U32(gms, r.events + 4 + k * 8);
+        if (name >= gms.size())
+            continue;
+        const char* s = reinterpret_cast<const char*>(&gms[name]);
+        bytes += (RoutineClassSize(std::string(s, strnlen(s, std::min<size_t>(64, gms.size() - name)))) + 4 + 15) & ~15u;
+    }
+    return bytes;
+}
+
 // the first reference array (tag 9: u32 bytes, then references) of a block
 bool FindArray(const std::vector<uint8_t>& b, size_t& at, uint32_t& bytes)
 {
@@ -1384,6 +1425,17 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     Put(newList, 0, count + uint32_t(added));
     newList.insert(newList.end(), table.begin(), table.end());
     Put(gms, 0, Append(gms, newList));
+    // the routines' arena with room for the level's records' routines too (RoutineArenaBytes)
+    {
+        std::vector<SceneRecord> all = ParseSceneRecords(gms, buf);
+        uint32_t own = 0, more = 0;
+        for (const SceneRecord& r : all)
+            (uint32_t(r.index) < count ? own : more) += RoutineArenaBytes(gms, r);
+        uint32_t field = U32(gms, kRoutineArenaField);
+        Put(gms, kRoutineArenaField, field + more);
+        Log("scene: routines' arena %u bytes for the scene's records (their routines %u) + %u for the level's",
+            field, own, more);
+    }
     Log("scene npcs: %d records of %zu characters added to %s (%zu dynamic after the scene's; %d more with data "
         "would fit)", added, listed.size(), scene.c_str(), g_deferred.size(), dataLeft);
     g_leftOut.objects = leftOut;

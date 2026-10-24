@@ -69,7 +69,8 @@ std::wstring DataDir(bool make = false)  // (made only by what writes there)
 // a file of at most `max` bytes, whole
 bool ReadFileW(const std::wstring& path, std::string& out, size_t max)
 {
-    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, 0, nullptr);
     if (h == INVALID_HANDLE_VALUE)
         return false;
     LARGE_INTEGER size{};
@@ -134,14 +135,19 @@ bool Unprotect(const std::string& sealed, std::string& out)
     return true;
 }
 
-json ReadJsonW(const std::wstring& path)
+json ReadJsonW(const std::wstring& path, std::string* why = nullptr)
 {
     std::string text;
-    if (!ReadFileW(path, text, 4u << 20))
+    if (!ReadFileW(path, text, 4u << 20)) {
+        if (why)
+            *why = "cannot read it: error " + std::to_string(GetLastError());
         return json();
+    }
     try {
         return json::parse(text);
-    } catch (const std::exception&) {
+    } catch (const std::exception& ex) {
+        if (why)
+            *why = std::string("not JSON: ") + ex.what();
         return json();
     }
 }
@@ -205,9 +211,10 @@ std::string ShareDataDir() { return Utf8(DataDir()); }
 bool LoadAuthor(AuthorInfo& info, AuthorKey* key, std::string* error)
 {
     std::wstring dir = DataDir();
-    json j = ReadJsonW(dir + L"author.json");
+    std::string why = "no name or key in it";
+    json j = ReadJsonW(dir + L"author.json", &why);
     if (!j.is_object() || !j.value("name", json()).is_string() || !j.value("key", json()).is_string())
-        return Fail(error, "no author yet (" + Utf8(dir) + "author.json): give your name once to make your author key");
+        return Fail(error, "no author yet (" + Utf8(dir) + "author.json: " + why + "): give your name once to make your author key");
     info.name = j["name"].get<std::string>();
     info.license = j.value("license", json()).is_string() ? j["license"].get<std::string>() : LicenseChoices()[0];
     info.keyHex = j["key"].get<std::string>();

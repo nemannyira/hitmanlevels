@@ -57,6 +57,7 @@ TESTS = [
     ("run_maps", ["run_maps.py"], 3600, True),
     ("level_check", ["level_check_test.py"], 300, False),  # (the validator: no game needed)
     ("package", ["package_test.py"], 300, False),  # (packages and the installer: no game needed)
+    ("package_game", ["package_game_test.py"], 600, False),  # (export in the game, install, load)
     ("online", ["online_level_test.py"], 900, False),  # (starts the game itself, twice)
     ("profile", ["profile_test.py"], 600, False, True),  # (reads the game's globals: h2.mem)
 ]

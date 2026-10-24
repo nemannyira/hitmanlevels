@@ -3,6 +3,18 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
+## 2026-10-24 (evening): levels passed on as one file
+
+* *Level > Share > Export package*: the level as one signed file
+  (`Mods\Packages\<level>_v<n>.h2lvl`), its scripts, README.md and
+  preview.png with it. Your name, a license and your author key are asked
+  once (docs/editor.md, Share).
+* `h2level_pack.exe` installs one (a double click): shows the author and the
+  license, asks about authors not seen before, warns about another author's
+  package of an installed level and about older versions, refuses changed or
+  odd packages. Installed levels are downloaded levels (`Mods\Online\<id>`)
+  and show their author in the launcher and the File menu.
+
 ## 2026-10-24: big levels, downloaded levels
 
 * Big levels no longer take the game down (stress levels on C1-1, each limit

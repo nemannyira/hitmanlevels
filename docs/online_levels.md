@@ -54,30 +54,40 @@ first parsing of downloaded data inside the game process.**
 
 ## 3. The package
 
-A `.h2lvl` file: a ZIP (stored or deflate only) with
+Built 2026-10-24 (`src/levelfmt/package.h`, `share.h`; the editor's *Level >
+Share > Export package*, the installer `h2level_pack.exe`). A `.h2lvl` file
+is a ZIP of **stored** files (no compression: a level is small, and without
+inflating there is no "zip bomb" and no decompressor to attack):
 
 | File | Content |
 |---|---|
-| `manifest.json` | format version, level id, version, title, author id, base scene, editor version needed, the list of files with their sizes and SHA-256 |
-| `manifest.sig` | Ed25519 signature of `manifest.json` by the site's key (see 4) |
-| `level.json` | the level as the editor saves it |
-| `scripts/*.lua` | its scripts (source text only) |
-| `preview.png` | shown by the Hub only, never by the game |
+| `manifest.json` | format 1, the level's id and version, title, base scene, author (name, Ed25519 public key), license, and every other file's name, size and SHA-256; in one canonical form (compact, keys sorted: the text must equal its own re-serialization, so no key twice, no second spelling a parser could read differently) |
+| `manifest.sig` | the author's Ed25519 signature (64 bytes) of `"H2LVL manifest v1\n"` + `manifest.json` (the prefix keeps the key's signatures of other things apart) |
+| `level.json` | the level as the editor saves it, with `package: {id, version}` |
+| `scripts/<name>.lua` | the scripts its level.json lists (exactly those) |
+| `README.md` | optional, plain text, shown by the installer only |
+| `preview.png` | optional, shown by the installer only, never by the game |
 
-Rules the Hub enforces before anything is written:
+What the reader (`OpenPackage`) checks before any of it is used:
 
-* **Only these names**: `level.json`, `scripts/[a-z0-9_-]{1,32}\.lua`,
-  `preview.png`; no other file, no folders beyond `scripts/`, no
-  duplicates differing in case only. Names from the archive are never used
-  as paths: each allowed name maps to a fixed path in the install folder
-  (this also rules out "zip slip": `..`, absolute paths, drive letters,
-  `\\?\`, alternate data streams `x:y`, device names `CON`, `NUL`, `COM1`,
-  links).
-* **Sizes**: the archive ≤ 2 MB, each file ≤ 1 MB unpacked (level.json,
-  scripts), ≤ 4 MB in all, at most 32 files; the unpacked size is counted
-  while inflating, so a "zip bomb" stops at the limit (also a ratio limit,
-  e.g. 100:1).
-* **Hashes**: each file's SHA-256 matches the signed manifest.
+* **The layout**: the end record last with no comment, the directory right
+  before it, each file's two headers alike and the files one after another
+  from the start: nothing before, between or after them (no polyglots, no
+  hidden data); no encryption, ZIP64, data descriptors or links.
+* **Only these names**, as above (a script's name as the editor allows:
+  `[A-Za-z0-9_-]{1,32}.lua`, no device names); no name twice, also not in
+  another case. Names from the archive are never used as paths: each allowed
+  name maps to a fixed path in the install folder (this also rules out "zip
+  slip": `..`, absolute paths, drive letters, `\\?\`, alternate data streams
+  `x:y`, device names, links).
+* **Sizes**: the archive ≤ 2 MB; level.json ≤ 1 MB, a script ≤ 256 KB,
+  README ≤ 64 KB, the preview ≤ 1 MB and 2048 x 2048, the manifest ≤ 64 KB.
+* **The signature** over the manifest with the key it names, S below the
+  group's order (one form of a signature); then **the hashes**: the files are
+  exactly the manifest's list, in its order, with its sizes and SHA-256.
+* **The content**: level.json passes the strict check (section 5) and is the
+  manifest's (id, version, name, base scene); the scripts are UTF-8 without
+  NUL, the README plain text, the preview a PNG.
 * **No game data**: a level refers to the game's files, it does not carry
   them. Models of other levels are references (`imports`: a game level's
   name and a mesh there); a map of its own (`own_map_of`, editor/own_map.h)
@@ -85,10 +95,26 @@ Rules the Hub enforces before anything is written:
   deterministic), never downloaded. This keeps the game's copyrighted data
   off the site and keeps binary game formats (GMS, PRM, TEX) out of the
   download path altogether.
-* **Install**: into a new temporary folder, then renamed to
-  `Mods\Online\<id>\` (the id comes from the signed manifest, checked
-  against `[a-z0-9]{8,32}`); the files are marked read-only. The Hub never
-  writes anywhere else under the game.
+* **Export** refuses a level a strict check refuses, missing scripts, and a
+  file holding a path of the PC (`C:\Users\...`, the user's profile path):
+  the Windows user name would go with it.
+
+**Install** (`InstallPackage`): into a new folder `Mods\Online\.new-<random>`,
+then swapped in for `Mods\Online\<id>\` (the old version moved aside first and
+removed after; put back if the swap fails); the id comes from the signed
+manifest, checked against `[a-z0-9]{8,32}`; the files are read-only, with the
+manifest kept as `package.json` (the launcher and the File menu show the
+author from it). Links in the way (`Mods`, `Online`, the level's folder) are
+refused. The installer never writes anywhere else under the game.
+
+**What the PC knows** (`%LOCALAPPDATA%\H2LevelEditor\known.json`): the author
+keys accepted (with the name each had then) and each installed level's key,
+the version installed and the highest ever installed. The installer asks
+about an author not seen before (`--yes`), warns when another key signs an
+installed level's id (someone else's level passed off as its update:
+`--allow-other-author`) and about an older version (`--allow-older`); the same
+package again is "installed already". Exit codes: 0 done, 1 refused, 2
+usage, 3 a confirmation missing.
 
 ## 4. Trust: signatures and transport
 
@@ -100,12 +126,19 @@ Rules the Hub enforces before anything is written:
   signature is refused even when it came over HTTPS: a compromised web
   server or CDN cannot serve altered levels unless it also has the signing
   key, which should live offline / in the server's signing service.
-* **Authors' keys** (later): the Hub can make an Ed25519 key per author
-  (kept with DPAPI) and sign uploads with it, so the site can show that
-  version 3 of a level comes from the same author as version 1.
-* **Versions**: a manifest carries a version that only grows; the Hub keeps
-  the highest it has seen per level and refuses an older one (no silent
-  downgrade to a vulnerable version).
+* **Authors' keys** (done 2026-10-24 for packages passed on by hand,
+  section 3): the editor makes an Ed25519 key per author once (DPAPI, the
+  PC's own LocalAppData) and signs each package with it; the installer shows
+  the author's name with the key's fingerprint, asks about a key it has not
+  seen, and warns when another key signs a level id it has installed. The
+  site can take the key over as the author's (uploads signed with it show
+  that version 3 comes from the author of version 1); a lost key (a new
+  Windows) means a new key: a backup of the key (password-protected file) is
+  left for later.
+* **Versions**: a manifest carries a version that only grows; the installer
+  keeps the highest it has installed per level and installs an older one
+  only when asked (`--allow-older`; no silent downgrade to a vulnerable
+  version).
 
 ## 5. The level file: what the client checks today and what to add
 
@@ -261,9 +294,12 @@ version must be newer than the installed one.
 2. **The untrusted mode** (section 6) for levels under Mods\Online\ (done
    2026-10-24; to test in the game once the Hub installs a level there: by
    hand, a folder `Mods\Online\<id>` works the same).
-3. **The package format offline**: export / import `.h2lvl` in the editor
-   (author key, manifest, hashes), so levels can be passed on without the
-   site; the importer is the Hub's installer.
+3. **The package format offline** (done 2026-10-24): export in the editor
+   (Level > Share), `h2level_pack.exe` installs (author keys, manifest,
+   hashes; section 3), so levels can be passed on without the site; the
+   installer becomes the Hub's. `tools/tests/package_test.py` (no game: the
+   RFC 8032 vectors, Python's Ed25519 both ways, hostile packages) and a
+   libFuzzer target (`package_fuzz`, `-DH2_FUZZ=ON`).
 4. **The Hub**: browsing and downloading with signatures, installing.
 5. **Accounts and uploads.**
 6. **Play records and rankings** (section 9), after the server's checks are

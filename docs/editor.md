@@ -135,6 +135,26 @@ the copy's files, from another map).
 stays closed; *Edit* opens it on the map). Five example levels, played
 through: `examples/missions` (copy a folder into `Mods`).
 
+**Share**: *Level > Share > Export package* saves the level and writes one
+file, `Mods\Packages\<level>_v<n>.h2lvl`, to pass on (its scripts go with it,
+and `README.md` / `preview.png` when the level's folder has them). The first
+time it asks your name and a license and makes your author key: the
+packages are signed with it, so players see that a level and its updates come
+from you (your name and a fingerprint such as `D046-8AD8-164A-AA81`). The key
+stays on this PC, readable by this Windows user only
+(`%LOCALAPPDATA%\H2LevelEditor`); a new Windows or another PC makes a new key,
+and players then see your next version as from another author.
+
+Installing: a double click on the `.h2lvl` with `h2level_pack.exe` (or
+`h2level_pack install <file>`). It shows the level, the author and the
+license; an author not seen on the PC before is asked about, later levels of
+the same author install without a question. Another key on a level that is
+installed, or an older version, are warned about. A package that was changed
+after it was signed, or holds anything else than a level, is refused. The
+level goes to `Mods\Online\<id>` and plays like a downloaded one: its scripts
+with less memory and time, no console; *Save as a level of your own* makes an
+editable copy (with a new id: shared, it is your level).
+
 ## Good to know (from playing levels through)
 
 * The game offers "Pick up" for an item only while its own point is above

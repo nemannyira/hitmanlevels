@@ -266,7 +266,7 @@ bool ReadZip(const std::string& z, std::vector<PackageFile>& out, std::string* e
         return Fail(error, "the package's ZIP end record is not a plain one");
     if (count == 0 || count > kMaxPackageFiles + 2)
         return Fail(error, "the package holds " + std::to_string(count) + " files");
-    if (size_t(cdOffset) + cdSize != end)
+    if (cdOffset > end || cdSize != end - cdOffset)  // (no sums: size_t is 32 bits here)
         return Fail(error, "the package's ZIP directory is not right before its end record");
     size_t at = cdOffset, next = 0;  // the next entry's data must start where the one before ended
     for (uint16_t i = 0; i < count; ++i) {
@@ -300,7 +300,7 @@ bool ReadZip(const std::string& z, std::vector<PackageFile>& out, std::string* e
         if (lNeeded > 20 || lFlags != flags || lMethod != 0 || lCrc != crc || lPacked != packed || lSize != size ||
             lNameLen != nameLen || data > cdOffset || z.compare(offset + kLocalSize, nameLen, name) != 0)
             return Fail(error, name + ": its two ZIP headers differ");
-        if (data + size > cdOffset)
+        if (size > cdOffset - data)
             return Fail(error, name + " goes past the package's files");
         PackageFile f{name, z.substr(data, size)};
         if (Crc32(f.data) != crc)

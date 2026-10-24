@@ -14,7 +14,7 @@
 
 namespace h2::levelfmt {
 
-std::string ShareDataDir();  // with a trailing backslash; made when missing
+std::string ShareDataDir();  // with a trailing backslash (made when the author key or known.json is written)
 
 struct AuthorInfo {
     std::string name;

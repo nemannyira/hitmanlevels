@@ -46,7 +46,7 @@ std::string Utf8(const std::wstring& w)
     return s;
 }
 
-std::wstring DataDir()
+std::wstring DataDir(bool make = false)  // (made only by what writes there)
 {
     wchar_t buf[MAX_PATH];
     DWORD n = GetEnvironmentVariableW(L"H2LEVEL_HOME", buf, MAX_PATH);
@@ -61,7 +61,8 @@ std::wstring DataDir()
     }
     if (dir.empty())
         return dir;
-    CreateDirectoryW(dir.c_str(), nullptr);
+    if (make)
+        CreateDirectoryW(dir.c_str(), nullptr);
     return dir + L"\\";
 }
 
@@ -206,7 +207,7 @@ bool LoadAuthor(AuthorInfo& info, AuthorKey* key, std::string* error)
     std::wstring dir = DataDir();
     json j = ReadJsonW(dir + L"author.json");
     if (!j.is_object() || !j.value("name", json()).is_string() || !j.value("key", json()).is_string())
-        return Fail(error, "no author yet: give your name once to make your author key");
+        return Fail(error, "no author yet (" + Utf8(dir) + "author.json): give your name once to make your author key");
     info.name = j["name"].get<std::string>();
     info.license = j.value("license", json()).is_string() ? j["license"].get<std::string>() : LicenseChoices()[0];
     info.keyHex = j["key"].get<std::string>();
@@ -231,7 +232,7 @@ bool SetAuthor(const std::string& name, const std::string& license, AuthorInfo* 
         return Fail(error, "the name: 1 to 40 letters, no control characters");
     if (!ValidManifestText(license, 64))
         return Fail(error, "the license: 1 to 64 letters");
-    std::wstring dir = DataDir();
+    std::wstring dir = DataDir(true);
     if (dir.empty())
         return Fail(error, "no folder for the author key (LocalAppData)");
     AuthorInfo old;
@@ -428,7 +429,7 @@ bool InstallPackage(const OpenedPackage& p, const std::string& gameDir, std::str
     if (!old.empty())
         RemoveInstalled(old);
     // what this PC knows now: the author accepted, the level's key and highest version
-    std::wstring knownPath = DataDir() + L"known.json";
+    std::wstring knownPath = DataDir(true) + L"known.json";
     json known = ReadJsonW(knownPath);
     if (!known.is_object())
         known = json::object();

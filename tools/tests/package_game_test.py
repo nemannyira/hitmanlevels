@@ -76,6 +76,8 @@ try:
     out = dev.run("local p, e = h2.dev_export() return tostring(p) .. '|' .. tostring(e)", 30)
     check("a second export: version 2", out.split("|")[0].strip().endswith("_PkgTest_v2.h2lvl"), out)
 
+    if not level_id or not os.path.exists(package):
+        raise RuntimeError("no package exported: the rest cannot run")
     p = subprocess.run([PACK, "install", package, "--game", dev.GAME, "--yes"], capture_output=True, text=True)
     online = os.path.join(dev.GAME, "Mods", "Online", level_id or "-")
     check("h2level_pack installs the game's package", p.returncode == 0 and os.path.isdir(online),
@@ -98,6 +100,8 @@ try:
     check("  untrusted", "a downloaded level runs" in out)
     check("  its script runs without the dev tools", "PKGTEST running, dev tools false" in out,
           [l.strip()[-60:] for l in out.splitlines() if "PKGTEST" in l][:1])
+except RuntimeError as ex:
+    check(str(ex), False)
 finally:
     run_all.kill()
     shutil.rmtree(FOLDER, ignore_errors=True)

@@ -45,7 +45,7 @@ for _, o in ipairs(h2.objects("ZSTDOBJ")) do
 end
 table.sort(found, function(a, b) return a[1] < b[1] end)
 local out = {}
-for i = 1, math.min(#found, 10) do out[i] = found[i][2] end
+for i = 1, math.min(#found, 40) do out[i] = found[i][2] end  -- (the nearest that are records of the scene file)
 return table.concat(out, "\n")
 """
 
@@ -54,6 +54,10 @@ def copy_near(dx, dz):
     """a copy of the nearest of the map's models the editor copies (not a character's body) beside it
     -> (its name, its place) or (None, None)"""
     for source in [p for p in lua(PLAIN_MODEL).splitlines() if p]:
+        # a record of the scene file (C6-1's arrival cutscene parts, moved to the root while it plays, are not
+        # the records the editor knows: a copy of one is made while playing, as it should be)
+        if not lua('local r, k = h2.dev_record([[%s]]) return k' % source).startswith("file"):
+            continue
         x, y, z = (float(v) for v in lua('local x, y, z = h2.find([[%s]]):pos() return x .. " " .. y .. " " .. z'
                                          % source).split())
         out = dev.run('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (source, x + dx, y, z + dz), 30)

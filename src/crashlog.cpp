@@ -12,6 +12,7 @@
 #include <typeinfo>
 #include <vector>
 
+#include "config.h"
 #include "hook.h"
 #include "log.h"
 
@@ -228,6 +229,8 @@ void __fastcall hkGameReport(EXCEPTION_POINTERS* ep)
     if (ep && ep->ExceptionRecord && ep->ContextRecord)
         Report("the game's own handler took it", ep);
     oGameReport(ep);
+    if (g_config.devCommands)  // (testing: not the game's error box after it, which keeps the game hanging)
+        TerminateProcess(GetCurrentProcess(), 3);
 }
 
 // what the game's own filter gets: the report first

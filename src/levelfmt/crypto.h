@@ -1,7 +1,7 @@
 #pragma once
 // The hashes and signatures of level packages (package.h): SHA-256 / SHA-512 and random bytes from
-// Windows (CNG, bcrypt.dll), Ed25519 (RFC 8032) of our own (ed25519.cpp, after TweetNaCl; checked
-// against the RFC's vectors and Python's `cryptography` by tools/tests/package_test.py).
+// Windows (CNG, bcrypt.dll), Ed25519 (RFC 8032) from Monocypher (third_party/monocypher, ed25519.cpp;
+// checked against the RFC's vectors and Python's `cryptography` by tools/tests/package_test.py).
 #include <array>
 #include <cstddef>
 #include <cstdint>

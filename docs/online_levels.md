@@ -121,7 +121,7 @@ usage, 3 a confirmation missing.
 * **Transport**: HTTPS only (WinHTTP / Schannel, TLS 1.2+, the system's
   certificate checks; no HTTP fallback, no "ignore certificate errors").
 * **Signatures**: the site signs each published package's manifest with an
-  Ed25519 key (libsodium or Monocypher in the Hub); the Hub has the public
+  Ed25519 key (Monocypher 4.0.3 in the client, third_party/monocypher); the Hub has the public
   key built in (two keys, so one can be rotated). A package without a valid
   signature is refused even when it came over HTTPS: a compromised web
   server or CDN cannot serve altered levels unless it also has the signing

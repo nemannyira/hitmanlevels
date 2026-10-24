@@ -13,8 +13,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # what a level file may hold and its packages (src/levelfmt): the DLL's loader and export,
 # h2level_check.exe, h2level_pack.exe (the installer) and the fuzz targets
 add_library(levelfmt STATIC src/levelfmt/level_check.cpp src/levelfmt/crypto.cpp src/levelfmt/ed25519.cpp
-            src/levelfmt/package.cpp src/levelfmt/share.cpp)
-target_include_directories(levelfmt PUBLIC third_party/json)
+            src/levelfmt/package.cpp src/levelfmt/share.cpp
+            third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
+target_include_directories(levelfmt PUBLIC third_party/json PRIVATE third_party/monocypher)
 target_link_libraries(levelfmt PUBLIC bcrypt crypt32 shell32 ole32)
 add_executable(h2level_check tools/level_check/main.cpp)
 target_link_libraries(h2level_check PRIVATE levelfmt)

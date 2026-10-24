@@ -116,7 +116,7 @@ add_library(h2fix SHARED
     src/ui.cpp
     src/watch.cpp
     src/dinput8.def)
-target_link_libraries(h2fix PRIVATE minhook lua imgui levelfmt)
+target_link_libraries(h2fix PRIVATE minhook lua imgui levelfmt dbghelp psapi)
 target_include_directories(h2fix PRIVATE third_party/json)
 target_compile_definitions(h2fix PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 target_compile_options(h2fix PRIVATE /W4 /permissive- /Zi)

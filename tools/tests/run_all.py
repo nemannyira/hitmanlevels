@@ -106,16 +106,7 @@ def load_c11():
     """C1-1 loaded freshly, the editor closed, no level -> True when there"""
     dev.run("h2.dev_editor(false) return h2.dev_level('revert')", 10)
     dev.run("return h2.dev_loadscene([[%s]])" % C11, 10)
-    time.sleep(4)
-    t = time.time()
-    while time.time() - t < 180:
-        if "C1-1__MAIN" in scene():
-            time.sleep(8)
-            return True
-        if not dev.running():
-            return False
-        time.sleep(1)
-    return False
+    return dev.wait_ready("C1-1__MAIN", 180)
 
 
 def ready(fresh):

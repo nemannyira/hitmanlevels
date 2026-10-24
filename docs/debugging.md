@@ -18,9 +18,22 @@ to the active program. Inline scripts are off (`GHIDRA_MCP_ALLOW_SCRIPTS`).
 
 ## Crashes
 
-* `src/crashlog.cpp` logs every exception outside the editor's own guarded
-  probes to H2Fix.log: code, address (`module+offset`), registers and the code
-  addresses on the stack.
+* `src/crashlog.cpp` logs the first exceptions outside the editor's own
+  guarded probes to H2Fix.log (code, `module+offset`, registers), and for the
+  fault that ends the game a report, `CRASH:`, with its stack: the DLL's frames
+  with function, file and line from its .pdb, the game's as `module+offset`
+  (for Ghidra / crash.py), and a minidump in `<game>\CrashDumps` (the last 10;
+  open in Visual Studio or WinDbg). The game catches every exception of its
+  main loop itself (its reporter 0x402840 writes "Stack trace" and quits): the
+  report is made there, with the fault's own context. Also reported: the
+  DLL's `std::bad_alloc` where it is thrown (the 32-bit game out of address
+  space), an uncaught C++ exception, `abort()`, a pure call (the game then ends
+  at once, no "abnormal program termination" box). `HANG:`: no frame for 30 s,
+  the main thread's stack and a dump (an endless loop). `h2.dev_crash("av" |
+  "throw" | "hang")` tries them.
+* Install the DLL with its .pdb next to it (`cp build/Release/dinput8.dll
+  build/Release/dinput8.pdb "<game>"`): the report reads the copy, so the
+  build's own .pdb stays free for the next link while the game runs.
 * `python tools/crash.py [log] [--last N]` prints those blocks with each
   hitman2.exe address's function from the Ghidra project (a call chain).
 * To stop at the crash itself: x32dbg (`x32dbg/release/x32`), attached to the
@@ -61,6 +74,10 @@ frames can be compared (images, state).
 
 `tools/tests`, against the installed DLL in a running game with
 `DevCommands=1` (H2Fix.ini [Debug]; `tools/dev.py` sends Lua to it).
+After `h2.dev_loadscene` / `h2.dev_loadgame`, `dev.wait_ready(scene)` waits
+until the scene has come in and the editor has put the level on it
+(`h2.dev_ready()`: `<scene>|loading`, `|applying`, `|ready`), not a fixed
+number of seconds: a reload of C1-1 is ready in under a second.
 
 * `python tools/tests/run_all.py`: all of them in one go. It backs up Save
   (into `dumps/test_runs/<time>/save_backup`, put back as it was at the end),

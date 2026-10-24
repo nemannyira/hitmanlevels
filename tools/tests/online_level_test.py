@@ -75,10 +75,7 @@ def load_online():
     """the level loaded from the main menu, the map loaded with it -> the log since"""
     dev.run('return h2.dev_level("revert")', 30)
     dev.run('return h2.dev_loadscene("MainMenu")', 10)
-    t = time.time()
-    while time.time() - t < 60 and "MainMenu" not in dev.run("return h2.scene()", 5):
-        time.sleep(1)
-    time.sleep(2)
+    dev.wait_ready("MainMenu", 60)
     mark = log_size()
     # (in one command: once a downloaded level is the editor's, Mods\_cmd.lua is not run any more)
     print(dev.run('local info = h2.dev_level("load", [[Online\\%s]]) h2.dev_loadscene([[C1-1\\C1-1__MAIN]]) '

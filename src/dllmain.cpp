@@ -87,11 +87,11 @@ void Init()
         return;
     }
     h2::Log("H2Fix loaded into %s", h2::GameDir().c_str());
-    h2::InstallCrashLog(g_self);
     if (MH_Initialize() != MH_OK) {
         h2::Log("MinHook init failed");
         return;
     }
+    h2::InstallCrashLog(g_self);  // (it hooks SetUnhandledExceptionFilter)
     h2::InstallFileHooks();
     if (h2::g_config.diagnostics)
         h2::InstallDiagnostics();

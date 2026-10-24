@@ -59,6 +59,21 @@ def shot(name, scale=0.5):
     return png
 
 
+def wait_ready(scene=None, timeout=180.0):
+    """after h2.dev_loadscene / h2.dev_loadgame: until the scene came in and the editor has put the level
+    on it (h2.dev_ready) -> True; False when the game went down or it took longer. `scene`: a part of
+    its name it must have ("C1-1__MAIN")."""
+    t = time.time()
+    while time.time() - t < timeout:
+        out = run("return h2.dev_ready()", 5)
+        if out.endswith("|ready") and (scene is None or scene.lower() in out.lower()):
+            return True
+        if "timeout" in out and not running():
+            return False
+        time.sleep(0.25)
+    return False
+
+
 def running():
     out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq hitman2.exe"], capture_output=True, text=True).stdout
     return "hitman2.exe" in out

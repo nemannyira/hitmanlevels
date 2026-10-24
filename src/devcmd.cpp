@@ -6,6 +6,7 @@
 #include <intrin.h>
 #include <algorithm>
 #include <map>
+#include <new>
 #include <tuple>
 #include <mutex>
 #include <sstream>
@@ -164,9 +165,29 @@ int SaveGameCmd(lua_State* L)
     return 1;
 }
 
+// a scene or saved game asked for and not come in yet (dev_ready)
+bool g_sceneAsked;
+long g_framesSinceScene;
+
 int LoadGameCmd(lua_State* L)
 {
-    lua_pushboolean(L, CallSlot(0x41AF70, unsigned(luaL_checkinteger(L, 1))));
+    bool asked = g_sceneAsked;
+    g_sceneAsked = true;  // (before: the scene may come in while the call is under way)
+    bool ok = CallSlot(0x41AF70, unsigned(luaL_checkinteger(L, 1)));
+    if (!ok)
+        g_sceneAsked = asked;
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+// h2.dev_ready() -> "<scene>|loading" (asked for with dev_loadscene / dev_loadgame, not come in yet),
+// "|applying" (the editor puts the level on it: two frames after), "|ready": what tests wait for
+int Ready(lua_State* L)
+{
+    const char* state = g_sceneAsked ? "loading"
+                        : editor::LevelApplyPending() || g_framesSinceScene < 3 ? "applying"
+                                                                               : "ready";
+    lua_pushstring(L, (CurrentScene() + "|" + state).c_str());
     return 1;
 }
 
@@ -252,7 +273,12 @@ int LevelEnd(lua_State* L)
 // h2.dev_loadscene(name): asks the engine to switch scenes (as the menus do)
 int LoadScene(lua_State* L)
 {
-    lua_pushboolean(L, RequestScene(luaL_checkstring(L, 1)));
+    bool asked = g_sceneAsked;
+    g_sceneAsked = true;  // (before: the scene may come in while the call is under way)
+    bool ok = RequestScene(luaL_checkstring(L, 1));
+    if (!ok)
+        g_sceneAsked = asked;
+    lua_pushboolean(L, ok);
     return 1;
 }
 
@@ -1146,6 +1172,8 @@ int CollSeen(lua_State* L)
     return 1;
 }
 
+int CrashCmd(lua_State* L);  // (below, with the Present hook)
+
 void InstallDevCommands()
 {
     if (!g_config.devCommands)
@@ -1203,6 +1231,12 @@ void InstallDevCommands()
     });
     script::Register("dev_locktrace_dump", LockTraceDump);
     script::Register("dev_coll_seen", CollSeen);
+    script::Register("dev_crash", CrashCmd);
+    script::Register("dev_ready", Ready);
+    OnScenePushed([](const std::string&) {
+        g_sceneAsked = false;
+        g_framesSinceScene = 0;
+    });
     Log("dev commands on: Mods\\_cmd.lua");
 }
 
@@ -1363,11 +1397,38 @@ void DevUiStep()
     }
 }
 
+// h2.dev_crash(kind): the crash report tried (crashlog.h) at the next frame, outside Lua: "av" a write
+// through null, "throw" a C++ exception nobody catches, "hang" no frame for 35 s
+std::string g_crashKind;
+
+int CrashCmd(lua_State* L)
+{
+    g_crashKind = luaL_checkstring(L, 1);
+    return 0;
+}
+
+void CrashNow()
+{
+    std::string kind = g_crashKind;
+    g_crashKind.clear();
+    Log("devcmd: crash test: %s", kind.c_str());
+    if (kind == "av")
+        *static_cast<volatile int*>(nullptr) = 1;
+    else if (kind == "throw")
+        throw std::bad_alloc();
+    else if (kind == "hang")
+        for (ULONGLONG until = GetTickCount64() + 35000; GetTickCount64() < until;)
+            Sleep(10);
+}
+
 void DevOnPresent(void* device)
 {
     TraceFrameDone();
     if (g_config.devCommands)
         Poll();  // at Present, like the editor UI (outside the game logic)
+    ++g_framesSinceScene;
+    if (!g_crashKind.empty())
+        CrashNow();
     if (g_shotPath.empty())
         return;
     std::string path = g_shotPath;

@@ -59,20 +59,11 @@ def load_from_menu(doc):
         json.dump(doc, f)
     lua('return h2.dev_level("revert")')
     lua('return h2.dev_loadscene("MainMenu")')
-    t = time.time()
-    while time.time() - t < 60 and "MainMenu" not in dev.run("return h2.scene()", 5):
-        time.sleep(1)
-    time.sleep(2)
+    dev.wait_ready("MainMenu", 60)
     mark = log_size()
     lua('return h2.dev_level("load", "%s")' % LEVEL, 60)
     lua(r'return h2.dev_loadscene([[C1-1\C1-1__MAIN]])')
-    time.sleep(4)
-    t = time.time()
-    while time.time() - t < 200 and dev.running():
-        if "C1-1__MAIN" in dev.run("return h2.scene()", 5) and "applied" in log_since(mark):
-            break
-        time.sleep(1)
-    time.sleep(5)
+    dev.wait_ready("C1-1__MAIN", 200)
     return mark
 
 

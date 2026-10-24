@@ -42,13 +42,7 @@ def check(name, ok, detail=""):
 
 
 def wait_map():
-    time.sleep(4)
-    t = time.time()
-    while time.time() - t < 150:
-        if "C1-1__MAIN" in dev.run("return h2.scene()", 5):
-            break
-        time.sleep(1)
-    time.sleep(8)
+    dev.wait_ready("C1-1__MAIN", 150)
 
 
 def load(level=None):

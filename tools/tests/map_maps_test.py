@@ -75,13 +75,7 @@ def check(name, ok, detail=""):
 
 
 def wait_map(scene):
-    time.sleep(4)
-    t = time.time()
-    while time.time() - t < 180:
-        if (scene + "__MAIN").lower() in dev.run("return h2.scene()", 5).lower():
-            break
-        time.sleep(1)
-    time.sleep(8)
+    dev.wait_ready(scene + "__MAIN", 180)
 
 
 def load(scene, level=None):

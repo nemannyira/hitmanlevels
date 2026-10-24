@@ -8,6 +8,7 @@
 #include "config.h"
 #include "game.h"
 #include "hook.h"
+#include "crashlog.h"
 #include "log.h"
 #include "mainloop.h"
 
@@ -165,23 +166,32 @@ void SampleMainThread(HANDLE thread)
     }
 }
 
+constexpr double kHangMs = 30000.0;
+
 DWORD WINAPI StatsThread(void*)
 {
     HANDLE main = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, g_mainThread);
     double last = NowMs();
     long lastTotal = 0;
     double stallSince = 0;
+    bool hangReported = false;  // (once a stall)
     for (;;) {
         Sleep(250);
         long total = g_totalFrames;
         double now = NowMs();
-        if (g_config.stallWatchdog && total == lastTotal && total > 0) {
+        if (total == lastTotal && total > 0) {
             if (stallSince == 0)
                 stallSince = now;
-            if (now - stallSince > 500)
+            if (g_config.stallWatchdog && now - stallSince > 500)
                 SampleMainThread(main);
+            // no frame for this long (a scene loads in about 10 s): a loop that does not end
+            if (!hangReported && now - stallSince > kHangMs && !IsDebuggerPresent()) {
+                hangReported = true;
+                ReportHang(g_mainThread, (now - stallSince) / 1000.0);
+            }
         } else {
             stallSince = 0;
+            hangReported = false;
         }
         lastTotal = total;
         if (now - last < 1000)

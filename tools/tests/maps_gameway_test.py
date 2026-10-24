@@ -103,14 +103,8 @@ START_OVER = 25.0  # a save in a level's first seconds: C5-1's (its start camera
 
 def wait_map(scene):
     global loaded_at
-    time.sleep(4)
-    t = time.time()
-    while time.time() - t < 180:
-        if (scene + "__MAIN").lower() in dev.run("return h2.scene()", 5).lower():
-            break
-        time.sleep(1)
+    dev.wait_ready(scene + "__MAIN", 180)
     loaded_at = time.time()
-    time.sleep(8)
 
 
 def load(scene, level=None):

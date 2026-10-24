@@ -61,6 +61,7 @@ TESTS = [
     ("level_check", ["level_check_test.py"], 300, False),  # (the validator: no game needed)
     ("package", ["package_test.py"], 300, False),  # (packages and the installer: no game needed)
     ("package_game", ["package_game_test.py"], 600, False),  # (export in the game, install, load)
+    ("kill_early", ["kill_early_test.py"], 900, False),  # (#2: scripted characters killed at once, C5-3)
     ("online", ["online_level_test.py"], 900, False),  # (starts the game itself, twice)
     ("profile", ["profile_test.py"], 600, False, True),  # (reads the game's globals: h2.mem)
 ]

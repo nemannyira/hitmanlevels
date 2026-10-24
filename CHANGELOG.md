@@ -3,6 +3,11 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
+## 2026-10-25: characters killed right after they were made
+
+* A character made by a script (`h2.npc`) with its behaviour and killed at
+  once could take the game down (seen on C5-3): fixed.
+
 ## 2026-10-24 (night): key backup, the Hub's client
 
 * *Level > Share > Back up my key...* / *Restore a key...*: your author key in

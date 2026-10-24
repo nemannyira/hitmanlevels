@@ -48,6 +48,7 @@ constexpr uint32_t kFlagInitialized = 0x800000;
 constexpr uintptr_t kActorCollision_Init = 0x489900;
 constexpr uintptr_t kItem_SetOwner = 0x4723F0;        // ZITEM: (owner ref, its group, notify)
 constexpr uintptr_t kAllocRefTab = 0x5B2A30;          // a reference table's new entry (vfunc of the tables)
+constexpr uintptr_t kFreeRefTab = 0x5B2B10;           // ... and its free (vfunc 0x10, vtable 0x65D534)
 constexpr uint32_t kActorCollisionRoom = 64;            // elements added at runtime it has room for
 const char* const kActorList = "TrackLinkObjects";
 
@@ -718,6 +719,20 @@ void* __fastcall hkAllocRefTab(void* table, void* edx)
     return oAllocRefTab(table, edx);
 }
 
+// Its free (FreeRefTab 0x5B2B10, the tables' vfunc 0x10) asserts the same way (int3 0x5B2B3C). A character
+// the editor made, killed while its behaviour is still starting (issue #2: a scripted soldier killed 1 s after
+// h2.npc on C5-3), frees references from its death handler while the engine has them locked: the int3
+// skipped the free and the script VM met the dead object later (int3 in 0x5E0260, the game down). Unlocked
+// for the call as the new entries are.
+using FreeRefTabFn = uint32_t(__fastcall*)(void* table, void* edx, uint32_t ref);
+FreeRefTabFn oFreeRefTab;
+
+uint32_t __fastcall hkFreeRefTab(void* table, void* edx, uint32_t ref)
+{
+    game::RefAllocUnlock unlock;
+    return oFreeRefTab(table, edx, ref);
+}
+
 // the scene's actor lists (one in each scene: AllLevels_AnimSound)
 std::vector<ZGEOM*> ActorLists()
 {
@@ -906,6 +921,7 @@ void InstallNpc()
     Hook("ZLIST_ActorCollision init", kActorCollision_Init, &hkActorCollisionInit, &oActorCollisionInit);
     Hook("ZITEM::SetOwner", kItem_SetOwner, &hkItemSetOwner, &oItemSetOwner);
     Hook("AllocRefTab (references made while playing)", kAllocRefTab, &hkAllocRefTab, &oAllocRefTab);
+    Hook("FreeRefTab (references freed while playing)", kFreeRefTab, &hkFreeRefTab, &oFreeRefTab);
     OnFrameEnd(GuardFrame);
     OnSceneLeaving([](const std::string&) { g_guards.clear(); });
 }

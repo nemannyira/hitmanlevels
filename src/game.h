@@ -52,8 +52,10 @@ inline ZSysInterface* SysInterface() { return *reinterpret_cast<ZSysInterface**>
 
 // ZSysInterface+0x7B4 is set by two of its virtuals (0x412830 / 0x412840)
 // while the game logic runs; then reference tables made while loading
-// (AllocRefTab 0x5B2A30, "+0x18 locked") assert on new entries. Objects the
-// editor creates at runtime need them, so the flag is lifted for that call.
+// (AllocRefTab 0x5B2A30, "+0x18 locked") assert on new entries, and their free
+// (0x5B2B10) on giving one back. Objects the editor creates at runtime need
+// them (and give them back when they die early), so the flag is lifted for
+// that call.
 class RefAllocUnlock {
 public:
     RefAllocUnlock()

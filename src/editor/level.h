@@ -176,6 +176,9 @@ struct LevelDocument {
     std::vector<std::string> scripts;
     std::vector<ImportedModel> imports;
     std::vector<LevelVehicle> vehicles;  // objects driving routes when the level is played
+    // its package (levelfmt/package.h): the id it is installed under elsewhere, the version exported last
+    std::string packageId;
+    int packageVersion = 0;
     bool dirty = false;
 };
 
@@ -191,6 +194,9 @@ bool SaveLevel(std::string* error = nullptr);
 bool ReloadLevelMap(std::string* error = nullptr);
 // The edits so far become a level of that name (its own folder in Mods) and are saved.
 bool SaveLevelAs(const std::string& name, std::string* error = nullptr);
+// Saves the level with its next package version and writes it as a signed package (levelfmt/share.h)
+// to Mods\Packages\<folder>_v<n>.h2lvl; needs the author key made (Level panel > Share).
+bool ExportPackage(std::string* path, std::string* error = nullptr);
 // Toolbar: the level's name, unsaved mark and Save / Save as; Ctrl+S.
 void DrawSaveControl();
 // The same as a row of a panel (full width button).
@@ -270,6 +276,8 @@ bool SetPointMapIcon(engine::ZGEOM* point, const std::string& icon, std::string*
 // "Online\<id>" (id [a-z0-9]{8,32}). It runs untrusted (script::SetUntrusted)
 // and is read-only: Save as makes a level of the user's own of it.
 bool IsOnlineLevel(const std::string& folder);
+// A downloaded level's author, fingerprint, version and license from its package record ("": not one).
+std::string DownloadedFrom(const std::string& folder);
 // New elements of a list (a route: the points in walking order).
 // Where an object stands: a group of models (a car) by its parts (their
 // middle, at the bottom of their boxes; a map's group is often at the world's

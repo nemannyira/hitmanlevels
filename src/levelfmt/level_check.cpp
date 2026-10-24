@@ -315,10 +315,19 @@ Report CheckLevel(const json& j, bool strict)
     c.Object(j, "level",
              {"format", "version", "name", "base_scene", "empty_map", "blank_map", "map_models", "own_map_of",
               "start_outfit", "place_floor", "floor_object", "sky", "objects", "spawned", "npcs", "npc_edits",
-              "mission", "music", "vehicles", "new_lists", "lists", "scripts", "imports"});
+              "mission", "music", "vehicles", "new_lists", "lists", "scripts", "imports", "package"});
     c.Int(j, "version", "level", 1, 1);
     c.Text(j, "name", "level", 64);
     c.Name(j, "base_scene", "level", 128, kSceneChars);
+    // the level's package (package.h): its id and the version it was exported last as
+    if (j.contains("package") && c.Object(j["package"], "level.package", {"id", "version"})) {
+        const json& p = j["package"];
+        if (!p.contains("id") || !p["id"].is_string() || !ValidOnlineId(p["id"].get<std::string>()))
+            c.Bad("level.package.id", "not [a-z0-9]{8,32}");
+        if (!p.contains("version"))
+            c.Bad("level.package.version", "missing");
+        c.Int(p, "version", "level.package", 1, 0x7FFFFFFF);
+    }
     for (const char* key : {"empty_map", "blank_map", "map_models"})
         c.Bool(j, key, "level");
     if (j.contains("own_map_of")) {  // a map of its own: [A-Za-z][A-Za-z0-9_-]{2,23}

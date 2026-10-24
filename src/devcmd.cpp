@@ -188,6 +188,19 @@ int RoomListsCmd(lua_State* L)
     return 2;
 }
 
+// h2.dev_export() -> the package's path, or nil and why: Level panel > Share > Export package
+int ExportCmd(lua_State* L)
+{
+    std::string path, error;
+    if (!editor::ExportPackage(&path, &error)) {
+        lua_pushnil(L);
+        lua_pushstring(L, error.c_str());
+        return 2;
+    }
+    lua_pushstring(L, path.c_str());
+    return 1;
+}
+
 // h2.dev_ready() -> "<scene>|loading" (asked for with dev_loadscene / dev_loadgame, not come in yet),
 // "|applying" (the editor puts the level on it: two frames after), "|ready": what tests wait for
 int Ready(lua_State* L)
@@ -1242,6 +1255,7 @@ void InstallDevCommands()
     script::Register("dev_crash", CrashCmd);
     script::Register("dev_ready", Ready);
     script::Register("dev_roomlists", RoomListsCmd);
+    script::Register("dev_export", ExportCmd);
     OnScenePushed([](const std::string&) {
         g_sceneAsked = false;
         g_framesSinceScene = 0;

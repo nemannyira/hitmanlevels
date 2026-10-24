@@ -90,6 +90,7 @@ const Floor kFloors[] = {
 int g_floor = 1;
 struct Saved {
     std::string folder, name, scene, modified;
+    std::string from;                     // a downloaded level's author ("" the user's own)
     std::string ownMapOf;                 // its map is a copy of this one
     std::string briefing;                 // the laptop's, its start ("" the map's own)
     std::vector<std::string> objectives;  // their lines
@@ -263,6 +264,7 @@ void LoadSavedList()
             s.name = j.value("name", folder);
             s.scene = j.value("base_scene", "");
             s.modified = LevelModified(folder);
+            s.from = DownloadedFrom(folder);
             if (j.contains("own_map_of") && j["own_map_of"].is_string())
                 s.ownMapOf = j["own_map_of"].get<std::string>().substr(0, 64);
             s.emptyMap = j.contains("empty_map") && j["empty_map"].is_boolean() && j["empty_map"].get<bool>();
@@ -311,6 +313,8 @@ void DrawSavedDetails(const Saved& s)
     else
         ImGui::TextDisabled("on %s%s", MapName(s.scene).c_str(),
                             s.blankMap ? ", no buildings" : s.emptyMap ? ", emptied" : "");
+    if (!s.from.empty())
+        ImGui::TextDisabled("%s", s.from.c_str());
     if (s.characters > 0)
         ImGui::TextDisabled("%d character%s of its own", s.characters, s.characters == 1 ? "" : "s");
     for (const std::string& o : s.objectives)

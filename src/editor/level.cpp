@@ -1,6 +1,7 @@
 #include "level.h"
 
 #include <windows.h>
+#include <shellapi.h>
 #include <algorithm>
 #include <set>
 #include <cctype>
@@ -21,6 +22,7 @@
 #include "../engine/scene_data.h"
 #include "../engine/spawn.h"
 #include "../levelfmt/level_check.h"
+#include "../levelfmt/share.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
@@ -1005,6 +1007,8 @@ std::string MakeOwnList(engine::ZGEOM* list, const std::string& name, std::strin
 
 namespace {
 
+uint64_t LevelFileTime(const std::string& folder);  // (below)
+
 void RecordList(const std::string& path, engine::ZGEOM* list, const std::vector<std::string>& points)
 {
     if (points == PathsOfRefs(engine::AuthoredListRefs(list)))
@@ -1491,6 +1495,111 @@ void DrawScripts()
                                              "event, saved state)\nin the level's folder, run when the map loads");
 }
 
+// the author of this PC (levelfmt/share.h), read once
+levelfmt::AuthorInfo g_author;
+int g_authorState = 0;  // 0 not read yet, 1 none, 2 there
+bool g_authorEdit = false;
+char g_authorName[41] = "";
+int g_authorLicense = 0;
+std::string g_shareStatus, g_lastPackage;
+
+const levelfmt::AuthorInfo* Author()
+{
+    if (g_authorState == 0)
+        g_authorState = levelfmt::LoadAuthor(g_author) ? 2 : 1;
+    return g_authorState == 2 ? &g_author : nullptr;
+}
+
+// Level panel: passing the level on as a package (docs/online_levels.md section 3)
+void DrawShare()
+{
+    LevelDocument& L = g_level;
+    ImGui::SeparatorText("Share");
+    if (IsOnlineLevel(L.folder)) {
+        ImGui::TextDisabled("A downloaded level: Save as a level of your own to share it.");
+        return;
+    }
+    const levelfmt::AuthorInfo* a = Author();
+    if (!a || g_authorEdit) {
+        if (!a)
+            ImGui::TextWrapped("Packages are signed with your author key, so players can see that a level and "
+                               "its updates come from you. It is made once and stays on this PC.");
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+        ImGui::InputText("Your name", g_authorName, sizeof g_authorName);
+        const auto& licenses = levelfmt::LicenseChoices();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+        if (ImGui::BeginCombo("License", licenses[g_authorLicense].c_str())) {
+            for (int i = 0; i < int(licenses.size()); ++i)
+                if (ImGui::Selectable(licenses[i].c_str(), i == g_authorLicense))
+                    g_authorLicense = i;
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("What others may do with your levels: CC BY share and change with your name,\n"
+                              "CC BY-NC not for money, CC0 anything; written into every package");
+        ImGui::BeginDisabled(!g_authorName[0]);
+        if (ImGui::SmallButton(a ? "Keep" : "Make my author key")) {
+            std::string err;
+            levelfmt::AuthorInfo made;
+            if (levelfmt::SetAuthor(g_authorName, licenses[g_authorLicense], &made, &err)) {
+                g_author = made;
+                g_authorState = 2;
+                g_authorEdit = false;
+                g_shareStatus = "author: " + made.name + " [" + made.Fingerprint() + "]";
+            } else {
+                g_shareStatus = "not made: " + err;
+            }
+        }
+        ImGui::EndDisabled();
+        if (a) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Cancel"))
+                g_authorEdit = false;
+        }
+    } else {
+        ImGui::Text("Signed as %s  [%s]", a->name.c_str(), a->Fingerprint().c_str());
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The fingerprint shows players that packages come from the same author key.\n"
+                              "License: %s. The key is kept in %s (only this Windows user can use it).",
+                              a->license.c_str(), levelfmt::ShareDataDir().c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Change...")) {
+            snprintf(g_authorName, sizeof g_authorName, "%s", a->name.c_str());
+            const auto& licenses = levelfmt::LicenseChoices();
+            auto it = std::find(licenses.begin(), licenses.end(), a->license);
+            g_authorLicense = it == licenses.end() ? 0 : int(it - licenses.begin());
+            g_authorEdit = true;
+        }
+        ImGui::BeginDisabled(L.folder.empty());
+        if (ImGui::Button("Export package")) {
+            std::string path, err;
+            g_shareStatus = ExportPackage(&path, &err) ? "written: " + path : "not exported: " + err;
+            g_lastPackage = path;
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip(L.folder.empty()
+                                  ? "Save the level first"
+                                  : "Saves the level, then writes Mods\\Packages\\<level>_v<n>.h2lvl: one file to pass on.\n"
+                                    "Its scripts go with it, and README.md / preview.png when the level's folder has them.\n"
+                                    "Players install it with h2level_pack.exe (a double click on the file).");
+        if (L.packageVersion > 0) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("version %d exported last", L.packageVersion);
+        }
+        if (!g_lastPackage.empty()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Show the file"))
+                ShellExecuteA(nullptr, "open", "explorer.exe", ("/select,\"" + g_lastPackage + "\"").c_str(), nullptr,
+                              SW_SHOWNORMAL);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("In Explorer (the game may go to the background)");
+        }
+    }
+    if (!g_shareStatus.empty())
+        ImGui::TextWrapped("%s", g_shareStatus.c_str());
+}
+
 // Level panel: the clothes Hitman starts the level in
 void DrawStartOutfit()
 {
@@ -1550,6 +1659,7 @@ void DrawPanel()
     }
     DrawProblems();
     DrawScripts();
+    DrawShare();
     DrawStartOutfit();
     DrawOwnMap();
 
@@ -1721,8 +1831,22 @@ void FileMenu()
         auto levels = ListLevels();
         if (levels.empty())
             ImGui::TextDisabled("no levels in Mods\\");
+        static std::map<std::string, std::pair<uint64_t, std::string>> downloaded;  // folder -> its file time, label
         for (const std::string& folder : levels) {
-            if (ImGui::MenuItem(folder.c_str(), LevelModified(folder).c_str())) {
+            std::string label = folder;
+            if (IsOnlineLevel(folder)) {  // its name and author instead of Online\<id>
+                auto& [time, text] = downloaded[folder];
+                if (time != LevelFileTime(folder) || text.empty()) {
+                    time = LevelFileTime(folder);
+                    std::ifstream f(ModsDir() + folder + "\\level.json", std::ios::binary);
+                    json j = json::parse(f, nullptr, false);
+                    text = (j.is_object() && j.value("name", json()).is_string() ? j["name"].get<std::string>().substr(0, 64)
+                                                                                 : folder) +
+                           " (" + DownloadedFrom(folder).substr(0, 60) + ")##" + folder;
+                }
+                label = text;
+            }
+            if (ImGui::MenuItem(label.c_str(), LevelModified(folder).c_str())) {
                 std::string err;
                 g_status = LoadLevel(folder, &err) ? "loaded " + folder : "load failed: " + err;
             }
@@ -1966,6 +2090,8 @@ bool SaveLevel(std::string* error)
         }
         j["imports"] = imports;
     }
+    if (!g_level.packageId.empty())
+        j["package"] = {{"id", g_level.packageId}, {"version", g_level.packageVersion}};
 
     std::string dir = ModsDir() + g_level.folder;
     CreateDirectoryA(ModsDir().c_str(), nullptr);
@@ -2026,6 +2152,10 @@ bool LoadLevel(const std::string& folder, std::string* error)
             if (error)
                 *error = "base_scene \"" + L.baseScene.substr(0, 100) + "\" is not a scene of the game";
             return false;
+        }
+        if (j.contains("package") && levelfmt::ValidOnlineId(j["package"].value("id", ""))) {  // (checked above)
+            L.packageId = j["package"]["id"].get<std::string>();
+            L.packageVersion = j["package"].value("version", 0);
         }
         L.emptyMap = j.value("empty_map", false);
         L.blankMap = j.value("blank_map", false);
@@ -2320,6 +2450,8 @@ bool SaveLevelAs(const std::string& name, std::string* error)
     std::string from = g_level.folder;
     g_level.name = name;
     g_level.folder = FreeFolder(name);
+    g_level.packageId.clear();  // a level of its own: shared, it is another level than the one it was saved from
+    g_level.packageVersion = 0;
     if (g_level.scripts.empty())
         g_level.scripts = {"main.lua"};
     if (IsOnlineLevel(from)) {  // a downloaded level's scripts come along (only its own, by their names)
@@ -2333,6 +2465,50 @@ bool SaveLevelAs(const std::string& name, std::string* error)
     }
     WriteMainScript(name);
     return SaveLevel(error);
+}
+
+bool ExportPackage(std::string* path, std::string* error)
+{
+    auto fail = [&](const std::string& what) {
+        if (error)
+            *error = what;
+        return false;
+    };
+    if (g_level.folder.empty())
+        return fail("save the level first");
+    if (IsOnlineLevel(g_level.folder))
+        return fail("a downloaded level: Save as a level of your own to share it");
+    // the next version (a new id the first time), saved with the level: the package holds it
+    json stamp = json::object();
+    if (!g_level.packageId.empty())
+        stamp["package"] = {{"id", g_level.packageId}, {"version", g_level.packageVersion}};
+    std::string err;
+    if (!levelfmt::StampPackage(stamp, &err))
+        return fail(err);
+    std::string oldId = g_level.packageId;
+    int oldVersion = g_level.packageVersion;
+    g_level.packageId = stamp["package"]["id"].get<std::string>();
+    g_level.packageVersion = stamp["package"]["version"].get<int>();
+    std::string package;
+    levelfmt::Manifest m;
+    if (!SaveLevel(&err) || !levelfmt::ExportLevelFolder(ModsDir() + g_level.folder, package, &m, &err)) {
+        g_level.packageId = oldId;  // (the version not used up)
+        g_level.packageVersion = oldVersion;
+        std::string ignored;
+        SaveLevel(&ignored);
+        return fail(err);
+    }
+    std::string dir = ModsDir() + "Packages";
+    CreateDirectoryA(dir.c_str(), nullptr);
+    std::string file = dir + "\\" + g_level.folder + "_v" + std::to_string(m.version) + ".h2lvl";
+    std::ofstream f(file, std::ios::binary | std::ios::trunc);
+    if (!f.write(package.data(), std::streamsize(package.size())))
+        return fail("cannot write " + file);
+    Log("level %s exported: %s (version %d, %zu bytes, signed by %s [%s])", g_level.folder.c_str(), file.c_str(),
+        m.version, package.size(), m.authorName.c_str(), levelfmt::Fingerprint(m.authorKey).c_str());
+    if (path)
+        *path = file;
+    return true;
 }
 
 void SaveShortcut()
@@ -3745,6 +3921,25 @@ uint64_t LevelFileTime(const std::string& folder)
 }
 
 } // namespace
+
+std::string DownloadedFrom(const std::string& folder)
+{
+    if (!IsOnlineLevel(folder))
+        return "";
+    std::ifstream f(ModsDir() + folder + "\\package.json", std::ios::binary | std::ios::ate);
+    if (!f || f.tellg() > std::streamoff(levelfmt::kMaxManifestBytes))
+        return "downloaded (no package record)";
+    f.seekg(0);
+    try {  // (the installer checked it with the package's signature; it is only shown here)
+        json j = json::parse(f);
+        std::string name = j.at("author").at("name").get<std::string>();
+        return "by " + name.substr(0, 40) + " [" + levelfmt::Fingerprint(j.at("author").at("key").get<std::string>()) +
+               "], version " + std::to_string(j.at("version").get<int>()) + ", " +
+               j.at("license").get<std::string>().substr(0, 64);
+    } catch (const std::exception&) {
+        return "downloaded (its package record is damaged)";
+    }
+}
 
 std::string LevelModified(const std::string& folder)
 {

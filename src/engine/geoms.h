@@ -100,6 +100,23 @@ SceneSnapshot TakeSnapshot(const std::vector<ZBaseGeom*>& extra = {});
 // The geom table (ZEngineDataBase+4) of the loaded scene, or null.
 void* GeomTable();
 
+// The rooms a moving object is drawn with (a dynamic node in a room, or one
+// whose rooms come from where it is: auto-assign) are kept in an entry of the
+// geom table's pool (0x427CE0: 0x20 bytes each, kRoomLists of them, those in
+// use counted at +0x59; a node keeps its own at +0x5C). The game takes one
+// unchecked (SetDynamic 0x5BD1B0, auto-assign 0x5BD760): past the last it
+// reads through null (a level of 425 copies on C1-1, whose own moving objects
+// take about 100). The entries left (0 without a scene).
+constexpr int kRoomLists = 0x1FE;
+int RoomListsFree();
+// What a level leaves to the game's own moving objects (characters, bodies,
+// what is dropped or thrown): its objects are made moving while more are free.
+constexpr int kRoomListsKept = 128;
+// ZBaseGeom::SetDynamic and its auto-assign hooked: an object is not made so
+// when no entry is left (it stays as it was, not drawn where it moves to)
+// instead of the game going down.
+void InstallRoomListGuard();
+
 std::string ClassName(const ZGEOM* geom);
 // "ZCAMERA : ZGEOM : ..." (most derived first)
 std::string ClassChain(const ZGEOM* geom);

@@ -8,6 +8,8 @@
 #include <unordered_set>
 
 #include "../game.h"
+#include "../hook.h"
+#include "../scene.h"
 
 namespace h2::engine {
 
@@ -19,6 +21,7 @@ constexpr int kGeomTable_StaticBase = 0x4C;      // vtable offset: ZBaseGeom* St
 constexpr uintptr_t kGeomTable_Hash = 0x08;      // -> object with the index mask at +0x10
 constexpr uintptr_t kGeomTable_Entries = 0x0C;   // -> ZBaseGeom* entries[mask + 1]
 constexpr int kMaxStaticNodes = 65535;           // 16-bit 1-based indices
+constexpr uintptr_t kGeomTable_RoomListsUsed = 0x59;  // the room list pool's entries in use (u32)
 constexpr uint32_t kMaxDynamicEntries = 1u << 20;
 
 bool SafeCopy(void* dst, const void* src, size_t n)
@@ -66,7 +69,52 @@ bool IsLiveNode(ZBaseGeom* node, ZGEOM*& geom)
     return true;
 }
 
+// SetDynamic(bool) and the auto-assign (char): an argument pushed as a dword
+using SetNodeFlag_t = void(__fastcall*)(ZBaseGeom* node, void* edx, uint32_t on);
+SetNodeFlag_t oSetDynamic = nullptr, oSetAutoAssign = nullptr;
+bool g_roomListsFull = false;  // told once a scene
+
+// whether a node may get a room list: none left, it is refused (told once)
+bool RoomListLeft(ZBaseGeom* node, uint32_t on, uint32_t flag)
+{
+    uint32_t flags = 0;
+    if (!(on & 0xFF) || !ReadAt(node, offsetof(ZBaseGeom, flags), flags) || (flags & flag) || RoomListsFree() > 0)
+        return true;
+    if (!g_roomListsFull)
+        Log("engine: all %d room lists of moving objects are in use: no more objects are made dynamic", kRoomLists);
+    g_roomListsFull = true;
+    return false;
+}
+
+void __fastcall hkSetDynamic(ZBaseGeom* node, void* edx, uint32_t on)
+{
+    if (RoomListLeft(node, on, game::kNodeDynamic))
+        oSetDynamic(node, edx, on);
+}
+
+void __fastcall hkSetAutoAssign(ZBaseGeom* node, void* edx, uint32_t on)
+{
+    if (RoomListLeft(node, on, game::kNodeAutoAssign))
+        oSetAutoAssign(node, edx, on);
+}
+
 } // namespace
+
+int RoomListsFree()
+{
+    void* table = GeomTable();
+    uint32_t used = 0;
+    if (!table || !ReadAt(table, kGeomTable_RoomListsUsed, used) || used > uint32_t(kRoomLists))
+        return 0;
+    return kRoomLists - int(used);
+}
+
+void InstallRoomListGuard()
+{
+    Hook("ZBaseGeom::SetDynamic", game::ZBaseGeom_SetDynamic, hkSetDynamic, &oSetDynamic);
+    Hook("ZBaseGeom::SetAutoAssign", game::ZBaseGeom_SetAutoAssign, hkSetAutoAssign, &oSetAutoAssign);
+    OnSceneLeaving([](const std::string&) { g_roomListsFull = false; });
+}
 
 void* GeomTable()
 {

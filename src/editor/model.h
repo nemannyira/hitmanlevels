@@ -13,6 +13,10 @@ const engine::SceneSnapshot& SceneModel(double maxAgeMs = 1000.0);
 void InvalidateSceneModel();
 // SceneModel for an object it lacks (maybe made since): new unless one was taken in the last 50 ms.
 const engine::SceneSnapshot& FresherSceneModel();
+// The last snapshot taken (a new one only when there is none): what was there before, for many
+// changes in a row without a walk of the scene for each (a replaced snapshot lives until the frame
+// ends).
+const engine::SceneSnapshot& RecentSceneModel();
 // Frees snapshots replaced during the frame (called once per frame).
 void SceneModelFrameEnd();
 
@@ -31,12 +35,16 @@ struct ObjectState {
 
 bool IsLive(engine::ZGEOM* geom);
 Transform GetTransform(engine::ZGEOM* geom);
-void SetTransform(engine::ZGEOM* geom, const Transform& t);  // makes the object dynamic first
+// Makes the object dynamic first; a static one that cannot be (no room list left:
+// engine::RoomListsFree) stays where it is (moved, the world around it is drawn torn).
+void SetTransform(engine::ZGEOM* geom, const Transform& t);
 // A character moved (teleported): once it stays put it is made to find its
 // room (see model.cpp); a walk given to it meanwhile makes that unnecessary.
 void SettleActor(engine::ZGEOM* actor, const float pos[3]);
 void CancelSettle(engine::ZGEOM* actor);
-void EnsureDynamic(engine::ZGEOM* geom);
+// The object made dynamic (and drawn with the rooms where it is) to be moved; false: it stays static,
+// all the scene's room lists of moving objects are in use.
+bool EnsureDynamic(engine::ZGEOM* geom);
 // World bounding sphere of the node (as used by the renderer's culling).
 bool GetBounds(engine::ZGEOM* geom, float center[3], float& radius);
 bool IsHidden(engine::ZGEOM* geom);

@@ -58,6 +58,7 @@ void LoadConfig()
     g_config.luaMemory = get("Debug", "LuaMemory", g_config.luaMemory) != 0;
     g_config.logRender = get("Debug", "LogRender", g_config.logRender) != 0;
     g_config.devCommands = get("Debug", "DevCommands", g_config.devCommands) != 0;
+    g_config.devCommandsOnline = get("Debug", "DevCommandsOnline", g_config.devCommandsOnline) != 0;
     g_config.watchResolution = get("Debug", "WatchResolution", g_config.watchResolution) != 0;
 }
 

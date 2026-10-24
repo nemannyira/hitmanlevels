@@ -3,6 +3,26 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
+## 2026-10-24: big levels, downloaded levels
+
+* Big levels no longer take the game down (stress levels on C1-1, each limit
+  found in the game's code; docs/roadmap.md, Engine limits a level meets):
+  * copies: the game keeps 510 moving objects in a map. A level's copies are
+    made while 128 are left for the game's own; past that they are not drawn
+    (it took the game down at about 425 copies), and *Duplicate* / placing an
+    item says the map has room for no more.
+  * the game's map draws 256 icons on a floor (more took the game down when
+    it was opened); a level shows at most 256 points on the map.
+  * the level's records that would not fit what the engine makes while the
+    map loads are left out.
+* Reverting or loading a level with hundreds of objects ran the game out of
+  memory (the editor took a snapshot of the scene for each object): fixed.
+* A level downloaded later from the website will run untrusted
+  (`Mods\Online\<id>`, docs/online_levels.md): less Lua memory and time, no
+  dev tools or console while it runs, read-only in the editor (*Save as a
+  level of your own* copies it), a strict check of its file. The check is
+  also a program of its own: `h2level_check.exe [--strict] <level folder>`.
+
 ## 2026-10-23: tests, icons on the map
 
 For those who work on the editor (docs/debugging.md, Tests):
@@ -35,15 +55,15 @@ For those who work on the editor (docs/debugging.md, Tests):
   the game down: Hitman himself, some characters' bodies at the root).
 * A level file is cut to what a level may hold (2000 placed objects, 5000
   object edits, 256 changed lists, 16 scripts named `name.lua`; the levels
-  made so far hold far less). Still open: a file with 2000 points with map
-  icons takes the game down while the map loads; the engine's capacity is to
-  be measured (docs/online_levels.md, section 5).
+  made so far hold far less). (A file with 2000 points with map icons took
+  the game down while the map loaded: fixed 2026-10-24, above.)
 
 Run in the game 2026-10-23: the map on C1-1, C2-1, C3-3, C4-1, C6-1, C7-1, a
 blank map, a map of its own, saved games, and the Inspector's and Level
 panel's controls through the GUI; the whole test set (run_all). Found and
-open: a saved game of a level on C5-1 crashes when it is loaded (older than
-these changes; docs/roadmap.md). Levels online, a design:
+then: a saved game of a level on C5-1 crashed when loaded (explained
+2026-10-24: the test tools saved in C5-1's first seconds, while its start
+camera moves; a save made later loads; docs/roadmap.md). Levels online, a design:
 docs/online_levels.md.
 
 ## 2026-10-17 .. 2026-10-22: the game's own way

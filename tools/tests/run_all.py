@@ -53,7 +53,10 @@ TESTS = [
     ("gui", ["gui_test.py"], 600, False),
     ("maps_gameway", ["maps_gameway_test.py"], 3600, False),
     ("fuzz", ["fuzz_levels.py"], 1800, False),
+    ("limits", ["limits_test.py"], 1500, True),  # (big levels: on a fresh game)
     ("run_maps", ["run_maps.py"], 3600, True),
+    ("level_check", ["level_check_test.py"], 300, False),  # (the validator: no game needed)
+    ("online", ["online_level_test.py"], 900, False),  # (starts the game itself, twice)
     ("profile", ["profile_test.py"], 600, False, True),  # (reads the game's globals: h2.mem)
 ]
 

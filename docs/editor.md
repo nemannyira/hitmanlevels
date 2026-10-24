@@ -55,10 +55,15 @@ level* / *File > Open level* loads a saved one.
   or a character's model lying at the root of a map) is refused, as its copy
   took the game down; place a character from the NPCs tab instead.
 * A level holds at most 2000 placed objects (copies, items, points), 200
-  characters, 5000 changed objects of the map and 16 scripts (named
-  `name.lua`); a level file from elsewhere is cut to this when it loads.
-  (Far fewer are safe while the map loads: 2000 points with map icons were
-  too many for the engine; the levels made so far have 15 at most.)
+  characters, 5000 changed objects of the map, 256 points shown on the map
+  and 16 scripts (named `name.lua`); a level file from elsewhere is cut to
+  this when it loads.
+* The game keeps at most 510 moving objects in a map (characters, cars,
+  dropped things, and every copy: copies are moving objects). A level's
+  copies are made while 128 are left for the game's own: past that a copy is
+  not drawn (H2Fix.log says how many), and *Duplicate* says the map has room
+  for no more. On C1-1 about 300 copies fit; the levels made so far have 15
+  placed objects at most. The game's map draws at most 256 icons on a floor.
 
 **Mission**:
 

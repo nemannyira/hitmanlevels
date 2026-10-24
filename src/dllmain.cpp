@@ -31,6 +31,7 @@
 #include "editor/viewport.h"
 #include "engine/game_events.h"
 #include "engine/imports.h"
+#include "engine/ingame_map.h"
 #include "engine/npc.h"
 #include "engine/script_files.h"
 #include "fov.h"
@@ -137,6 +138,7 @@ void Init()
     h2::engine::InstallNpc();
     h2::engine::InstallScriptFiles();
     h2::engine::InstallGameEvents();
+    h2::engine::InstallIngameMap();
     h2::editor::InstallPlacement();
     h2::InstallD3DHooks();
     if (h2::g_config.watchResolution) {

@@ -119,6 +119,10 @@ void DrawConsole()
     ImGui::EndChild();
     ImGui::Separator();
 
+    if (script::Untrusted()) {  // (the state holds a downloaded level's globals: what is typed would run among them)
+        ImGui::TextDisabled("The console is off while a downloaded level runs (its scripts share the Lua state).");
+        return;
+    }
     ImGuiInputTextFlags flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_EscapeClearsAll |
                                 ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_CallbackCompletion;
     ImGui::SetNextItemWidth(-1);

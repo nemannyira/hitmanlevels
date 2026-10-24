@@ -20,6 +20,7 @@
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
 #include "../engine/spawn.h"
+#include "../levelfmt/level_check.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
@@ -312,29 +313,17 @@ constexpr size_t kMaxLevelNpcs = 200;  // characters a level adds to the scene f
 // no more. Placed objects and lists become records of the scene while it loads, and the engine's buffers
 // are sized then (stress_suite: full, the game goes down). The levels made so far hold far fewer (15
 // placed objects at most).
-constexpr size_t kMaxLevelSpawned = 2000;  // placed objects (copies, items, points)
-constexpr size_t kMaxLevelEdits = 5000;    // objects of the map changed
-constexpr size_t kMaxLevelLists = 256;     // lists changed
-constexpr size_t kMaxListPoints = 256;     //   points of one
-constexpr size_t kMaxLevelScripts = 16;
+// (levelfmt: the checks the Level Hub makes too)
+constexpr size_t kMaxLevelSpawned = levelfmt::kMaxSpawned;
+constexpr size_t kMaxLevelEdits = levelfmt::kMaxEdits;
+constexpr size_t kMaxLevelLists = levelfmt::kMaxLists;
+constexpr size_t kMaxListPoints = levelfmt::kMaxListPoints;
+constexpr size_t kMaxLevelScripts = levelfmt::kMaxScripts;
+constexpr size_t kMaxLevelMapIcons = levelfmt::kMaxMapIcons;
 
 // a script of the level: a file of its folder, by a plain name ("main.lua", "script2.lua"; no
 // folders, drives, device names such as CON)
-bool ValidScriptName(const std::string& s)
-{
-    if (s.size() < 5 || s.size() > 36 || _stricmp(s.c_str() + s.size() - 4, ".lua") != 0)
-        return false;
-    std::string base = s.substr(0, s.size() - 4);
-    for (const char* device : {"CON", "PRN", "AUX", "NUL"})  // (Windows' devices, with any extension too)
-        if (_stricmp(base.c_str(), device) == 0)
-            return false;
-    if (base.size() == 4 && (_strnicmp(base.c_str(), "COM", 3) == 0 || _strnicmp(base.c_str(), "LPT", 3) == 0) &&
-        isdigit(static_cast<unsigned char>(base[3])))
-        return false;
-    return std::all_of(base.begin(), base.end(), [](char c) {
-        return isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-';
-    });
-}
+bool ValidScriptName(const std::string& s) { return levelfmt::ValidScriptName(s); }
 
 std::string Sanitize(const std::string& name)
 {
@@ -481,9 +470,11 @@ void RetireGroup(const std::string& id, engine::ZGEOM* g)
 // what saved games point at), and shown again by Materialize.
 bool IsMapCopy(engine::ZGEOM* g) { return g && engine::IsSceneCopyRecord(engine::RecordOf(g)); }
 
-void RetireCopy(engine::ZGEOM* g)
+// `parts`: its VisibleParts (a group's models), found while it is the editor's: before any of
+// these are taken back (each takes the scene's snapshot away: one for each would keep them all
+// alive until the frame ends, a level of 600 copies ran the game out of memory reverting)
+void RetireCopy(engine::ZGEOM* g, const std::vector<engine::ZGEOM*>& parts)
 {
-    std::vector<engine::ZGEOM*> parts = VisibleParts(g);  // (a group's models; while it is the editor's)
     ForgetEngineOwned(g);
     if (IsLive(g)) {
         for (engine::ZGEOM* p : parts) {
@@ -900,7 +891,7 @@ bool RemoveSpawned(const std::string& id)
         if (IsPointEntry(id))
             RetirePoint(id, g);
         else if (IsMapCopy(g))
-            RetireCopy(g);
+            RetireCopy(g, VisibleParts(g));
         else if (IsGroupEntry(id))
             RetireGroup(id, g);
         else
@@ -1050,8 +1041,17 @@ void DressHitman()
     script::ExecChunk("h2.outfit(\"" + g_level.startOutfit + "\")", "start_outfit");
 }
 
+// the Lua state's trust as the level is (a downloaded one runs untrusted): before its scripts run, and
+// whenever another level is the editor's
+void ApplyLevelTrust()
+{
+    bool online = IsOnlineLevel(g_level.folder);
+    script::SetUntrusted(online, online ? g_level.folder.substr(7) : "", g_config.devCommandsOnline);
+}
+
 void RunLevelScripts()
 {
+    ApplyLevelTrust();
     g_errorsFrom = script::ErrorSerial();
     script::ClearHandlers("level");
     script::DestroyScriptObjects();
@@ -1117,6 +1117,8 @@ void PutBackFallen()
 
 void OnFrame()
 {
+    if (IsOnlineLevel(g_level.folder) != script::Untrusted())
+        ApplyLevelTrust();  // (another level opened, or none)
     KeepCleared();
     // the class names of other levels' records are needed while a scene
     // loads (its models of other levels): learnt from the first scene
@@ -1781,6 +1783,10 @@ bool SaveLevel(std::string* error)
         if (error) *error = "no folder";
         return false;
     }
+    if (IsOnlineLevel(g_level.folder)) {  // (the Hub's files: Save as makes the user's own copy)
+        if (error) *error = "a downloaded level is not changed: Save as... makes a level of your own of it";
+        return false;
+    }
     CompleteImports();
     json j;
     j["format"] = "h2level";
@@ -1980,6 +1986,17 @@ bool LoadLevel(const std::string& folder, std::string* error)
         if (error) *error = "not an h2level file";
         return false;
     }
+    // what the Level Hub checks too: a downloaded level is refused for any of it, the user's own levels
+    // (older versions of the editor's) lose what does not fit below
+    levelfmt::Report report = levelfmt::CheckLevel(j, IsOnlineLevel(folder));
+    if (!report.Ok()) {
+        if (error)
+            *error = "level.json refused:\n" + report.Summary();
+        Log("level %s refused:\n%s", folder.c_str(), report.Summary(20).c_str());
+        return false;
+    }
+    if (!report.issues.empty())
+        Log("level %s: %zu fields left out or cut:\n%s", folder.c_str(), report.issues.size(), report.Summary(10).c_str());
     RevertLevel();
     LevelDocument L;
     // a level from elsewhere: any field of the wrong kind is a load error, not a crash
@@ -2014,6 +2031,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
             if (StateFromJson(o, e.state) && o.contains("path") && L.objects.size() < kMaxLevelEdits)
                 L.objects[o["path"].get<std::string>()] = e;
         }
+        size_t mapIcons = 0;
         for (const json& o : j.value("spawned", json::array())) {
             SpawnedObject s;
             ObjectState st;
@@ -2048,8 +2066,14 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 s.importMesh = o["import"].value("mesh", 0u);
             }
             const auto& icons = engine::MapIconNames();
-            if (std::string icon = o.value("map_icon", ""); s.point && std::find(icons.begin(), icons.end(), icon) != icons.end())
-                s.mapIcon = icon;
+            if (std::string icon = o.value("map_icon", ""); s.point && std::find(icons.begin(), icons.end(), icon) != icons.end()) {
+                if (mapIcons < kMaxLevelMapIcons) {
+                    s.mapIcon = icon;
+                    ++mapIcons;
+                } else if (mapIcons++ == kMaxLevelMapIcons) {
+                    Log("level: points' map icons beyond %zu left out", kMaxLevelMapIcons);
+                }
+            }
             L.spawned.push_back(s);
         }
         for (const json& o : j.value("npcs", json::array())) {
@@ -2219,6 +2243,13 @@ bool LoadLevel(const std::string& folder, std::string* error)
     return true;
 }
 
+bool IsOnlineLevel(const std::string& folder)
+{
+    constexpr size_t kPrefix = 7;  // "Online\\"
+    return folder.size() > kPrefix && _strnicmp(folder.c_str(), "Online\\", kPrefix) == 0 &&
+           levelfmt::ValidOnlineId(folder.substr(kPrefix));
+}
+
 // a folder of its own in Mods (a level of that name may be there already)
 std::string FreeFolder(const std::string& name)
 {
@@ -2248,7 +2279,7 @@ bool ReloadLevelMap(std::string* error)
             *error = "save the level first (it needs a name)";
         return false;
     }
-    if (!SaveLevel(error))
+    if (!IsOnlineLevel(g_level.folder) && !SaveLevel(error))  // (a downloaded level loads again as it is)
         return false;
     if (!RequestScene(g_level.baseScene)) {
         if (error)
@@ -2268,17 +2299,27 @@ bool SaveLevelAs(const std::string& name, std::string* error)
     }
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();
+    std::string from = g_level.folder;
     g_level.name = name;
     g_level.folder = FreeFolder(name);
     if (g_level.scripts.empty())
         g_level.scripts = {"main.lua"};
+    if (IsOnlineLevel(from)) {  // a downloaded level's scripts come along (only its own, by their names)
+        CreateDirectoryA(ModsDir().c_str(), nullptr);
+        CreateDirectoryA((ModsDir() + g_level.folder).c_str(), nullptr);
+        for (const std::string& s : g_level.scripts)
+            if (ValidScriptName(s))
+                CopyFileA((ModsDir() + from + "\\" + s).c_str(), (ModsDir() + g_level.folder + "\\" + s).c_str(), TRUE);
+        Log("level: the downloaded level %s saved as a level of the user's own: %s", from.c_str(),
+            g_level.folder.c_str());
+    }
     WriteMainScript(name);
     return SaveLevel(error);
 }
 
 void SaveShortcut()
 {
-    if (g_level.folder.empty()) {
+    if (g_level.folder.empty() || IsOnlineLevel(g_level.folder)) {
         g_openSaveAs = true;
         return;
     }
@@ -2291,18 +2332,22 @@ void DrawSaveControl()
 {
     LevelDocument& L = g_level;
     bool none = L.folder.empty();
+    bool online = IsOnlineLevel(L.folder);
     if (none)
         ImGui::TextDisabled(L.dirty ? "changes not in a level yet" : "no level");
     else
-        ImGui::Text("%s%s", L.name.c_str(), L.dirty ? " *" : "");
+        ImGui::Text("%s%s%s", L.name.c_str(), online ? " (downloaded)" : "", L.dirty ? " *" : "");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Everything you change on the map (objects, characters, routes, objectives, music)\n"
                           "belongs to the level: saved to Mods\\<level>\\level.json, applied when the map loads.%s",
                           none ? "" : ("\nthis level: Mods\\" + L.folder).c_str());
     ImGui::SameLine();
-    if (none) {
-        if (ImGui::SmallButton("Save as level... (Ctrl+S)"))
+    if (none || online) {
+        if (ImGui::SmallButton(online ? "Save as a level of your own... (Ctrl+S)" : "Save as level... (Ctrl+S)"))
             g_openSaveAs = true;
+        if (online && ImGui::IsItemHovered())
+            ImGui::SetTooltip("A downloaded level is not changed; its scripts run with less memory and time,\n"
+                              "and the dev tools and the console are off while it runs.");
     } else {
         ImGui::BeginDisabled(!L.dirty);
         if (ImGui::SmallButton("Save (Ctrl+S)"))
@@ -2357,7 +2402,7 @@ void DrawSaveControl()
 void DrawSaveRow()
 {
     LevelDocument& L = g_level;
-    if (L.folder.empty()) {
+    if (L.folder.empty() || IsOnlineLevel(L.folder)) {
         ImGui::TextDisabled(L.dirty ? "These changes are not saved in a level yet." : "No level yet.");
         if (ImGui::Button("Save as level... (Ctrl+S)", ImVec2(-1, 0)))
             g_openSaveAs = true;  // the toolbar asks the name
@@ -2418,6 +2463,10 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         return fail("nothing selected");
     if (g_level.spawned.size() >= kMaxLevelSpawned)
         return fail("the level holds " + std::to_string(kMaxLevelSpawned) + " placed objects, as many as a level may");
+    if (engine::RoomListsFree() <= engine::kRoomListsKept)
+        return fail("the map has room for no more moving objects (the game keeps the last " +
+                    std::to_string(engine::kRoomListsKept) + " of its " + std::to_string(engine::kRoomLists) +
+                    " for its own)");
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();
     if (g_level.baseScene != CurrentScene())
@@ -2501,6 +2550,10 @@ engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::
         return fail("not an item template");
     if (g_level.spawned.size() >= kMaxLevelSpawned)
         return fail("the level holds " + std::to_string(kMaxLevelSpawned) + " placed objects, as many as a level may");
+    if (engine::RoomListsFree() <= engine::kRoomListsKept)
+        return fail("the map has room for no more moving objects (the game keeps the last " +
+                    std::to_string(engine::kRoomListsKept) + " of its " + std::to_string(engine::kRoomLists) +
+                    " for its own)");
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();
     if (g_level.baseScene != CurrentScene())
@@ -2676,6 +2729,11 @@ bool SetPointMapIcon(engine::ZGEOM* geom, const std::string& icon, std::string* 
         return fail("no map icon " + icon);
     if (e->mapIcon == icon)
         return true;
+    if (e->mapIcon.empty() && !icon.empty() &&
+        std::count_if(g_level.spawned.begin(), g_level.spawned.end(), [](const SpawnedObject& s) {
+            return !s.mapIcon.empty();
+        }) >= std::ptrdiff_t(kMaxLevelMapIcons))
+        return fail("the level shows " + std::to_string(kMaxLevelMapIcons) + " points on the map, as many as it may");
     std::string id = e->id, before = e->mapIcon;
     DoSetMapIcon(id, icon);
     PushAction(
@@ -3308,7 +3366,9 @@ engine::ZGEOM* RoomAt(const float p[3])
     engine::ZGEOM* best = nullptr;
     float bestScore = 1e30f;
     const IngameMapParts map;
-    for (const auto& g : SceneModel(0).geoms) {
+    // (the map's models: a snapshot of before is as good, and a new one for each of many places (a
+    // level's points onto the in-game map's floors) kept them all alive until the frame ended)
+    for (const auto& g : RecentSceneModel().geoms) {
         if (!IsLive(g.geom) || IsSpawned(g.geom) || InActor(g.geom) || !engine::MeshOf(g.geom) ||
             g.name.rfind("SkyDome", 0) == 0 || g.path.find("HeroSetup") != std::string::npos ||
             g.path.find("GuiSetup") != std::string::npos || map.Contains(g.geom))
@@ -3322,7 +3382,7 @@ engine::ZGEOM* RoomAt(const float p[3])
         if (score >= bestScore)
             continue;
         engine::ZGEOM* room = RoomOf(g.geom);
-        if (room && PathOf(room) != "ROOT") {
+        if (room && room->node->parent) {  // (not the root, "ROOT")
             best = room;
             bestScore = score;
         }
@@ -3623,11 +3683,15 @@ void RevertLevel()
     for (auto& [path, points] : g_level.lists)  // the scene file's elements (before the points go)
         if (engine::ZGEOM* list = Resolve(path); list && IsLive(list))
             engine::SetListRefs(list, engine::AuthoredListRefs(list));
+    std::map<engine::ZGEOM*, std::vector<engine::ZGEOM*>> copyParts;  // (all from one snapshot: RetireCopy)
+    for (auto& [id, g] : g_live)
+        if (!IsPointEntry(id) && IsMapCopy(g))
+            copyParts[g] = VisibleParts(g);
     for (auto& [id, g] : g_live) {
         if (IsPointEntry(id) && IsLive(g))
             RetirePoint(id, g);
         else if (IsMapCopy(g))
-            RetireCopy(g);
+            RetireCopy(g, copyParts[g]);
         else if (IsGroupEntry(id))
             RetireGroup(id, g);
         else if (IsSpawned(g))
@@ -3691,6 +3755,17 @@ std::vector<std::string> ListLevels()
         }
     } while (FindNextFileA(h, &fd));
     FindClose(h);
+    // the Hub's: Mods\Online\<id> (their own names only)
+    h = FindFirstFileA((ModsDir() + "Online\\*").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            std::string folder = std::string("Online\\") + fd.cFileName;
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && IsOnlineLevel(folder) &&
+                GetFileAttributesA((ModsDir() + folder + "\\level.json").c_str()) != INVALID_FILE_ATTRIBUTES)
+                out.push_back(folder);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
     std::vector<std::pair<uint64_t, std::string>> byTime;
     for (const std::string& folder : out)
         byTime.emplace_back(LevelFileTime(folder), folder);

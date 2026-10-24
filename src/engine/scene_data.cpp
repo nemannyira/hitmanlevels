@@ -291,6 +291,7 @@ void InstallSceneData()
     Hook("ZEngineDataBase::GetGeomsData", kGetGeomsData, hkGetGeomsData, &oGetGeomsData);
     Hook("ZEngineDataBase::CreateGeoms", kCreateGeoms, hkCreateGeoms, &oCreateGeoms);
     InstallSceneNpcs();
+    InstallRoomListGuard();
     Hook("ZEngineDataBase::RemapCreatedDataBlock", kRemapCreatedDataBlock, hkRemap, &oRemap);
     OnSceneLeaving([](const std::string&) { g_valid = false; });
 }

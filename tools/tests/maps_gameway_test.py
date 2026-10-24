@@ -97,13 +97,19 @@ def note(text):
     print("NOTE " + text)
 
 
+loaded_at = 0.0  # when the map came in last
+START_OVER = 25.0  # a save in a level's first seconds: C5-1's (its start camera still moving) crashed when loaded
+
+
 def wait_map(scene):
+    global loaded_at
     time.sleep(4)
     t = time.time()
     while time.time() - t < 180:
         if (scene + "__MAIN").lower() in dev.run("return h2.scene()", 5).lower():
             break
         time.sleep(1)
+    loaded_at = time.time()
     time.sleep(8)
 
 
@@ -199,6 +205,7 @@ def run_map(scene):
     save_file = os.path.join(dev.GAME, "Save", "%d.1" % SLOT)
     before = os.path.getmtime(save_file) if os.path.exists(save_file) else 0
     mark = size()
+    time.sleep(max(0.0, START_OVER - (time.time() - loaded_at)))  # (as a player saves: once the level has started)
     lua("return tostring(h2.dev_savegame(%d))" % SLOT)
     time.sleep(3)
     check(scene + ": saved game", os.path.exists(save_file) and os.path.getmtime(save_file) > before)

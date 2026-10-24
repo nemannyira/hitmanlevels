@@ -17,6 +17,10 @@
 
 namespace h2::engine {
 
+// The map draws at most 256 icons on a floor (CMapIconDraw, 0x53D1E0): past
+// that the game breaks; the hook leaves the others out instead.
+void InstallIngameMap();
+
 // The window's routine in the loaded scene, as the map's routines find it (the
 // scene's "rIngameMap", 0x40CAC0); null: the scene has no map. IngameMapWindow:
 // the object it is on (the ZWINDOW record "IngameMap").

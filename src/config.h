@@ -24,6 +24,7 @@ struct Config {
     bool luaMemory = false;   // expose h2.mem (raw memory access) to Lua
     bool logRender = false;   // log cameras, projections, viewports and draw stats
     bool devCommands = false; // run Mods\_cmd.lua when it appears, h2.dev_* (automated testing)
+    bool devCommandsOnline = false;  // ... also while a downloaded level (Mods\Online\) runs (testing it)
 };
 
 extern Config g_config;

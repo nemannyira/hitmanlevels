@@ -45,9 +45,11 @@ constexpr const char* kExtraKey = "__editor";
 int g_loadedSlot = -1;   // a "load" event to fire (-1: none)
 int g_loadFrames;
 
+// a downloaded level's are its own (its id: [a-z0-9]): it reads no other level's state
 std::string StatePath(unsigned slot)
 {
-    return GameDir() + "Save\\" + std::to_string(slot) + ".h2lua";
+    const std::string& tag = UntrustedTag();
+    return GameDir() + "Save\\" + std::to_string(slot) + (tag.empty() ? "" : "." + tag) + ".h2lua";
 }
 
 bool SlotSaved(unsigned slot)

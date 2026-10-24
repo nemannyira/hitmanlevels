@@ -420,25 +420,49 @@ cheats.
   as the scene file has it (its routine's data, `MapIconShownInFile`), also
   when a saved game had taken it off already.
 
-### Open: a saved game of a level on C5-1 crashes when it is loaded (found 2026-10-23)
+### Engine limits a level meets (measured 2026-10-24)
 
-* Found by maps_gameway_test (its first run on C5-1). Reproduced: a level for
-  C5-1, even an empty one (no objects, no scripts), a saved game made and
-  loaded: the game goes down in its first frame drawn (RenderD3D+0x1F90D,
-  hitman2 0x5C782E / 0x43B47E: a group's children drawn). Without a level for
-  the scene the same save / load lives (5 times in one session). Not from the
-  in-game map work: the DLL of the morning (master) does it too.
-* Not the cause: the profile guard (off: still), applying the level
-  (ApplyLevel skipped: still), the level's scripts (none: still), the level's
-  objects (the save audit: every pointer placed).
-* At the crash (x32dbg): a packed array of 29-byte entries on the stack
-  (a flag byte, a pointer into an array of 36-byte items, the float 314.53);
-  the code read an entry at an odd address and called through the float as
-  a pointer (eip 0x439D4360). Next: find who fills that array (RenderD3D,
-  Ghidra) and what a level present for the scene changes before the load
-  (the mission's hooks, the scene providers, the Hitman start).
-* C1-1 and C2-1 saved games with levels load (saveload, copies, gameway3,
-  imports_save, map_icon, map_own tests).
+Stress levels on C1-1 (scratch tests: N copies of a tree, N points with map
+icons) found what took the game down, each traced to the engine's own code:
+
+| Limit | Where | Past it | The editor now |
+|---|---|---|---|
+| 510 room lists of moving objects | geom table pool (vfunc 0x50 = 0x427CE0: 0x20 bytes each, count at table +0x59, cap 0x1FE; a node keeps its own at +0x5C). Every dynamic node in a room and every auto-assign one takes one (SetDynamic 0x5BAA00 -> 0x5BD1B0, auto-assign 0x5BDBD0 -> 0x5BD760) | the allocation returns 0 and the caller reads through null (0x5BD714): 425 copies of a tree on C1-1 (its own moving objects take about 100) | `engine::RoomListsFree`; ZBaseGeom::SetDynamic and the auto-assign hooked (refused when none is left); a level's moving records made dynamic after the scene's own, only while more than 128 are free (`kRoomListsKept`, the game's own characters, bodies, thrown things); Duplicate / place item refused past that; the editor moves a static object only when it can be made dynamic |
+| 1000 dynamic objects at load | CreateGeoms' ZStackArray<1000, SMakeGeomDynamic> on AllocSequence's stack (MakeDynamicGeomsDynamic 0x41E410, MakeAutoAssignGeomsAutoAssign 0x41E470) | INT3, then written past the array over the stack | the level's records with 0x40000 are made without it (0x40000 and 0x4000 off, as CreateGeoms does: 0xFFFBBFFF) and made dynamic / auto-assign after the scene's (hooks on both): they take no room there (C1-1 has 102 of its own, C8-1 336) |
+| 0x2000 records with a data block at load | CreateGeoms' stack of blocks to remap | INT3 | inject.cpp counts the scene's (C6-3: 4413) and leaves out the level's objects that would not fit |
+| 256 icons on a floor of the in-game map | CMapIconDraw (0x53D1E0: 0x800 bytes of pairs, count +0x18) | INT3 when the map is opened | the add hooked: the icons past 256 are not drawn (`engine::InstallIngameMap`) |
+| about 1500-1800 points with map icons | C1-1: the scene's routine list (engine +0x5D13, linked at +0x56, 0x41A9B0) went round in a circle in InitializeGeoms (0x41E9F6: 23789 entries, the loop counter at 3.7 billion); 1500 loaded | the load never ends | a level may show 256 points on the map (`levelfmt::kMaxMapIcons`; the floor's limit anyway). Why the list loops is not known yet |
+
+And two in the editor itself, found with them:
+
+* The editor's snapshot of the scene (editor/model.cpp SceneModel): a
+  replaced one lives until the frame ends (a reference somebody iterates
+  stays valid). Loops that took one for each object kept them all: reverting
+  600 copies (RetireCopy -> VisibleParts) and putting 450 points' icons onto
+  the map's floors (RoomAt used SceneModel(0)) ran the 32-bit game out of
+  address space (std::bad_alloc in TakeSnapshot, the game at 1.6 GB). The
+  parts are found before anything is retired, RoomAt and SpawnClone use the
+  last snapshot (`RecentSceneModel`), and 32 snapshots in one frame are
+  logged.
+* Placing a copy made with the map where it already is no longer makes it
+  dynamic (SetTransform with the same place).
+
+### C5-1: a saved game made in the level's first seconds crashes when loaded (found 2026-10-23, explained 2026-10-24)
+
+* Found by maps_gameway_test (its first run on C5-1): a saved game made and
+  loaded took the game down in its first frame drawn (RenderD3D 0x1001F8C0,
+  the characters' bone animation: a packed array of 29-byte bone entries,
+  0x1001EDA0, read through a pointer the saved game gave back wrong; eip the
+  float 314.53).
+* Not the level's: with no level at all, and with the DLL of the morning of
+  2026-10-23 (master), the same. The test saved 8 s after C5-1 came in, while
+  its start camera still moves; a save made 20 s or 60 s in loads (an empty
+  level, a level with a copy). The game's own way to save is its in-game menu
+  (0x555C60 -> ZEngineDataBase::SaveGame 0x41AAD0); h2.dev_savegame calls
+  SaveGame directly, at any moment. maps_gameway_test now saves 25 s after a
+  map came in, as a player would.
+* Whether the in-game menu can be opened that early on C5-1 is not checked
+  (h2.dev_key's Esc did not open it there in the first minute either).
 
 ### Direct writes into the game's objects (audit, 2026-10-18)
 

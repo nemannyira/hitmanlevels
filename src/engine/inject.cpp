@@ -6,8 +6,11 @@
 #include <map>
 #include <set>
 
+#include "../game.h"
+#include "../hook.h"
 #include "../loader.h"
 #include "../log.h"
+#include "../levelfmt/level_check.h"
 #include "geoms.h"
 #include "imports.h"
 #include "scene_data.h"
@@ -38,6 +41,28 @@ constexpr size_t kRecord = 0x30;
 constexpr int kPools = 24;
 const char* const kActorList = "TrackLinkObjects";
 const char* const kAimHelper = "ZAIMTHINGY";
+// CreateGeoms (0x41CDA0) keeps, while it makes the scene's objects, the dynamic ones (node flag
+// 0x40000, the record's or the class's) in a ZStackArray<1000, SMakeGeomDynamic> on AllocSequence's
+// stack, for MakeDynamicGeomsDynamic and MakeAutoAssignGeomsAutoAssign after: its check breaks into
+// the debugger (INT3) and goes on writing past it over the stack (a level of 880 copies on C1-1 took
+// the game down so). The level's records with the flag are made without it and dynamic after the
+// scene's own, as those two do theirs (g_deferred), so they take no room there; what the class gives
+// (characters) still does. Those with a data block go onto a stack of 0x2000 (remapped after the
+// last), checked the same way: the scene's own leave the level the rest (C6-3 has 4413 of them).
+// A moving object takes one of the scene's room lists (RoomListsFree): the level's get theirs while
+// more than kRoomListsKept are left.
+constexpr uint32_t kDynamicFlag = 0x40000;
+constexpr int kMaxDynamicGeoms = 1000;
+constexpr int kMaxDataGeoms = 0x2000;
+constexpr uintptr_t kMakeDynamicGeoms = 0x41E410;     // ZEngineDataBase::MakeDynamicGeomsDynamic(array)
+constexpr uintptr_t kMakeAutoAssignGeoms = 0x41E470;  // ZEngineDataBase::MakeAutoAssignGeomsAutoAssign(array)
+constexpr uintptr_t kIsLoading = 0x41B3B0;            // ZEngineDataBase::IsLoading: a saved game (its states)
+struct Deferred {
+    int record;      // its index in the scene's list
+    uint32_t flags;  // the record's flags as the level made it (kNodeAutoAssign too)
+    bool made;       // made dynamic (a room list was left for it)
+};
+std::vector<Deferred> g_deferred;  // the level's dynamic records (the scene loaded last)
 
 // ZEngineDataBase's node kind of a class (0x5BE500)
 int NodeKind(uint32_t cls)
@@ -269,15 +294,7 @@ static std::vector<uint8_t> ZoneData(const float half[3])
 // (0x540C50: the room's parents up to a floor's group or location), and draws the icon named by
 // each object whose room is on that floor and which is not hidden (0x540920 -> CMapIconDraw).
 // A level's point gets an icon so: a copy of a map icon record, put into its room by its place.
-const std::vector<std::string>& MapIconNames()
-{
-    static const std::vector<std::string> names = {
-        "Icon_Exit",        "Icon_PointOfInterest", "Icon_Pickup",       "Icon_Target",      "Icon_VIP",
-        "Icon_Enemy",       "Icon_Innocent",        "Icon_Police",       "Icon_Stairs",      "Icon_StairsUP",
-        "Icon_StairsDOWN",  "Icon_LadderUP",        "Icon_LadderDOWN",   "Icon_SewerHatchUP", "Icon_SewerHatchDOWN",
-        "Icon_Elevator",    "Icon_Vehicle",         "Icon_Generator"};
-    return names;
-}
+const std::vector<std::string>& MapIconNames() { return levelfmt::MapIconNames(); }
 
 // ZBoxPrimitive: its half sizes (1 m, as the maps' own icons); ZGEOM_MapObject (data 0x541320):
 // the legend's icon of that name, shown (+0x76: ShowMapIcon switches it)
@@ -351,6 +368,52 @@ bool IsSceneNpcRecord(int index)
     return false;
 }
 
+namespace {
+
+// AllocSequence's ZStackArray<1000, SMakeGeomDynamic>: u32 count, then {u32 ref, u32 flags}
+using MakeGeoms_t = void(__fastcall*)(void* db, void* edx, const uint32_t* array);
+MakeGeoms_t oMakeDynamic = nullptr, oMakeAutoAssign = nullptr;
+
+bool Loading(void* db) { return reinterpret_cast<bool(__thiscall*)(void*)>(kIsLoading)(db); }
+
+// the level's dynamic records made so after the scene's own (none when a saved game loads: it has them)
+void __fastcall hkMakeDynamic(void* db, void* edx, const uint32_t* array)
+{
+    oMakeDynamic(db, edx, array);
+    if (array && IsReadable(array, 4))
+        Log("scene: %u dynamic objects of the scene (the engine's array holds %d), %zu of the level's", array[0],
+            kMaxDynamicGeoms, g_deferred.size());
+    if (Loading(db))
+        return;
+    int notMade = 0;
+    for (Deferred& d : g_deferred) {
+        ZGEOM* g = RecordGeom(d.record);
+        if (!g || !g->node)
+            continue;
+        if (RoomListsFree() <= kRoomListsKept) {
+            ++notMade;
+            continue;
+        }
+        reinterpret_cast<void(__thiscall*)(ZBaseGeom*, bool)>(game::ZBaseGeom_SetDynamic)(g->node, true);
+        d.made = true;
+    }
+    if (notMade)
+        Log("scene: %d of the level's moving objects are not drawn: the game keeps %d room lists for its own "
+            "(%d in all)", notMade, kRoomListsKept, kRoomLists);
+}
+
+void __fastcall hkMakeAutoAssign(void* db, void* edx, const uint32_t* array)
+{
+    oMakeAutoAssign(db, edx, array);
+    if (!Loading(db))
+        for (const Deferred& d : g_deferred)
+            if (ZGEOM* g = RecordGeom(d.record); g && g->node && d.made && (d.flags & game::kNodeAutoAssign))
+                reinterpret_cast<void(__thiscall*)(ZBaseGeom*, bool)>(game::ZBaseGeom_SetAutoAssign)(g->node, true);
+    g_deferred.clear();  // (done: a scene loaded without the level's records must not get them)
+}
+
+} // namespace
+
 void InstallSceneNpcs()
 {
     uint8_t original[5], call[5] = {0xE8};
@@ -360,6 +423,9 @@ void InstallSceneNpcs()
     rel = int32_t(reinterpret_cast<uintptr_t>(&TakeNodeThunk) - (kTakeNodeCall + 5));
     memcpy(call + 1, &rel, 4);
     PatchBytes(reinterpret_cast<void*>(kTakeNodeCall), original, call, 5, "CreateGeoms node of a scene npc group");
+    Hook("ZEngineDataBase::MakeDynamicGeomsDynamic", kMakeDynamicGeoms, hkMakeDynamic, &oMakeDynamic);
+    Hook("ZEngineDataBase::MakeAutoAssignGeomsAutoAssign", kMakeAutoAssignGeoms, hkMakeAutoAssign,
+         &oMakeAutoAssign);
 }
 
 void SetSceneNpcGms(const void* gms) { g_gms = static_cast<const uint8_t*>(gms); }
@@ -416,6 +482,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     g_copyRecords.clear();
     g_fileRecords = int(U32(gms, U32(gms, 0)));
     g_scriptEdited.clear();
+    g_deferred.clear();
     std::vector<SceneScriptEdit> edits = g_scriptEditProvider ? g_scriptEditProvider(scene) : std::vector<SceneScriptEdit>{};
     std::vector<SceneNpc> npcs = g_provider ? g_provider(scene) : std::vector<SceneNpc>{};
     std::vector<SceneList> lists = g_listProvider ? g_listProvider(scene) : std::vector<SceneList>{};
@@ -449,6 +516,26 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     if (depth < 0)
         depth = 0;
     std::vector<uint8_t> table(gms.begin() + entry(0), gms.begin() + entry(int(count)));
+    // what CreateGeoms can still take (kMaxDataGeoms): each of the level's objects is made only when
+    // all its records fit, else it is left out (the scene loads without it)
+    int dataLeft = kMaxDataGeoms, leftOut = 0;
+    for (const SceneRecord& r : recs)
+        dataLeft -= r.data ? 1 : 0;
+    struct Cost {
+        int data = 0;  // records with a data block
+        void Add(bool hasData) { data += hasData ? 1 : 0; }
+    };
+    auto fits = [&](const Cost& c, const std::string& what) {
+        if (c.data <= dataLeft) {
+            dataLeft -= c.data;
+            return true;
+        }
+        if (!leftOut)
+            Log("scene: %s and what follows it are left out: the engine makes at most %d objects with data in "
+                "a scene (%d are left)", what.c_str(), kMaxDataGeoms, dataLeft);
+        ++leftOut;
+        return false;
+    };
     std::map<uint32_t, int> moreOfClass;
     std::vector<uint32_t> rootNodes(kPools);          // not in the root's block (TakeNode)
     std::vector<std::vector<uint32_t>> groupBlocks;    // node counts of the new groups' children
@@ -530,6 +617,28 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         const SceneRecord& actor = recs[npc.record];
         const SceneRecord& group = recs[actor.parent];
         std::vector<uint8_t> data = Block(gms, actor.data);
+        {  // its records: its group, itself, its aim helper and the outfits it may get (as below)
+            Cost c;
+            c.Add(group.data != 0);
+            c.Add(!data.empty());
+            for (size_t at : BlockRefOffsets(data)) {
+                uint32_t idx = (U32(data, at) & 0x7FFFFFFF) - 1;
+                if (!(U32(data, at) & 0x80000000) || idx >= count)
+                    continue;
+                if (recs[idx].name == kAimHelper && recs[idx].classId == kHelperClass) {
+                    c.Add(recs[idx].data != 0);
+                } else if (npc.mesh && (npc.outfitMesh || npc.nudeMesh) && (recs[idx].classId & 0x100000)) {
+                    c.Add(recs[idx].data != 0);
+                    for (uint32_t k = idx + 1; k < count && k < idx + 8; ++k)
+                        if (recs[k].parent == int(idx) && recs[k].mesh) {
+                            c.Add(recs[k].data != 0);
+                            break;
+                        }
+                }
+            }
+            if (!fits(c, "character " + npc.name))
+                continue;
+        }
         // its outfits (before its group: at the root)
         if (npc.mesh && (npc.outfitMesh || npc.nudeMesh))
             for (size_t at : BlockRefOffsets(data)) {
@@ -619,6 +728,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             Log("scene lists: %s: record %d is not a list", l.name.c_str(), l.record);
             continue;
         }
+        Cost cost;
+        cost.Add(true);
+        if (!fits(cost, "list " + l.name))
+            continue;
         Put(data, 0, U32(data, 0) & 0x7FFFFFFF);  // not remapped yet
         std::vector<uint8_t> r(gms.begin() + recordAt(l.record), gms.begin() + recordAt(l.record) + kRecord);
         Put(r, 0x00, AppendString(buf, l.name));
@@ -650,6 +763,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             uint32_t pops = added == 0 ? uint32_t(depth) : inGroup ? 1u : 0u;
             if (pops > 127 || z.name.empty())
                 break;
+            Cost cost;
+            cost.Add(true);
+            if (!fits(cost, "zone " + z.name))
+                continue;
             int index = int(count) + added;
             std::vector<uint8_t> d = ZoneData(z.half);  // (remapped when the scene loads: its messages)
             const float mat[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
@@ -752,11 +869,30 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                         copy(c, level + 1, mine, nullptr, guard + 1, nullptr);
                 }
             };
+        // the cost of a record copied with what is under it, as `copy` makes them
+        std::function<void(Cost&, int, int)> costOf = [&](Cost& c, int r, int guard) {
+            if (guard > 8)
+                return;
+            c.Add(recs[r].data != 0);
+            if (recs[r].classId & 0x100000)
+                for (int k : children[r])
+                    costOf(c, k, guard + 1);
+        };
         for (const SceneCar& c : cars) {
             if (c.parts.empty() || c.parts.size() > 64 || shape < 0 ||
                 c.name.empty() || c.name.size() > 64 || c.shape.empty() || c.shape.size() > 64) {
                 Log("scene cars: %s: no models (of record %d) or no ZSHAPE to copy", c.name.c_str(), c.model);
                 continue;
+            }
+            {  // its spline, its group, its parts (the wheels have no data)
+                Cost cost;
+                cost.Add(recs[shape].data != 0);
+                cost.Add(true);
+                for (const auto& [r, local] : c.parts)
+                    if (r >= 0 && uint32_t(r) < count && !(recs[r].classId & 0x100000) && recs[r].mesh)
+                        costOf(cost, r, 0);
+                if (!fits(cost, "vehicle " + c.name))
+                    continue;
             }
             uint32_t mesh = ShapeMesh(c.shape);
             if (!mesh) {
@@ -870,6 +1006,12 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                     Log("scene copies: %s: this scene has no aim helper record to copy", c.name.c_str());
                     continue;
                 }
+                Cost cost;
+                cost.Add(recs[pointTemplate].data != 0);
+                if (!c.mapIcon.empty() && iconTemplate >= 0)
+                    cost.Add(true);
+                if (!fits(cost, "point " + c.name))
+                    continue;
                 uint32_t flags = copyFlags, extra = copyExtra, root = rootFlags;
                 copyFlags = 0;
                 copyExtra = 0;
@@ -909,6 +1051,11 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                         c.name.c_str());
                     continue;
                 }
+                Cost cost;
+                for (const auto& [r, local] : c.parts)
+                    costOf(cost, r, 0);
+                if (!fits(cost, "copy " + c.name))
+                    continue;
                 std::vector<uint8_t> g(gms.begin() + recordAt(groupTemplate),
                                        gms.begin() + recordAt(groupTemplate) + kRecord);
                 Put(g, 0x00, AppendString(buf, c.name));
@@ -933,6 +1080,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                     Log("scene copies: %s: this scene has no plain model record to copy", c.name.c_str());
                     continue;
                 }
+                Cost cost;
+                cost.Add(recs[modelTemplate].data != 0);
+                if (!fits(cost, "model " + c.name))
+                    continue;
                 g_copies[c.name] = index;
                 g_copyRecords.insert(index);
                 copy(modelTemplate, 0, kAtRoot, &place, 0, c.name.c_str());
@@ -945,6 +1096,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                         c.name.c_str(), c.record, c.source.c_str());
                     continue;
                 }
+                Cost cost;
+                costOf(cost, c.record, 0);
+                if (!fits(cost, "copy " + c.name))
+                    continue;
                 g_copies[c.name] = index;
                 g_copyRecords.insert(index);
                 copy(c.record, 0, kAtRoot, &place, 0, c.name.c_str());
@@ -974,6 +1129,10 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
                 Log("scene map: %s: no model (record %d) to draw", m.name.c_str(), m.record);
                 continue;
             }
+            Cost cost;
+            cost.Add(recs[planTemplate].data != 0);
+            if (!fits(cost, "the map's model " + m.name))
+                continue;
             std::vector<uint8_t> r(gms.begin() + recordAt(planTemplate), gms.begin() + recordAt(planTemplate) + kRecord);
             Put(r, 0x00, AppendString(buf, m.name));
             Put(r, 0x04, Append(gms, m.mat, sizeof(m.mat)));
@@ -1166,12 +1325,24 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
         Put(b, 0, (U32(b, 0) & 0x7F000000) | uint32_t(b.size()));
         Put(gms, recordAt(int(i)) + 0x20, Append(gms, b));
     }
+    // the level's dynamic records: made so after the scene's own (hkMakeDynamic)
+    for (int i = int(count); i < int(count) + added; ++i) {
+        size_t rec = size_t(U32(table, size_t(i) * 8) & 0xFFFFFF) * 4;
+        uint32_t flags = U32(gms, rec + 0x18);
+        if (flags & kDynamicFlag) {  // (both off, as CreateGeoms makes the scene's dynamic ones: 0xFFFBBFFF)
+            Put(gms, rec + 0x18, flags & ~(kDynamicFlag | game::kNodeAutoAssign));
+            g_deferred.push_back({i, flags, false});
+        }
+    }
     // the record list, longer
     std::vector<uint8_t> newList(4);
     Put(newList, 0, count + uint32_t(added));
     newList.insert(newList.end(), table.begin(), table.end());
     Put(gms, 0, Append(gms, newList));
-    Log("scene npcs: %d records of %zu characters added to %s", added, listed.size(), scene.c_str());
+    Log("scene npcs: %d records of %zu characters added to %s (%zu dynamic after the scene's; %d more with data "
+        "would fit)", added, listed.size(), scene.c_str(), g_deferred.size(), dataLeft);
+    if (leftOut)
+        Log("scene: %d of the level's objects left out (too many for the engine)", leftOut);
     return true;
 }
 

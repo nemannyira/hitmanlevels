@@ -10,6 +10,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # static CRT: the DLL must not depend on redistributables next to a 2002 game
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# what a level file may hold (src/levelfmt): the DLL's loader, h2level_check.exe and the fuzz target
+add_library(levelfmt STATIC src/levelfmt/level_check.cpp)
+target_include_directories(levelfmt PUBLIC third_party/json)
+add_executable(h2level_check tools/level_check/main.cpp)
+target_link_libraries(h2level_check PRIVATE levelfmt)
+option(H2_FUZZ "libFuzzer target for the level validator (clang-cl)" OFF)
+if(H2_FUZZ)
+    add_executable(level_check_fuzz tools/fuzz/level_check_fuzz.cpp)
+    target_compile_options(level_check_fuzz PRIVATE -fsanitize=fuzzer,address)
+    target_link_options(level_check_fuzz PRIVATE -fsanitize=fuzzer,address)
+    target_link_libraries(level_check_fuzz PRIVATE levelfmt)
+endif()
+
 add_library(minhook STATIC
     third_party/minhook/src/buffer.c
     third_party/minhook/src/hook.c
@@ -103,9 +116,10 @@ add_library(h2fix SHARED
     src/ui.cpp
     src/watch.cpp
     src/dinput8.def)
-target_link_libraries(h2fix PRIVATE minhook lua imgui)
+target_link_libraries(h2fix PRIVATE minhook lua imgui levelfmt)
 target_include_directories(h2fix PRIVATE third_party/json)
 target_compile_definitions(h2fix PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
-target_compile_options(h2fix PRIVATE /W4 /permissive-)
+target_compile_options(h2fix PRIVATE /W4 /permissive- /Zi)
 set_target_properties(h2fix PROPERTIES OUTPUT_NAME dinput8)
-target_link_options(h2fix PRIVATE /MAP:${CMAKE_BINARY_DIR}/dinput8.map)
+# a .pdb next to the map (crash stacks in the debugger; no change to the code made)
+target_link_options(h2fix PRIVATE /MAP:${CMAKE_BINARY_DIR}/dinput8.map /DEBUG /OPT:REF /OPT:ICF)

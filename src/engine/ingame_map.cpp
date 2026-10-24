@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "../hook.h"
+#include "../scene.h"
 #include "messages.h"
 #include "scene_data.h"
 
@@ -25,7 +27,8 @@ constexpr size_t kMap_ShownFloor = 0x2F3;     // the floor entry shown last
 constexpr size_t kFloor_Group = 0x04;         // a floor entry: its group's ref,
 constexpr size_t kFloor_Name = 0x08;          //   its name (char*)
 constexpr size_t kIconDraw_Count = 0x18, kIconDraw_Pairs = 0x1C;
-constexpr uint32_t kMaxIcons = 256;
+constexpr uint32_t kMaxIcons = 256;           // its pairs (0x800 bytes; the drawer's own field at +0x81C after)
+constexpr uintptr_t kIconDraw_Add = 0x53D1E0;  // CMapIconDraw->(icon ref, object ref): INT3 past kMaxIcons
 
 template <typename T>
 T VFunc(void* obj, int index)
@@ -101,7 +104,35 @@ uint8_t* Field(void* map, size_t at)
     return p;
 }
 
+// The map's icons of a floor (FillFloorIcons, 0x540920) go into a drawer of kMaxIcons; the game's
+// add breaks into the debugger past that (INT3, then writes past the array when a handler returns),
+// which only a level can reach (its points' icons, its characters on one floor): the icons past it
+// are not drawn instead.
+using IconDrawAdd_t = void(__fastcall*)(uint8_t* draw, void* edx, uint32_t icon, uint32_t object);
+IconDrawAdd_t oIconDrawAdd = nullptr;
+bool g_iconsFull = false;  // told once a scene
+
+void __fastcall hkIconDrawAdd(uint8_t* draw, void* edx, uint32_t icon, uint32_t object)
+{
+    uint32_t n = 0;
+    if (draw && IsReadable(draw + kIconDraw_Count, 4))
+        memcpy(&n, draw + kIconDraw_Count, 4);
+    if (n >= kMaxIcons) {
+        if (!g_iconsFull)
+            Log("in-game map: more than %u icons on one floor, the others are not drawn", kMaxIcons);
+        g_iconsFull = true;
+        return;
+    }
+    oIconDrawAdd(draw, edx, icon, object);
+}
+
 } // namespace
+
+void InstallIngameMap()
+{
+    Hook("CMapIconDraw::Add", kIconDraw_Add, hkIconDrawAdd, &oIconDrawAdd);
+    OnSceneLeaving([](const std::string&) { g_iconsFull = false; });
+}
 
 void* IngameMap()
 {

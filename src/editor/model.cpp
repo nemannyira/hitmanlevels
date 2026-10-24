@@ -28,6 +28,7 @@ namespace {
 // (PathOf, Resolve, ...) takes a new snapshot.
 std::shared_ptr<engine::SceneSnapshot> g_snapshot = std::make_shared<engine::SceneSnapshot>();
 std::vector<std::shared_ptr<engine::SceneSnapshot>> g_retired;
+std::shared_ptr<engine::SceneSnapshot> g_lastFull;  // the last one taken (kept while newer ones are not)
 std::vector<std::pair<engine::ZBaseGeom*, engine::ZGEOM*>> g_spawned;
 std::vector<engine::ZGEOM*> g_engineOwned;  // items: the game removes them on unload
 double g_snapshotTime = -1e12;
@@ -49,17 +50,33 @@ const engine::SceneSnapshot& SceneModel(double maxAgeMs)
 {
     if (!g_hooked) {
         g_hooked = true;
-        OnScenePushed([](const std::string&) { InvalidateSceneModel(); });
+        OnScenePushed([](const std::string&) {
+            InvalidateSceneModel();
+            g_lastFull.reset();  // (another scene's objects)
+        });
     }
     if (NowMs() - g_snapshotTime > maxAgeMs) {
         std::vector<engine::ZBaseGeom*> extra;
         for (auto& [node, geom] : g_spawned)
             extra.push_back(node);
         g_retired.push_back(g_snapshot);
+        if (g_retired.size() == 32) {  // (each lives until the frame ends: a walk of the scene for each of many)
+            static int told;
+            if (told++ < 3)
+                Log("editor: 32 snapshots of the scene in one frame (a loop that takes one for each object?)");
+        }
         g_snapshot = std::make_shared<engine::SceneSnapshot>(engine::TakeSnapshot(extra));
         g_snapshotTime = NowMs();
+        g_lastFull = g_snapshot;
     }
     return *g_snapshot;
+}
+
+// The objects of the scene's last snapshot (taken anew only when there is none): for what was there
+// before (an object's parts), without a walk of the scene for each of many changes
+const engine::SceneSnapshot& RecentSceneModel()
+{
+    return g_lastFull && !g_lastFull->geoms.empty() ? *g_lastFull : SceneModel();
 }
 
 // Not again within 50 ms: lookups of objects that are gone do not walk the
@@ -68,8 +85,10 @@ const engine::SceneSnapshot& FresherSceneModel() { return SceneModel(50.0); }
 
 void InvalidateSceneModel()
 {
-    g_retired.push_back(g_snapshot);
-    g_snapshot = std::make_shared<engine::SceneSnapshot>();
+    if (!g_snapshot->geoms.empty()) {  // (an empty one is nobody's to keep)
+        g_retired.push_back(g_snapshot);
+        g_snapshot = std::make_shared<engine::SceneSnapshot>();
+    }
     g_snapshotTime = -1e12;
 }
 
@@ -136,18 +155,20 @@ void RevertDynamic(const std::string&)
     g_madeDynamic.clear();
 }
 
-void EnsureDynamic(engine::ZGEOM* geom)
+bool EnsureDynamic(engine::ZGEOM* geom)
 {
     engine::ZBaseGeom* node = geom->node;
     if (engine::IsA(geom, "ZActor"))
-        return;  // characters have their own movement; converting them breaks their rendering
+        return true;  // characters have their own movement; converting them breaks their rendering
     if (node->flags & game::kNodeDynamic) {
         // moving: drawn in the rooms where it is, not only in the one it was put in
-        if (!(node->flags & game::kNodeAutoAssign) && !(node->parent && (node->parent->flags & game::kNodeDynamic))) {
+        if (!(node->flags & game::kNodeAutoAssign) && !(node->parent && (node->parent->flags & game::kNodeDynamic)) &&
+            engine::RoomListsFree() > engine::kRoomListsKept) {
             SetAutoAssign(node, true);
-            g_madeAutoAssign.push_back({node, geom});
+            if (node->flags & game::kNodeAutoAssign)
+                g_madeAutoAssign.push_back({node, geom});
         }
-        return;
+        return true;
     }
     // parts of a moving group (vehicle, item) move with it: only the group is tracked
     for (engine::ZBaseGeom* p = node->parent; p && engine::IsReadable(p, sizeof(*p)); p = p->parent) {
@@ -156,7 +177,7 @@ void EnsureDynamic(engine::ZGEOM* geom)
             if (logged++ < 10)
                 Log("'%s' is part of the moving group '%s': not made dynamic", engine::SafeString(geom->name).c_str(),
                     p->geom ? engine::SafeString(p->geom->name).c_str() : "?");
-            return;
+            return true;
         }
     }
     static bool hooked;
@@ -164,13 +185,25 @@ void EnsureDynamic(engine::ZGEOM* geom)
         hooked = true;
         OnSceneLeaving(RevertDynamic);
     }
+    // a room list of its own: not one of those the game keeps for its own moving objects (taken, the
+    // game goes down when it needs one: engine::RoomListsFree)
+    if (engine::RoomListsFree() <= engine::kRoomListsKept) {
+        static int told;
+        if (told++ < 5)
+            Log("'%s' stays where it is: the map has room for no more moving objects",
+                engine::SafeString(geom->name).c_str());
+        return false;
+    }
     SetDynamic(node, true);
+    if (!(node->flags & game::kNodeDynamic))
+        return false;
     g_madeDynamic.push_back({node, geom});
     if (!(node->flags & game::kNodeAutoAssign)) {
         SetAutoAssign(node, true);
         g_madeAutoAssign.push_back({node, geom});
     }
     Log("made %p dynamic (flags %08X)", static_cast<void*>(geom), node->flags);
+    return true;
 }
 
 void DestroyAllSpawned(const std::string&)
@@ -211,12 +244,16 @@ engine::ZGEOM* SpawnClone(engine::ZGEOM* source, const std::string& name, std::s
     // drawn in between); parts hidden by the map itself (a lamp's "on" stage)
     // stay hidden in the copy too.
     std::vector<engine::ZGEOM*> hidden;
-    const auto& snap = SceneModel();
-    int start = snap.Find(source);
+    const engine::SceneSnapshot* snap = &RecentSceneModel();  // (a clone for each of a level's copies)
+    int start = snap->Find(source);
+    if (start < 0) {  // (made since: a copy of a copy)
+        snap = &FresherSceneModel();
+        start = snap->Find(source);
+    }
     if (start >= 0) {
         std::vector<int> queue{start};
         for (size_t q = 0; q < queue.size() && q < 4096; ++q) {
-            const engine::GeomInfo& g = snap.geoms[queue[q]];
+            const engine::GeomInfo& g = snap->geoms[queue[q]];
             if (IsLive(g.geom) && IsHidden(g.geom) && g_takenOut && g_takenOut(g.geom))
                 hidden.push_back(g.geom);
             queue.insert(queue.end(), g.children.begin(), g.children.end());
@@ -497,7 +534,17 @@ void SetTransform(engine::ZGEOM* geom, const Transform& t)
         WatchHitmanAfterMove(geom, t);
         return;
     }
-    EnsureDynamic(geom);
+    // where it is already (a copy made with the map, put where the level has it): left static
+    Transform now = GetTransform(geom);
+    bool same = true;
+    for (int i = 0; i < 9 && same; ++i)
+        same = std::fabs(now.mat[i] - t.mat[i]) < 1e-4f;
+    for (int i = 0; i < 3 && same; ++i)
+        same = std::fabs(now.pos[i] - t.pos[i]) < 0.01f;
+    if (same)
+        return;
+    if (!EnsureDynamic(geom))
+        return;
     if (!parentGeom || !IsLive(parentGeom)) {
         game::SetLocalTransform(geom, t.mat, t.pos);
         return;
@@ -626,6 +673,12 @@ std::string PathOf(engine::ZGEOM* geom)
 
 engine::ZGEOM* Resolve(const std::string& path)
 {
+    // an object of the map (not the editor's: its paths stay) from the last snapshot: a level's objects
+    // made one after another (each takes the snapshot away) look up their rooms and sources so, not with
+    // a walk of the scene for each (2000 points of a level kept 2000 snapshots alive: out of memory)
+    const auto& recent = RecentSceneModel();
+    if (int r = recent.FindPath(path); r >= 0 && IsLive(recent.geoms[r].geom) && !IsSpawned(recent.geoms[r].geom))
+        return recent.geoms[r].geom;
     const auto& snap = SceneModel();
     int i = snap.FindPath(path);
     if (i >= 0)

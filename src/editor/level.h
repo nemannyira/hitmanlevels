@@ -265,6 +265,11 @@ engine::ZGEOM* RenamePoint(engine::ZGEOM* point, const std::string& name, std::s
 // A point's icon on the in-game map (M) ("": none; undoable): shown from the
 // map's next load on (it is made with the map), on the floor of its room.
 bool SetPointMapIcon(engine::ZGEOM* point, const std::string& icon, std::string* error = nullptr);
+
+// A level downloaded by the Hub (docs/online_levels.md): its folder is
+// "Online\<id>" (id [a-z0-9]{8,32}). It runs untrusted (script::SetUntrusted)
+// and is read-only: Save as makes a level of the user's own of it.
+bool IsOnlineLevel(const std::string& folder);
 // New elements of a list (a route: the points in walking order).
 // Where an object stands: a group of models (a car) by its parts (their
 // middle, at the bottom of their boxes; a map's group is often at the world's

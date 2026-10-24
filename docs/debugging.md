@@ -88,6 +88,14 @@ frames can be compared (images, state).
   editor must be open and the control's panel shown (`h2.dev_editor(true)`,
   `h2.dev_panel(name)`). `h2.dev_selected()`: the selection's path (a copy
   just made by Duplicate is selected).
+* `level_check_test.py` (no game): the level validator (`src/levelfmt`,
+  `build/Release/h2level_check.exe`) with hostile files, strict and lenient,
+  and every level of Mods and examples accepted strictly.
+* `online_level_test.py`: a downloaded level (`Mods\Online\<id>`) runs
+  untrusted; it starts the game itself, once as players have it (the dev
+  commands stop answering while the level runs: what it checks comes from
+  H2Fix.log) and once with `[Debug] DevCommandsOnline=1` (Save refused, Save
+  as, its own h2.state file).
 * `map_models_test.py`: the level's models on the in-game map, on C1-1 and on
   a map without buildings (screenshots of the open map: dumps/shots).
 * `map_icon_test.py`: a point's icon and the mission's (targets, exit) on the

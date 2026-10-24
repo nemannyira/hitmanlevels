@@ -24,6 +24,13 @@ std::vector<ConsoleLine> g_console;
 
 constexpr size_t kMemoryLimit = 256u << 20;
 constexpr ULONGLONG kCallBudgetMs = 3000;
+constexpr size_t kUntrustedMemoryLimit = 64u << 20;  // a level from elsewhere (SetUntrusted)
+constexpr ULONGLONG kUntrustedBudgetMs = 1000;
+constexpr const char* kHiddenTools = "h2fix.hidden_tools";  // registry: h2's fields taken out while untrusted
+bool g_untrusted;
+std::string g_untrustedTag;
+size_t MemoryLimit() { return g_untrusted ? kUntrustedMemoryLimit : kMemoryLimit; }
+ULONGLONG CallBudgetMs() { return g_untrusted ? kUntrustedBudgetMs : kCallBudgetMs; }
 constexpr int kHookCount = 100000;  // instructions between time checks
 size_t g_memory;          // bytes the state has
 int g_depth;              // calls into Lua under way (PCall)
@@ -41,7 +48,7 @@ void* LimitedAlloc(void*, void* ptr, size_t osize, size_t nsize)
         g_memory -= osize;
         return nullptr;
     }
-    if (nsize > osize && g_memory + (nsize - osize) > kMemoryLimit)
+    if (nsize > osize && g_memory + (nsize - osize) > MemoryLimit())
         return nullptr;  // Lua raises "not enough memory"
     void* p = realloc(ptr, nsize);
     if (p)
@@ -57,7 +64,7 @@ int Panic(lua_State* s)
 
 void CountHook(lua_State* s, lua_Debug*)
 {
-    if (g_depth > 0 && (g_stopping || GetTickCount64() - g_callStart > kCallBudgetMs)) {
+    if (g_depth > 0 && (g_stopping || GetTickCount64() - g_callStart > CallBudgetMs())) {
         // A script could catch the error (pcall in a loop) and go on: from now
         // on every instruction of every thread fails until the call returns.
         if (!g_stopping) {
@@ -65,7 +72,7 @@ void CountHook(lua_State* s, lua_Debug*)
             lua_sethook(L, CountHook, LUA_MASKCOUNT, 1);  // new coroutines take the main thread's
         }
         lua_sethook(s, CountHook, LUA_MASKCOUNT, 1);
-        luaL_error(s, "script stopped: it ran longer than %d s", int(kCallBudgetMs / 1000));
+        luaL_error(s, "script stopped: it ran longer than %d s", int(CallBudgetMs() / 1000));
     }
 }
 
@@ -250,7 +257,7 @@ int PCall(lua_State* s, int nargs, int nresults, int errfunc)
 }
 
 bool LastCallTimedOut() { return g_lastTimedOut; }
-bool CallTimeLeft() { return g_depth == 0 || (!g_stopping && GetTickCount64() - g_callStart <= kCallBudgetMs); }
+bool CallTimeLeft() { return g_depth == 0 || (!g_stopping && GetTickCount64() - g_callStart <= CallBudgetMs()); }
 int TimeoutCount() { return g_timeouts; }
 void ResetTimeouts() { g_timeouts = 0; }
 
@@ -405,5 +412,51 @@ void Register(const char* name, CFunction fn)
     lua_setfield(L, -2, name);
     lua_pop(L, 1);
 }
+
+void SetUntrusted(bool on, const std::string& tag, bool keepDevTools)
+{
+    g_untrustedTag = on ? tag : "";
+    if (on == g_untrusted || !L)
+        return;
+    g_untrusted = on;
+    int top = lua_gettop(L);
+    lua_getglobal(L, "h2");
+    if (on) {  // the user's tools out of h2, into the registry
+        lua_newtable(L);
+        std::vector<std::string> names;
+        lua_pushnil(L);
+        while (lua_next(L, -3)) {
+            lua_pop(L, 1);
+            if (lua_type(L, -1) != LUA_TSTRING)
+                continue;
+            std::string name = lua_tostring(L, -1);
+            if (name == "mem" || (!keepDevTools && name.rfind("dev_", 0) == 0))
+                names.push_back(name);
+        }
+        for (const std::string& name : names) {
+            lua_getfield(L, -2, name.c_str());
+            lua_setfield(L, -2, name.c_str());
+            lua_pushnil(L);
+            lua_setfield(L, -3, name.c_str());
+        }
+        lua_setfield(L, LUA_REGISTRYINDEX, kHiddenTools);
+        Log("lua: a downloaded level runs: %d MB, %d s a call, %zu of h2's tools taken out", int(MemoryLimit() >> 20),
+            int(CallBudgetMs() / 1000), names.size());
+    } else if (lua_getfield(L, LUA_REGISTRYINDEX, kHiddenTools) == LUA_TTABLE) {  // back
+        lua_pushnil(L);
+        while (lua_next(L, -2)) {
+            lua_pushvalue(L, -2);
+            lua_insert(L, -2);
+            lua_settable(L, -5);
+        }
+        lua_pushnil(L);
+        lua_setfield(L, LUA_REGISTRYINDEX, kHiddenTools);
+        Log("lua: the level is the user's own again: h2's tools back");
+    }
+    lua_settop(L, top);
+}
+
+bool Untrusted() { return g_untrusted; }
+const std::string& UntrustedTag() { return g_untrustedTag; }
 
 } // namespace h2::script

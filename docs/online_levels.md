@@ -128,23 +128,34 @@ Added 2026-10-23 (fuzz_levels "many placed", "script names"):
 
 * **Counts**: a level file is cut to at most 2000 placed objects, 5000
   object edits, 256 changed lists of 256 points, 200 characters' new
-  settings, 16 scripts (vehicles 64, new lists 256 already); the editor makes
-  no more placed objects than that. The 38 levels made so far hold 15 placed
-  objects at most. **Not enough yet**: each placed object becomes records of
-  the scene while it loads (a point with a map icon two, a group's copy one
-  per model), and 2000 points with icons (about 4000 records added to C1-1's
-  4264) took the game down while the map loaded (fuzz_levels "many placed").
-  The engine's capacity for records added at load is to be measured and
-  inject.cpp given a budget for them (it knows how many it adds); until then
-  a hostile file can still crash the game this way (not run code).
+  settings, 16 scripts, 64 vehicles, 256 points shown on the map; the editor
+  makes no more than that. The 38 levels made so far hold 15 placed objects
+  at most.
+* **What the engine can take while the map loads** (measured 2026-10-24,
+  docs/roadmap.md "Engine limits a level meets"): the moving objects' room
+  lists (510 in a scene), the dynamic objects' array at load (1000), the
+  records with data (0x2000), the map's icons on a floor (256) and the
+  routine list (a level of 1800 points with icons never finished loading).
+  The DLL keeps within each: the level's moving records are made dynamic
+  after the scene's own and only while 128 room lists stay free, objects
+  whose records would not fit are left out, the icons past 256 on a floor
+  are not drawn, a level shows at most 256 points on the map. A hostile file
+  of 2000 placed objects, all of them with icons, loads (and is cut).
 * **Script names as a whitelist**: `[A-Za-z0-9_-]{1,32}.lua`, not Windows'
   device names (`CON`, `NUL`, `COM1`... with any extension), instead of the
   blacklist of `..`, `:` and slashes.
 
-To add for downloaded levels:
-
-* **Strict schema**: unknown fields refused for downloaded levels (the
-  editor's own files may keep being lenient).
+Added 2026-10-24: **the validator as a library** (`src/levelfmt/level_check`):
+what a level.json may hold, in one place, with no knowledge of the game, built
+into the DLL, into `h2level_check.exe` (the Hub's installer starts from it)
+and into a libFuzzer target (`-DH2_FUZZ=ON`, clang-cl). Strict for a
+downloaded level (the DLL's LoadLevel for `Mods\Online\<id>`, the Hub): a
+field the editor does not write, a value of the wrong kind, out of range or
+of the wrong characters, more than a level may hold, ids or scripts twice
+refuse the level; lenient for the user's own (warnings in H2Fix.log, the
+loader leaves those out). `tools/tests/level_check_test.py` (no game): 30
+hostile cases both ways, and every level of Mods and examples accepted
+strictly.
 
 ## 6. In the game: an untrusted mode for downloaded levels
 
@@ -156,21 +167,22 @@ kill switch (a level's scripts that run out of time three times are
 stopped); `h2.mem` only with LuaMemory=1; dev commands only with
 DevCommands=1; long and strange text (`%n`, `%s`, NUL) checked.
 
-For levels under `Mods\Online\`:
+For levels under `Mods\Online\<id>` (done 2026-10-24, `script::SetUntrusted`,
+`editor::IsOnlineLevel`):
 
-* **Memory**: 256 MB of Lua memory is a lot in a 32-bit game that ran out of
-  address space at 1.6 GB in a long test session; 32–64 MB for downloaded
-  levels.
-* **Time**: a shorter budget per call (e.g. 1 s).
-* **Debug features off while one runs**, whatever H2Fix.ini says:
-  DevCommands (it executes Mods\_cmd.lua and offers memory and script
-  commands), LuaMemory (`h2.mem`), the editor's scripts console. These are
-  the user's own tools, not for content from others.
-* **The editor**: a downloaded level opens read-only; "Save as" makes a
-  local copy (in Mods\, the user's own from then on).
+* **Memory**: 64 MB of Lua memory instead of 256 (a 32-bit game).
+* **Time**: 1 s for a call instead of 3.
+* **The user's own tools out while one runs**: `h2.dev_*` and `h2.mem` are
+  taken out of `h2` (kept in the registry, back when the level is the user's
+  own again), `Mods\_cmd.lua` is not run, the console takes no input (the
+  level's globals share the state). `[Debug] DevCommandsOnline=1` keeps the
+  dev commands for testing such a level; it is off by default.
+* **The editor**: a downloaded level is not saved; *Save as a level of your
+  own* makes a copy in `Mods\` (its scripts, by their names only), which is
+  the user's from then on. The launcher lists `Online\<id>` levels.
 * **Saved games**: `h2.state` stays limited (4 MB, depth 32, checked when
-  read back), its file per save slot; a downloaded level's state is kept
-  apart from local levels' (its id in the file name).
+  read back); a downloaded level's file is `Save\<slot>.<id>.h2lua`, apart
+  from local levels'.
 
 ## 7. Accounts on the client
 
@@ -243,8 +255,12 @@ version must be newer than the installed one.
 
 1. **Harden the DLL's loader now** (useful for levels shared today by hand):
    count limits, script name whitelist, fuzz cases (done 2026-10-23); the
-   validator as a library the DLL and the Hub share.
-2. **The untrusted mode** (section 6) for levels under Mods\Online\.
+   engine's load-time limits kept (done 2026-10-24); the validator as a
+   library the DLL and the Hub share (done 2026-10-24: `src/levelfmt`,
+   `h2level_check.exe`).
+2. **The untrusted mode** (section 6) for levels under Mods\Online\ (done
+   2026-10-24; to test in the game once the Hub installs a level there: by
+   hand, a folder `Mods\Online\<id>` works the same).
 3. **The package format offline**: export / import `.h2lvl` in the editor
    (author key, manifest, hashes), so levels can be passed on without the
    site; the importer is the Hub's installer.

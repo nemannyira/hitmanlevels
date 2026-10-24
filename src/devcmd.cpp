@@ -138,6 +138,8 @@ void Poll()
     if (now < g_nextPoll)
         return;
     g_nextPoll = now + 200.0;
+    if (script::Untrusted() && !g_config.devCommandsOnline)
+        return;  // (a downloaded level runs: not the user's Mods\_cmd.lua either)
     RunCommandFile();
 }
 
@@ -386,7 +388,8 @@ int Shot(lua_State* L)
 }
 
 // h2.dev_panel(name): shows an editor panel (left tab / right section)
-// h2.dev_level(op [, arg]): "new" name | "save" | "load" folder | "apply" | "revert" | "undo" | "redo" | "info" | ...
+// h2.dev_level(op [, arg]): "new" name | "save" | "saveas" name | "load" folder | "apply" | "revert" | "undo" | "redo" |
+// "info" | ...
 int Level(lua_State* L)
 {
     std::string op = luaL_checkstring(L, 1);
@@ -405,6 +408,9 @@ int Level(lua_State* L)
     } else if (op == "save") {
         if (!editor::SaveLevel(&err))
             return luaL_error(L, "save: %s", err.c_str());
+    } else if (op == "saveas") {  // the toolbar's Save as (a downloaded level: a copy of the user's own)
+        if (!editor::SaveLevelAs(arg, &err))
+            return luaL_error(L, "saveas: %s", err.c_str());
     } else if (op == "load") {
         if (!editor::LoadLevel(arg, &err))
             return luaL_error(L, "load: %s", err.c_str());

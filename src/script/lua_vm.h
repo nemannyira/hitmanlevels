@@ -63,4 +63,13 @@ void ResetTimeouts();
 using CFunction = int (*)(lua_State*);
 void Register(const char* name, CFunction fn);
 
+// A level from elsewhere (Mods\Online\<id>, docs/online_levels.md section 6)
+// runs untrusted: 64 MB of Lua memory instead of 256, 1 s for a call instead
+// of 3, and the user's own tools are not in "h2" while it does (h2.dev_*,
+// h2.mem; `keepDevTools`: the dev commands stay, for testing it). `tag`: its
+// id (its h2.state files are its own: state.h). Off again: they are back.
+void SetUntrusted(bool on, const std::string& tag = "", bool keepDevTools = false);
+bool Untrusted();
+const std::string& UntrustedTag();
+
 } // namespace h2::script

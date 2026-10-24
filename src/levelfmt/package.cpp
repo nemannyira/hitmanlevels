@@ -85,14 +85,38 @@ bool ValidUtf8(const std::string& s)
     return true;
 }
 
-// text for people: UTF-8, no control characters but new lines / tabs where `lines`
+// characters that change how the text around them shows without being seen: direction overrides and
+// isolates, zero-width ones, invisible separators, the BOM, C1 controls (issue #7: a name could pass
+// itself off as another, or carry a fake fingerprint after a right-to-left override)
+bool Invisible(uint32_t cp)
+{
+    return (cp >= 0x80 && cp <= 0x9F) || cp == 0xAD || cp == 0x34F || cp == 0x61C || cp == 0x115F || cp == 0x1160 ||
+           cp == 0x17B4 || cp == 0x17B5 || cp == 0x180E || (cp >= 0x200B && cp <= 0x200F) ||
+           (cp >= 0x2028 && cp <= 0x202E) || (cp >= 0x2060 && cp <= 0x206F) || cp == 0x3164 || cp == 0xFEFF ||
+           cp == 0xFFA0 || (cp >= 0xFFF0 && cp <= 0xFFFB) || (cp >= 0xE0000 && cp <= 0xE0FFF);
+}
+
+// text for people: UTF-8, no control characters (but new lines / tabs where `lines`), nothing invisible
 bool PlainText(const std::string& s, bool lines)
 {
     if (!ValidUtf8(s))
         return false;
-    for (unsigned char c : s)
-        if ((c < 0x20 && !(lines && (c == '\n' || c == '\r' || c == '\t'))) || c == 0x7F)
+    for (size_t i = 0; i < s.size();) {
+        unsigned char c = s[i];
+        if (c < 0x80) {
+            if ((c < 0x20 && !(lines && (c == '\n' || c == '\r' || c == '\t'))) || c == 0x7F)
+                return false;
+            ++i;
+            continue;
+        }
+        int extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : 1;  // (valid: checked above)
+        uint32_t cp = c & (0x3F >> extra);
+        for (int k = 1; k <= extra; ++k)
+            cp = cp << 6 | (static_cast<unsigned char>(s[i + k]) & 0x3F);
+        if (Invisible(cp))
             return false;
+        i += extra + 1;
+    }
     return true;
 }
 
@@ -105,7 +129,9 @@ bool ScriptFileName(const std::string& name, std::string* script = nullptr)
     return true;
 }
 
-bool ValidPng(const std::string& d)
+// A PNG's chunks walked: the picture's own kept (into `clean` when given), the others (text, EXIF, times,
+// profiles: what can carry a name or a path, issue #8) dropped there and refused otherwise.
+bool WalkPng(const std::string& d, std::string* clean)
 {
     static const char sig[] = "\x89PNG\r\n\x1a\n";
     if (d.size() < 33 || memcmp(d.data(), sig, 8) != 0 || memcmp(d.data() + 12, "IHDR", 4) != 0)
@@ -115,8 +141,37 @@ bool ValidPng(const std::string& d)
                uint8_t(d[at + 3]);
     };
     uint32_t w = be(16), h = be(20);
-    return be(8) == 13 && w > 0 && h > 0 && w <= uint32_t(kMaxPreviewSide) && h <= uint32_t(kMaxPreviewSide);
+    if (be(8) != 13 || w == 0 || h == 0 || w > uint32_t(kMaxPreviewSide) || h > uint32_t(kMaxPreviewSide))
+        return false;
+    if (clean)
+        clean->assign(d, 0, 8);
+    bool idat = false;
+    for (size_t at = 8;;) {
+        if (d.size() - at < 12)
+            return false;
+        uint32_t n = be(at);
+        if (n > d.size() - at - 12)
+            return false;
+        std::string type = d.substr(at + 4, 4), chunk = d.substr(at, 12 + size_t(n));
+        if (Crc32(d.substr(at + 4, 4 + size_t(n))) != be(at + 8 + n))
+            return false;
+        bool keep = type == "IHDR" || type == "PLTE" || type == "tRNS" || type == "IDAT" || type == "IEND" ||
+                    type == "gAMA" || type == "sRGB" || type == "cHRM" || type == "sBIT" || type == "bKGD" ||
+                    type == "pHYs";
+        if (!keep && !(type[0] & 0x20))
+            return false;  // a critical chunk this reader does not know
+        if (!keep && !clean)
+            return false;  // (a package's preview holds the picture only)
+        if (keep && clean)
+            *clean += chunk;
+        idat = idat || type == "IDAT";
+        at += 12 + size_t(n);
+        if (type == "IEND")
+            return idat && at == d.size();
+    }
 }
+
+bool ValidPng(const std::string& d) { return WalkPng(d, nullptr); }
 
 // a file's own limit and content check
 bool CheckFile(const PackageFile& f, std::string* error)
@@ -321,6 +376,12 @@ bool ReadZip(const std::string& z, std::vector<PackageFile>& out, std::string* e
 } // namespace
 
 bool ValidManifestText(const std::string& s, size_t max) { return !s.empty() && s.size() <= max && PlainText(s, false); }
+
+std::string CleanPng(const std::string& png)
+{
+    std::string clean;
+    return WalkPng(png, &clean) ? clean : std::string();
+}
 
 bool AllowedPackageName(const std::string& name)
 {

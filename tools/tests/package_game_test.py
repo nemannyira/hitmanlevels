@@ -22,7 +22,7 @@ sys.path.insert(0, HERE)
 import dev  # noqa: E402
 import run_all  # noqa: E402
 
-PACK = os.path.join(ROOT, "build", "Release", "h2level_pack.exe")
+PACK = os.environ.get("H2LEVEL_PACK") or os.path.join(ROOT, "build", "Release", "h2level_pack.exe")
 NAME = "_PkgTest"
 FOLDER = os.path.join(dev.GAME, "Mods", NAME)
 LOG = os.path.join(dev.GAME, "H2Fix.log")

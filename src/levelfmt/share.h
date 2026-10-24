@@ -28,14 +28,26 @@ bool LoadAuthor(AuthorInfo& info, AuthorKey* key = nullptr, std::string* error =
 // Makes the author's key once (a second call keeps the key, changes the name / license).
 bool SetAuthor(const std::string& name, const std::string& license, AuthorInfo* info, std::string* error);
 
+// The author key backed up with a password (issue #4: a new Windows or another PC keeps the author's
+// fingerprint): the seed, name and license encrypted (Argon2id 32 MB / 3 passes -> XChaCha20-Poly1305,
+// Monocypher), the parameters, salt and nonce in its authenticated header. `file`: the backup's bytes.
+constexpr size_t kMinBackupPassword = 8;
+bool BackupAuthorKey(const std::string& password, std::string& file, std::string* error);
+// Makes the backup's key this PC's author key. Another key there already is refused unless `replace`
+// (then it is kept beside as author.key.old-<random>, with its author.json).
+bool RestoreAuthorKey(const std::string& file, const std::string& password, bool replace, AuthorInfo* info,
+                      std::string* error);
+
 // Gives a level file its package id (when it has none) and the next version: `level` is the parsed
 // level.json, changed in place. False when the level cannot have one.
 bool StampPackage(nlohmann::json& level, std::string* error);
 
 // The package of the level in `folder` (its level.json, the scripts it lists, README.md and preview.png
 // when there): checked as an installer checks it, signed with the author's key. The level.json must
-// carry its package stamp (StampPackage). Refused when a file holds a path of this PC (C:\Users\...).
-bool ExportLevelFolder(const std::string& folder, std::string& package, Manifest* manifest, std::string* error);
+// carry its package stamp (StampPackage). Refused when a file holds a path of this PC (C:\Users\...);
+// preview.png goes as the picture only (CleanPng); `note`: the Windows user name found in a file (sent anyway).
+bool ExportLevelFolder(const std::string& folder, std::string& package, Manifest* manifest, std::string* error,
+                       std::string* note = nullptr);
 
 // What this PC knows of a package's author and level.
 struct TrustCheck {

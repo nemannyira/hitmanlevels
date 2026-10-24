@@ -3,13 +3,16 @@ exactly as they were at the end), H2Fix.ini's DevCommands on for the run and
 LuaMemory only for the tests that need it, LuaMemory last (put back after; the
 security suite checks that h2.mem is not there without it), the game started
 through Steam (tools/start_game.ps1,
-the intros skipped with Esc), each test on a freshly loaded C1-1, the game
+the intros skipped with Esc; why a start failed goes into the report), each test on a freshly loaded C1-1, the game
 started again when a test took it down (and for the stress suite first, which
 fills the map's buffers). The installed DLL is what is tested: build and copy
 it first. A report goes to dumps/test_runs/<time>/report.md, each test's
 output next to it.
 
   python tools/tests/run_all.py [--only api,gui,...] [--skip maps,fuzz] [--keep-game] [--list]
+
+Start it from a shell outside any sandbox (PowerShell here): the files tests make outside the repo
+and the game folder (the author key in %LOCALAPPDATA%) must be the ones the game sees.
 """
 import argparse
 import datetime
@@ -83,24 +86,40 @@ def kill():
     time.sleep(2)
 
 
-def start():
+STARTS = []  # why starting / loading failed (issue #5: the report says it)
+
+
+def why(text):
+    STARTS.append(time.strftime("%H:%M:%S ") + text)
+    log(text)
+
+
+def start(wait=90):
     """the game through Steam, the intros skipped (Esc until the main menu) -> True when up"""
     kill()
-    out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", START],
-                         capture_output=True, text=True, timeout=120).stdout
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", START],
+                             capture_output=True, text=True, timeout=120).stdout
+    except subprocess.TimeoutExpired:
+        why("start: start_game.ps1 did not finish in 120 s")
+        return False
     if "game up" not in out:
-        log("start: " + out.strip()[-200:])
+        why("start: no game window (start_game.ps1: %s)" % (out.strip()[-160:] or "nothing"))
         return False
     t = time.time()
-    while time.time() - t < 90:
+    s = ""
+    while time.time() - t < wait:
         s = scene()
         if "MainMenu" in s:
             return True
         if "timeout" not in s:
             dev.run("return h2.dev_key(1, 0.1)", 5)  # (Esc: the intro videos)
         elif not dev.running():
+            why("start: the game went away before the main menu")
             return False
         time.sleep(0.5)
+    why("start: no main menu in %d s (the game answered: %s; DevCommands on? Mods\\_cmd.lua answered?)"
+        % (wait, s.strip()[:60] or "nothing"))
     return False
 
 
@@ -108,12 +127,20 @@ def load_c11():
     """C1-1 loaded freshly, the editor closed, no level -> True when there"""
     dev.run("h2.dev_editor(false) return h2.dev_level('revert')", 10)
     dev.run("return h2.dev_loadscene([[%s]])" % C11, 10)
-    return dev.wait_ready("C1-1__MAIN", 180)
+    if dev.wait_ready("C1-1__MAIN", 180):
+        return True
+    why("load: C1-1 not ready in 180 s (dev_ready: %s, game running: %s)"
+        % (dev.run("return h2.dev_ready()", 5).strip()[:60], dev.running()))
+    return False
 
 
 def ready(fresh):
-    for attempt in range(2):
-        if (fresh or not alive()) and not start():
+    # (a third try waits longer: Steam starting up, or a game closing slowly, took the first ones)
+    for attempt in range(3):
+        if attempt == 2:
+            kill()
+            time.sleep(20)
+        if (fresh or not alive()) and not start(90 if attempt < 2 else 180):
             fresh = True
             continue
         if load_c11():
@@ -201,8 +228,9 @@ def main():
                 with open(INI, "w", encoding="latin1", newline="") as f:
                     f.write(set_ini(ini, {"DevCommands": 1, "LuaMemory": int(wanted)}))
                 memory, restart = wanted, True
+            STARTS.clear()
             if not ready(fresh or restart):
-                rows.append((name, 0, 1, "the game did not start / load C1-1", 0, ""))
+                rows.append((name, 0, 1, "the game did not start / load C1-1", 0, "\n".join(STARTS[-6:])))
                 log("   the game did not start / load C1-1")
                 restart = True
                 continue

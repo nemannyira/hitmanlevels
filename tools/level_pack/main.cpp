@@ -5,6 +5,10 @@
 //   h2level_pack inspect <file.h2lvl>
 //   h2level_pack export <level folder> <file.h2lvl>      (stamps the level's next package version)
 //   h2level_pack author [<name> [<license>]]            (shows / makes this PC's author key)
+//   h2level_pack author backup <file.h2key>             (the key with a password, asked or piped)
+//   h2level_pack author restore <file.h2key> [--replace]
+//   h2level_pack hub list|install <id> [--source https://hitmanlevels.com | <folder>]   (the site's levels)
+//   h2level_pack site keygen <key file> | site sign <index.json> <key file>             (the site's operator)
 //   h2level_pack selftest
 //   h2level_pack <file.h2lvl>                           (a double click: install, asking)
 //
@@ -14,13 +18,17 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <shellapi.h>
+
 #include <cstdio>
+#include <io.h>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 
 #include "../../src/levelfmt/crypto.h"
+#include "../../src/levelfmt/hub.h"
 #include "../../src/levelfmt/package.h"
 #include "../../src/levelfmt/share.h"
 
@@ -86,7 +94,7 @@ void Show(const OpenedPackage& p)
 {
     const Manifest& m = p.manifest;
     std::printf("Level:    %s (version %d)\n", m.title.c_str(), m.version);
-    std::printf("Author:   %s  [%s]\n", m.authorName.c_str(), Fingerprint(m.authorKey).c_str());
+    std::printf("Author:   [%s]  %s\n", Fingerprint(m.authorKey).c_str(), m.authorName.c_str());
     std::printf("License:  %s\n", m.license.c_str());
     std::printf("Map:      %s\n", m.baseScene.c_str());
     std::printf("Id:       %s\n", m.id.c_str());
@@ -113,11 +121,20 @@ bool Open(const std::string& path, OpenedPackage& p)
     return true;
 }
 
+int InstallOpened(const OpenedPackage& p, std::string game, bool yes, bool allowOlder, bool allowOther,
+                  bool interactive);
+
 int Install(const std::string& path, std::string game, bool yes, bool allowOlder, bool allowOther, bool interactive)
 {
     OpenedPackage p;
     if (!Open(path, p))
         return 1;
+    return InstallOpened(p, game, yes, allowOlder, allowOther, interactive);
+}
+
+int InstallOpened(const OpenedPackage& p, std::string game, bool yes, bool allowOlder, bool allowOther,
+                  bool interactive)
+{
     Show(p);
     if (game.empty())
         game = FindGameDir();
@@ -148,9 +165,9 @@ int Install(const std::string& path, std::string game, bool yes, bool allowOlder
         }
         break;
     case TrustCheck::NewAuthor:
-        std::printf("\nAn author this PC has not seen before: %s [%s].\n"
+        std::printf("\nAn author this PC has not seen before: [%s] %s.\n"
                     "The level runs with limits like every passed-on level (no console, less memory and time).\n",
-                    m.authorName.c_str(), Fingerprint(m.authorKey).c_str());
+                    Fingerprint(m.authorKey).c_str(), m.authorName.c_str());
         if (!yes && !Ask("Install it?", interactive)) {
             std::printf("Not installed.\n");
             return interactive ? 1 : 3;
@@ -192,9 +209,9 @@ int Export(const std::string& folder, const std::string& out)
         std::ofstream f(folder + "\\level.json", std::ios::binary);
         f << level.dump(2);
     }
-    std::string package;
+    std::string package, note;
     Manifest m;
-    if (!ExportLevelFolder(folder, package, &m, &error)) {
+    if (!ExportLevelFolder(folder, package, &m, &error, &note)) {
         std::ofstream f(folder + "\\level.json", std::ios::binary);  // (the version not used: as it was)
         f << text;
         std::fprintf(stderr, "Not exported: %s\n", error.c_str());
@@ -207,16 +224,86 @@ int Export(const std::string& folder, const std::string& out)
     }
     std::printf("%s: %s version %d, %zu bytes, signed by %s [%s]\n", out.c_str(), m.title.c_str(), m.version,
                 package.size(), m.authorName.c_str(), Fingerprint(m.authorKey).c_str());
+    if (!note.empty())
+        std::printf("Note: %s\n", note.c_str());
     return 0;
+}
+
+// a password: from a pipe as it is (tests), else asked without echo (twice when `confirm`)
+// a password: one line of the standard input (piped, or typed: the editor's Share panel asks it hidden)
+std::string ReadPassword(const char* prompt, bool confirm)
+{
+    std::string line, again;
+    std::printf("%s", prompt);
+    std::getline(std::cin, line);
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+    if (confirm && _isatty(_fileno(stdin))) {
+        std::printf("Again: ");
+        std::getline(std::cin, again);
+        if (!again.empty() && again.back() == '\r')
+            again.pop_back();
+        if (again != line)
+            return "";
+    }
+    return line;
+}
+
+int AuthorBackup(int argc, char** argv)
+{
+    std::string error, file;
+    if (argv[2] == std::string("backup")) {
+        std::string password = ReadPassword("Password for the backup (at least 8 characters): ", true);
+        if (!BackupAuthorKey(password, file, &error)) {
+            std::fprintf(stderr, "Not backed up: %s\n", error.empty() ? "the passwords differ" : error.c_str());
+            return 1;
+        }
+        std::ofstream f(argv[3], std::ios::binary);
+        if (!f.write(file.data(), std::streamsize(file.size()))) {
+            std::fprintf(stderr, "%s: cannot write it\n", argv[3]);
+            return 2;
+        }
+        std::printf("Backed up to %s: keep it and its password; with them another PC signs as you.\n", argv[3]);
+        return 0;
+    }
+    bool replace = argc >= 5 && argv[4] == std::string("--replace");
+    if (!ReadAll(argv[3], file, 4096)) {
+        std::fprintf(stderr, "%s: cannot read it\n", argv[3]);
+        return 2;
+    }
+    AuthorInfo a;
+    if (!RestoreAuthorKey(file, ReadPassword("Password of the backup: ", false), replace, &a, &error)) {
+        std::fprintf(stderr, "Not restored: %s\n", error.c_str());
+        return 1;
+    }
+    std::printf("Restored: %s  [%s]\n", a.name.c_str(), a.Fingerprint().c_str());
+    return 0;
+}
+
+// argument i as UTF-8 (argv is in the code page: names and licenses keep every letter so)
+std::string Utf8Arg(int i)
+{
+    int n = 0;
+    LPWSTR* w = CommandLineToArgvW(GetCommandLineW(), &n);
+    std::string out;
+    if (w && i < n) {
+        int len = WideCharToMultiByte(CP_UTF8, 0, w[i], -1, nullptr, 0, nullptr, nullptr);
+        out.resize(len > 0 ? size_t(len - 1) : 0);
+        WideCharToMultiByte(CP_UTF8, 0, w[i], -1, out.data(), len, nullptr, nullptr);
+    }
+    LocalFree(w);
+    return out;
 }
 
 int Author(int argc, char** argv)
 {
     AuthorInfo a;
     std::string error;
+    if (argc >= 4 && (argv[2] == std::string("backup") || argv[2] == std::string("restore")))
+        return AuthorBackup(argc, argv);
     if (argc >= 3) {
-        std::string license = argc >= 4 ? argv[3] : LicenseChoices()[0];
-        if (!SetAuthor(argv[2], license, &a, &error)) {
+        std::string license = argc >= 4 ? Utf8Arg(3) : LicenseChoices()[0];
+        if (!SetAuthor(Utf8Arg(2), license, &a, &error)) {
             std::fprintf(stderr, "%s\n", error.c_str());
             return 1;
         }
@@ -229,6 +316,89 @@ int Author(int argc, char** argv)
     return 0;
 }
 
+int Usage();
+
+// h2level_pack hub list|install ...: the site's levels (src/levelfmt/hub.h)
+int Hub(int argc, char** argv)
+{
+    std::string source = kHubSite, game, id;
+    bool yes = false, older = false, other = false;
+    for (int i = 3; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--source" && i + 1 < argc)
+            source = argv[++i];
+        else if (a == "--game" && i + 1 < argc)
+            game = argv[++i];
+        else if (a == "--yes")
+            yes = true;
+        else if (a == "--allow-older")
+            older = true;
+        else if (a == "--allow-other-author")
+            other = true;
+        else if (id.empty() && a[0] != '-')
+            id = a;
+        else
+            return Usage();
+    }
+    HubIndex index;
+    std::string error;
+    if (!LoadHubIndex(source, index, &error)) {
+        std::fprintf(stderr, "REFUSED: %s\n", error.c_str());
+        return 1;
+    }
+    if (argv[2] == std::string("list")) {
+        std::printf("%zu levels (list %lld):\n", index.levels.size(), index.serial);
+        for (const HubLevel& l : index.levels)
+            std::printf("  %-32s v%-3d [%s] %s  %s\n", l.id.c_str(), l.version, Fingerprint(l.authorKey).c_str(),
+                        l.authorName.c_str(), l.title.c_str());
+        return 0;
+    }
+    const HubLevel* level = index.Find(id);
+    if (!level) {
+        std::fprintf(stderr, "no level %s on the site's list\n", id.c_str());
+        return 1;
+    }
+    OpenedPackage p;
+    if (!FetchHubPackage(source, *level, p, &error)) {
+        std::fprintf(stderr, "REFUSED: %s\n", error.c_str());
+        return 1;
+    }
+    std::printf("From %s (the site's signed list %lld).\n", source.c_str(), index.serial);
+    return InstallOpened(p, game, yes, older, other, false);
+}
+
+// h2level_pack site keygen|sign ...: the site operator's offline signing (src/levelfmt/hub.h)
+int Site(int argc, char** argv)
+{
+    std::string error;
+    if (argv[2] == std::string("keygen") && argc == 4) {
+        std::string pub;
+        if (!MakeSiteKey(argv[3], &pub, &error)) {
+            std::fprintf(stderr, "%s\n", error.c_str());
+            return 1;
+        }
+        std::printf("Site key made: %s (sealed for this Windows user)\nPublic key: %s\n", argv[3], pub.c_str());
+        return 0;
+    }
+    if (argv[2] == std::string("sign") && argc == 5) {
+        std::string text, sig;
+        if (!ReadAll(argv[3], text, kMaxIndexBytes) || !SignIndex(text, argv[4], sig, &error)) {
+            std::fprintf(stderr, "Not signed: %s\n", error.empty() ? "cannot read the index" : error.c_str());
+            return 1;
+        }
+        std::string out = std::string(argv[3]);
+        out = out.substr(0, out.size() - (out.size() > 5 && out.compare(out.size() - 5, 5, ".json") == 0 ? 5 : 0)) + ".sig";
+        std::ofstream f(out, std::ios::binary);
+        if (!f.write(sig.data(), std::streamsize(sig.size()))) {
+            std::fprintf(stderr, "%s: cannot write it\n", out.c_str());
+            return 2;
+        }
+        std::printf("Signed: %s\n", out.c_str());
+        return 0;
+    }
+    return Usage();
+}
+
 int Usage()
 {
     std::fprintf(stderr,
@@ -236,6 +406,13 @@ int Usage()
                  "       h2level_pack inspect <file.h2lvl>\n"
                  "       h2level_pack export <level folder> <file.h2lvl>\n"
                  "       h2level_pack author [<name> [<license>]]\n"
+                 "       h2level_pack author backup <file.h2key>\n"
+                 "       h2level_pack author restore <file.h2key> [--replace]\n"
+                 "       h2level_pack hub list [--source https://host | <folder>]\n"
+                 "       h2level_pack hub install <id> [--source ...] [--game <dir>] [--yes] [--allow-older] "
+                 "[--allow-other-author]\n"
+                 "       h2level_pack site keygen <key file>\n"
+                 "       h2level_pack site sign <index.json> <key file>\n"
                  "       h2level_pack selftest\n");
     return 2;
 }
@@ -269,6 +446,10 @@ int main(int argc, char** argv)
     }
     if (cmd == "export" && argc == 4)
         return Export(argv[2], argv[3]);
+    if (cmd == "hub" && argc >= 3 && (argv[2] == std::string("list") || argv[2] == std::string("install")))
+        return Hub(argc, argv);
+    if (cmd == "site" && argc >= 4)
+        return Site(argc, argv);
     if (cmd == "install" && argc >= 3) {
         std::string game;
         bool yes = false, older = false, other = false;

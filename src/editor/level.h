@@ -196,7 +196,8 @@ bool ReloadLevelMap(std::string* error = nullptr);
 bool SaveLevelAs(const std::string& name, std::string* error = nullptr);
 // Saves the level with its next package version and writes it as a signed package (levelfmt/share.h)
 // to Mods\Packages\<folder>_v<n>.h2lvl; needs the author key made (Level panel > Share).
-bool ExportPackage(std::string* path, std::string* error = nullptr);
+// `note`: something sent that may be meant to stay private (the Windows user name in a file).
+bool ExportPackage(std::string* path, std::string* error = nullptr, std::string* note = nullptr);
 // Toolbar: the level's name, unsaved mark and Save / Save as; Ctrl+S.
 void DrawSaveControl();
 // The same as a row of a panel (full width button).

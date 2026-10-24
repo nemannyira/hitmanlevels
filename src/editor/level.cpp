@@ -1502,6 +1502,105 @@ bool g_authorEdit = false;
 char g_authorName[41] = "";
 int g_authorLicense = 0;
 std::string g_shareStatus, g_lastPackage;
+char g_password[64] = "", g_password2[64] = "", g_keyFile[260] = "";
+bool g_replaceKey = false;
+
+const levelfmt::AuthorInfo* Author();  // (below)
+
+void ClearPasswords()
+{
+    SecureZeroMemory(g_password, sizeof g_password);
+    SecureZeroMemory(g_password2, sizeof g_password2);
+}
+
+// Level panel > Share > Back up my key... (levelfmt::BackupAuthorKey, issue #4)
+void DrawKeyBackupPopup()
+{
+    if (!ImGui::BeginPopupModal("Back up the author key", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    ImGui::TextUnformatted("A password for the backup (at least 8 characters; it cannot be recovered):");
+    ImGui::InputText("Password", g_password, sizeof g_password, ImGuiInputTextFlags_Password);
+    ImGui::InputText("Again", g_password2, sizeof g_password2, ImGuiInputTextFlags_Password);
+    bool same = strcmp(g_password, g_password2) == 0;
+    if (!same)
+        ImGui::TextDisabled("the two differ");
+    ImGui::BeginDisabled(!same || strlen(g_password) < levelfmt::kMinBackupPassword);
+    if (ImGui::Button("Back up")) {
+        std::string file, err;
+        if (levelfmt::BackupAuthorKey(g_password, file, &err) && Author()) {
+            std::string dir = ModsDir() + "Packages";
+            CreateDirectoryA(dir.c_str(), nullptr);
+            std::string fp = Author()->Fingerprint();
+            std::string path = dir + "\\author_" + fp + ".h2key";
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            g_shareStatus = f.write(file.data(), std::streamsize(file.size()))
+                                ? "key backed up: " + path + " (keep it and its password somewhere else too)"
+                                : "cannot write " + path;
+            g_lastPackage = path;
+        } else {
+            g_shareStatus = "not backed up: " + err;
+        }
+        ClearPasswords();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        ClearPasswords();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
+// Level panel > Share > Restore a key... (levelfmt::RestoreAuthorKey)
+void DrawKeyRestorePopup()
+{
+    if (!ImGui::BeginPopupModal("Restore an author key", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    if (ImGui::IsWindowAppearing() && !g_keyFile[0]) {  // the newest backup in Mods\Packages
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA((ModsDir() + "Packages\\*.h2key").c_str(), &fd);
+        FILETIME newest{};
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (CompareFileTime(&fd.ftLastWriteTime, &newest) > 0) {
+                    newest = fd.ftLastWriteTime;
+                    snprintf(g_keyFile, sizeof g_keyFile, "%sPackages\\%s", ModsDir().c_str(), fd.cFileName);
+                }
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+    }
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 30);
+    ImGui::InputText("Backup file", g_keyFile, sizeof g_keyFile);
+    ImGui::InputText("Password", g_password, sizeof g_password, ImGuiInputTextFlags_Password);
+    ImGui::Checkbox("Replace the key this PC has now (it is kept beside)", &g_replaceKey);
+    if (ImGui::Button("Restore")) {
+        std::ifstream f(g_keyFile, std::ios::binary | std::ios::ate);
+        std::string file, err;
+        if (f && f.tellg() <= 4096) {
+            file.resize(size_t(f.tellg()));
+            f.seekg(0);
+            f.read(file.data(), std::streamsize(file.size()));
+        }
+        levelfmt::AuthorInfo made;
+        if (!file.empty() && levelfmt::RestoreAuthorKey(file, g_password, g_replaceKey, &made, &err)) {
+            g_author = made;
+            g_authorState = 2;
+            g_shareStatus = "author key restored: " + made.name + " [" + made.Fingerprint() + "]";
+        } else {
+            g_shareStatus = "not restored: " + (file.empty() ? std::string("cannot read ") + g_keyFile : err);
+        }
+        ClearPasswords();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        ClearPasswords();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
 
 const levelfmt::AuthorInfo* Author()
 {
@@ -1545,7 +1644,8 @@ void DrawShare()
                 g_author = made;
                 g_authorState = 2;
                 g_authorEdit = false;
-                g_shareStatus = "author: " + made.name + " [" + made.Fingerprint() + "]";
+                g_shareStatus = "author: " + made.name + " [" + made.Fingerprint() + "]. Back up your key (Back up "
+                                "my key...): with a new Windows or another PC your packages stay yours.";
             } else {
                 g_shareStatus = "not made: " + err;
             }
@@ -1556,6 +1656,12 @@ void DrawShare()
             if (ImGui::SmallButton("Cancel"))
                 g_authorEdit = false;
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Restore a key..."))
+            ImGui::OpenPopup("Restore an author key");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Your key from a backup (.h2key in Mods\\Packages): the packages you sign keep your fingerprint");
+        DrawKeyRestorePopup();
     } else {
         ImGui::Text("Signed as %s  [%s]", a->name.c_str(), a->Fingerprint().c_str());
         if (ImGui::IsItemHovered())
@@ -1570,10 +1676,20 @@ void DrawShare()
             g_authorLicense = it == licenses.end() ? 0 : int(it - licenses.begin());
             g_authorEdit = true;
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Back up my key..."))
+            ImGui::OpenPopup("Back up the author key");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Writes your key, locked with a password, to Mods\\Packages\\author_<fingerprint>.h2key.\n"
+                              "Keep the file and the password: with them a new Windows or another PC signs as you.");
+        DrawKeyBackupPopup();
         ImGui::BeginDisabled(L.folder.empty());
         if (ImGui::Button("Export package")) {
             std::string path, err;
-            g_shareStatus = ExportPackage(&path, &err) ? "written: " + path : "not exported: " + err;
+            std::string note;
+            g_shareStatus = ExportPackage(&path, &err, &note) ? "written: " + path : "not exported: " + err;
+            if (!note.empty())
+                g_shareStatus += "\nNote: " + note;
             g_lastPackage = path;
         }
         ImGui::EndDisabled();
@@ -2467,7 +2583,7 @@ bool SaveLevelAs(const std::string& name, std::string* error)
     return SaveLevel(error);
 }
 
-bool ExportPackage(std::string* path, std::string* error)
+bool ExportPackage(std::string* path, std::string* error, std::string* note)
 {
     auto fail = [&](const std::string& what) {
         if (error)
@@ -2491,7 +2607,7 @@ bool ExportPackage(std::string* path, std::string* error)
     g_level.packageVersion = stamp["package"]["version"].get<int>();
     std::string package;
     levelfmt::Manifest m;
-    if (!SaveLevel(&err) || !levelfmt::ExportLevelFolder(ModsDir() + g_level.folder, package, &m, &err)) {
+    if (!SaveLevel(&err) || !levelfmt::ExportLevelFolder(ModsDir() + g_level.folder, package, &m, &err, note)) {
         g_level.packageId = oldId;  // (the version not used up)
         g_level.packageVersion = oldVersion;
         std::string ignored;

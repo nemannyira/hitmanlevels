@@ -1,4 +1,5 @@
 #include "share.h"
+#include "files.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -10,15 +11,18 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <new>
+#include <vector>
 
 #include "crypto.h"
 #include "level_check.h"
+#include "monocypher.h"
 
 namespace h2::levelfmt {
 
 using nlohmann::json;
 
-namespace {
+namespace files {
 
 bool Fail(std::string* error, const std::string& what)
 {
@@ -46,7 +50,7 @@ std::string Utf8(const std::wstring& w)
     return s;
 }
 
-std::wstring DataDir(bool make = false)  // (made only by what writes there)
+std::wstring DataDir(bool make)  // (made only by what writes there)
 {
     wchar_t buf[MAX_PATH];
     DWORD n = GetEnvironmentVariableW(L"H2LEVEL_HOME", buf, MAX_PATH);
@@ -135,7 +139,7 @@ bool Unprotect(const std::string& sealed, std::string& out)
     return true;
 }
 
-json ReadJsonW(const std::wstring& path, std::string* why = nullptr)
+json ReadJsonW(const std::wstring& path, std::string* why)
 {
     std::string text;
     if (!ReadFileW(path, text, 4u << 20)) {
@@ -204,7 +208,33 @@ bool HoldsPrivatePath(const std::string& text)
     return false;
 }
 
-} // namespace
+std::string WindowsUserName()
+{
+    wchar_t name[256];
+    DWORD n = GetEnvironmentVariableW(L"USERNAME", name, 256);
+    return n >= 3 && n < 256 ? Utf8(std::wstring(name, n)) : "";
+}
+
+// `word` in the text, not part of a longer word (case-insensitive, ASCII letters)
+bool HoldsWord(const std::string& text, const std::string& word)
+{
+    if (word.empty())
+        return false;
+    auto low = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+        return s;
+    };
+    std::string t = low(text), w = low(word);
+    auto letter = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || static_cast<unsigned char>(c) >= 0x80; };
+    for (size_t at = t.find(w); at != std::string::npos; at = t.find(w, at + 1))
+        if ((at == 0 || !letter(t[at - 1])) && (at + w.size() == t.size() || !letter(t[at + w.size()])))
+            return true;
+    return false;
+}
+
+} // namespace files
+
+using namespace files;
 
 std::string ShareDataDir() { return Utf8(DataDir()); }
 
@@ -267,6 +297,142 @@ bool SetAuthor(const std::string& name, const std::string& license, AuthorInfo* 
     return true;
 }
 
+namespace {
+
+constexpr char kBackupMagic[] = "H2LVL key backup 1\n";
+constexpr size_t kBackupMagicSize = sizeof kBackupMagic - 1;
+constexpr size_t kBackupHeader = kBackupMagicSize + 8 + 16 + 24;  // magic, blocks, passes, salt, nonce
+constexpr uint32_t kBackupBlocks = 32768, kBackupPasses = 3;  // 32 MB of Argon2id
+
+// the key a password and salt make (false: no memory for Argon2's work area)
+bool PasswordKey(const std::string& password, const uint8_t salt[16], uint32_t blocks, uint32_t passes, uint8_t key[32])
+{
+    std::vector<uint8_t> work;
+    try {
+        work.resize(size_t(blocks) * 1024);
+    } catch (const std::bad_alloc&) {
+        return false;
+    }
+    crypto_argon2_config config{CRYPTO_ARGON2_ID, blocks, passes, 1};
+    crypto_argon2_inputs inputs{reinterpret_cast<const uint8_t*>(password.data()), salt, uint32_t(password.size()), 16};
+    crypto_argon2(key, 32, work.data(), config, inputs, crypto_argon2_no_extras);
+    crypto_wipe(work.data(), work.size());
+    return true;
+}
+
+void Put32(std::string& s, size_t at, uint32_t v) { memcpy(&s[at], &v, 4); }
+uint32_t Get32(const std::string& s, size_t at)
+{
+    uint32_t v;
+    memcpy(&v, &s[at], 4);
+    return v;
+}
+
+} // namespace
+
+bool BackupAuthorKey(const std::string& password, std::string& file, std::string* error)
+{
+    if (password.size() < kMinBackupPassword)
+        return Fail(error, "the password: at least " + std::to_string(kMinBackupPassword) + " characters");
+    AuthorInfo author;
+    AuthorKey key;
+    if (!LoadAuthor(author, &key, error))
+        return false;
+    std::string plain =
+        json{{"seed", crypto::Hex(key.seed, 32)}, {"name", author.name}, {"license", author.license}}.dump();
+    SecureZeroMemory(key.seed, sizeof key.seed);
+    std::string header(kBackupHeader, '\0');
+    memcpy(&header[0], kBackupMagic, kBackupMagicSize);
+    Put32(header, kBackupMagicSize, kBackupBlocks);
+    Put32(header, kBackupMagicSize + 4, kBackupPasses);
+    uint8_t* salt = reinterpret_cast<uint8_t*>(&header[kBackupMagicSize + 8]);
+    uint8_t* nonce = salt + 16;
+    uint8_t pk[32];
+    if (!crypto::RandomBytes(salt, 16 + 24))
+        return Fail(error, "no random bytes from the system");
+    if (!PasswordKey(password, salt, kBackupBlocks, kBackupPasses, pk)) {
+        crypto_wipe(&plain[0], plain.size());
+        return Fail(error, "no memory for the password's key (32 MB)");
+    }
+    std::string mac(16, '\0'), cipher(plain.size(), '\0');
+    crypto_aead_lock(reinterpret_cast<uint8_t*>(&cipher[0]), reinterpret_cast<uint8_t*>(&mac[0]), pk, nonce,
+                     reinterpret_cast<const uint8_t*>(header.data()), header.size(),
+                     reinterpret_cast<const uint8_t*>(plain.data()), plain.size());
+    crypto_wipe(pk, sizeof pk);
+    crypto_wipe(&plain[0], plain.size());
+    file = header + mac + cipher;
+    return true;
+}
+
+bool RestoreAuthorKey(const std::string& file, const std::string& password, bool replace, AuthorInfo* info,
+                      std::string* error)
+{
+    if (file.size() < kBackupHeader + 16 + 2 || file.size() > 4096 || file.compare(0, kBackupMagicSize, kBackupMagic) != 0)
+        return Fail(error, "not an author key backup");
+    uint32_t blocks = Get32(file, kBackupMagicSize), passes = Get32(file, kBackupMagicSize + 4);
+    if (blocks < 8 || blocks > 262144 || passes < 1 || passes > 16)  // (at most 256 MB, as no editor writes more)
+        return Fail(error, "an author key backup with parameters this editor does not use");
+    const uint8_t* salt = reinterpret_cast<const uint8_t*>(&file[kBackupMagicSize + 8]);
+    uint8_t pk[32];
+    if (!PasswordKey(password, salt, blocks, passes, pk))
+        return Fail(error, "no memory for the password's key");
+    std::string plain(file.size() - kBackupHeader - 16, '\0');
+    int bad = crypto_aead_unlock(reinterpret_cast<uint8_t*>(&plain[0]),
+                                 reinterpret_cast<const uint8_t*>(&file[kBackupHeader]), pk, salt + 16,
+                                 reinterpret_cast<const uint8_t*>(file.data()), kBackupHeader,
+                                 reinterpret_cast<const uint8_t*>(&file[kBackupHeader + 16]), plain.size());
+    crypto_wipe(pk, sizeof pk);
+    if (bad)
+        return Fail(error, "wrong password, or the backup was changed");
+    json j = json::parse(plain, nullptr, false);
+    crypto_wipe(&plain[0], plain.size());
+    AuthorKey key;
+    if (!j.is_object() || !j.value("seed", json()).is_string() || !j.value("name", json()).is_string() ||
+        !j.value("license", json()).is_string() || !crypto::FromHex(j["seed"].get<std::string>(), key.seed, 32) ||
+        !ValidManifestText(j["name"].get<std::string>(), 40) || !ValidManifestText(j["license"].get<std::string>(), 64))
+        return Fail(error, "the backup's content is damaged");
+    crypto::Ed25519PublicKey(key.seed, key.pub);
+    AuthorInfo now{j["name"].get<std::string>(), j["license"].get<std::string>(), crypto::Hex(key.pub, 32)};
+    std::wstring dir = DataDir(true);
+    if (dir.empty()) {
+        SecureZeroMemory(key.seed, sizeof key.seed);
+        return Fail(error, "no folder for the author key (LocalAppData)");
+    }
+    AuthorInfo old;
+    AuthorKey oldKey;
+    bool haveOld = GetFileAttributesW((dir + L"author.key").c_str()) != INVALID_FILE_ATTRIBUTES;
+    bool same = haveOld && LoadAuthor(old, &oldKey, nullptr) && old.keyHex == now.keyHex;
+    SecureZeroMemory(oldKey.seed, sizeof oldKey.seed);
+    if (haveOld && !same) {
+        if (!replace) {
+            SecureZeroMemory(key.seed, sizeof key.seed);
+            return Fail(error, "this PC has another author key" +
+                                   (old.keyHex.empty() ? std::string() : " [" + old.Fingerprint() + "]") +
+                                   ": restore with replace to put the backup's [" + now.Fingerprint() +
+                                   "] in its place (the other one is kept beside)");
+        }
+        std::string hex = RandomHex(4);
+        std::wstring aside = L".old-" + std::wstring(hex.begin(), hex.end());
+        MoveFileW((dir + L"author.key").c_str(), (dir + L"author.key" + aside).c_str());
+        MoveFileW((dir + L"author.json").c_str(), (dir + L"author.json" + aside).c_str());
+    }
+    if (!same) {
+        std::string sealed;
+        bool ok = Protect(std::string(reinterpret_cast<char*>(key.seed), 32), sealed) &&
+                  WriteNewFileW(dir + L"author.key", sealed, false);
+        if (!ok) {
+            SecureZeroMemory(key.seed, sizeof key.seed);
+            return Fail(error, "the author key cannot be written to " + Utf8(dir));
+        }
+    }
+    SecureZeroMemory(key.seed, sizeof key.seed);
+    if (!WriteFileAtomic(dir + L"author.json", json{{"name", now.name}, {"license", now.license}, {"key", now.keyHex}}.dump(2)))
+        return Fail(error, "author.json cannot be written to " + Utf8(dir));
+    if (info)
+        *info = now;
+    return true;
+}
+
 bool StampPackage(json& level, std::string* error)
 {
     if (!level.is_object())
@@ -292,8 +458,11 @@ bool StampPackage(json& level, std::string* error)
     return true;
 }
 
-bool ExportLevelFolder(const std::string& folder, std::string& package, Manifest* manifest, std::string* error)
+bool ExportLevelFolder(const std::string& folder, std::string& package, Manifest* manifest, std::string* error,
+                       std::string* note)
 {
+    if (note)
+        note->clear();
     std::vector<PackageFile> files;
     PackageFile level{"level.json"};
     if (!ReadFileA(folder + "\\level.json", level.data, kMaxPackagedLevel))
@@ -324,12 +493,24 @@ bool ExportLevelFolder(const std::string& folder, std::string& package, Manifest
             continue;
         if (!ReadFileA(folder + "\\" + name, f.data, max))
             return Fail(error, std::string(name) + " is larger than " + std::to_string(max >> 10) + " KB");
+        if (f.name == "preview.png") {  // the picture only: its text / EXIF chunks stay here (issue #8)
+            f.data = CleanPng(f.data);
+            if (f.data.empty())
+                return Fail(error, "preview.png is not a PNG picture of at most " + std::to_string(kMaxPreviewSide) +
+                                       " x " + std::to_string(kMaxPreviewSide));
+        }
         files.push_back(std::move(f));
     }
-    for (const PackageFile& f : files)
-        if (f.name != "preview.png" && HoldsPrivatePath(f.data))
+    std::string userName = WindowsUserName();
+    for (const PackageFile& f : files) {
+        if (f.name == "preview.png")
+            continue;
+        if (HoldsPrivatePath(f.data))
             return Fail(error, f.name + " holds a path of this PC (C:\\Users\\...: your Windows user name would go "
                                         "with the package); take it out first");
+        if (note && note->empty() && HoldsWord(f.data, userName))
+            *note = f.name + " mentions your Windows user name (\"" + userName + "\"): it goes with the package";
+    }
     AuthorInfo author;
     AuthorKey key;
     if (!LoadAuthor(author, &key, error))

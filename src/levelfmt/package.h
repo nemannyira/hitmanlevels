@@ -58,6 +58,9 @@ struct AuthorKey {
 
 // Text for people in a manifest (title, author, license): UTF-8, no control characters, 1 to `max` bytes.
 bool ValidManifestText(const std::string& s, size_t max);
+// The PNG with the picture's own chunks only (no text, EXIF, times: what can hold a name or a path); ""
+// when it is not a PNG a package may hold (at most kMaxPreviewSide square, CRCs right).
+std::string CleanPng(const std::string& png);
 // A name a package may hold.
 bool AllowedPackageName(const std::string& name);
 // The licenses the editor offers (the first one its default); a manifest may name another (text).

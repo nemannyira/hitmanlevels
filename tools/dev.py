@@ -19,21 +19,36 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SHOTS = os.path.join(HERE, "..", "dumps", "shots")
 
 
+def _retry(fn, tries=40):
+    """fn() again while the game has the file open (it writes _cmd.out as we look)"""
+    for i in range(tries):
+        try:
+            return fn()
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(0.05)
+
+
+def _read():
+    with open(OUT, encoding="utf-8", errors="replace") as f:
+        return f.read().rstrip()
+
+
 def run(code, timeout=15.0):
     if os.path.exists(OUT):
-        os.remove(OUT)
+        _retry(lambda: os.remove(OUT))
     with open(CMD + ".tmp", "w", encoding="utf-8") as f:
         f.write(code)
-    os.replace(CMD + ".tmp", CMD)
+    _retry(lambda: os.replace(CMD + ".tmp", CMD))
     t = time.time()
     while time.time() - t < timeout:
         if os.path.exists(OUT):
             time.sleep(0.05)
-            with open(OUT, encoding="utf-8", errors="replace") as f:
-                return f.read().rstrip()
+            return _retry(_read)
         time.sleep(0.1)
     if os.path.exists(CMD):
-        os.remove(CMD)
+        _retry(lambda: os.remove(CMD))
     return "(timeout: game not answering)"
 
 

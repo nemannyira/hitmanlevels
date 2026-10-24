@@ -9,6 +9,7 @@
 
 #include "../game.h"
 #include "../hook.h"
+#include "../loader.h"
 #include "../scene.h"
 
 namespace h2::engine {
@@ -21,7 +22,14 @@ constexpr int kGeomTable_StaticBase = 0x4C;      // vtable offset: ZBaseGeom* St
 constexpr uintptr_t kGeomTable_Hash = 0x08;      // -> object with the index mask at +0x10
 constexpr uintptr_t kGeomTable_Entries = 0x0C;   // -> ZBaseGeom* entries[mask + 1]
 constexpr int kMaxStaticNodes = 65535;           // 16-bit 1-based indices
-constexpr uintptr_t kGeomTable_RoomListsUsed = 0x59;  // the room list pool's entries in use (u32)
+constexpr uintptr_t kGeomTable_RoomLists = 0x51;      // the room list pool: its entries (0x20 bytes each),
+constexpr uintptr_t kGeomTable_RoomListFree = 0x55;   //   the indices of the free ones (u16, a stack),
+constexpr uintptr_t kGeomTable_RoomListsUsed = 0x59;  //   how many are in use (u32)
+constexpr uintptr_t kRoomListMaker = 0x427C90;        // the pool's maker (ecx: the geom table)
+constexpr uintptr_t kRoomListTakerLimit = 0x427CE5;   // the taker's "cmp edx, 0x1FE" (0x427CE3): its 0x1FE
+constexpr int kRoomListsGame = 0x1FE;
+constexpr uintptr_t kEngineAlloc = 0x530490;          // engine allocation (cdecl size): the pool's own
+int g_roomListCapacity = kRoomListsGame;
 constexpr uint32_t kMaxDynamicEntries = 1u << 20;
 
 bool SafeCopy(void* dst, const void* src, size_t n)
@@ -69,6 +77,32 @@ bool IsLiveNode(ZBaseGeom* node, ZGEOM*& geom)
     return true;
 }
 
+// the pool made as the game's maker does, with kRoomListsMade entries (the game's free it: the engine's
+// allocation, as its own)
+using MakeRoomLists_t = void(__fastcall*)(uint8_t* table);
+MakeRoomLists_t oMakeRoomLists = nullptr;
+
+void __fastcall hkMakeRoomLists(uint8_t* table)
+{
+    if (g_roomListCapacity == kRoomListsGame) {  // (the taker's limit not patched: the game's pool)
+        oMakeRoomLists(table);
+        return;
+    }
+    auto alloc = reinterpret_cast<void*(__cdecl*)(size_t)>(kEngineAlloc);
+    void* entries = alloc(size_t(kRoomListsMade) * 0x20);
+    auto* stack = static_cast<uint16_t*>(alloc(size_t(kRoomListsMade) * 2));
+    if (!entries || !stack) {
+        Log("engine: the room lists' pool of %d not made", kRoomListsMade);
+        oMakeRoomLists(table);
+        return;
+    }
+    for (int i = 0; i < kRoomListsMade; ++i)
+        stack[i] = uint16_t(i);
+    *reinterpret_cast<uint32_t*>(table + kGeomTable_RoomListsUsed) = 0;
+    *reinterpret_cast<void**>(table + kGeomTable_RoomLists) = entries;
+    *reinterpret_cast<uint16_t**>(table + kGeomTable_RoomListFree) = stack;
+}
+
 // SetDynamic(bool) and the auto-assign (char): an argument pushed as a dword
 using SetNodeFlag_t = void(__fastcall*)(ZBaseGeom* node, void* edx, uint32_t on);
 SetNodeFlag_t oSetDynamic = nullptr, oSetAutoAssign = nullptr;
@@ -81,7 +115,8 @@ bool RoomListLeft(ZBaseGeom* node, uint32_t on, uint32_t flag)
     if (!(on & 0xFF) || !ReadAt(node, offsetof(ZBaseGeom, flags), flags) || (flags & flag) || RoomListsFree() > 0)
         return true;
     if (!g_roomListsFull)
-        Log("engine: all %d room lists of moving objects are in use: no more objects are made dynamic", kRoomLists);
+        Log("engine: all %d room lists of moving objects are in use: no more objects are made dynamic",
+            g_roomListCapacity);
     g_roomListsFull = true;
     return false;
 }
@@ -100,17 +135,25 @@ void __fastcall hkSetAutoAssign(ZBaseGeom* node, void* edx, uint32_t on)
 
 } // namespace
 
+int RoomListCapacity() { return g_roomListCapacity; }
+
 int RoomListsFree()
 {
     void* table = GeomTable();
     uint32_t used = 0;
-    if (!table || !ReadAt(table, kGeomTable_RoomListsUsed, used) || used > uint32_t(kRoomLists))
+    if (!table || !ReadAt(table, kGeomTable_RoomListsUsed, used) || used > uint32_t(g_roomListCapacity))
         return 0;
-    return kRoomLists - int(used);
+    return g_roomListCapacity - int(used);
 }
 
 void InstallRoomListGuard()
 {
+    // the taker's limit first: the maker makes the larger pool only when that took (both or neither)
+    const uint32_t game = kRoomListsGame, made = kRoomListsMade;
+    if (Hook("room lists' maker", kRoomListMaker, hkMakeRoomLists, &oMakeRoomLists) &&
+        PatchBytes(reinterpret_cast<void*>(kRoomListTakerLimit), &game, &made, 4, "room lists' limit"))
+        g_roomListCapacity = kRoomListsMade;
+    Log("engine: %d room lists of moving objects in a scene", g_roomListCapacity);
     Hook("ZBaseGeom::SetDynamic", game::ZBaseGeom_SetDynamic, hkSetDynamic, &oSetDynamic);
     Hook("ZBaseGeom::SetAutoAssign", game::ZBaseGeom_SetAutoAssign, hkSetAutoAssign, &oSetAutoAssign);
     OnSceneLeaving([](const std::string&) { g_roomListsFull = false; });

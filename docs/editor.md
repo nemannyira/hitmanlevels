@@ -58,12 +58,12 @@ level* / *File > Open level* loads a saved one.
   characters, 5000 changed objects of the map, 256 points shown on the map
   and 16 scripts (named `name.lua`); a level file from elsewhere is cut to
   this when it loads.
-* The game keeps at most 510 moving objects in a map (characters, cars,
-  dropped things, and every copy: copies are moving objects). A level's
-  copies are made while 128 are left for the game's own: past that a copy is
-  not drawn (H2Fix.log says how many), and *Duplicate* says the map has room
-  for no more. On C1-1 about 300 copies fit; the levels made so far have 15
-  placed objects at most. The game's map draws at most 256 icons on a floor.
+* The game keeps 510 moving objects in a map (characters, cars, dropped
+  things, and every copy: copies are moving objects); the editor makes room
+  for 4096, so a level's 2000 copies all fit. Should it ever run out, the
+  copies past it are not drawn (H2Fix.log says how many) and *Duplicate* says
+  the map has room for no more. The game's map draws at most 256 icons on a
+  floor.
 
 **Mission**:
 
@@ -113,7 +113,9 @@ with Hitman where he is, where the camera looks or at the level's start. The
 network (a mission completed after god mode, invisible Hitman or another
 speed was on says so over the statistics: not a real rating). The Level tab's *Problems* list shows what would go wrong: characters
 and route points off the path network, objectives whose target is gone,
-missing script files, the scripts' errors since they last ran. A character
+missing script files, the scripts' errors since they last ran, and what the
+game could not take of the level when the map loaded (objects left out or not
+drawn, a full light table, more than 256 icons on a floor of the game's map). A character
 or point off the path network with a place of it within 8 m gets an *onto the
 paths* button: it moves there (undoable, kept in the level). A vehicle's route
 points are not listed (cars drive their own splines).

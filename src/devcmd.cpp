@@ -180,6 +180,14 @@ int LoadGameCmd(lua_State* L)
     return 1;
 }
 
+// h2.dev_roomlists() -> free, all: the scene's room lists of moving objects (engine::RoomListsFree)
+int RoomListsCmd(lua_State* L)
+{
+    lua_pushinteger(L, engine::RoomListsFree());
+    lua_pushinteger(L, engine::RoomListCapacity());
+    return 2;
+}
+
 // h2.dev_ready() -> "<scene>|loading" (asked for with dev_loadscene / dev_loadgame, not come in yet),
 // "|applying" (the editor puts the level on it: two frames after), "|ready": what tests wait for
 int Ready(lua_State* L)
@@ -1233,6 +1241,7 @@ void InstallDevCommands()
     script::Register("dev_coll_seen", CollSeen);
     script::Register("dev_crash", CrashCmd);
     script::Register("dev_ready", Ready);
+    script::Register("dev_roomlists", RoomListsCmd);
     OnScenePushed([](const std::string&) {
         g_sceneAsked = false;
         g_framesSinceScene = 0;

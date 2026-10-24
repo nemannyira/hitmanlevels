@@ -274,6 +274,8 @@ bool CarCall(engine::ZGEOM* car, int vfunc, uint32_t a, uint32_t b, uint32_t c, 
     }
 }
 
+int g_lightEntriesMissing;  // (since the scene loaded: OnScenePushed)
+
 uint32_t Bits(float f)
 {
     uint32_t u;
@@ -304,8 +306,14 @@ bool OwnLightEntryOf(engine::ZGEOM* g)
     if (!n || !(n->flags & 0x8000))
         return false;
     uint32_t h = RegisterLights(n);
-    if (!h)
+    if (!h) {
+        static int told;
+        ++g_lightEntriesMissing;
+        if (told++ < 3)
+            Log("vehicles: the scene's light table has no entry left for %s (it keeps the shared one)",
+                engine::SafeString(g->name).c_str());
         return false;
+    }
     *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(n) + 0x6C) = h;
     n->flags |= 0x1000000;  // (its lights looked at again, as 0x5BB2C0 does)
     return true;
@@ -1089,6 +1097,16 @@ void InstallVehicles()
     g_last = double(GetTickCount64());
 }
 
-bool OwnLightEntry(engine::ZGEOM* model) { return OwnLightEntryOf(model); }
+bool OwnLightEntry(engine::ZGEOM* model)
+{
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnScenePushed([](const std::string&) { g_lightEntriesMissing = 0; });
+    }
+    return OwnLightEntryOf(model);
+}
+
+int LightEntriesMissing() { return g_lightEntriesMissing; }
 
 } // namespace h2::editor

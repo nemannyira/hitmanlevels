@@ -1,8 +1,8 @@
 """Big levels on C1-1 against the engine's limits (docs/roadmap.md, Engine limits a level meets):
-600 copies of a tree made with the map (moving objects past the room lists kept for the game are
-not drawn; the game lives; the level reverted at once), 2000 points with map icons (cut to 256; the
-map opens and draws at most 256 on a floor), Duplicate refused once the map has room for no more
-moving objects. Uses Mods/_LimitsTest; a running game with dev commands (C1-1 loaded).
+1999 copies of a tree made with the map (and one by Duplicate), all of them moving and drawn (the room lists' pool made with
+4096 entries instead of 510; the game lives; a saved game keeps them; the level reverted at once), 2000
+points with map icons (cut to 256; the map opens and draws at most 256 on a floor). Uses Mods/_LimitsTest
+and save slot 9 (back up the saves first: run_all does); a running game with dev commands (C1-1 loaded).
 
   python tools/tests/limits_test.py
 """
@@ -82,26 +82,30 @@ try:
         doc = json.load(f)
     one = doc["spawned"][0]
 
-    # 600 copies
+    # 2000 copies: as many as a level may hold, each a moving object
     copies = []
-    for i in range(600):
+    for i in range(1999):  # (and one more by Duplicate: as many as a level may hold)
         s = dict(one, id="%s_%d" % (one["id"], i))
-        s["pos"] = [one["pos"][0] + (i % 40) * 300, one["pos"][1], one["pos"][2] + (i // 40) * 300]
+        s["pos"] = [one["pos"][0] + (i % 50) * 300, one["pos"][1], one["pos"][2] + (i // 50) * 300]
         copies.append(s)
     mark = load_from_menu(dict(doc, spawned=copies))
     out = log_since(mark)
-    check("600 copies: the game lives", alive())
-    check("  made with the map", "scene copies: 600 models" in out, lines(out, "scene copies")[-1:])
-    check("  those past the room lists not drawn, said so", "of the level's moving objects are not drawn" in out,
-          lines(out, "not drawn")[-1:])
-    out, made = "", 0
-    for k in range(60):  # (the game may have given back a few room lists since the load)
-        out = dev.run('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (src, x + 350 + k * 100, y, z - 150), 30)
-        if "room for no more moving objects" in out:
-            break
-        made += 1
-    check("  Duplicate refused: no room for more moving objects", "room for no more moving objects" in out,
-          "after %d more: %s" % (made, out[:90]))
+    check("1999 copies: the game lives", alive())
+    check("  the room lists' pool of 4096", "4096 room lists" in open(LOG, encoding="latin1").read())
+    check("  made with the map", "scene copies: 1999 models" in out, lines(out, "scene copies")[-1:])
+    check("  all of them moving and drawn", "not drawn" not in out, lines(out, "not drawn")[-1:])
+    free, total = (int(v) for v in lua("return h2.dev_roomlists()").split())
+    check("  room lists: 1999 and the scene's in use", total == 4096 and free < 4096 - 1999, "%d of %d free" % (free, total))
+    out = dev.run('return h2.dev_edit("dup", [[%s]], %f, %f, %f)' % (src, x + 350, y, z - 150), 30)
+    check("  Duplicate still makes moving copies", "+" in out and not out.startswith("error"), out[-60:])
+    lua("return tostring(h2.dev_savegame(9))")
+    time.sleep(3)
+    lua("return tostring(h2.dev_loadgame(9))")
+    loaded = dev.wait_ready("C1-1__MAIN", 200)
+    check("  a saved game with them loads, the game lives", loaded and alive())
+    if loaded:
+        free2, _ = (int(v) for v in lua("return h2.dev_roomlists()").split())
+        check("  the saved game's room lists as before", abs(free2 - free) < 64, "%d free (was %d)" % (free2, free))
     t = time.time()
     rev = dev.run('return h2.dev_level("revert")', 120)
     check("  reverted at once, the game lives", "timeout" not in rev and time.time() - t < 30 and alive(),
@@ -130,6 +134,8 @@ try:
     n = sum(1 for l in drawn.splitlines() if l.startswith("Icon_"))
     check("  the map opens, at most 256 icons on the floor", drawn.startswith("floor") and 0 < n <= 256, "%d drawn" % n)
     check("  the game lives after", alive())
+    problems = dev.run('return h2.dev_level("problems")', 30)
+    check("  the Problems list says so", "more than 256 icons on a floor" in problems, problems[:120])
     lua('return h2.dev_level("revert")', 120)
 finally:
     if dev.running():

@@ -1170,6 +1170,24 @@ std::vector<Problem> FindProblems()
     if (!L.baseScene.empty() && !CurrentScene().empty() && L.baseScene != CurrentScene())
         out.push_back({"the level is for " + L.baseScene + ": this map is " + CurrentScene(), ""});
     if (here) {
+        // what the engine could not take of the level when the map loaded (docs/editor.md, the limits)
+        engine::SceneLeftOut left = engine::LevelLeftOut();
+        if (left.objects)
+            out.push_back({std::to_string(left.objects) + " of the level's objects were not made with the map: the "
+                           "engine makes at most 8192 objects with data in a map (fewer objects, or not of this map)",
+                           ""});
+        if (left.notMoving)
+            out.push_back({std::to_string(left.notMoving) + " of the level's objects are not drawn: the map has no "
+                           "room for more moving objects (" + std::to_string(engine::RoomListCapacity()) + ")",
+                           ""});
+        if (int shared = LightEntriesMissing())
+            out.push_back({std::to_string(shared) + " of the level's objects got no light entry of their own: the "
+                           "map's light table is full (they may be lit wrongly; fewer objects)",
+                           ""});
+        if (engine::MapIconsLeftOut())
+            out.push_back({"the in-game map shows more than 256 icons on a floor: the others are not drawn (fewer "
+                           "points on the map, or characters spread over floors)",
+                           ""});
         const auto& snap = SceneModel();
         for (const LevelNpc& n : L.npcs)
             if (engine::OnPathNetwork(n.transform.pos) == 0) {
@@ -2465,7 +2483,7 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
         return fail("the level holds " + std::to_string(kMaxLevelSpawned) + " placed objects, as many as a level may");
     if (engine::RoomListsFree() <= engine::kRoomListsKept)
         return fail("the map has room for no more moving objects (the game keeps the last " +
-                    std::to_string(engine::kRoomListsKept) + " of its " + std::to_string(engine::kRoomLists) +
+                    std::to_string(engine::kRoomListsKept) + " of its " + std::to_string(engine::RoomListCapacity()) +
                     " for its own)");
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();
@@ -2552,7 +2570,7 @@ engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::
         return fail("the level holds " + std::to_string(kMaxLevelSpawned) + " placed objects, as many as a level may");
     if (engine::RoomListsFree() <= engine::kRoomListsKept)
         return fail("the map has room for no more moving objects (the game keeps the last " +
-                    std::to_string(engine::kRoomListsKept) + " of its " + std::to_string(engine::kRoomLists) +
+                    std::to_string(engine::kRoomListsKept) + " of its " + std::to_string(engine::RoomListCapacity()) +
                     " for its own)");
     if (g_level.baseScene.empty())
         g_level.baseScene = CurrentScene();

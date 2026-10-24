@@ -7,10 +7,11 @@ game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
 * Big levels no longer take the game down (stress levels on C1-1, each limit
   found in the game's code; docs/roadmap.md, Engine limits a level meets):
-  * copies: the game keeps 510 moving objects in a map. A level's copies are
-    made while 128 are left for the game's own; past that they are not drawn
-    (it took the game down at about 425 copies), and *Duplicate* / placing an
-    item says the map has room for no more.
+  * copies: the game keeps 510 moving objects in a map (it went down at about
+    425 copies). The editor now makes room for 4096 and gives the light table
+    room for the level's objects: a level's 2000 copies all move and are
+    drawn, and a saved game of it loads. Past the room (never with copies
+    alone) the others are not drawn, and *Duplicate* says so.
   * the game's map draws 256 icons on a floor (more took the game down when
     it was opened); a level shows at most 256 points on the map.
   * the level's records that would not fit what the engine makes while the

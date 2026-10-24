@@ -63,6 +63,7 @@ struct Deferred {
     bool made;       // made dynamic (a room list was left for it)
 };
 std::vector<Deferred> g_deferred;  // the level's dynamic records (the scene loaded last)
+SceneLeftOut g_leftOut;            // (the scene loaded last)
 
 // ZEngineDataBase's node kind of a class (0x5BE500)
 int NodeKind(uint32_t cls)
@@ -236,6 +237,8 @@ void SetSceneMapIconProvider(std::function<std::vector<SceneMapIcon>(const std::
     g_mapIconProvider = std::move(provider);
 }
 
+SceneLeftOut LevelLeftOut() { return g_leftOut; }
+
 int SceneCopyRecord(const std::string& name)
 {
     auto it = g_copies.find(name);
@@ -397,9 +400,10 @@ void __fastcall hkMakeDynamic(void* db, void* edx, const uint32_t* array)
         reinterpret_cast<void(__thiscall*)(ZBaseGeom*, bool)>(game::ZBaseGeom_SetDynamic)(g->node, true);
         d.made = true;
     }
+    g_leftOut.notMoving = notMade;
     if (notMade)
         Log("scene: %d of the level's moving objects are not drawn: the game keeps %d room lists for its own "
-            "(%d in all)", notMade, kRoomListsKept, kRoomLists);
+            "(%d in all)", notMade, kRoomListsKept, RoomListCapacity());
 }
 
 void __fastcall hkMakeAutoAssign(void* db, void* edx, const uint32_t* array)
@@ -473,6 +477,43 @@ bool MovePlayerStart(const std::string& scene, std::vector<uint8_t>& gms, const 
     return false;
 }
 
+namespace {
+
+// The scene's light table (GMS +0x18: u32 bytes, then its words; 0x428880 makes the table of them): words
+// [0] the entries the scene's records have (their light table handles index the words), [1] the bytes of
+// the pool of 16-byte nodes (the lights on a node; at the end), [2] the words of the pool of 8-byte entries
+// the nodes made or registered while playing take (vfunc 0x24 -> 0x4286F0 / 0x5C0870: none left, 0). Every
+// scene file has room for 2000 of those: a level of 1999 copies, each given an entry of its own
+// (editor OwnLightEntry), took them all; the copies left with the empty entry they share broke the table
+// (an exception in 0x428220 when one was destroyed). The pools are made larger by `more` entries and nodes:
+// the 8-byte one after its own (before the nodes), the nodes' at the end; the handles point below both.
+void MoreLightEntries(std::vector<uint8_t>& gms, uint32_t more)
+{
+    uint32_t lt = U32(gms, 0x18);
+    uint32_t size = lt ? U32(gms, lt) : 0;
+    if (!lt || size < 12 || lt + 4 + size_t(size) > gms.size())
+        return;
+    std::vector<uint8_t> words(gms.begin() + lt + 4, gms.begin() + lt + 4 + size);
+    uint32_t w0 = U32(words, 0), w1 = U32(words, 4), w2 = U32(words, 8);
+    size_t entriesEnd = (size_t(w0) + (w2 & 0x3FFFFFFF)) * 4;  // (the nodes' pool starts there)
+    size_t nodesEnd = entriesEnd + (w1 & 0x3FFFFFFF) * 4;
+    if (entriesEnd > words.size() || nodesEnd > words.size())
+        return;
+    more = std::min<uint32_t>(more + 512, 0xFFFF - ((w2 & 0x3FFFFFFF) >> 1));  // (16-bit indices)
+    words.insert(words.begin() + nodesEnd, size_t(more) * 16, 0);
+    words.insert(words.begin() + entriesEnd, size_t(more) * 8, 0);
+    Put(words, 4, (w1 & 0xC0000000) | ((w1 & 0x3FFFFFFF) + more * 4));
+    Put(words, 8, (w2 & 0xC0000000) | ((w2 & 0x3FFFFFFF) + more * 2));
+    std::vector<uint8_t> block(4);
+    Put(block, 0, uint32_t(words.size()));
+    block.insert(block.end(), words.begin(), words.end());
+    Put(gms, 0x18, Append(gms, block));
+    Log("scene: light table with room for %u more entries of their own (%u in all)", more,
+        ((w2 & 0x3FFFFFFF) >> 1) + more);
+}
+
+} // namespace
+
 bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vector<uint8_t>& buf)
 {
     g_made.clear();
@@ -483,6 +524,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     g_fileRecords = int(U32(gms, U32(gms, 0)));
     g_scriptEdited.clear();
     g_deferred.clear();
+    g_leftOut = {};
     std::vector<SceneScriptEdit> edits = g_scriptEditProvider ? g_scriptEditProvider(scene) : std::vector<SceneScriptEdit>{};
     std::vector<SceneNpc> npcs = g_provider ? g_provider(scene) : std::vector<SceneNpc>{};
     std::vector<SceneList> lists = g_listProvider ? g_listProvider(scene) : std::vector<SceneList>{};
@@ -1334,6 +1376,9 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
             g_deferred.push_back({i, flags, false});
         }
     }
+    // the light table with room for the level's objects' entries of their own (MoreLightEntries)
+    if (copiesAdded + mapModelsAdded + carsAdded > 0)
+        MoreLightEntries(gms, uint32_t(added));
     // the record list, longer
     std::vector<uint8_t> newList(4);
     Put(newList, 0, count + uint32_t(added));
@@ -1341,6 +1386,7 @@ bool AddSceneNpcs(const std::string& scene, std::vector<uint8_t>& gms, std::vect
     Put(gms, 0, Append(gms, newList));
     Log("scene npcs: %d records of %zu characters added to %s (%zu dynamic after the scene's; %d more with data "
         "would fit)", added, listed.size(), scene.c_str(), g_deferred.size(), dataLeft);
+    g_leftOut.objects = leftOut;
     if (leftOut)
         Log("scene: %d of the level's objects left out (too many for the engine)", leftOut);
     return true;

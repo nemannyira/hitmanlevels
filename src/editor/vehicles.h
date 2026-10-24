@@ -68,6 +68,8 @@ float TrackPlace(engine::ZGEOM* vehicle);
 // level's copy: engine/inject.h) gets one of its own, as the game gives the
 // nodes it makes while playing; false: not a lit model.
 bool OwnLightEntry(engine::ZGEOM* model);
+// The level's objects that got no light table entry of their own since the scene loaded (the table full).
+int LightEntriesMissing();
 // A car of several models (its group: body, wheels, doors) when `part` is one
 // of them (clicking a car in the world picks one part); null otherwise.
 engine::ZGEOM* WholeVehicle(engine::ZGEOM* part);

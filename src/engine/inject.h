@@ -159,6 +159,14 @@ void SetSceneMapIconProvider(std::function<std::vector<SceneMapIcon>(const std::
 void SetSceneCopyProvider(std::function<std::vector<SceneCopy>(const std::string& scene)> provider);
 // The record made for a copy of that name in the scene loaded last (-1: none).
 int SceneCopyRecord(const std::string& name);
+// What the engine could not take of the level when the scene loaded last:
+// objects left out (records with data past CreateGeoms' 0x2000) and moving
+// objects not made so (no room list left: not drawn).
+struct SceneLeftOut {
+    int objects = 0;
+    int notMoving = 0;
+};
+SceneLeftOut LevelLeftOut();
 // Whether a record of the scene loaded last is one of those copies.
 bool IsSceneCopyRecord(int index);
 // Whether a record of the scene loaded last is the scene file's own (not one

@@ -128,6 +128,8 @@ void __fastcall hkIconDrawAdd(uint8_t* draw, void* edx, uint32_t icon, uint32_t 
 
 } // namespace
 
+bool MapIconsLeftOut() { return g_iconsFull; }
+
 void InstallIngameMap()
 {
     Hook("CMapIconDraw::Add", kIconDraw_Add, hkIconDrawAdd, &oIconDrawAdd);

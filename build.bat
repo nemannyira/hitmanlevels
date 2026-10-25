@@ -1,6 +1,6 @@
 @echo off
-rem Configure + build the x86 DLL with MSVC and Ninja.
-rem Usage: build.bat [Release|Debug] [install]
+rem Configure + build every game's editor DLL and the tools (x86, MSVC, Ninja) into build\<config>.
+rem Usage: build.bat [Release|Debug] [install]   (install: Hitman 2's dinput8.dll into its Steam folder)
 setlocal
 set CONFIG=%1
 if "%CONFIG%"=="" set CONFIG=Release
@@ -22,5 +22,5 @@ if /i not "%BUILD%"=="build\%CONFIG%" copy /y %BUILD%\dinput8.dll build\%CONFIG%
 
 if /i "%2"=="install" (
     copy /y build\%CONFIG%\dinput8.dll "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\dinput8.dll" || exit /b 1
-    if not exist "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\H2Fix.ini" copy /y H2Fix.ini "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\H2Fix.ini"
+    if not exist "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\H2Fix.ini" copy /y h2\H2Fix.ini "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\H2Fix.ini"
 )

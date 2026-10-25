@@ -54,14 +54,14 @@ first parsing of downloaded data inside the game process.**
 
 ## 3. The package
 
-Built 2026-10-24 (`src/levelfmt/package.h`, `share.h`; the editor's *Level >
-Share > Export package*, the installer `h2level_pack.exe`). A `.h2lvl` file
+Built 2026-10-24 (`shared/levelfmt/package.h`, `share.h`; the editor's *Level >
+Share > Export package*, the installer `levelpack.exe`). A `.h2lvl` file
 is a ZIP of **stored** files (no compression: a level is small, and without
 inflating there is no "zip bomb" and no decompressor to attack):
 
 | File | Content |
 |---|---|
-| `manifest.json` | format 1, the level's id and version, title, base scene, author (name, Ed25519 public key), license, and every other file's name, size and SHA-256; in one canonical form (compact, keys sorted: the text must equal its own re-serialization, so no key twice, no second spelling a parser could read differently) |
+| `manifest.json` | format 1, the game (`h2`; `.h2lvl` files, later `h3` `.h3lvl`, `h4` `.h4lvl`), the level's id and version, title, base scene, author (name, Ed25519 public key), license, and every other file's name, size and SHA-256; in one canonical form (compact, keys sorted: the text must equal its own re-serialization, so no key twice, no second spelling a parser could read differently) |
 | `manifest.sig` | the author's Ed25519 signature (64 bytes) of `"H2LVL manifest v1\n"` + `manifest.json` (the prefix keeps the key's signatures of other things apart) |
 | `level.json` | the level as the editor saves it, with `package: {id, version}` |
 | `scripts/<name>.lua` | the scripts its level.json lists (exactly those) |
@@ -107,7 +107,7 @@ manifest kept as `package.json` (the launcher and the File menu show the
 author from it). Links in the way (`Mods`, `Online`, the level's folder) are
 refused. The installer never writes anywhere else under the game.
 
-**What the PC knows** (`%LOCALAPPDATA%\H2LevelEditor\known.json`): the author
+**What the PC knows** (`%LOCALAPPDATA%\HitmanLevels\known.json`): the author
 keys accepted (with the name each had then) and each installed level's key,
 the version installed and the highest ever installed. The installer asks
 about an author not seen before (`--yes`), warns when another key signs an
@@ -142,7 +142,7 @@ usage, 3 a confirmation missing.
 
 ## 5. The level file: what the client checks today and what to add
 
-Already in the client (tested by `tools/tests/fuzz_levels.py` and
+Already in the client (tested by `h2/tests/fuzz_levels.py` and
 `security_suite.lua`):
 
 * level.json: wrong types, deep nesting (100000 levels), huge strings and
@@ -165,7 +165,7 @@ Added 2026-10-23 (fuzz_levels "many placed", "script names"):
   makes no more than that. The 38 levels made so far hold 15 placed objects
   at most.
 * **What the engine can take while the map loads** (measured 2026-10-24,
-  docs/roadmap.md "Engine limits a level meets"): the moving objects' room
+  h2/docs/roadmap.md "Engine limits a level meets"): the moving objects' room
   lists (510 in a scene), the dynamic objects' array at load (1000), the
   records with data (0x2000), the map's icons on a floor (256) and the
   routine list (a level of 1800 points with icons never finished loading).
@@ -186,7 +186,7 @@ downloaded level (the DLL's LoadLevel for `Mods\Online\<id>`, the Hub): a
 field the editor does not write, a value of the wrong kind, out of range or
 of the wrong characters, more than a level may hold, ids or scripts twice
 refuse the level; lenient for the user's own (warnings in H2Fix.log, the
-loader leaves those out). `tools/tests/level_check_test.py` (no game): 30
+loader leaves those out). `h2/tests/level_check_test.py` (no game): 30
 hostile cases both ways, and every level of Mods and examples accepted
 strictly.
 
@@ -289,19 +289,19 @@ version must be newer than the installed one.
 1. **Harden the DLL's loader now** (useful for levels shared today by hand):
    count limits, script name whitelist, fuzz cases (done 2026-10-23); the
    engine's load-time limits kept (done 2026-10-24); the validator as a
-   library the DLL and the Hub share (done 2026-10-24: `src/levelfmt`,
+   library the DLL and the Hub share (done 2026-10-24: `h2/src/levelfmt`,
    `h2level_check.exe`).
 2. **The untrusted mode** (section 6) for levels under Mods\Online\ (done
    2026-10-24; to test in the game once the Hub installs a level there: by
    hand, a folder `Mods\Online\<id>` works the same).
 3. **The package format offline** (done 2026-10-24): export in the editor
-   (Level > Share), `h2level_pack.exe` installs (author keys, manifest,
+   (Level > Share), `levelpack.exe` installs (author keys, manifest,
    hashes; section 3), so levels can be passed on without the site; the
-   installer becomes the Hub's. `tools/tests/package_test.py` (no game: the
+   installer becomes the Hub's. `h2/tests/package_test.py` (no game: the
    RFC 8032 vectors, Python's Ed25519 both ways, hostile packages) and a
    libFuzzer target (`package_fuzz`, `-DH2_FUZZ=ON`).
 4. **The Hub**: browsing and downloading with signatures, installing. The client side is built
-   (2026-10-24, issue #6: `src/levelfmt/hub.h`, `h2level_pack hub list|install`, `site keygen|sign`;
+   (2026-10-24, issue #6: `shared/levelfmt/hub.h`, `levelpack hub list|install`, `site keygen|sign`;
    the site's contract in [site_api.md](site_api.md)); the site (hitmanlevels.com) and its key are
    to come: until a site key is built in, the Hub is off.
 5. **Accounts and uploads.**

@@ -1,7 +1,16 @@
 # Changes
 
 What changed for level makers, newest first. The details (addresses, the
-game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
+game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
+
+## 2026-10-25: one repository for the Hitman games
+
+* The project is now **hitmanlevels** (github.com/nemannyira/hitmanlevels), made for Hitman 2 now and
+  Contracts / Blood Money later: Hitman 2's editor in `h2/`, the shared parts in `shared/` and `tools/`,
+  the site in `website/` (README.md).
+* The package installer is `levelpack.exe` (it was `h2level_pack.exe`); a package names its game
+  (`.h2lvl` = Hitman 2), and goes to that game's folder.
+* The author key's folder is `%LOCALAPPDATA%\HitmanLevels` (a key made before moves there by itself).
 
 ## 2026-10-25: characters killed right after they were made
 
@@ -25,7 +34,7 @@ game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 * *Level > Share > Export package*: the level as one signed file
   (`Mods\Packages\<level>_v<n>.h2lvl`), its scripts, README.md and
   preview.png with it. Your name, a license and your author key are asked
-  once (docs/editor.md, Share).
+  once (h2/docs/editor.md, Share).
 * `h2level_pack.exe` installs one (a double click): shows the author and the
   license, asks about authors not seen before, warns about another author's
   package of an installed level and about older versions, refuses changed or
@@ -35,12 +44,12 @@ game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
   load never ended): the level's objects used up the room the game keeps
   for the routines made while playing, such as the doors' actions. The
   editor now gives the map room for the level's own routines (found with
-  about 1800 points shown on the map; docs/roadmap.md, Engine limits).
+  about 1800 points shown on the map; h2/docs/roadmap.md, Engine limits).
 
 ## 2026-10-24: big levels, downloaded levels
 
 * Big levels no longer take the game down (stress levels on C1-1, each limit
-  found in the game's code; docs/roadmap.md, Engine limits a level meets):
+  found in the game's code; h2/docs/roadmap.md, Engine limits a level meets):
   * copies: the game keeps 510 moving objects in a map (it went down at about
     425 copies). The editor now makes room for 4096 and gives the light table
     room for the level's objects: a level's 2000 copies all move and are
@@ -60,7 +69,7 @@ game's functions) are in `docs/roadmap.md`, `docs/mission.md`, `docs/lua.md`.
 
 ## 2026-10-23: tests, icons on the map
 
-For those who work on the editor (docs/debugging.md, Tests):
+For those who work on the editor (h2/docs/debugging.md, Tests):
 
 * `tools/tests/run_all.py` runs every test in one go: the saves backed up and
   put back, the dev commands on for the run only, the game started (and started
@@ -72,7 +81,7 @@ For those who work on the editor (docs/debugging.md, Tests):
 
 * A point of the level can be shown on the game's map (M): Inspector > *On
   the map*, an icon of the map's legend; made with the map as the map's own
-  icons are (docs/roadmap.md, The in-game map).
+  icons are (h2/docs/roadmap.md, The in-game map).
 * The game's map works on every level: with *No buildings* it showed
   nothing (its window and legend went with the buildings); now it keeps them,
   takes out only the old floor plans and draws the level's floor and models
@@ -98,7 +107,7 @@ blank map, a map of its own, saved games, and the Inspector's and Level
 panel's controls through the GUI; the whole test set (run_all). Found and
 then: a saved game of a level on C5-1 crashed when loaded (explained
 2026-10-24: the test tools saved in C5-1's first seconds, while its start
-camera moves; a save made later loads; docs/roadmap.md). Levels online, a design:
+camera moves; a save made later loads; h2/docs/roadmap.md). Levels online, a design:
 docs/online_levels.md.
 
 ## 2026-10-17 .. 2026-10-22: the game's own way

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-#include "../../src/levelfmt/package.h"
+#include "levelfmt/package.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {

@@ -1,37 +1,20 @@
 cmake_minimum_required(VERSION 3.20)
-project(H2LevelEditor C CXX)
+project(HitmanLevels C CXX)
 
+# The games' editors (h2/: Hitman 2: Silent Assassin; h3/, h4/ to come), what they share (shared/), the
+# tools for every game (tools/) and the site (website/, not built here).
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
-    message(FATAL_ERROR "Hitman 2 is a 32-bit game: configure with an x86 toolchain (see build.bat)")
+    message(FATAL_ERROR "the games are 32-bit: configure with an x86 toolchain (see build.bat)")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# static CRT: the DLL must not depend on redistributables next to a 2002 game
+# static CRT: the DLLs must not depend on redistributables next to games of 2002-2006
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-
-# what a level file may hold and its packages (src/levelfmt): the DLL's loader and export,
-# h2level_check.exe, h2level_pack.exe (the installer) and the fuzz targets
-add_library(levelfmt STATIC src/levelfmt/level_check.cpp src/levelfmt/crypto.cpp src/levelfmt/ed25519.cpp
-            src/levelfmt/package.cpp src/levelfmt/share.cpp src/levelfmt/hub.cpp
-            third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
-target_include_directories(levelfmt PUBLIC third_party/json PRIVATE third_party/monocypher)
-target_link_libraries(levelfmt PUBLIC bcrypt crypt32 shell32 ole32 winhttp)
-add_executable(h2level_check tools/level_check/main.cpp)
-target_link_libraries(h2level_check PRIVATE levelfmt)
-add_executable(h2level_pack tools/level_pack/main.cpp)
-target_link_libraries(h2level_pack PRIVATE levelfmt)
-option(H2_FUZZ "libFuzzer target for the level validator (clang-cl)" OFF)
-if(H2_FUZZ)
-    add_executable(level_check_fuzz tools/fuzz/level_check_fuzz.cpp)
-    target_compile_options(level_check_fuzz PRIVATE -fsanitize=fuzzer,address)
-    target_link_options(level_check_fuzz PRIVATE -fsanitize=fuzzer,address)
-    target_link_libraries(level_check_fuzz PRIVATE levelfmt)
-    add_executable(package_fuzz tools/fuzz/package_fuzz.cpp)
-    target_compile_options(package_fuzz PRIVATE -fsanitize=fuzzer,address)
-    target_link_options(package_fuzz PRIVATE -fsanitize=fuzzer,address)
-    target_link_libraries(package_fuzz PRIVATE levelfmt)
-endif()
+# every DLL and tool in the build folder itself (build\Release\dinput8.dll, levelpack.exe, ...)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+option(H2_FUZZ "libFuzzer targets for the level validator and the package reader (clang-cl)" OFF)
 
 add_library(minhook STATIC
     third_party/minhook/src/buffer.c
@@ -55,81 +38,29 @@ add_library(imgui STATIC
     third_party/imgui/backends/imgui_impl_win32.cpp
     third_party/imguizmo/src/ImGuizmo.cpp)
 target_include_directories(imgui PUBLIC third_party/imgui third_party/imguizmo/src)
-# ImGui's test engine hooks (src/devcmd.cpp h2.dev_press: an editor control by its label, for
+# ImGui's test engine hooks (h2/src/devcmd.cpp h2.dev_press: an editor control by its label, for
 # tests); they are called only while a press is asked for (ImGuiContext::TestEngineHookItems)
 target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_TEST_ENGINE)
 
-# dinput8.dll proxy: hitman2.exe imports DINPUT8 statically, so the packer stub
-# loads us right after it has decompressed .text and before the game's OEP runs.
-add_library(h2fix SHARED
-    src/dllmain.cpp
-    src/log.cpp
-    src/config.cpp
-    src/d3dhook.cpp
-    src/crashlog.cpp
-    src/devcmd.cpp
-    src/diag.cpp
-    src/scene.cpp
-    src/game.cpp
-    src/editor/freecam.cpp
-    src/editor/guides.cpp
-    src/editor/highlight.cpp
-    src/editor/ingame_map.cpp
-    src/editor/history.cpp
-    src/editor/level.cpp
-    src/editor/model.cpp
-    src/editor/model_catalog.cpp
-    src/editor/models_panel.cpp
-    src/editor/npc_docs.cpp
-    src/editor/playtest.cpp
-    src/editor/profile_guard.cpp
-    src/editor/vehicles.cpp
-    src/editor/own_map.cpp
-    src/editor/testtools.cpp
-    src/editor/npc_panel.cpp
-    src/editor/npcs.cpp
-    src/editor/mission.cpp
-    src/editor/music.cpp
-    src/editor/launcher.cpp
-    src/editor/placement.cpp
-    src/editor/scene_panel.cpp
-    src/editor/viewport.cpp
-    src/engine/geoms.cpp
-    src/engine/spawn.cpp
-    src/engine/npc.cpp
-    src/engine/lists.cpp
-    src/engine/messages.cpp
-    src/engine/game_events.cpp
-    src/engine/scene_data.cpp
-    src/engine/script_files.cpp
-    src/engine/imports.cpp
-    src/engine/ingame_map.cpp
-    src/engine/inject.cpp
-    src/engine/zip.cpp
-    src/screenshot.cpp
-    src/input/dinput.cpp
-    src/overlay/console.cpp
-    src/overlay/imgui_impl_dx8.cpp
-    src/overlay/overlay.cpp
-    src/script/api.cpp
-    src/script/events.cpp
-    src/script/memapi.cpp
-    src/script/objects_api.cpp
-    src/script/lua_vm.cpp
-    src/script/triggers.cpp
-    src/script/state.cpp
-    src/display.cpp
-    src/fov.cpp
-    src/loader.cpp
-    src/framelimit.cpp
-    src/mainloop.cpp
-    src/ui.cpp
-    src/watch.cpp
-    src/dinput8.def)
-target_link_libraries(h2fix PRIVATE minhook lua imgui levelfmt dbghelp psapi)
-target_include_directories(h2fix PRIVATE third_party/json)
-target_compile_definitions(h2fix PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
-target_compile_options(h2fix PRIVATE /W4 /permissive- /Zi)
-set_target_properties(h2fix PROPERTIES OUTPUT_NAME dinput8)
-# a .pdb next to the map (crash stacks in the debugger; no change to the code made)
-target_link_options(h2fix PRIVATE /MAP:${CMAKE_BINARY_DIR}/dinput8.map /DEBUG /OPT:REF /OPT:ICF)
+
+# the level packages every game's levels travel in (shared/levelfmt): format, signatures, installer, Hub
+add_library(levelfmt STATIC shared/levelfmt/names.cpp shared/levelfmt/games.cpp shared/levelfmt/crypto.cpp
+            shared/levelfmt/ed25519.cpp shared/levelfmt/package.cpp shared/levelfmt/share.cpp
+            third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
+target_include_directories(levelfmt PUBLIC shared third_party/json PRIVATE third_party/monocypher)
+target_link_libraries(levelfmt PUBLIC bcrypt crypt32 shell32 ole32)
+# the Hub's download side (not in the games' DLLs: no WinHTTP there)
+add_library(levelhub STATIC shared/levelfmt/hub.cpp)
+target_link_libraries(levelhub PUBLIC levelfmt winhttp)
+
+add_subdirectory(h2)
+
+# levelpack.exe: installs any game's packages (the Level Hub's installer), exports, signs the site's list
+add_executable(levelpack tools/levelpack/main.cpp)
+target_link_libraries(levelpack PRIVATE levelhub h2levelfmt)
+if(H2_FUZZ)
+    add_executable(package_fuzz tools/fuzz/package_fuzz.cpp)
+    target_compile_options(package_fuzz PRIVATE -fsanitize=fuzzer,address)
+    target_link_options(package_fuzz PRIVATE -fsanitize=fuzzer,address)
+    target_link_libraries(package_fuzz PRIVATE levelfmt h2levelfmt)
+endif()

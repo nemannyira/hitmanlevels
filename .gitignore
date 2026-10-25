@@ -11,3 +11,8 @@ __pycache__/
 /third_party/apitrace-mcp-main/
 /third_party/cheatengine-mcp-bridge-main/
 /third_party/frida/
+
+# the site (site/): npm and wrangler local state
+site/node_modules/
+site/.wrangler/
+site/.dev.vars

@@ -1,0 +1,12 @@
+{
+  "name": "hitmanlevels-site",
+  "private": true,
+  "description": "hitmanlevels.com: the Level Hub's site (docs/site_api.md); deployed with Cloudflare's wrangler",
+  "scripts": {
+    "wrangler": "wrangler"
+  },
+  "devDependencies": {
+    "@napi-rs/keyring": "1.3.0",
+    "wrangler": "4.149.0"
+  }
+}

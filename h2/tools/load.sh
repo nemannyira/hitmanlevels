@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build, install, start the game and load a level (dev commands must be on).
 #   bash h2/tools/load.sh [scene] [--nobuild]     scene default: C1-1\C1-1__MAIN
-cd /c/Users/pinte/source/repos/H2-LevelEditor
+cd "$(dirname "$0")/../.."  # (the repository)
 LEVEL='C1-1\C1-1__MAIN'
 BUILD=1
 for a in "$@"; do

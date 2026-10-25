@@ -1,7 +1,7 @@
 #!/bin/bash
 # Characters at the screen sides (Hor+ strips): a C1-1 guard straight ahead and
 # 38 degrees to each side. Screenshots dumps/shots/sides_{center,left,right}.png
-cd /c/Users/pinte/source/repos/H2-LevelEditor
+cd "$(dirname "$0")/../.."  # (the repository)
 bash h2/tools/load.sh 'C1-1\C1-1__MAIN' "$@" || exit 1
 D=h2/tools/dev.py
 python $D 'h2.freecam(true) h2.setcampos(2750, 170, -6220) h2.camlookat(2750, 120, -5620) return "cam"'

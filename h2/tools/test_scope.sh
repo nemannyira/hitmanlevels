@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sniper scope and binocular views (widescreen check): screenshots in dumps/shots.
 #   bash h2/tools/test_scope.sh [--nobuild]
-cd /c/Users/pinte/source/repos/H2-LevelEditor
+cd "$(dirname "$0")/../.."  # (the repository)
 bash h2/tools/load.sh 'C1-1\C1-1__MAIN' "$@" || exit 1
 D=h2/tools/dev.py
 python $D 'local h=h2.objects("ZHITMAN2")[1] local x,y,z=h:pos() h2.item("RifleSniperR93", x+40, y+5, z) return "rifle"'

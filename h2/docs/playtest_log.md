@@ -203,10 +203,10 @@ maps being the main use. Every finding is a GitHub issue.
 
 | # | Found | Issue |
 |---|---|---|
-| W1 | A new character cannot have its own map's behaviours (Boss, Bodyguard, the guards): only Neutral2 and other levels' behaviours; a guard model gets *none* | #10 |
-| W2 | BaseGuard (C1-1) on C2-2 needs a panic arbiter the map does not have: it never starts | #11 |
-| W3 | A patrol behaviour of another level needs a route, and a list parameter has no *new route*: it never starts | #11 |
-| W4 | A guard's GuardPoint defaults to another character's point 80 m away; Problems said "No problems found" for both guards that never started | #11 |
+| W1 | A new character cannot have its own map's behaviours (Boss, Bodyguard, the guards): only Neutral2 and other levels' behaviours; a guard model gets *none* | fixed: the map's own behaviours offered, story parts apart (#10) |
+| W2 | BaseGuard (C1-1) on C2-2 needs a panic arbiter the map does not have: it never starts | fixed: the map's guard group fills an arbiter it lacks (#11) |
+| W3 | A patrol behaviour of another level needs a route, and a list parameter has no *new route*: it never starts | fixed: *New route (click its points)* (#11) |
+| W4 | A guard's GuardPoint defaults to another character's point 80 m away; Problems said "No problems found" for both guards that never started | fixed: a guard point where it is put; Problems lists behaviours that cannot start (#11) |
 | W5 | The Mission tab's briefing is not shown on C2-2: the laptop has the map's own | #12 |
 | W6 | An item placed on C2-2's ground lay 6 cm under its collision: no "Pick up" (offered at once 3 cm above it) | #13 |
 | W7 | The script template's `h2.objective(1, ...)` and zone completed the Mission tab's objective 1 | #14 |

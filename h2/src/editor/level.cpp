@@ -20,6 +20,7 @@
 #include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../engine/scene_data.h"
+#include "../engine/script_files.h"
 #include "../engine/spawn.h"
 #include "../levelfmt/level_check.h"
 #include "levelfmt/share.h"
@@ -1005,13 +1006,96 @@ std::string MakeOwnList(engine::ZGEOM* list, const std::string& name, std::strin
     return path;
 }
 
+engine::ZGEOM* MakeNewRoute(const std::string& name, std::string* error)
+{
+    auto fail = [&](const std::string& why) -> engine::ZGEOM* {
+        if (error)
+            *error = why;
+        return nullptr;
+    };
+    if (g_level.baseScene.empty())
+        g_level.baseScene = CurrentScene();
+    if (g_level.baseScene != CurrentScene())
+        return fail("the level is for scene " + g_level.baseScene);
+    // the list it copies: a route of the map's characters (a list a behaviour walks), else another list of
+    // places a behaviour has (C2-2's guards: the places they run to), else any list of the map
+    const auto& records = engine::SceneRecords();
+    engine::ZGEOM* source = nullptr;
+    for (int pass = 0; pass < 2 && !source; ++pass)
+        for (const engine::SceneRecord& r : records) {
+            if (source || !r.script || r.classId != 0x2003E9)
+                continue;
+            engine::ScriptInfo info;
+            if (!engine::ParseScript(r.script, info))
+                continue;
+            for (const engine::ScriptParam& p : info.params)
+                if (!source && p.type == engine::ParamType::Ref && p.bits && (pass == 1 || IsRouteRef(p.name)))
+                    if (engine::ZGEOM* g = engine::GeomOfRef(engine::RemapRef(p.bits));
+                        g && IsLive(g) && engine::IsEditableList(g) && engine::RecordOf(g) >= 0 &&
+                        engine::ClassName(g) == "ZLIST")
+                        source = g;
+        }
+    for (size_t i = 0; i < records.size() && !source; ++i)
+        if (engine::ZGEOM* g = engine::RecordGeom(int(i));
+            g && IsLive(g) && engine::IsEditableList(g) && engine::ClassName(g) == "ZLIST")
+            source = g;
+    if (!source)
+        return fail("the map has no list of points to make a route like");
+    std::string unique = name;
+    for (int k = 2; Resolve("ROOT/" + unique) || std::any_of(g_level.newLists.begin(), g_level.newLists.end(),
+                                                              [&](const LevelDocument::NewList& l) {
+                                                                  return l.name == unique;
+                                                              });
+         ++k)
+        unique = name + "_" + std::to_string(k);
+    std::string path = MakeOwnList(source, unique, error);
+    if (path.empty())
+        return nullptr;
+    g_level.lists[path] = {};
+    // the same list now, so its points can be clicked before the map makes it (a copy of the record as
+    // the engine makes it at load, emptied)
+    const engine::SceneRecord& r = records[size_t(engine::RecordOf(source))];
+    std::string err;
+    std::vector<uint8_t> block = engine::RemappedBlock(r.data);
+    engine::ZGEOM* list = engine::CreateObject(unique, Resolve("ROOT"), engine::ClassName(source).c_str(), 0, r.flags,
+                                               r.mat, r.pos, block, &err);
+    if (list)
+        engine::SetRuntimeListBlock(list, block);
+    if (!list || !engine::SetListRefs(list, {}, &err)) {
+        g_level.newLists.pop_back();
+        g_level.lists.erase(path);
+        return fail("the route was not made: " + err);
+    }
+    AdoptEngineOwned(list);
+    LevelDocument::NewList made = g_level.newLists.back();
+    PushAction("new route",
+               [path, unique] {
+                   g_level.newLists.erase(std::remove_if(g_level.newLists.begin(), g_level.newLists.end(),
+                                                         [&](const LevelDocument::NewList& l) { return l.name == unique; }),
+                                          g_level.newLists.end());
+                   g_level.lists.erase(path);
+                   g_level.dirty = true;
+                   return true;
+               },
+               [path, made] {
+                   g_level.newLists.push_back(made);
+                   g_level.lists[path] = PathsOfRefs(engine::ListRefs(Resolve(path)));
+                   g_level.dirty = true;
+                   return true;
+               });
+    Log("level: new route %s (like %s)", path.c_str(), PathOf(source).c_str());
+    return list;
+}
+
 namespace {
 
 uint64_t LevelFileTime(const std::string& folder);  // (below)
 
 void RecordList(const std::string& path, engine::ZGEOM* list, const std::vector<std::string>& points)
 {
-    if (points == PathsOfRefs(engine::AuthoredListRefs(list)))
+    bool own = std::any_of(g_level.newLists.begin(), g_level.newLists.end(),
+                           [&](const LevelDocument::NewList& l) { return "ROOT/" + l.name == path; });
+    if (!own && points == PathsOfRefs(engine::AuthoredListRefs(list)))
         g_level.lists.erase(path);
     else
         g_level.lists[path] = points;
@@ -1166,6 +1250,13 @@ Problem OffNetwork(const std::string& text, const std::string& path, const float
     return p;
 }
 
+// a list of the level's own (made with the map; not there before it loads again)
+bool IsLevelList(const std::string& path)
+{
+    return std::any_of(g_level.newLists.begin(), g_level.newLists.end(),
+                       [&](const LevelDocument::NewList& l) { return "ROOT/" + l.name == path; });
+}
+
 std::vector<Problem> FindProblems()
 {
     const LevelDocument& L = g_level;
@@ -1199,6 +1290,22 @@ std::vector<Problem> FindProblems()
                 out.push_back(OffNetwork("character " + n.id + " stands off the path network: it cannot walk",
                                          at.empty() ? "" : snap.geoms[at[0]].path, n.transform.pos));
             }
+        // a behaviour without a setting it needs does not start (tested: BaseGuard (C1-1) without its panic
+        // arbiter, a patrol without its route stand still, unarmed)
+        for (const LevelNpc& n : L.npcs) {
+            if (!n.hasBehaviour)
+                continue;
+            for (const ParamValue& v : n.params)
+                if (v.type == "ZGEOMREF" && engine::IsRequiredRef(v.name) &&
+                    (v.value.empty() || (!Resolve(v.value) && !IsLevelList(v.value)))) {
+                    std::vector<int> at = snap.FindName(n.id);
+                    out.push_back({"character " + n.id + ": its behaviour (" + engine::ScriptShortName(n.behaviour) +
+                                       ") does not start without " + v.name +
+                                       (IsRouteRef(v.name) ? " (a route: its settings, New route)" : ""),
+                                   at.empty() ? "" : snap.geoms[at[0]].path});
+                    break;
+                }
+        }
         for (const SpawnedObject& s : L.spawned)
             if (s.point && engine::OnPathNetwork(s.transform.pos) == 0) {
                 engine::ZGEOM* g = LiveSpawned(s.id);

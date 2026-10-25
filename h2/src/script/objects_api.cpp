@@ -700,6 +700,23 @@ int Npc(lua_State* L)
         spec.hasBehaviour = true;
     }
     ApplyParams(L, 7, spec.behaviour);
+    // a guard point not given: one where it stands (made now, not kept in the level), as the NPCs panel
+    // does; without one a guard walks to a place of its behaviour's own
+    bool given = false;
+    if (lua_istable(L, 7)) {
+        lua_getfield(L, 7, "GuardPoint");
+        given = !lua_isnil(L, -1);
+        lua_pop(L, 1);
+    }
+    for (engine::ScriptParam& p : spec.behaviour.params)
+        if (!given && spec.hasBehaviour && p.type == engine::ParamType::Ref && !p.bits && p.name == "GuardPoint") {
+            editor::Transform t = spec.transform;
+            t.pos[1] += 1.0f;
+            static int made;
+            if (engine::ZGEOM* point = editor::SpawnPoint("GuardPoint_npc" + std::to_string(++made),
+                                                          editor::RoomAt(t.pos), t))
+                p.bits = engine::RefOf(point);
+        }
     spec.now = true;  // the game runs: it acts at once
     std::string err;
     engine::ZGEOM* g = editor::CreateNpc(spec, &err);

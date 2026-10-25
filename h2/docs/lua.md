@@ -68,8 +68,8 @@ been given stops. Hitman can be moved anywhere too
 | `h2.disguise(character | clothes item)` | Hitman takes its clothes (as from a body: the character is left in underwear) |
 | `h2.health([points])` | Hitman's hit points (and the health bar); a new value above 0 (C1-1 on this difficulty: 60 at most) |
 | `h2.npcs()` | `{ {record, model, behaviour, object}, ... }` the map's characters |
-| `h2.npc(who, x, y, z [, yaw [, behaviour [, params]]])` | a character now (`who`: model `"BodyguardMafia_01"`, group name, record or a character; `behaviour`: `"BaseGuard"`, `false` none, nil its own; `params`: `{ GuardPoint = obj, IsSentry = 1 }`) |
-| `h2.behaviours([others])` | behaviour names (`others`: of other levels too, `"Guard2_1 (C2-1)"`) |
+| `h2.npc(who, x, y, z [, yaw [, behaviour [, params]]])` | a character now (`who`: model `"BodyguardMafia_01"`, group name, record or a character; `behaviour`: `"BaseGuard"`, `false` none, nil its own; `params`: `{ GuardPoint = obj, IsSentry = 1 }`; a guard point not given is a point where it stands, made for the map's time) |
+| `h2.behaviours([others])` | behaviour names: the map's characters' (`"EntranceGuard"`), the plain civilian, and with `others` the other levels' that work anywhere (`"Guard2_1 (C2-1)"`) |
 | `npc:behaviour()`, `npc:behaviour(name | false [, params])` | read / change |
 | `npc:state()` | the state its behaviour is in (`"Neutral2.normal"`) |
 | `npc:event(name)` | a script event for its behaviour (`"Msg_InstantDeath"`, ...) |

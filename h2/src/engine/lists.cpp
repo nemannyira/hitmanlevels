@@ -2,8 +2,10 @@
 
 #include <windows.h>
 #include <cstring>
+#include <map>
 
 #include "../log.h"
+#include "../scene.h"
 #include "scene_data.h"
 
 namespace h2::engine {
@@ -84,12 +86,16 @@ bool FindArray(const std::vector<uint8_t>& b, size_t& start, size_t& end)
     return false;
 }
 
+std::map<ZGEOM*, std::vector<uint8_t>> g_runtimeBlocks;  // lists made while playing: the block they were made of
+
 std::vector<uint8_t> AuthoredBlock(ZGEOM* list)
 {
     int record = RecordOf(list);
     const auto& records = SceneRecords();
-    if (record < 0 || size_t(record) >= records.size() || !records[record].data)
-        return {};
+    if (record < 0 || size_t(record) >= records.size() || !records[record].data) {
+        auto it = g_runtimeBlocks.find(list);
+        return it != g_runtimeBlocks.end() ? it->second : std::vector<uint8_t>{};
+    }
     return RemappedBlock(records[record].data);
 }
 
@@ -116,6 +122,16 @@ bool Reload(ZGEOM* list, RefContainer* c, uint8_t* block)
 }
 
 } // namespace
+
+void SetRuntimeListBlock(ZGEOM* list, const std::vector<uint8_t>& block)
+{
+    static bool hooked;
+    if (!hooked) {
+        hooked = true;
+        OnSceneLeaving([](const std::string&) { g_runtimeBlocks.clear(); });
+    }
+    g_runtimeBlocks[list] = block;
+}
 
 bool IsEditableList(ZGEOM* geom)
 {

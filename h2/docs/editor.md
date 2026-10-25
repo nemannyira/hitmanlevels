@@ -37,6 +37,15 @@ level* / *File > Open level* loads a saved one.
   applies to all) becomes the selected one's own with *A route of its own*:
   a copy of the list, made with the map when it loads again (*Test now*),
   whose points then change for that character only.
+* A new character takes a behaviour of the map's own characters (a soldier
+  of C2-2 is an EntranceGuard, Guard22, PatrolGuard22 as theirs are), the
+  plain civilian, or one of another level that works anywhere. *Parts of
+  this map's story* (a boss, its bodyguard, a limousine's guard) act out the
+  map's own mission: their settings point to its characters and vehicles.
+  A guard gets a guard point where it is put. A route setting (WayPoints,
+  ...) without a route: its value > *New route (click its points)*, then
+  click the points in walking order (Esc ends). *Problems* lists characters
+  whose behaviour cannot start without a setting.
 * *Vehicles*: select a car (a car of the map, or a copy of one) and
   *Inspector > Vehicle > Make it drive a route*: the route starts where it
   stands; click the road for its points (Esc ends); speed, *round and round*,

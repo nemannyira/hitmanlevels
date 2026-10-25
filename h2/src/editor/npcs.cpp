@@ -250,14 +250,31 @@ std::string CivilianBehaviour()
     return SceneScriptPath("Neutral2").empty() ? "" : "Neutral2";
 }
 
+bool TiedToFurniture(const std::string& name);  // (below)
+
+bool IsStoryBehaviour(const engine::ScriptInfo& s)
+{
+    if (TiedToFurniture(engine::ScriptShortName(s.name)))
+        return true;
+    for (const engine::ScriptParam& p : s.params) {
+        if (p.type != engine::ParamType::Ref || !p.bits)
+            continue;
+        engine::ZGEOM* g = engine::GeomOfRef(p.bits);
+        if (g && IsLive(g) && (engine::IsA(g, "ZActor") || engine::IsA(g, "ZCar") || engine::IsA(g, "ZMoveOnSpline")))
+            return true;
+    }
+    return false;
+}
+
 std::vector<std::string> BehaviourNames()
 {
+    // every behaviour of the map's characters: on its own map whatever it points to is there
     std::vector<std::string> names;
     for (const engine::SceneRecord& r : engine::SceneRecords()) {
         if (!r.script || r.classId != 0x2003E9)
             continue;
         engine::ScriptInfo info;
-        if (!engine::ParseScript(r.script, info) || !IsPortableBehaviour(info))
+        if (!engine::ParseScript(r.script, info))
             continue;
         std::string n = engine::ScriptShortName(info.name);
         if (std::find(names.begin(), names.end(), n) == names.end())
@@ -309,14 +326,35 @@ const std::vector<std::string>& ForeignBehaviourNames()
     return names;
 }
 
+bool IsOwnPlaceRef(const std::string& param)
+{
+    // one character's own place or route: taken from another character it walks to that one's (a C2-2
+    // limousine guard's point 80 m away), so these stay empty (the editor gives a new point or route)
+    static const char* const kOwn[] = {"guardpoint", "protectpoint", "m_rdistractpoint", "m_rstartpos", "waypoints",
+                                       "waypointlist", "patrolpointlist", "pausepoints", "walkpositions",
+                                       "walkaroundlist", "walkaboutpoints", "followpoints", "sewerpoints",
+                                       "m_rpatrolpositionlist"};
+    std::string n = Lower(param);
+    return std::any_of(std::begin(kOwn), std::end(kOwn), [&](const char* o) { return n == o; });
+}
+
+bool IsRouteRef(const std::string& param)
+{
+    std::string n = Lower(param);
+    return IsOwnPlaceRef(param) && n != "guardpoint" && n != "protectpoint" && n != "m_rdistractpoint" &&
+           n != "m_rstartpos";
+}
+
 int FillSharedRefs(engine::ScriptInfo& s, bool requiredOnly)
 {
     std::map<std::string, uint32_t> wanted;  // lower-case name -> value found
     for (const engine::ScriptParam& p : s.params)
-        if (p.type == engine::ParamType::Ref && !p.bits && (!requiredOnly || engine::IsRequiredRef(p.name)))
+        if (p.type == engine::ParamType::Ref && !p.bits && !IsOwnPlaceRef(p.name) &&
+            (!requiredOnly || engine::IsRequiredRef(p.name)))
             wanted[Lower(p.name)] = 0;
     if (wanted.empty())
         return 0;
+    uint32_t arbiter = 0;  // a guard group of the map (its guards' m_Arbiter), for any arbiter it lacks
     for (const engine::SceneRecord& r : engine::SceneRecords()) {
         if (!r.script || r.classId != 0x2003E9)
             continue;
@@ -324,11 +362,27 @@ int FillSharedRefs(engine::ScriptInfo& s, bool requiredOnly)
         if (!engine::ParseScript(r.script, other))
             continue;
         for (const engine::ScriptParam& p : other.params) {
+            if (p.type != engine::ParamType::Ref || !p.bits)
+                continue;
+            if (!arbiter && Lower(p.name) == "m_arbiter")
+                arbiter = engine::RemapRef(p.bits);
             auto it = wanted.find(Lower(p.name));
-            if (it != wanted.end() && !it->second && p.type == engine::ParamType::Ref && p.bits)
+            if (it != wanted.end() && !it->second)
                 it->second = engine::RemapRef(p.bits);
         }
     }
+    // C1-1's m_PanicArbiter is a ZActionArbiter as every guard group is (class 0x80000C9): a map without
+    // one gives its own (tested on C2-2: BaseGuard (C1-1) starts with Soldiers/Arbiter, not without)
+    if (!arbiter) {
+        const auto& records = engine::SceneRecords();
+        for (size_t i = 0; i < records.size() && !arbiter; ++i)
+            if (records[i].classId == 0x80000C9)
+                if (engine::ZGEOM* g = engine::RecordGeom(int(i)); g && IsLive(g))
+                    arbiter = engine::RefOf(g);
+    }
+    for (auto& [name, value] : wanted)
+        if (!value && name.find("arbiter") != std::string::npos)
+            value = arbiter;
     int n = 0;
     for (engine::ScriptParam& p : s.params) {
         if (p.type != engine::ParamType::Ref || p.bits)

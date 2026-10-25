@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -68,6 +69,7 @@ bool g_visible = true;
 std::string g_builtFor;
 std::vector<NpcType> g_types;
 std::vector<std::string> g_behaviourNames;  // script classes of the scene's characters
+std::set<std::string> g_storyBehaviours;    // ... playing a part of the map's story (IsStoryBehaviour)
 int g_type = -1;              // character chosen for placing
 std::string g_newBehaviour;   // behaviour of the next one ("" = none)
 engine::ScriptInfo g_new;     // its settings
@@ -182,6 +184,12 @@ void Build()
     g_newMoves.clear();
     g_builtFor = BuildKey();
     g_behaviourNames = BehaviourNames();
+    g_storyBehaviours.clear();
+    for (const std::string& b : g_behaviourNames) {
+        engine::ScriptInfo s;
+        if (BehaviourTemplate(b, s) && IsStoryBehaviour(s))
+            g_storyBehaviours.insert(b);
+    }
     const auto& records = engine::SceneRecords();
     std::map<std::string, int> typeIndex;
     for (int index : NpcRecords()) {
@@ -253,6 +261,62 @@ void SetNewBehaviour(const engine::ScriptInfo& s)
     SetRouteWarps(g_new, g_newMoves, !g_startHere);
 }
 
+// The behaviours to choose from (the new character's, another one for a placed one): the map's own,
+// its story parts, the other levels'; true when `chosen` was clicked.
+bool BehaviourChoices(std::string& chosen)
+{
+    bool clicked = false;
+    auto item = [&](const std::string& b) {
+        if (ImGui::Selectable(b.c_str(), chosen == b)) {
+            chosen = b;
+            clicked = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", DescribeBehaviour(b).c_str());
+    };
+    for (const std::string& b : g_behaviourNames)
+        if (!g_storyBehaviours.count(b))
+            item(b);
+    if (!g_storyBehaviours.empty()) {
+        ImGui::SeparatorText("parts of this map's story");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Behaviours that act out a part of the map's own mission: their settings point to\n"
+                              "its characters or vehicles (a boss's limousine, the boss a bodyguard follows).\n"
+                              "A copy plays that part; point those settings at your own ones.");
+        for (const std::string& b : g_behaviourNames)
+            if (g_storyBehaviours.count(b))
+                item(b);
+    }
+    ImGui::SeparatorText("from other levels");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Behaviours of other levels' characters that work anywhere: their scripts are\n"
+                          "loaded from that level. Routes they walk have to be set.");
+    for (const std::string& b : ForeignBehaviourNames())
+        item(b);
+    return clicked;
+}
+
+// A guard's point (GuardPoint) left empty gets a new point where the character stands: without one a
+// guard goes to a place of its behaviour's own (BaseGuard (C1-1) on C2-2 walked away). How many made.
+int GuardPointAt(engine::ScriptInfo& s, const Transform& at, engine::ZGEOM* room)
+{
+    for (engine::ScriptParam& p : s.params) {
+        if (p.type != engine::ParamType::Ref || p.bits || Lower(p.name) != "guardpoint")
+            continue;
+        Transform t = at;
+        t.pos[1] += 1.0f;
+        std::string err;
+        engine::ZGEOM* point = PlacePoint(t, room, &err);
+        if (!point) {
+            Log("npc: no guard point (%s)", err.c_str());
+            return 0;
+        }
+        p.bits = engine::RefOf(point);
+        return 1;
+    }
+    return 0;
+}
+
 void ChooseNewBehaviour(const std::string& name)
 {
     g_newBehaviour = name;
@@ -279,15 +343,17 @@ void ChooseType(int t)
     }
     engine::ScriptInfo info;
     bool authored = AuthoredBehaviour(g_types[t].record, info);
-    if (authored && IsPortableBehaviour(info)) {
+    if (authored && (type.importLevel.empty() || IsPortableBehaviour(info)) && !IsStoryBehaviour(info)) {
         g_newBehaviour = engine::ScriptShortName(info.name);
         SetNewBehaviour(info);  // this character's own settings
         return;
     }
-    bool guard = IsGuardBehaviour(authored ? engine::ScriptShortName(info.name) : g_types[t].model);
+    // a guard of the map's story (a limousine's, the boss's bodyguard): one of the map's other guards
+    bool guard = IsGuardBehaviour(authored ? engine::ScriptShortName(info.name) : g_types[t].model) ||
+                 (authored && IsGuardBehaviour(type.model));
     std::string pick;
     for (const std::string& b : g_behaviourNames)
-        if (pick.empty() && guard && IsGuardBehaviour(b))
+        if (pick.empty() && guard && IsGuardBehaviour(b) && !g_storyBehaviours.count(b))
             pick = b;
     if (pick.empty() && !guard)
         pick = CivilianBehaviour();
@@ -639,6 +705,30 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Makes an invisible point where you click and uses it here\n"
                                       "(move it later: click its marker, then drag it)");
+                engine::ZGEOM* now = p.bits ? engine::GeomOfRef(p.bits) : nullptr;
+                bool route = IsRouteRef(p.name) || (now && IsLive(now) && engine::IsEditableList(now));
+                if (route && ImGui::MenuItem("New route (click its points)...")) {
+                    std::string owner = "Route";
+                    if (std::string(table) == "target" && g_target)
+                        if (const LevelNpc* n = FindLevelNpc(g_target))
+                            owner = n->id;
+                    std::string err;
+                    if (engine::ZGEOM* list = MakeNewRoute(owner + "_" + p.name, &err)) {
+                        p.bits = engine::RefOf(list);
+                        changed = true;
+                        g_addList = list;
+                        g_pickPending = false;
+                        g_pickParam.clear();
+                        g_newPointParam.clear();
+                        g_message = p.name + " = new route " + engine::SafeString(list->name) +
+                                    ": click its points in walking order, Esc ends";
+                    } else {
+                        g_message = "no route made: " + err;
+                    }
+                }
+                if (route && ImGui::IsItemHovered())
+                    ImGui::SetTooltip("A route of this level's own: click its points in the world in walking\n"
+                                      "order (Esc ends); the map makes it when it loads again");
                 if (ImGui::MenuItem("None", nullptr, false, p.bits != 0)) {
                     p.bits = 0;
                     changed = true;
@@ -943,11 +1033,11 @@ void DrawTarget()
                            "loads again (Test).");
     std::string current = g_targetHasBehaviour ? engine::ScriptShortName(g_targetEdit.name) : "";
     ImGui::Text("Behaviour: %s", BehaviourLabel(current).c_str());
-    if (placed && g_targetHasBehaviour && !IsPortableBehaviour(g_targetEdit)) {
+    if (placed && g_targetHasBehaviour && IsStoryBehaviour(g_targetEdit)) {
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f),
-                           "A behaviour of this level's own character: it uses objects of the level (items, "
-                           "doors, other characters) and may act oddly. Choose another one below.");
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f),
+                           "A part of this map's story: its settings point to the map's characters or vehicles, "
+                           "and it acts that part (point them at your own ones, or choose another behaviour).");
         ImGui::PopTextWrapPos();
     }
     if (!current.empty()) {
@@ -961,13 +1051,7 @@ void DrawTarget()
         if (ImGui::BeginCombo("##changeto", g_changeTo.empty() ? "another behaviour..." : g_changeTo.c_str())) {
             if (ImGui::Selectable("none (stands still)", g_changeTo == "-"))
                 g_changeTo = "-";
-            for (const std::string& b : g_behaviourNames)
-                if (ImGui::Selectable(b.c_str(), g_changeTo == b))
-                    g_changeTo = b;
-            ImGui::SeparatorText("from other levels");
-            for (const std::string& b : ForeignBehaviourNames())
-                if (ImGui::Selectable(b.c_str(), g_changeTo == b))
-                    g_changeTo = b;
+            BehaviourChoices(g_changeTo);
             ImGui::EndCombo();
         }
         ImGui::SameLine();
@@ -986,6 +1070,7 @@ void DrawTarget()
                     std::vector<StartMove> moves = StartMoves(s);
                     SetRouteWarps(s, moves, false);
                     points = PointStartsAt(s, moves, GetTransform(actor), RoomOf(actor));
+                    points += GuardPointAt(s, GetTransform(actor), RoomOf(actor));
                     g_targetEdit = s;
                     g_targetHasBehaviour = true;
                 }
@@ -1077,9 +1162,10 @@ void Place()
     int points = 0;
     if (spec.hasBehaviour) {
         spec.behaviour = g_new;
+        engine::ZGEOM* room = g_hitRoom ? g_hitRoom : RoomOf(engine::RecordGeom(spec.record));
         if (g_startHere)
-            points = PointStartsAt(spec.behaviour, g_newMoves, spec.transform,
-                                   g_hitRoom ? g_hitRoom : RoomOf(engine::RecordGeom(spec.record)));
+            points = PointStartsAt(spec.behaviour, g_newMoves, spec.transform, room);
+        points += GuardPointAt(spec.behaviour, spec.transform, room);
     }
     std::string err;
     engine::ZGEOM* npc = PlaceNpc(spec, &err);
@@ -1126,16 +1212,9 @@ void DrawPlace()
     if (ImGui::BeginCombo("##behaviour", BehaviourLabel(g_newBehaviour).c_str())) {
         if (ImGui::Selectable("none (stands still)", g_newBehaviour.empty()))
             ChooseNewBehaviour("");
-        for (const std::string& b : g_behaviourNames)
-            if (ImGui::Selectable(b.c_str(), g_newBehaviour == b))
-                ChooseNewBehaviour(b);
-        ImGui::SeparatorText("from other levels");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Behaviours of other levels' characters that work anywhere: their scripts are\n"
-                              "loaded from that level. Routes they walk have to be set.");
-        for (const std::string& b : ForeignBehaviourNames())
-            if (ImGui::Selectable(b.c_str(), g_newBehaviour == b))
-                ChooseNewBehaviour(b);
+        std::string chosen = g_newBehaviour;
+        if (BehaviourChoices(chosen))
+            ChooseNewBehaviour(chosen);
         ImGui::EndCombo();
     }
     if (!g_newBehaviour.empty()) {

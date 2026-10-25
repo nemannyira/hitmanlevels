@@ -43,6 +43,7 @@ TESTS = [
     ("goals", ["goals_test.py"], 600, False),
     ("saveload", ["saveload_test.py"], 600, False),
     ("knockout", ["knockout_test.py"], 600, False),
+    ("behaviours", ["behaviours_test.py"], 600, False),
     ("take_action", ["take_action_test.py"], 600, False),
     ("copies", ["copies_test.py"], 600, False),
     ("copies2", ["copies2_test.py"], 600, False),

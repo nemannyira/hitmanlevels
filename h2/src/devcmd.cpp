@@ -275,6 +275,21 @@ int EditCmd(lua_State* L)
     } else if (op == "sky") {
         editor::SetSky(luaL_checkstring(L, 2));
         return 0;
+    } else if (op == "npcref") {  // (character, setting, object): the NPCs panel's setting of a reference (kept)
+        engine::ZGEOM* actor = editor::ActorOf(resolve(2));
+        std::string param = luaL_checkstring(L, 3);
+        engine::ScriptInfo s;
+        if (!actor || !editor::CurrentBehaviour(actor, s))
+            return luaL_error(L, "npcref: no character with a behaviour");
+        bool found = false;
+        for (engine::ScriptParam& p : s.params)
+            if (p.name == param && p.type == engine::ParamType::Ref) {
+                p.bits = engine::RefOf(resolve(4));
+                found = true;
+            }
+        if (!found)
+            return luaL_error(L, "npcref: no reference %s", param.c_str());
+        made = editor::EditNpcBehaviour(actor, &s, &err);
     } else {
         return luaL_error(L, "unknown op %s", op.c_str());
     }
@@ -378,6 +393,14 @@ int Hover(lua_State* L)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_ui.push_back({0, float(luaL_checknumber(L, 1)), float(luaL_checknumber(L, 2)), 0});
+    return 0;
+}
+
+// h2.dev_uiwheel(notches): the editor's mouse wheel (+ up / - down) where its mouse is (a list, a popup)
+int UiWheel(lua_State* L)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_ui.push_back({3, 0, float(luaL_checknumber(L, 1)), 0});
     return 0;
 }
 
@@ -513,6 +536,12 @@ int Level(lua_State* L)
         if (path.empty())
             return luaL_error(L, "ownlist: %s", err.c_str());
         lua_pushstring(L, path.c_str());
+        return 1;
+    } else if (op == "newroute") {  // "<name>": the NPCs panel's New route (a list of the level's own, empty, now)
+        engine::ZGEOM* list = editor::MakeNewRoute(arg, &err);
+        if (!list)
+            return luaL_error(L, "newroute: %s", err.c_str());
+        lua_pushstring(L, editor::PathOf(list).c_str());
         return 1;
     } else if (op == "listpoints") {  // "<list path>|<point path>|...": the editor's change of a list (kept)
         std::vector<engine::ZGEOM*> pts;
@@ -1234,6 +1263,7 @@ void InstallDevCommands()
     script::Register("dev_click", Click);
     script::Register("dev_hover", Hover);
     script::Register("dev_type", Type);
+    script::Register("dev_uiwheel", UiWheel);
     script::Register("dev_uikey", UiKey);
     script::Register("dev_press", Press);
     script::Register("dev_press_status", PressStatus);
@@ -1414,6 +1444,7 @@ void DevUiStep()
     // the backend adds the OS cursor every frame while the game is in front: clicks bring their position
     case 1: io.AddMousePosEvent(s.x, s.y); io.AddMouseButtonEvent(s.button, true); break;
     case 2: io.AddMousePosEvent(s.x, s.y); io.AddMouseButtonEvent(s.button, false); break;
+    case 3: io.AddMouseWheelEvent(0.0f, s.y); break;
     case 4: io.AddKeyEvent(ImGuiKey(s.button), true); break;
     case 5: io.AddKeyEvent(ImGuiKey(s.button), false); break;
     case 6: io.AddInputCharacter(unsigned(s.button)); break;

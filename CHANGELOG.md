@@ -3,6 +3,21 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-25 (evening): guards that work on every map (#10, #11)
+
+* *NPCs > Place a character* offers the map's own behaviours: on C2-2 a new
+  soldier is an EntranceGuard, Guard22 or PatrolGuard22 like the map's own.
+  Behaviours acting out a part of the map's mission (a boss, its bodyguard,
+  a limousine's guard) are listed apart, as *parts of this map's story*.
+* A guard gets a guard point where it is put (before, another character's
+  point: it walked away to it), and a guard group of the map when its
+  behaviour comes from a level that had one the map lacks (BaseGuard (C1-1)
+  on C2-2 now starts).
+* A route setting (WayPoints, ...) has *New route (click its points)*: a
+  route of the level's own, its points clicked at once.
+* *Problems* lists a character whose behaviour cannot start (a route or a
+  setting it needs is not set).
+
 ## 2026-10-25: one repository for the Hitman games
 
 * The project is now **hitmanlevels** (github.com/nemannyira/hitmanlevels), made for Hitman 2 now and

@@ -20,7 +20,11 @@ namespace h2::engine {
 bool IsEditableList(ZGEOM* geom);
 // Its elements (references) in order, as the game sees them now.
 std::vector<uint32_t> ListRefs(ZGEOM* list);
-// Replaces its elements. Only lists of the scene file (their data block is the template).
+// Replaces its elements. Lists of the scene file (their data block is the
+// template), and lists made while playing with the block they were made of.
+// A list made while playing (engine::CreateObject of a list record's block):
+// that block is its template for SetListRefs (until the scene is left).
+void SetRuntimeListBlock(ZGEOM* list, const std::vector<uint8_t>& block);
 bool SetListRefs(ZGEOM* list, const std::vector<uint32_t>& refs, std::string* error = nullptr);
 // The elements the scene file gave it.
 std::vector<uint32_t> AuthoredListRefs(ZGEOM* list);

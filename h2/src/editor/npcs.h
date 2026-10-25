@@ -19,10 +19,20 @@ std::vector<int> NpcRecords();
 std::string NpcModel(int record);
 // The behaviour the record has in the scene file (runtime refs); false: none.
 bool AuthoredBehaviour(int record, engine::ScriptInfo& out);
-// The behaviours a placed character can have: the script classes used in the
-// scene that work anywhere (IsPortableBehaviour), and the game's plain
-// civilian (Neutral2) when the scene has it. Short names ("BaseGuard"), sorted.
+// The behaviours of the map's characters (on their own map whatever they point
+// to is there; IsStoryBehaviour tells the ones playing a part of its story),
+// and the game's plain civilian (Neutral2) when the scene has it. Short names
+// ("EntranceGuard"), sorted.
 std::vector<std::string> BehaviourNames();
+// A behaviour playing a part of its map's story: its settings point to the
+// map's characters or vehicles (C2-2's Boss: its counterpart and limousine;
+// its Bodyguard: the boss), or it uses furniture. A copy acts that part.
+bool IsStoryBehaviour(const engine::ScriptInfo& s);
+// A setting that is one character's own place or route (guard point, protect
+// point, waypoints, ...): never taken from another character (FillSharedRefs).
+bool IsOwnPlaceRef(const std::string& param);
+// Of those, the routes (lists of points walked: WayPoints, PatrolPointList, ...).
+bool IsRouteRef(const std::string& param);
 // The parameters a script class has at its first use in the scene (runtime
 // refs); Neutral2's as the game's characters declare them.
 bool BehaviourTemplate(const std::string& name, engine::ScriptInfo& out);
@@ -37,8 +47,9 @@ std::string ForeignBehaviourName(const std::string& script, const std::string& l
 // The portable behaviours of the game's other levels, as such names (sorted).
 const std::vector<std::string>& ForeignBehaviourNames();
 // Its zero references filled from the scene's characters' settings of the same
-// name (help and safe points, weapon template, guard group, alarm list, a
-// route of the same name, ...); how many.
+// name (help and safe points, weapon template, guard group, alarm list, ...;
+// not a character's own place or route: IsOwnPlaceRef), an arbiter the map's
+// characters do not name from the map's guard group; how many.
 // requiredOnly: only those it cannot start without (engine/script_files.h).
 int FillSharedRefs(engine::ScriptInfo& s, bool requiredOnly = false);
 // The game's plain civilian (AllLevels/Std2/Neutral2: stands, panics and runs

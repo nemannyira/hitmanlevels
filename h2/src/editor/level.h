@@ -289,6 +289,11 @@ bool SetListPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& point
 // made with the map when it loads again. -> its path ("ROOT/<name>"), "" and
 // `error`: not made.
 std::string MakeOwnList(engine::ZGEOM* list, const std::string& name, std::string* error = nullptr);
+// A new route of the level's own (a list of points, empty): made now, so its
+// points can be added at once, and with the map when it loads again (a copy of
+// a route of the map, MakeOwnList, its points the level's). Undoable. -> the
+// list ("ROOT/<name>", or <name>_2 ...), null and `error`.
+engine::ZGEOM* MakeNewRoute(const std::string& name, std::string* error = nullptr);
 
 // Takes the scene's characters and items out (empty map) or puts them back.
 void SetEmptyMap(bool empty);

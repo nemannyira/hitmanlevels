@@ -190,3 +190,53 @@ map again*, *NPCs* > Vittorio > *Place character* > a click on the floor >
 |---|---|---|
 | P42 | A map loaded with the editor open (*Load the map again* for models of other levels) showed the world from inside Hitman's head: the editor held the world from the first frame, before the game's camera moved behind him | fixed: a new map runs 60 frames before the editor holds it |
 
+
+## 2026-10-25: a new mission on another map, as a level maker
+
+A mission made through the GUI only (the launcher, the panels, the toolbar;
+dev commands drove the mouse and keys), on a map no example used: *Park
+Meeting* on C2-2 Kirov Park, emptied. A target (MafiaBossRussian) with two
+bodyguards, an object to take, a briefing, an exit, a script from the
+template; *Test*, played to the end (Silent Assassin; the kill stood in with
+`npc:kill`). The aim: what a level maker meets, new missions on the existing
+maps being the main use. Every finding is a GitHub issue.
+
+| # | Found | Issue |
+|---|---|---|
+| W1 | A new character cannot have its own map's behaviours (Boss, Bodyguard, the guards): only Neutral2 and other levels' behaviours; a guard model gets *none* | #10 |
+| W2 | BaseGuard (C1-1) on C2-2 needs a panic arbiter the map does not have: it never starts | #11 |
+| W3 | A patrol behaviour of another level needs a route, and a list parameter has no *new route*: it never starts | #11 |
+| W4 | A guard's GuardPoint defaults to another character's point 80 m away; Problems said "No problems found" for both guards that never started | #11 |
+| W5 | The Mission tab's briefing is not shown on C2-2: the laptop has the map's own | #12 |
+| W6 | An item placed on C2-2's ground lay 6 cm under its collision: no "Pick up" (offered at once 3 cm above it) | #13 |
+| W7 | The script template's `h2.objective(1, ...)` and zone completed the Mission tab's objective 1 | #14 |
+| W8 | A reference's *Pick in the world* picks the ground behind a character, before and after *Test*: "this guard protects that character" cannot be set | #15 |
+| W9 | A placed character not real yet is not drawn; unselected nothing shows where it stands | #15 |
+| W10 | *File > Open level* of another map's level does not load that map (the launcher does) | #16 |
+| W11 | Then *Test* (*where Hitman is*) put Hitman at his C1-1 coordinates on C2-2; *Where Hitman stands* made the exit there | #16 |
+| W12 | An emptied level starts with the base level's end on and *Completed when every objective is done* off | #17 |
+| W13 | The exit is offered only after that box; it is no laptop line; the map (M) keeps the base level's EXIT | #17 |
+| W14 | The campaign's bonus weapon popup after an editor level, though the profile was not written | #18 |
+| W15 | No overview: above ~100 m the free camera draws nothing | #19 |
+| W16 | No document or briefcase on C2-2; *Other levels...* searches one level at a time, no pictures | #19 |
+| W17 | Characters cannot be named; objectives get model names | #19 |
+| W18 | Behaviours and settings by their engine names (`m_iHitpoints`, `m_PanicArbiter`, *Guard22*); C1-1 fields on C2-2 | #20 |
+| W19 | 51 behaviours of other levels in a five-row popup, no filter, described only once chosen | #20 |
+| W20 | After placing, the selected character's settings push *Place a character* down; setting rows packed tight | #20 |
+| W21 | The "placed ..." message stays after the map was loaded again | #20 |
+| W22 | Launcher: *Empty map* on by default; the floor box shown with *No buildings either* off | #21 |
+| W23 | Level tab: *Share* (author key) near the top of a new level; *Hitman starts in* under *Share* | #21 |
+| W24 | Text cut at the panel's edge; the briefing box does not wrap | #21 |
+| W25 | Step chips *Test* / *Save* green on a new, empty level | #21 |
+| W26 | Inspector: *Make it drive a route* for a pickup item | #21 |
+| W27 | The free camera stays on after the editor is closed | #21 |
+| W28 | The laptop's *Additional files*: six empty boxes on an emptied map | #21 |
+| W29 | No *Open* for a script written from the template | #21 |
+
+Worked as meant: the launcher's *Open a level* (map, objectives, briefing),
+*Make it a target* and *Hitman has to take it* from the Inspector, the
+objective editor, a reference's *New point* (the guard point), the parameter
+info box, the template not overwriting a script of the user's, *Test* loading
+the level's map, the editor's goals and exit completing the mission, the
+profile guard (nothing written). Not tried: *Share* (it makes the user's own
+author key: left for their test).

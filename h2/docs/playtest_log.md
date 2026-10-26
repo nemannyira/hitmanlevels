@@ -210,8 +210,8 @@ maps being the main use. Every finding is a GitHub issue.
 | W5 | The Mission tab's briefing is not shown on C2-2: the laptop has the map's own | fixed: the level's own key format (`<folder>/formatstring`, read by SetLocaleFolder 0x52D340) answered (#12) |
 | W6 | An item placed on C2-2's ground lay 6 cm under its collision: no "Pick up" (offered at once 3 cm above it) | fixed: placed 3 cm above the clicked object's collision (the game's line test, RenderD3D collision manager vfunc 0x64) (#13) |
 | W7 | The script template's `h2.objective(1, ...)` and zone completed the Mission tab's objective 1 | fixed: the template takes a line the Mission tab does not use; Problems names a script setting one it uses (#14) |
-| W8 | A reference's *Pick in the world* picks the ground behind a character, before and after *Test*: "this guard protects that character" cannot be set | #15 |
-| W9 | A placed character not real yet is not drawn; unselected nothing shows where it stands | #15 |
+| W8 | A reference's *Pick in the world* picks the ground behind a character, before and after *Test*: "this guard protects that character" cannot be set | fixed: a click picks the character (CharacterAt); the menu lists every character (#15) |
+| W9 | A placed character not real yet is not drawn; unselected nothing shows where it stands | fixed: the stopped world steps 3 frames after a placement: the body gets its pose (#15) |
 | W10 | *File > Open level* of another map's level does not load that map (the launcher does) | #16 |
 | W11 | Then *Test* (*where Hitman is*) put Hitman at his C1-1 coordinates on C2-2; *Where Hitman stands* made the exit there | #16 |
 | W12 | An emptied level starts with the base level's end on and *Completed when every objective is done* off | #17 |

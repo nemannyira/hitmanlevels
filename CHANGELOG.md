@@ -3,6 +3,14 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: characters in settings, placed characters shown (#15)
+
+* A setting's *Pick in the world* takes the character clicked (before: the
+  ground behind it), and its menu has *A character* (every character, also
+  far away): a bodyguard protects your own target, kept when the map loads.
+* A character placed while the world stands (the editor open) is drawn at
+  once (before: only its marker when selected).
+
 ## 2026-10-26: scripts and the Mission tab's laptop lines (#14)
 
 * *New script from a template* uses the first laptop line the Mission tab

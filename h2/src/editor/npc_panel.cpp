@@ -31,6 +31,7 @@
 #include "npcs.h"
 #include "playtest.h"
 #include "scene_panel.h"
+#include "viewport.h"
 
 namespace h2::editor {
 
@@ -729,6 +730,19 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
                 if (route && ImGui::IsItemHovered())
                     ImGui::SetTooltip("A route of this level's own: click its points in the world in walking\n"
                                       "order (Esc ends); the map makes it when it loads again");
+                if (ImGui::BeginMenu("A character")) {  // (also one not drawn yet, or far away)
+                    for (engine::ZGEOM* c : AllCharacters()) {
+                        if (IsRemovedNpc(c))
+                            continue;
+                        if (ImGui::MenuItem((CharacterName(c) + (IsPlacedNpc(c) ? " *" : "") + "##" +
+                                             PathOf(c)).c_str(),
+                                            nullptr, p.bits == engine::RefOf(c))) {
+                            p.bits = engine::RefOf(c);
+                            changed = true;
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
                 if (ImGui::MenuItem("None", nullptr, false, p.bits != 0)) {
                     p.bits = 0;
                     changed = true;
@@ -1503,10 +1517,20 @@ void UpdateNpcPlacement()
         dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170),
                           4);
         dl->AddText(p, IM_COL32(255, 220, 120, 255), text.c_str());
+        // characters by their place (the picking draws see no skinned body: the ground behind it was
+        // taken, #15), anything else by the picking
+        engine::ZGEOM* who = overWorld ? CharacterAt(io.MousePos.x, io.MousePos.y) : nullptr;
+        if (who)
+            dl->AddText(ImVec2(p.x, p.y + size.y + 6), IM_COL32(255, 220, 120, 255),
+                        ("click: " + CharacterName(who)).c_str());
         if (overWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            g_pickPending = true;
-            g_pickFrame = ImGui::GetFrameCount();
-            RequestPick(io.MousePos.x, io.MousePos.y, OnParamPick);
+            if (who) {
+                OnParamPick(who, nullptr, nullptr);
+            } else {
+                g_pickPending = true;
+                g_pickFrame = ImGui::GetFrameCount();
+                RequestPick(io.MousePos.x, io.MousePos.y, OnParamPick);
+            }
         }
         return;
     }

@@ -44,7 +44,9 @@ level* / *File > Open level* loads a saved one.
   map's own mission: their settings point to its characters and vehicles.
   A guard gets a guard point where it is put. A route setting (WayPoints,
   ...) without a route: its value > *New route (click its points)*, then
-  click the points in walking order (Esc ends). *Problems* lists characters
+  click the points in walking order (Esc ends). A setting that names an
+  object takes a character too: *Pick in the world* and a click on it, or
+  its menu's *A character* (a bodyguard's *ProtectPoint*: your target). *Problems* lists characters
   whose behaviour cannot start without a setting.
 * *Vehicles*: select a car (a car of the map, or a copy of one) and
   *Inspector > Vehicle > Make it drive a route*: the route starts where it

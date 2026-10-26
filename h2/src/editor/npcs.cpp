@@ -19,6 +19,7 @@
 #include "../log.h"
 #include "../scene.h"
 #include "level.h"
+#include "playtest.h"
 
 namespace h2::editor {
 
@@ -578,6 +579,8 @@ engine::ZGEOM* CreateNpc(const NpcSpec& spec, std::string* error)
     } else {
         Log("npc %s: shown until the map is loaded again", s.name.c_str());
         g_pending.insert(npc);
+        if (ScenePaused())
+            StepWorld(3);  // a character made in a stopped world has no pose yet: not drawn (#15)
     }
     g_placed.push_back(npc);
     g_placedRecord[npc] = spec.record;

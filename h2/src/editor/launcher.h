@@ -6,8 +6,12 @@
 // level) or a level saved before. The chosen map is loaded and the editor
 // opens on it.
 
+#include <string>
+
 namespace h2::editor {
 
 void InstallLauncher();
+// The game's name of a map ("Kirov Park Meeting" for "C2-2\\C2-2__MAIN"); the scene's own name else.
+std::string MapTitle(const std::string& scene);
 
 } // namespace h2::editor

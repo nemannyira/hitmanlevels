@@ -145,6 +145,12 @@ void OnCameraPoint(engine::ZGEOM*, const float* point, const float*)
 
 void Test()
 {
+    // another map comes (a level of another map opened): Hitman's or the camera's place here means
+    // nothing there, the level's start is used (#16: he stood at C1-1's coordinates on C2-2)
+    if (!CurrentLevel().baseScene.empty() && _stricmp(CurrentLevel().baseScene.c_str(), CurrentScene().c_str()) != 0) {
+        Reload();
+        return;
+    }
     if (g_startAt == kAtCamera) {
         g_picking = true;
         RequestPick(RenderWidth() * 0.5f, RenderHeight() * 0.5f, OnCameraPoint);

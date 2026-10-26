@@ -3,6 +3,14 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: opening a level of another map (#16)
+
+* *File > Open level* lists each level's map, loads the map of a level made
+  on another one (as the launcher does), and asks first when the open level
+  has unsaved changes.
+* *Test* of a level whose map is not the loaded one starts Hitman at the
+  level's start (before: at his place on the other map).
+
 ## 2026-10-26: an emptied map's mission is the level's (#17)
 
 * A map emptied (launcher's *Empty map*, or the Level tab's) starts with

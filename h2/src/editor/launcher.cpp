@@ -548,6 +548,18 @@ void DrawEntry()
         OpenLauncher();
 }
 
+} // namespace
+
+std::string MapTitle(const std::string& scene)
+{
+    for (const Map& m : kMaps)
+        if (_stricmp(m.scene, scene.c_str()) == 0)
+            return m.name;
+    return scene;
+}
+
+namespace {
+
 // the map was loaded from the launcher: the editor opens on it
 void AfterStart()
 {

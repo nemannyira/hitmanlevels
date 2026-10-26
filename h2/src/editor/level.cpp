@@ -38,6 +38,7 @@
 #include "own_map.h"
 #include "profile_guard.h"
 #include "music.h"
+#include "launcher.h"
 #include "scene_panel.h"
 
 using json = nlohmann::json;
@@ -303,6 +304,7 @@ bool g_hitmanAtLoadKnown;
 int g_applyWaitFrames;
 char g_newName[64] = "My level";
 std::string g_status;
+std::string g_openAsk;  // File > Open level: this one, once asked about the open one's unsaved changes
 
 std::string ModsDir() { return GameDir() + "Mods\\"; }
 bool g_openSaveAs;           // Ctrl+S without a level: the name is asked
@@ -2075,6 +2077,55 @@ void DrawPanel()
     }
 }
 
+// File > Open level: the level and its map (another map is loaded, as the launcher does; #16)
+void OpenLevel(const std::string& folder)
+{
+    std::string err;
+    if (!LoadLevel(folder, &err)) {
+        g_status = "load failed: " + err;
+        return;
+    }
+    g_status = "loaded " + folder;
+    if (!g_level.baseScene.empty() && !SameScene(g_level.baseScene, CurrentScene())) {
+        g_status += ": its map (" + MapTitle(g_level.baseScene) + ") is loading";
+        if (!RequestScene(g_level.baseScene))
+            g_status = "loaded " + folder + ", but the game did not load its map " + g_level.baseScene;
+    }
+}
+
+// the question before another level replaces one with unsaved changes
+void DrawOpenAsk()
+{
+    if (!g_openAsk.empty() && !ImGui::IsPopupOpen("Open another level?"))
+        ImGui::OpenPopup("Open another level?");
+    if (!ImGui::BeginPopupModal("Open another level?", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    ImGui::Text("%s has changes not saved.", g_level.name.c_str());
+    std::string folder = g_openAsk;
+    if (ImGui::Button("Save, then open")) {
+        std::string err;
+        if (SaveLevel(&err)) {
+            OpenLevel(folder);
+        } else {
+            g_status = "save failed: " + err;
+        }
+        g_openAsk.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open without saving")) {
+        OpenLevel(folder);
+        g_openAsk.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        g_openAsk.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
 void FileMenu()
 {
     LevelDocument& L = g_level;
@@ -2109,9 +2160,23 @@ void FileMenu()
                 }
                 label = text;
             }
-            if (ImGui::MenuItem(label.c_str(), LevelModified(folder).c_str())) {
-                std::string err;
-                g_status = LoadLevel(folder, &err) ? "loaded " + folder : "load failed: " + err;
+            // its map beside it (as the launcher lists them), read again when the file changes
+            static std::map<std::string, std::pair<uint64_t, std::string>> maps;
+            auto& [mapTime, map] = maps[folder];
+            if (mapTime != LevelFileTime(folder)) {
+                mapTime = LevelFileTime(folder);
+                std::ifstream f(ModsDir() + folder + "\\level.json", std::ios::binary);
+                json j = json::parse(f, nullptr, false);
+                map = j.is_object() && j.value("base_scene", json()).is_string()
+                          ? MapTitle(j["base_scene"].get<std::string>())
+                          : "";
+            }
+            if (ImGui::MenuItem(label.c_str(), (map + "   " + LevelModified(folder)).c_str())) {
+                if (L.dirty) {  // (asked: its changes would go, #16)
+                    g_openAsk = folder;
+                } else {
+                    OpenLevel(folder);
+                }
             }
         }
         ImGui::EndMenu();
@@ -4269,6 +4334,7 @@ void InstallLevelPanel()
     });
     overlay::AddPanel({"Level", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     overlay::AddMenu("File", FileMenu);
+    overlay::AddAlwaysDraw(DrawOpenAsk);
     OnScenePushed(OnScene);
     OnScenePushed([](const std::string&) { g_libraryLevel.clear(); });
     OnFrameEnd(OnFrame);

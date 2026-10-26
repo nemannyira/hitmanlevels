@@ -212,8 +212,8 @@ maps being the main use. Every finding is a GitHub issue.
 | W7 | The script template's `h2.objective(1, ...)` and zone completed the Mission tab's objective 1 | fixed: the template takes a line the Mission tab does not use; Problems names a script setting one it uses (#14) |
 | W8 | A reference's *Pick in the world* picks the ground behind a character, before and after *Test*: "this guard protects that character" cannot be set | fixed: a click picks the character (CharacterAt); the menu lists every character (#15) |
 | W9 | A placed character not real yet is not drawn; unselected nothing shows where it stands | fixed: the stopped world steps 3 frames after a placement: the body gets its pose (#15) |
-| W10 | *File > Open level* of another map's level does not load that map (the launcher does) | #16 |
-| W11 | Then *Test* (*where Hitman is*) put Hitman at his C1-1 coordinates on C2-2; *Where Hitman stands* made the exit there | #16 |
+| W10 | *File > Open level* of another map's level does not load that map (the launcher does) | fixed: its map loaded, the map listed, unsaved changes asked about (#16) |
+| W11 | Then *Test* (*where Hitman is*) put Hitman at his C1-1 coordinates on C2-2; *Where Hitman stands* made the exit there | fixed: another map starts at the level's start (#16) |
 | W12 | An emptied level starts with the base level's end on and *Completed when every objective is done* off | fixed: an emptied map starts with the base level's end off, the goals' on (#17) |
 | W13 | The exit is offered only after that box; it is no laptop line; the map (M) keeps the base level's EXIT | fixed: the exit offered at once (the defaults), the base level's EXIT off the map while its end is off; the exit as a laptop line: open (#17) |
 | W14 | The campaign's bonus weapon popup after an editor level, though the profile was not written | #18 |

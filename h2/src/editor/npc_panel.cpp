@@ -270,33 +270,53 @@ void SetNewBehaviour(const engine::ScriptInfo& s)
 bool BehaviourChoices(std::string& chosen)
 {
     bool clicked = false;
-    auto item = [&](const std::string& b) {
-        if (ImGui::Selectable(b.c_str(), chosen == b)) {
-            chosen = b;
-            clicked = true;
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", DescribeBehaviour(b).c_str());
+    static char filter[32];
+    if (ImGui::IsWindowAppearing()) {
+        filter[0] = 0;
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##bfilter", "filter (guard, patrol, C3-1...)", filter, sizeof(filter));
+    std::string want = Lower(filter);
+    auto matches = [&](const std::string& b) {
+        return want.empty() || Lower(b).find(want) != std::string::npos ||
+               Lower(DescribeBehaviour(b)).find(want) != std::string::npos;
     };
+    std::vector<std::string> own, story, other;
     for (const std::string& b : g_behaviourNames)
-        if (!g_storyBehaviours.count(b))
-            item(b);
-    if (!g_storyBehaviours.empty()) {
+        if (matches(b))
+            (g_storyBehaviours.count(b) ? story : own).push_back(b);
+    for (const std::string& b : ForeignBehaviourNames())
+        if (matches(b))
+            other.push_back(b);
+    auto items = [&](const std::vector<std::string>& list) {
+        for (const std::string& b : list) {
+            if (ImGui::Selectable(b.c_str(), chosen == b)) {
+                chosen = b;
+                clicked = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", DescribeBehaviour(b).c_str());
+        }
+    };
+    items(own);
+    if (!story.empty()) {
         ImGui::SeparatorText("parts of this map's story");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Behaviours that act out a part of the map's own mission: their settings point to\n"
                               "its characters or vehicles (a boss's limousine, the boss a bodyguard follows).\n"
                               "A copy plays that part; point those settings at your own ones.");
-        for (const std::string& b : g_behaviourNames)
-            if (g_storyBehaviours.count(b))
-                item(b);
+        items(story);
     }
-    ImGui::SeparatorText("from other levels");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Behaviours of other levels' characters that work anywhere: their scripts are\n"
-                          "loaded from that level. Routes they walk have to be set.");
-    for (const std::string& b : ForeignBehaviourNames())
-        item(b);
+    if (!other.empty()) {
+        ImGui::SeparatorText("from other levels");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Behaviours of other levels' characters that work anywhere: their scripts are\n"
+                              "loaded from that level. Routes they walk have to be set.");
+        items(other);
+    }
+    if (own.empty() && story.empty() && other.empty())
+        ImGui::TextDisabled("none with \"%s\"", filter);
     return clicked;
 }
 
@@ -623,7 +643,11 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
         ImGui::TextDisabled("no settings");
         return false;
     }
-    if (!ImGui::BeginTable(table, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding,
+                        ImVec2(ImGui::GetStyle().CellPadding.x, ImGui::GetFontSize() * 0.2f));  // (#20: clicks)
+    bool open = ImGui::BeginTable(table, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp);
+    ImGui::PopStyleVar();
+    if (!open)
         return false;
     ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
     ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 1.4f);
@@ -634,7 +658,7 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         std::string key = std::string(table) + ":" + p.name;
-        if (ImGui::Selectable(p.name.c_str(), g_info == key))
+        if (ImGui::Selectable((ParamLabel(p.name) + "##" + p.name).c_str(), g_info == key))
             g_info = g_info == key ? std::string() : key;
         if (ImGui::IsItemHovered())
             ParamTooltip(p);
@@ -1089,7 +1113,8 @@ void DrawTarget()
     if (placed) {
         // another kind of behaviour: the character is made again
         ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Change").x - ImGui::GetStyle().ItemSpacing.x * 2 - 8);
-        if (ImGui::BeginCombo("##changeto", g_changeTo.empty() ? "another behaviour..." : g_changeTo.c_str())) {
+        if (ImGui::BeginCombo("##changeto", g_changeTo.empty() ? "another behaviour..." : g_changeTo.c_str(),
+                              ImGuiComboFlags_HeightLargest)) {
             if (ImGui::Selectable("none (stands still)", g_changeTo == "-"))
                 g_changeTo = "-";
             BehaviourChoices(g_changeTo);
@@ -1250,7 +1275,7 @@ void DrawPlace()
         return;
     }
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::BeginCombo("##behaviour", BehaviourLabel(g_newBehaviour).c_str())) {
+    if (ImGui::BeginCombo("##behaviour", BehaviourLabel(g_newBehaviour).c_str(), ImGuiComboFlags_HeightLargest)) {
         if (ImGui::Selectable("none (stands still)", g_newBehaviour.empty()))
             ChooseNewBehaviour("");
         std::string chosen = g_newBehaviour;
@@ -1356,6 +1381,19 @@ void DrawPanel()
                           kSnapRadius / 100.0f);
     if (!g_message.empty())
         ImGui::TextWrapped("%s", g_message.c_str());
+    // the next one of the kind placed last, without scrolling down to the list (#20)
+    if (g_type >= 0 && g_type < int(g_types.size()) && !g_placing && g_target) {
+        if (ImGui::SmallButton(("Place another " + g_types[g_type].model).c_str())) {
+            g_placing = true;
+            g_placePickPending = false;
+            g_haveHit = false;
+            g_rawPoint[0] = NAN;
+            g_message.clear();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click in the world to place one more, with the behaviour and settings below in\n"
+                              "Place a character (%s)", BehaviourLabel(g_newBehaviour).c_str());
+    }
     if (int pending = PendingNpcCount()) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f),
@@ -1635,6 +1673,7 @@ void InstallNpcPanel()
         g_behaviourNames.clear();
         g_routeCache.clear();
         g_info.clear();
+        g_message.clear();  // (#20: "placed ..." of the map before)
         g_type = -1;
         g_target = nullptr;
         g_hitRoom = nullptr;

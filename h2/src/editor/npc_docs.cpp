@@ -199,6 +199,34 @@ ParamDoc DescribeParam(const std::string& name, const std::string& type)
     return d;
 }
 
+std::string ParamLabel(const std::string& name)
+{
+    static const std::pair<const char*, const char*> kLabels[] = {
+        {"m_iHitpoints", "Hit points"},          {"Mute", "Silent"},
+        {"WeaponTemplate", "Weapon"},            {"MayHolsterWeapon", "Puts weapon away"},
+        {"ReactionTime", "Reaction time (s)"},   {"GuardPoint", "Guard point"},
+        {"m_Arbiter", "Guard group"},            {"m_PanicArbiter", "Panic group"},
+        {"IsSentry", "Sentry (stays)"},          {"SentryRadius", "Sentry radius (cm)"},
+        {"WayPoints", "Route"},                  {"Waypoints", "Route"},
+        {"waypoints", "Route"},                  {"PathList", "Route"},
+        {"patrolPointList", "Route"},            {"WayPointList", "Route"},
+        {"Delay", "Start delay (s)"},            {"StartPathPos", "Starts at point no."},
+        {"WarpToPathPoint", "Starts on its route"}, {"WaitTime", "Wait at points (s)"},
+        {"RunAnnoyance", "Running annoys"},      {"SneakAnnoyance", "Sneaking annoys"},
+        {"TrespassAnnoyance", "Trespass annoys"}, {"Xenophobia", "Suspicion of strangers"},
+        {"ProtectPoint", "Protects"},            {"m_rDistractPoint", "Distraction point"},
+        {"HelpPoints", "Runs for help to"},      {"SafePoints", "Flees to"},
+        {"LoopPath", "Route loops"},             {"PatrolRelaxed", "Calm patrol"},
+        {"RelaxedPatrol", "Calm patrol"},        {"AlarmPoint", "Raises the alarm at"},
+        {"PostManAllowed", "Lets the postman in (C1-1)"}, {"AtKitchenGate", "At the kitchen gate (C1-1)"},
+        {"fMaxSniperAttackDistance", "Shoots from (cm)"},
+    };
+    for (const auto& [key, label] : kLabels)
+        if (name == key)
+            return label;
+    return name;
+}
+
 std::string DescribeBehaviour(const std::string& shortName)
 {
     std::string l = Lower(shortName);

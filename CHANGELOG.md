@@ -3,6 +3,17 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: the NPCs tab easier to read (#20)
+
+* Settings have plain names (*Hit points*, *Weapon*, *Guard point*, *Guard
+  group*, *Route*, ...; the game's own name in the tooltip).
+* The behaviour lists are taller and have a filter (a name, a word of the
+  description, a level: "patrol", "C3-1").
+* *Place another <model>* at the top places the next character of the kind
+  placed last, without scrolling down.
+* Setting rows have more room; the last "placed ..." message goes with the
+  map.
+
 ## 2026-10-26: finding models of every level, characters with names (#19)
 
 * *Models > Other levels...* has *every level* in its level list: three

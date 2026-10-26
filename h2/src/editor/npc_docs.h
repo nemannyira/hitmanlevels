@@ -14,5 +14,7 @@ struct ParamDoc {
 
 ParamDoc DescribeParam(const std::string& name, const std::string& type);
 std::string DescribeBehaviour(const std::string& shortName);
+// A setting's name for people ("Hit points" for m_iHitpoints); its own name when it has none.
+std::string ParamLabel(const std::string& name);
 
 } // namespace h2::editor

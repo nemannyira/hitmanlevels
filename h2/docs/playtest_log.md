@@ -220,10 +220,10 @@ maps being the main use. Every finding is a GitHub issue.
 | W15 | No overview: above ~100 m the free camera draws nothing | open: the camera gets no room there (ZBaseGeom_AssignRoomsFromBox 0x5BD760); a follow-up issue |
 | W16 | No document or briefcase on C2-2; *Other levels...* searches one level at a time, no pictures | fixed: *every level* search by name (no pictures yet) (#19) |
 | W17 | Characters cannot be named; objectives get model names | fixed: *Name it*: lists, goals, h2.find (#19) |
-| W18 | Behaviours and settings by their engine names (`m_iHitpoints`, `m_PanicArbiter`, *Guard22*); C1-1 fields on C2-2 | #20 |
-| W19 | 51 behaviours of other levels in a five-row popup, no filter, described only once chosen | #20 |
-| W20 | After placing, the selected character's settings push *Place a character* down; setting rows packed tight | #20 |
-| W21 | The "placed ..." message stays after the map was loaded again | #20 |
+| W18 | Behaviours and settings by their engine names (`m_iHitpoints`, `m_PanicArbiter`, *Guard22*); C1-1 fields on C2-2 | fixed: plain names for the common settings (ParamLabel), the engine's in the tooltip (#20) |
+| W19 | 51 behaviours of other levels in a five-row popup, no filter, described only once chosen | fixed: a filter, taller lists, descriptions on hover (#20) |
+| W20 | After placing, the selected character's settings push *Place a character* down; setting rows packed tight | fixed: *Place another*; roomier rows (#20) |
+| W21 | The "placed ..." message stays after the map was loaded again | fixed: cleared with the map (#20) |
 | W22 | Launcher: *Empty map* on by default; the floor box shown with *No buildings either* off | #21 |
 | W23 | Level tab: *Share* (author key) near the top of a new level; *Hitman starts in* under *Share* | #21 |
 | W24 | Text cut at the panel's edge; the briefing box does not wrap | #21 |

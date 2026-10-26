@@ -3,6 +3,14 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: an emptied map's mission is the level's (#17)
+
+* A map emptied (launcher's *Empty map*, or the Level tab's) starts with
+  *The base level can end the mission* off and *Completed when every
+  objective is done* on, so the exit can be chosen at once.
+* While the base level cannot end the mission, its EXIT is not on the game's
+  map (M).
+
 ## 2026-10-26: characters in settings, placed characters shown (#15)
 
 * A setting's *Pick in the world* takes the character clicked (before: the

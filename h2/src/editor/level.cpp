@@ -3500,6 +3500,13 @@ void SetFloor(const std::string& level, uint32_t mesh, const std::string& name)
 
 void SetEmptyMap(bool empty)
 {
+    // an emptied map's mission is the level's own: its goals end it, not the base level's scripts
+    // (#17; while nothing of the mission was set yet)
+    MissionDoc& m = g_level.mission;
+    if (empty && !g_level.emptyMap && m.objectives.empty() && m.exitPath.empty() && m.baseEnds && !m.endWhenDone) {
+        m.baseEnds = false;
+        m.endWhenDone = true;
+    }
     g_level.emptyMap = empty;
     g_level.dirty = true;
     if (g_level.baseScene.empty())

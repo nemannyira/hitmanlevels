@@ -14,6 +14,7 @@
 #include "json.hpp"
 
 #include "../engine/game_events.h"
+#include "../engine/ingame_map.h"
 #include "../engine/inject.h"
 #include "../engine/messages.h"
 #include "../engine/npc.h"
@@ -73,6 +74,8 @@ std::map<std::string, std::string> g_fixedTexts;   // ... of the editor itself (
 std::string g_scriptBriefing;              // h2.briefing (this load), over the document's
 std::string g_lineKeys[kSlots + 1];         // the level's LOC key of each line (as it set them)
 bool g_ours;                               // the editor itself checks a line
+std::vector<engine::ZGEOM*> g_exitIcons;   // the base level's exit icons taken off the map (BaseExitIcons)
+void BaseExitIcons(bool shown);
 bool g_restoring;                          // lines go back to the level's texts
 bool g_panelVisible = true;
 std::string g_status;
@@ -951,6 +954,7 @@ void Check()
 
 void OnScene(const std::string&)
 {
+    g_exitIcons.clear();  // (gone with the scene)
     g_shownLines = 0;
     g_savesY = -1e30f;
     g_lineYKnown = false;
@@ -1512,6 +1516,7 @@ void DrawEnd()
         Changed();
         if (ForThisScene())
             engine::SetLevelEndsAllowed(m.baseEnds);
+            BaseExitIcons(m.baseEnds);
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Off: the base level's own scripts (its target killed, ...) no longer complete or fail\n"
@@ -1521,8 +1526,10 @@ void DrawEnd()
         Changed();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Without this the level's own scripts end the mission (as in the game)");
-    if (!m.endWhenDone)
+    if (!m.endWhenDone) {
+        ImGui::TextDisabled("(ticked: an exit Hitman has to reach can be chosen too)");
         return;
+    }
     ImGui::Indent();
     std::string label = Label(m.exitPath);
     ImGui::Text("and Hitman reaches: %s", label.empty() ? "nothing more (ends at once)" : label.c_str());
@@ -1734,16 +1741,44 @@ bool BaseLevelEnd(bool completed)
 
 std::string LevelObjectiveText(int slot) { return OwnText(slot); }
 
+namespace {
+
+// The base level's exit off the in-game map while its scripts do not end the mission (#17: C2-2's
+// EXIT at the pier showed on an emptied map whose mission ends elsewhere); back as the scene file has it.
+void BaseExitIcons(bool shown)
+{
+    if (shown) {
+        for (engine::ZGEOM* g : g_exitIcons)
+            if (IsLive(g) && engine::MapIconShownInFile(g) == 1)
+                engine::ShowMapIcon(g, true);
+        g_exitIcons.clear();
+        return;
+    }
+    const auto& records = engine::SceneRecords();
+    for (size_t i = 0; i < records.size(); ++i) {
+        engine::ZGEOM* g = engine::RecordGeom(int(i));
+        if (!g || !IsLive(g) || engine::MapIconShown(g) != 1 || engine::MapIconName(g) != "Icon_Exit")
+            continue;
+        if (std::find(g_exitIcons.begin(), g_exitIcons.end(), g) == g_exitIcons.end())
+            g_exitIcons.push_back(g);
+        engine::ShowMapIcon(g, false);
+    }
+}
+
+} // namespace
+
 void ApplyMission()
 {
     g_applied = true;
     engine::SetLevelEndsAllowed(Doc().baseEnds);
+    BaseExitIcons(Doc().baseEnds);
     ShowLines();
 }
 
 void RevertMission()
 {
     engine::SetLevelEndsAllowed(true);
+    BaseExitIcons(true);
     for (auto& [target, st] : g_taken)  // taken objects come back
         if (engine::ZGEOM* g = ResolveTarget(target); g && IsLive(g))
             SetState(g, st);

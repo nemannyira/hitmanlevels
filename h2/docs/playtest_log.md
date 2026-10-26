@@ -214,8 +214,8 @@ maps being the main use. Every finding is a GitHub issue.
 | W9 | A placed character not real yet is not drawn; unselected nothing shows where it stands | fixed: the stopped world steps 3 frames after a placement: the body gets its pose (#15) |
 | W10 | *File > Open level* of another map's level does not load that map (the launcher does) | #16 |
 | W11 | Then *Test* (*where Hitman is*) put Hitman at his C1-1 coordinates on C2-2; *Where Hitman stands* made the exit there | #16 |
-| W12 | An emptied level starts with the base level's end on and *Completed when every objective is done* off | #17 |
-| W13 | The exit is offered only after that box; it is no laptop line; the map (M) keeps the base level's EXIT | #17 |
+| W12 | An emptied level starts with the base level's end on and *Completed when every objective is done* off | fixed: an emptied map starts with the base level's end off, the goals' on (#17) |
+| W13 | The exit is offered only after that box; it is no laptop line; the map (M) keeps the base level's EXIT | fixed: the exit offered at once (the defaults), the base level's EXIT off the map while its end is off; the exit as a laptop line: open (#17) |
 | W14 | The campaign's bonus weapon popup after an editor level, though the profile was not written | #18 |
 | W15 | No overview: above ~100 m the free camera draws nothing | #19 |
 | W16 | No document or briefcase on C2-2; *Other levels...* searches one level at a time, no pictures | #19 |

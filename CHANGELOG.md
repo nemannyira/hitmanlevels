@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: the briefing on every map (#12)
+
+* The Mission tab's briefing is shown on maps whose laptop names its texts
+  differently (C2-2: `Missionbriefing/Missionbriefing%d`, a text crawling up
+  the box): before, the map's own briefing was shown there.
+
 ## 2026-10-26: items placed where they can be picked up (#13)
 
 * An item placed with a click (*Models > Pickup items*) goes 3 cm above the

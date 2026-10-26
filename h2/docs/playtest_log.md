@@ -207,7 +207,7 @@ maps being the main use. Every finding is a GitHub issue.
 | W2 | BaseGuard (C1-1) on C2-2 needs a panic arbiter the map does not have: it never starts | fixed: the map's guard group fills an arbiter it lacks (#11) |
 | W3 | A patrol behaviour of another level needs a route, and a list parameter has no *new route*: it never starts | fixed: *New route (click its points)* (#11) |
 | W4 | A guard's GuardPoint defaults to another character's point 80 m away; Problems said "No problems found" for both guards that never started | fixed: a guard point where it is put; Problems lists behaviours that cannot start (#11) |
-| W5 | The Mission tab's briefing is not shown on C2-2: the laptop has the map's own | #12 |
+| W5 | The Mission tab's briefing is not shown on C2-2: the laptop has the map's own | fixed: the level's own key format (`<folder>/formatstring`, read by SetLocaleFolder 0x52D340) answered (#12) |
 | W6 | An item placed on C2-2's ground lay 6 cm under its collision: no "Pick up" (offered at once 3 cm above it) | fixed: placed 3 cm above the clicked object's collision (the game's line test, RenderD3D collision manager vfunc 0x64) (#13) |
 | W7 | The script template's `h2.objective(1, ...)` and zone completed the Mission tab's objective 1 | #14 |
 | W8 | A reference's *Pick in the world* picks the ground behind a character, before and after *Test*: "this guard protects that character" cannot be set | #15 |

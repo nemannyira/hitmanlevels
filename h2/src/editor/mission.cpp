@@ -177,6 +177,29 @@ std::string FromGameText(const char* s)
 
 // ---- hooks ----
 
+// A level's own briefing keys: "<folder>/formatstring" names them when the level has one (C2-2:
+// "Missionbriefing/Missionbriefing%d"; the default "MissionBriefing/%da", SetLocaleFolder 0x52D340
+// reads it as a node's data string, 0x428F30). The level's briefing (BuildTexts' "1a") goes under
+// its first key and the further ones are answered "not there", as with the default keys.
+void BriefingFormat(const uint8_t* node)
+{
+    auto first = g_texts.find(Lower(g_folder + "/MissionBriefing/1a"));
+    if (first == g_texts.end() || !engine::IsReadable(node, 1) || !(node[0] & 2))
+        return;
+    const char* data = reinterpret_cast<const char*>(node + 1);
+    if (node[0] & 1)
+        data += strnlen(data, 4096) + 1;  // (the text first, then the data)
+    std::string format(data, strnlen(data, 64));
+    size_t d = format.find("%d");
+    if (d == std::string::npos || format.find('%', d + 1) != std::string::npos)
+        return;  // one number, nothing else to format
+    std::string text = first->second;
+    for (int i = 1; i <= 40; ++i) {
+        std::string key = format.substr(0, d) + std::to_string(i) + format.substr(d + 2);
+        g_texts[Lower(g_folder + "/" + key)] = i == 1 ? text : "";
+    }
+}
+
 uint8_t* __stdcall hkLocFind(const char* path, const uint8_t* root)
 {
     if (path && !g_texts.empty()) {
@@ -188,6 +211,11 @@ uint8_t* __stdcall hkLocFind(const char* path, const uint8_t* root)
         for (; p[n] && n + 1 < sizeof(key); ++n)
             key[n] = char(std::tolower(static_cast<unsigned char>(p[n])));
         key[n] = 0;
+        if (!g_folder.empty() && Lower(g_folder + "/formatstring") == key)
+            if (uint8_t* node = oLocFind(path, root)) {
+                BriefingFormat(node);
+                return node;
+            }
         auto it = g_texts.find(key);
         if (it != g_texts.end())
             return it->second.empty() ? nullptr : reinterpret_cast<uint8_t*>(it->second.data());

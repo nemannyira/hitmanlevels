@@ -231,6 +231,31 @@ the map's own sun, whose sky has another scale; checked: C3-3's pale sun
 over C1-1). Next: the lens flare (ZLightOverlay), the fog colour and light of
 the map to match.
 
+## 9b. The map from above (done, #22)
+
+A camera draws from the rooms it is in (its visibility, `Camera_FindVisibleRooms`
+0x433170): the collision manager (renderer +0x1C) vfunc 0x24 (RenderD3D
++0x27D60: rooms, end, matrix, position, scale) gives the rooms whose inside
+trees hold the point (vfunc 0x18), else those a box of that size meets (vfunc
+0x14), the deepest of nested ones; each is kept if `ZROOM_HoldsPoint` (vfunc
+0x16C, 0x43DC50: its box and inside trees) holds the camera; each gets an entry
+of 0xF00 bytes (0x20000 of stack: 34) with the whole view, and rooms seen
+through portals are added clipped to the portal (`Camera_WalkRoomPortals`
+0x432120, `Camera_AddRoomThroughPortal` 0x431A10). Camera +0x18: the room it
+was in last; +0x1C: a room of its own (geom ref; 0: the root), drawn with the
+whole view (its own nodes only) when it is in none, if it is a room (vfunc
+0x1CC = IsA, ZROOM 0x100021). Above a map the camera is in no room: grey.
+
+The editor gives the free camera, when it is in no room, the rooms the same
+query finds with a box as large as its far plane, those in front, nearest
+first (32), and `ZROOM_HoldsPoint` answers yes at the camera's call
+(0x4333C9). Rooms under the open sky have the map's backdrop (room +0xB3);
+inside rooms have none. Both kinds at once overflow the renderer's lit colour
+vertex buffer (one of 0x20000, filled in RenderD3D 0x10010050; C1-1 with all
+its rooms crashed in 0x100090C0 on a buffer index past it): the view shows one
+kind (*From above: inside the buildings*). A room of no size
+(EmptyGroupForBlankScreen) is left out (it crashed in `LightTable_LightsOf`).
+
 ## 10. Reviews (done this round)
 
 Security: Lua sandbox (text-only load, time and memory limits), level files

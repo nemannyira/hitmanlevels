@@ -1,7 +1,10 @@
 #include "freecam.h"
 
 #include <windows.h>
+#include <intrin.h>
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "imgui.h"
 
@@ -11,6 +14,7 @@
 #include "../game.h"
 #include "../hook.h"
 #include "../input/dinput.h"
+#include "../loader.h"
 #include "../log.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
@@ -119,6 +123,98 @@ void UpdateControls(float dt)
         g_pos[i] += move[i] * speed;
 }
 
+// Above the map (#22). A camera draws what it sees from the rooms it is in, each with its whole view, and
+// from them through their portals (its visibility, 0x433170): the collision manager (renderer +0x1C) gives
+// the rooms at the camera (vfunc 0x24, RenderD3D +0x27D60: (rooms, rooms' end, matrix, position, scale),
+// ret 0x14: the rooms whose inside trees hold the point, else those a box of that size there meets, the
+// rooms within another one taking its place), each is kept if it holds the camera's point (ZROOM vfunc
+// 0x16C, 0x43DC50: (point, margin), ret 8), and a room seen through a portal is drawn within the portal only
+// (0x432120). High above a map the free camera is in no room and nothing is drawn (grey). There the
+// rooms its sight meets (the same question with a box as large as its far plane) are given as the ones it
+// is in, those in front of it, nearest first: each is drawn with the whole view, as the room one stands in.
+constexpr uintptr_t kRenderD3D_RoomsOfBox = 0x27D60;
+constexpr uintptr_t kCameraRoomsCall = 0x43324B;    // (the return addresses of the camera's calls)
+constexpr uintptr_t kZROOM_HoldsPoint = 0x43DC50;
+constexpr uintptr_t kCameraHoldsCall = 0x4333C9;
+// A camera's view takes 0x20000 bytes of its stack for its rooms, 0xF00 each: 34 (it stops at the end);
+// two are left to the rooms seen through portals and its own room
+constexpr int kOverviewRooms = 32;
+// A room under the open sky has the map's backdrop to draw with it (room +0xB3, a geom ref: 433170 draws it
+// once for the rooms that see out); the rooms inside the buildings have none. The renderer's room for the
+// lit colours of what it draws (one vertex buffer of 0x20000, RenderD3D 0x10010050) holds what one sees from
+// a map's open places, or from inside a building, not both at once (C1-1 from above with all its rooms:
+// a vertex buffer index past the pool, 0x100090C0): the view from above takes one of the two.
+constexpr size_t kRoomBackdrop = 0xB3;
+bool g_overviewInside;  // the insides of the buildings (their floors, roofs left out) instead of the open map
+bool g_overview;  // this frame's rooms are the ones the free camera sees
+
+// The rooms in front of the camera, nearest first (their boxes: room +0x18 half extents, +0x24 centre, world),
+// those under the open sky or those inside
+int InFront(const float pos[3], void** rooms, int n)
+{
+    float f[3];
+    Forward(g_yaw, g_pitch, f);
+    std::vector<std::pair<float, void*>> seen;
+    for (int k = 0; k < n; ++k) {
+        auto box = reinterpret_cast<const float*>(reinterpret_cast<const unsigned char*>(rooms[k]) + 0x18);
+        float d2 = 0, ahead = 0, reach = 0;
+        for (int i = 0; i < 3; ++i) {
+            float off = box[3 + i] - pos[i], out = std::fabs(off) - box[i];
+            if (out > 0)
+                d2 += out * out;
+            ahead += off * f[i];
+            reach += std::fabs(f[i]) * box[i];
+        }
+        bool open = *reinterpret_cast<const uint32_t*>(reinterpret_cast<const unsigned char*>(rooms[k]) +
+                                                         kRoomBackdrop) != 0;
+        // (a camera's own setup has a room of no size: EmptyGroupForBlankScreen, lit by nothing of the map's)
+        if (ahead > -reach && box[0] + box[1] + box[2] > 0 && open != g_overviewInside)
+            seen.push_back({d2, rooms[k]});
+    }
+    std::sort(seen.begin(), seen.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    int kept = std::min(int(seen.size()), kOverviewRooms);
+    for (int k = 0; k < kept; ++k)
+        rooms[k] = seen[k].second;
+    return kept;
+}
+
+using RoomsOfBox_t = int(__fastcall*)(void* self, void* edx, void** rooms, void** end, float* mat, float* pos,
+                                      float* scale);
+RoomsOfBox_t oRoomsOfBox;
+
+int __fastcall hkRoomsOfBox(void* self, void* edx, void** rooms, void** end, float* mat, float* pos, float* scale)
+{
+    int n = oRoomsOfBox(self, edx, rooms, end, mat, pos, scale);
+    if (reinterpret_cast<uintptr_t>(_ReturnAddress()) != kCameraRoomsCall)
+        return n;
+    // the free camera's view (another camera's is somewhere else), in no room
+    g_overview = false;
+    game::ZCAMERA* cam = game::MainCamera();
+    if (n || !g_enabled || !cam || !pos || std::fabs(pos[0] - g_pos[0]) > 1.0f ||
+        std::fabs(pos[1] - g_pos[1]) > 1.0f || std::fabs(pos[2] - g_pos[2]) > 1.0f)
+        return n;
+    float sight[3] = {cam->farPlane, cam->farPlane, cam->farPlane};
+    n = InFront(pos, rooms, oRoomsOfBox(self, edx, rooms, end, mat, pos, sight));
+    g_overview = n > 0;
+    return n;
+}
+
+using HoldsPoint_t = bool(__fastcall*)(void* room, void* edx, float* point, float margin);
+HoldsPoint_t oHoldsPoint;
+
+bool __fastcall hkHoldsPoint(void* room, void* edx, float* point, float margin)
+{
+    if (g_overview && reinterpret_cast<uintptr_t>(_ReturnAddress()) == kCameraHoldsCall)
+        return true;
+    return oHoldsPoint(room, edx, point, margin);
+}
+
+void OnRendererLoaded(HMODULE mod)
+{
+    Hook("RenderD3D::RoomsOfBox", reinterpret_cast<unsigned char*>(mod) + kRenderD3D_RoomsOfBox, hkRoomsOfBox,
+         &oRoomsOfBox);
+}
+
 using FrameUpdate_t = void(__fastcall*)(void* self, void* edx);
 FrameUpdate_t oFrameUpdate;
 
@@ -153,6 +249,7 @@ void __fastcall hkFrameUpdate(void* self, void* edx)
 void OnScene(const std::string&)
 {
     g_enabled = false;  // the camera objects are recreated with the scene
+    g_overview = false;
     SetViewDistance(1.0f);
 }
 
@@ -161,6 +258,8 @@ void OnScene(const std::string&)
 void InstallFreeCam()
 {
     Hook("ZEngineDataBase::FrameUpdate", game::ZEngineDataBase_FrameUpdate, hkFrameUpdate, &oFrameUpdate);
+    Hook("ZROOM::HoldsPoint", kZROOM_HoldsPoint, hkHoldsPoint, &oHoldsPoint);
+    OnModuleLoad("RenderD3D.dll", OnRendererLoaded);
     OnScenePushed(OnScene);
     overlay::AddPanel({"Camera", &g_panelVisible, DrawCameraPanel, overlay::Dock::Right});
 }
@@ -251,6 +350,10 @@ void DrawCameraPanel()
     if (ImGui::InputFloat3("position", pos, "%.1f") && g_enabled)
         SetFreeCamPosition(pos);
     ImGui::Text("yaw %.1f  pitch %.1f", g_yaw * 180 / kPi, g_pitch * 180 / kPi);
+    ImGui::Checkbox("From above: inside the buildings", &g_overviewInside);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Above the map (out of every room) the camera shows the open map with its roofs.\n"
+                          "On: the floors inside the buildings instead (the game draws one or the other).");
     ImGui::TextDisabled("right mouse: look, WASD move, Q/E down/up,\nShift fast, wheel speed");
 }
 

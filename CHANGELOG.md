@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: the map from above (#22)
+
+* The free camera above the map shows it from above (before: grey): the open
+  places and the roofs; *From above: inside the buildings* in the Camera
+  panel shows the floors inside the buildings instead.
+
 ## 2026-10-26: smaller things from the walkthrough (#21)
 
 * Level tab: the map's settings under *The map*; *Share* and *A map of its

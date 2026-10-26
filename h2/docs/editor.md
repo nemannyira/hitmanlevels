@@ -209,3 +209,10 @@ characters; the export says so when a file mentions your Windows user name.
 
 Tab hides the panels (the game's view only). The free camera: hold the right
 mouse button and use W A S D, Q / E, Shift faster, the wheel for its speed.
+
+Above the map (higher than any of its places) the free camera shows the map
+from above: the open places with the roofs of the buildings. *From above:
+inside the buildings* (Camera panel) shows the floors inside them instead (a
+cut through the roofs; on C2-2 the sewers). The game can draw one or the
+other at once, not both. Far away the view fades into the fog: raise *view
+distance*.

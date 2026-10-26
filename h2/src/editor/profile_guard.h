@@ -11,7 +11,8 @@
 //
 // While a level of the editor is on the map the file is not written, and
 // when the map is left the variables are put back as they were when the
-// level came on it.
+// level came on it. The statistics screen does not show the bonus weapon the
+// rating chose (0x55CF00 sets its +0xC0; its show 0x55CC00 opens the box).
 namespace h2::editor {
 
 void InstallProfileGuard();

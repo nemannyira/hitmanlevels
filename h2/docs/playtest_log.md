@@ -216,7 +216,7 @@ maps being the main use. Every finding is a GitHub issue.
 | W11 | Then *Test* (*where Hitman is*) put Hitman at his C1-1 coordinates on C2-2; *Where Hitman stands* made the exit there | fixed: another map starts at the level's start (#16) |
 | W12 | An emptied level starts with the base level's end on and *Completed when every objective is done* off | fixed: an emptied map starts with the base level's end off, the goals' on (#17) |
 | W13 | The exit is offered only after that box; it is no laptop line; the map (M) keeps the base level's EXIT | fixed: the exit offered at once (the defaults), the base level's EXIT off the map while its end is off; the exit as a laptop line: open (#17) |
-| W14 | The campaign's bonus weapon popup after an editor level, though the profile was not written | #18 |
+| W14 | The campaign's bonus weapon popup after an editor level, though the profile was not written | fixed: the statistics' bonus weapon is cleared before the screen shows (0x55CC00 +0xC0) (#18) |
 | W15 | No overview: above ~100 m the free camera draws nothing | #19 |
 | W16 | No document or briefcase on C2-2; *Other levels...* searches one level at a time, no pictures | #19 |
 | W17 | Characters cannot be named; objectives get model names | #19 |

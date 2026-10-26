@@ -18,6 +18,10 @@ constexpr uintptr_t kGlobalCom = 0x6A40EC;    // CGlobalCom (g_pGlobalCom 0x6A6C
 constexpr uintptr_t kSaveProfile = 0x551420;  // writes Save\<n>.blap from the variables (thiscall, 4 args)
 constexpr uintptr_t kMissionCompleted = 0x5058B0;  // the level routine's MissionCompleted (thiscall)
 constexpr uint32_t kMaxVariables = 1 << 20;   // a sane capacity (the game's is 0x2000)
+// The statistics screen's show (ZWINDOW_StatisticsLevel vfunc 0xAC, thiscall (a, b)): with its +0xC0 set
+// (the bonus weapon's name, chosen by the rating 0x55CF00) it shows "awarded a bonus weapon" (#18)
+constexpr uintptr_t kStatisticsShow = 0x55CC00;
+constexpr size_t kStatistics_BonusWeapon = 0xC0;
 
 struct ComHeader {
     void* vtable;
@@ -112,6 +116,23 @@ void __fastcall hkMissionCompleted(void* self, void* edx)
     oMissionCompleted(self, edx);
 }
 
+// After a level of the editor no bonus weapon is awarded (the profile is put back): the screen does not
+// say one was
+using StatisticsShow_t = uint32_t(__fastcall*)(void* self, void* edx, void* a, uint32_t b);
+StatisticsShow_t oStatisticsShow;
+
+uint32_t __fastcall hkStatisticsShow(void* self, void* edx, void* a, uint32_t b)
+{
+    if (g_protected && self) {
+        auto weapon = reinterpret_cast<const char**>(static_cast<char*>(self) + kStatistics_BonusWeapon);
+        if (*weapon) {
+            Log("profile: the statistics' bonus weapon (%s) not shown: nothing is awarded", *weapon);
+            *weapon = nullptr;
+        }
+    }
+    return oStatisticsShow(self, edx, a, b);
+}
+
 // After a level of the editor the statistics screen's Continue would go on to
 // the next mission of the campaign (strNextScene) as if the map were done:
 // the main menu instead. (The map loaded again, as Test does, stays.)
@@ -155,6 +176,7 @@ void InstallProfileGuard()
 {
     Hook("Profile::Save", kSaveProfile, hkSaveProfile, &oSaveProfile);
     Hook("Level::MissionCompleted", kMissionCompleted, hkMissionCompleted, &oMissionCompleted);
+    Hook("StatisticsLevel::Show", kStatisticsShow, hkStatisticsShow, &oStatisticsShow);
     SetSceneRedirect(Redirect);
     OnSceneLeaving(OnLeaving);
 }

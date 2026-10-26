@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: no bonus weapon popup after an editor level (#18)
+
+* A level of the editor completed with Silent Assassin no longer shows the
+  campaign's "awarded a bonus weapon" box: nothing was awarded (the profile
+  is kept from editor levels).
+
 ## 2026-10-26: opening a level of another map (#16)
 
 * *File > Open level* lists each level's map, loads the map of a level made

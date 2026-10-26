@@ -35,6 +35,7 @@ the map is loaded (`obj:valid()`).
 | call | |
 |---|---|
 | `h2.find(name)` | by name (`"Crate#2"`: the third of that name) or full path; nil: none |
+| `h2.find("Volkov")` | also a character the level named (NPCs tab > *Name it*) |
 | `h2.findall(name)` | all of that name (an item's model has its name too: `o:isa("ZItem")` is the item itself) |
 | `h2.objects(class)` | all of a class, derived ones too (`"ZActor"`, `"ZSTDOBJ"`, `"ZItemTemplate"`) |
 | `obj:name()`, `obj:path()`, `obj:class()`, `obj:isa(class)`, `obj:valid()` | |

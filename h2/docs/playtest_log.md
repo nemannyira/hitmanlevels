@@ -217,9 +217,9 @@ maps being the main use. Every finding is a GitHub issue.
 | W12 | An emptied level starts with the base level's end on and *Completed when every objective is done* off | fixed: an emptied map starts with the base level's end off, the goals' on (#17) |
 | W13 | The exit is offered only after that box; it is no laptop line; the map (M) keeps the base level's EXIT | fixed: the exit offered at once (the defaults), the base level's EXIT off the map while its end is off; the exit as a laptop line: open (#17) |
 | W14 | The campaign's bonus weapon popup after an editor level, though the profile was not written | fixed: the statistics' bonus weapon is cleared before the screen shows (0x55CC00 +0xC0) (#18) |
-| W15 | No overview: above ~100 m the free camera draws nothing | #19 |
-| W16 | No document or briefcase on C2-2; *Other levels...* searches one level at a time, no pictures | #19 |
-| W17 | Characters cannot be named; objectives get model names | #19 |
+| W15 | No overview: above ~100 m the free camera draws nothing | open: the camera gets no room there (ZBaseGeom_AssignRoomsFromBox 0x5BD760); a follow-up issue |
+| W16 | No document or briefcase on C2-2; *Other levels...* searches one level at a time, no pictures | fixed: *every level* search by name (no pictures yet) (#19) |
+| W17 | Characters cannot be named; objectives get model names | fixed: *Name it*: lists, goals, h2.find (#19) |
 | W18 | Behaviours and settings by their engine names (`m_iHitpoints`, `m_PanicArbiter`, *Guard22*); C1-1 fields on C2-2 | #20 |
 | W19 | 51 behaviours of other levels in a five-row popup, no filter, described only once chosen | #20 |
 | W20 | After placing, the selected character's settings push *Place a character* down; setting rows packed tight | #20 |

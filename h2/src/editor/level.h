@@ -89,6 +89,7 @@ struct SpawnedObject {
 
 struct LevelNpc {
     std::string id;          // object name of the character
+    std::string label;       // its name of the level maker's ("Volkov"; "": its model's)
     int record = -1;         // actor record of the base scene it copies (body, animations)
     std::string model;       // that record's model name (checked when loading)
     std::string importLevel; // its body from a character of another level (ImportedModel)
@@ -259,6 +260,11 @@ std::string GiveOwnRoute(engine::ZGEOM* actor, const std::string& param, std::st
 engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour,
                                 std::string* error = nullptr);
 const LevelNpc* FindLevelNpc(engine::ZGEOM* actor);
+// A placed character's name of the level maker's (lists, goals, h2.find): letters, digits, space, _ and -,
+// 40 at most, one of a kind ("" clears it; undoable).
+bool SetNpcLabel(engine::ZGEOM* actor, const std::string& label, std::string* error = nullptr);
+// The placed character of that name (null: none).
+engine::ZGEOM* NpcByLabel(const std::string& label);
 
 // ---- route points and lists (undoable, kept in the level) ----
 // A new point (an invisible helper characters can be sent to) at `at`, in `room`.

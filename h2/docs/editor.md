@@ -28,6 +28,8 @@ level* / *File > Open level* loads a saved one.
   the gizmo moves (W) or rotates (E) it, G puts it onto the surface under the
   mouse, H hides it, Ctrl+D copies it, Del removes a copy. Ctrl+Z / Ctrl+Y
   undo / redo.
+* *Models > Other levels...* > level *every level*: three letters of a name
+  list the models of all the other levels that have it.
 * *NPCs* tab: choose a character and a behaviour, *Place character*, click in
   the world. *Onto the paths* (on by default) puts it, and new route points,
   on the nearest place characters can walk (2 m at most); a red ring means
@@ -60,6 +62,9 @@ level* / *File > Open level* loads a saved one.
   vehicles that follow their tracks (the C1-1 van) drive only those: the
   Inspector's *To its start* / *To its end* / *Stop* and a speed (Lua
   `h2.track`); a copy of one drives a route of its own.
+* A placed character can be named (*Name it* under its buttons, e.g.
+  *Volkov*): lists and its objectives use the name; scripts find it with
+  `h2.find("Volkov")`.
 * A placed character is real (behaviour, collision, can be shot) only after
   the map loads again: *Test now (save and reload)*.
 * Duplicate copies models, not characters: a character's body (Hitman's,

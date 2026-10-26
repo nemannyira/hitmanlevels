@@ -1017,6 +1017,8 @@ std::string Label(const std::string& path)
     if (!g || !IsLive(g))
         return "(missing) " + path.substr(path.rfind('/') + 1);
     if (engine::ZGEOM* a = ActorOf(g)) {
+        if (const LevelNpc* n = FindLevelNpc(a); n && !n->label.empty())
+            return n->label;
         int rec = NpcRecordOf(a);
         if (rec >= 0)
             return NpcModel(rec) + (IsPlacedNpc(a) ? " (placed)" : "");

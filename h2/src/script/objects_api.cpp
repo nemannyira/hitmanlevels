@@ -130,6 +130,9 @@ int FindIndex(const std::string& key)
     if (i < 0 && key.find('/') == std::string::npos && key.find('#') != std::string::npos)
         if (auto exact = snap.FindName(key); !exact.empty())  // a '#' of its own name ("Truck_Body#0.C2-1.33DFFE+1")
             i = exact[0];
+    if (i < 0 && key.find('/') == std::string::npos)  // a placed character by the name the level gave it
+        if (engine::ZGEOM* g = editor::NpcByLabel(key))
+            i = snap.Find(g);
     if (i < 0) {
         std::string name = key;
         int k = 0;

@@ -2323,6 +2323,8 @@ bool SaveLevel(std::string* error)
         json o = StateJson(st);
         o.erase("hidden");
         o["id"] = n.id;
+        if (!n.label.empty())
+            o["label"] = n.label;
         o["record"] = n.record;
         o["model"] = n.model;
         if (n.importMesh) {
@@ -2563,6 +2565,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
             if (std::any_of(L.npcs.begin(), L.npcs.end(), [&](const LevelNpc& m) { return m.id == n.id; }) ||
                 L.npcs.size() >= kMaxLevelNpcs)
                 continue;
+            n.label = o.value("label", json()).is_string() ? o["label"].get<std::string>().substr(0, 40) : "";
             n.record = o.value("record", -1);
             n.model = o.value("model", "");
             n.importLevel = o.value("import_level", "");
@@ -3382,6 +3385,50 @@ std::string GiveOwnRoute(engine::ZGEOM* actor, const std::string& param, std::st
     g_level.dirty = true;
     Log("level: %s gets a %s of its own: %s (from the next load)", PathOf(actor).c_str(), param.c_str(), path.c_str());
     return path;
+}
+
+bool SetNpcLabel(engine::ZGEOM* actor, const std::string& label, std::string* error)
+{
+    auto fail = [&](const std::string& why) {
+        if (error)
+            *error = why;
+        return false;
+    };
+    LevelNpc* e = NpcEntryOf(actor);
+    if (!e)
+        return fail("only a character placed by the level has a name of its own");
+    if (label.size() > 40 || !std::all_of(label.begin(), label.end(), [](char c) {
+            return isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == ' ';
+        }))
+        return fail("letters, digits, spaces, _ or -, 40 at most");
+    if (!label.empty() && label.front() == ' ')
+        return fail("not starting with a space");
+    for (const LevelNpc& n : g_level.npcs)
+        if (&n != e && !label.empty() && _stricmp(n.label.c_str(), label.c_str()) == 0)
+            return fail("another character has that name");
+    std::string id = e->id, before = e->label;
+    auto set = [id](const std::string& value) {
+        for (LevelNpc& n : g_level.npcs)
+            if (n.id == id) {
+                n.label = value;
+                g_level.dirty = true;
+                return true;
+            }
+        return false;
+    };
+    set(label);
+    PushAction("name a character", [set, before] { return set(before); }, [set, label] { return set(label); });
+    return true;
+}
+
+engine::ZGEOM* NpcByLabel(const std::string& label)
+{
+    if (label.empty())
+        return nullptr;
+    for (const LevelNpc& n : g_level.npcs)
+        if (_stricmp(n.label.c_str(), label.c_str()) == 0)
+            return LiveNpc(n.id);
+    return nullptr;
 }
 
 engine::ZGEOM* EditNpcBehaviour(engine::ZGEOM* actor, const engine::ScriptInfo* behaviour, std::string* error)

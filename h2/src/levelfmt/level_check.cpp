@@ -369,11 +369,12 @@ Report CheckLevel(const json& j, bool strict)
     });
     std::set<std::string> npcIds;
     c.Array(j, "npcs", "", kMaxNpcs, [&](const json& o, const std::string& w) {
-        if (!c.Object(o, w, {"pos", "matrix", "id", "record", "model", "import_level", "import_mesh", "import_name",
-                             "behaviour", "behaviour_level", "params"}))
+        if (!c.Object(o, w, {"pos", "matrix", "id", "label", "record", "model", "import_level", "import_mesh",
+                             "import_name", "behaviour", "behaviour_level", "params"}))
             return;
         c.Place(o, w);
         c.Name(o, "id", w, 64, "_-");
+        c.Name(o, "label", w, 40, "_- ");  // its name in the editor and for scripts ("Volkov")
         if (o.contains("id") && o["id"].is_string() && !npcIds.insert(o["id"].get<std::string>()).second)
             c.Bad(w + ".id", "twice");
         c.Int(o, "record", w, -1, 1 << 24);

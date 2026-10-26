@@ -356,6 +356,7 @@ void DrawRow(const ModelEntry& e, int index)
 
 bool g_otherOpen;
 int g_otherLevel = -1;
+bool g_otherAll;  // the models of every level, by the filter (#19)
 char g_otherFilter[128];
 std::string g_otherMessage;
 
@@ -425,6 +426,73 @@ void DrawOtherCharacters(const std::string& level)
     ImGui::EndChild();
 }
 
+// one model of another level: its tick (the level gets it), its tooltip and size
+void DrawOtherModel(const std::string& level, const engine::LevelModel& m, bool withLevel)
+{
+    ImGui::PushID((level + std::to_string(m.mesh)).c_str());
+    bool on = IsImported(level, m.mesh);
+    std::string label = ShownName(m.name);
+    if (!m.pieces.empty())
+        label += "  (" + std::to_string(m.pieces.size()) + " parts)";
+    if (ImGui::Checkbox(label.c_str(), &on)) {
+        int uses = on ? 0 : ImportUses(level, m.mesh);
+        if (uses)
+            g_otherMessage = m.name + " is used by " + std::to_string(uses) + " placed objects: remove them first";
+        else
+            SetImported(level, m.mesh, m.name, on);
+    }
+    if (ImGui::IsItemHovered()) {
+        if (m.pieces.empty())
+            ImGui::SetTooltip("%s\nin %s (%s), used %d times there, %d materials", m.name.c_str(), m.group.c_str(),
+                              level.c_str(), m.uses, m.parts);
+        else
+            ImGui::SetTooltip("%s: %zu models together (e.g. a vehicle and its wheels)\nin %s (%s)", m.name.c_str(),
+                              m.pieces.size(), m.group.c_str(), level.c_str());
+    }
+    char size[48];
+    if (withLevel)
+        snprintf(size, sizeof(size), "%s  %.1f m", level.c_str(), m.radius * 2.0f / 100.0f);
+    else
+        snprintf(size, sizeof(size), "%.1f m", m.radius * 2.0f / 100.0f);
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(size).x);
+    ImGui::TextDisabled("%s", size);
+    ImGui::PopID();
+}
+
+// "every level": the filter's matches in all the other levels (each read once, then kept)
+template <class IsHere>
+void DrawEveryLevel(const std::vector<std::string>& levels, IsHere isHere)
+{
+    std::string filter = Lower(g_otherFilter);
+    float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing();
+    if (ImGui::BeginChild("alist", ImVec2(0, -footer), ImGuiChildFlags_Borders)) {
+        if (filter.size() < 3) {
+            ImGui::TextWrapped("Type at least three letters of a name (\"case\", \"book\", \"lamp\"): the models of every "
+                               "other level with it are listed, with their level.");
+        } else {
+            engine::ZGEOM* known = Resolve("ROOT");
+            int found = 0;
+            for (int i = 0; i < int(levels.size()); ++i) {
+                if (isHere(i))
+                    continue;
+                for (const engine::LevelModel& m : engine::LevelModels(levels[i])) {
+                    if (Lower(m.name).find(filter) == std::string::npos)
+                        continue;  // (its name only: a group "Staircase" would list its stairs and ceilings)
+                    std::string chain = engine::ClassChainOfId(m.classId, known);
+                    Category cat = Categorize(m.name, chain.substr(0, chain.find(' ')));
+                    if (cat == Category::Helpers || cat == Category::Interface)
+                        continue;
+                    DrawOtherModel(levels[i], m, true);
+                    ++found;
+                }
+            }
+            if (!found)
+                ImGui::TextDisabled("no model of another level has \"%s\" in its name", g_otherFilter);
+        }
+    }
+    ImGui::EndChild();
+}
+
 void DrawOtherLevels()
 {
     if (!g_otherOpen)
@@ -467,10 +535,15 @@ void DrawOtherLevels()
                            "others: a character of this map (one with the same animations if it has one) lends its "
                            "behaviour.");
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
-    if (ImGui::BeginCombo("level", g_otherLevel >= 0 ? levels[g_otherLevel].c_str() : "-")) {
+    const char* shown = page == 0 && g_otherAll ? "every level" : g_otherLevel >= 0 ? levels[g_otherLevel].c_str() : "-";
+    if (ImGui::BeginCombo("level", shown)) {
+        if (page == 0 && ImGui::Selectable("every level", g_otherAll))
+            g_otherAll = true;
         for (int i = 0; i < int(levels.size()); ++i)
-            if (!isHere(i) && ImGui::Selectable(levels[i].c_str(), i == g_otherLevel))
+            if (!isHere(i) && ImGui::Selectable(levels[i].c_str(), !g_otherAll && i == g_otherLevel)) {
                 g_otherLevel = i;
+                g_otherAll = false;
+            }
         ImGui::EndCombo();
     }
     ImGui::SameLine();
@@ -483,6 +556,12 @@ void DrawOtherLevels()
     const std::string& level = levels[g_otherLevel];
     if (page == 1) {
         DrawOtherCharacters(level);
+        DrawImportFooter();
+        ImGui::End();
+        return;
+    }
+    if (g_otherAll) {
+        DrawEveryLevel(levels, isHere);
         DrawImportFooter();
         ImGui::End();
         return;
@@ -523,35 +602,8 @@ void DrawOtherLevels()
             char header[96];
             snprintf(header, sizeof(header), "%s  (%d)###ocat%d", CategoryName(cat), int(end - i), int(cat));
             if (ImGui::CollapsingHeader(header)) {
-                for (size_t k = i; k < end; ++k) {
-                    const engine::LevelModel& m = *rows[k].m;
-                    ImGui::PushID(int(m.mesh));
-                    bool on = IsImported(level, m.mesh);
-                    std::string label = ShownName(m.name);
-                    if (!m.pieces.empty())
-                        label += "  (" + std::to_string(m.pieces.size()) + " parts)";
-                    if (ImGui::Checkbox(label.c_str(), &on)) {
-                        int uses = on ? 0 : ImportUses(level, m.mesh);
-                        if (uses)
-                            g_otherMessage = m.name + " is used by " + std::to_string(uses) +
-                                             " placed objects: remove them first";
-                        else
-                            SetImported(level, m.mesh, m.name, on);
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        if (m.pieces.empty())
-                            ImGui::SetTooltip("%s\nin %s, used %d times there, %d materials", m.name.c_str(),
-                                              m.group.c_str(), m.uses, m.parts);
-                        else
-                            ImGui::SetTooltip("%s: %zu models together (e.g. a vehicle and its wheels)\nin %s",
-                                              m.name.c_str(), m.pieces.size(), m.group.c_str());
-                    }
-                    char size[32];
-                    snprintf(size, sizeof(size), "%.1f m", m.radius * 2.0f / 100.0f);
-                    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(size).x);
-                    ImGui::TextDisabled("%s", size);
-                    ImGui::PopID();
-                }
+                for (size_t k = i; k < end; ++k)
+                    DrawOtherModel(level, *rows[k].m, false);
             }
             i = end;
         }

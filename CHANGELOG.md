@@ -3,6 +3,15 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: finding models of every level, characters with names (#19)
+
+* *Models > Other levels...* has *every level* in its level list: three
+  letters of a name ("case", "book") list the models of all the other levels
+  with it, each with its level.
+* A placed character can have a name of its own (*NPCs*, under its buttons:
+  *Name it*): the lists and the objectives made for it use it ("Kill
+  Volkov"), and scripts find it with `h2.find("Volkov")`.
+
 ## 2026-10-26: no bonus weapon popup after an editor level (#18)
 
 * A level of the editor completed with Silent Assassin no longer shows the

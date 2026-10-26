@@ -44,6 +44,9 @@ std::string CharacterName(engine::ZGEOM* actor)
 {
     std::string name = engine::SafeString(actor->name);
     for (const LevelNpc& n : CurrentLevel().npcs)
+        if (n.id == name && !n.label.empty())
+            return n.label;
+    for (const LevelNpc& n : CurrentLevel().npcs)
         if (n.id == name && !n.importName.empty())
             return n.importName + " (" + n.importLevel + ")";
     int record = NpcRecordOf(actor);
@@ -1039,6 +1042,30 @@ void DrawTarget()
             g_target = nullptr;
             return;
         }
+        // its name of the level maker's: lists, goals' texts, h2.find("Volkov")
+        static char name[41];
+        static engine::ZGEOM* nameOf;
+        const LevelNpc* entry = FindLevelNpc(actor);
+        if (nameOf != actor) {
+            snprintf(name, sizeof(name), "%s", entry ? entry->label.c_str() : "");
+            nameOf = actor;
+        }
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9);
+        bool enter = ImGui::InputTextWithHint("##npcname", "a name (Volkov)", name, sizeof(name),
+                                              ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(entry && entry->label == name);
+        if (ImGui::SmallButton("Name it") || (enter && entry && entry->label != name)) {
+            std::string err;
+            g_message = SetNpcLabel(actor, name, &err)
+                            ? (name[0] ? std::string("named ") + name + " (scripts: h2.find(\"" + name + "\"))"
+                                       : std::string("its name taken off"))
+                            : "not named: " + err;
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("A name of its own (letters, digits, spaces, _ and -): shown in the lists and in\n"
+                              "the objectives made for it; scripts find it with h2.find(\"name\").");
     }
 
     if (IsPendingNpc(actor))

@@ -1350,6 +1350,28 @@ std::vector<Problem> FindProblems()
         if (GetFileAttributesA((ModsDir() + L.folder + "\\" + s).c_str()) == INVALID_FILE_ATTRIBUTES)
             out.push_back({"script " + s + " is not in Mods\\" + L.folder, ""});
     }
+    // a script setting a laptop line the Mission tab owns takes it from the editor's goal (#14)
+    if (!L.folder.empty())
+        for (const std::string& s : L.scripts) {
+            std::ifstream f(ModsDir() + L.folder + "\\" + s, std::ios::binary);
+            std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            for (const MissionObjective& o : L.mission.objectives) {
+                std::string call = "h2.objective(" + std::to_string(o.slot);
+                for (size_t at = text.find(call); at != std::string::npos; at = text.find(call, at + 1)) {
+                    char next = at + call.size() < text.size() ? text[at + call.size()] : ')';
+                    size_t bol = text.rfind('\n', at);
+                    std::string before = text.substr(bol == std::string::npos ? 0 : bol + 1,
+                                                     at - (bol == std::string::npos ? 0 : bol + 1));
+                    if ((next == ',' || next == ')' || next == ' ') && before.find("--") == std::string::npos) {
+                        out.push_back({"script " + s + " sets laptop line " + std::to_string(o.slot) +
+                                           ", the Mission tab's objective " + std::to_string(o.slot) +
+                                           ": the script takes it over (use another line)",
+                                       ""});
+                        break;
+                    }
+                }
+            }
+        }
     if (ImportsPending())
         out.push_back({"models of other levels come with the map when it loads again", ""});
     // the level's scripts' errors since they last ran (the newest three)
@@ -1511,8 +1533,10 @@ const char* const kScriptTemplate = R"lua(-- A level script: it runs when the ma
 -- the story's state, kept with the game's saves
 h2.state.stage = h2.state.stage or 1
 
--- the laptop's lines (1..6), a line done: h2.objective(1, nil, true)
-h2.objective(1, "Find the target")
+-- the laptop's lines (1..6): this script's own (the Mission tab's are @USED@; a script setting
+-- one of those takes it from the editor's goal), a line done: h2.objective(line, nil, true)
+local line = @LINE@
+if line then h2.objective(line, "Find the target") end
 
 h2.subtitle("The mission begins.", 5)
 
@@ -1527,7 +1551,7 @@ h2.zone{ x = x, y = y, z = z, radius = 300,
   on_leave = function(zone, who)
     if h2.state.stage == 1 then
       h2.state.stage = 2
-      h2.objective(1, nil, true)
+      if line then h2.objective(line, nil, true) end
     end
   end }
 
@@ -1572,8 +1596,24 @@ void DrawScripts()
         for (int i = 2; GetFileAttributesA((dir + name).c_str()) != INVALID_FILE_ATTRIBUTES && !IsStubScript(dir + name);
              ++i)
             name = "script" + std::to_string(i) + ".lua";
+        // its laptop line: the first one the Mission tab does not use (#14: the template's line 1
+        // completed the tab's objective 1 when Hitman left his start)
+        std::set<int> used;
+        for (const MissionObjective& o : L.mission.objectives)
+            used.insert(o.slot);
+        std::string line = "nil", usedText;
+        for (int slot = 6; slot >= 1; --slot)
+            if (!used.count(slot))
+                line = std::to_string(slot);
+        for (int slot : used)
+            usedText += (usedText.empty() ? "" : ", ") + std::to_string(slot);
+        std::string text = kScriptTemplate;
+        for (auto [key, value] : {std::pair<std::string, std::string>{"@LINE@", line},
+                                  {"@USED@", usedText.empty() ? "none" : usedText}})
+            for (size_t at; (at = text.find(key)) != std::string::npos;)
+                text.replace(at, key.size(), value);
         std::ofstream f(dir + name, std::ios::binary | std::ios::trunc);
-        if (f << kScriptTemplate) {
+        if (f << text) {
             if (std::find(L.scripts.begin(), L.scripts.end(), name) == L.scripts.end())
                 L.scripts.push_back(name);
             L.dirty = true;

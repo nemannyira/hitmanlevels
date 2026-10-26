@@ -3,6 +3,13 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: scripts and the Mission tab's laptop lines (#14)
+
+* *New script from a template* uses the first laptop line the Mission tab
+  does not (before: line 1, which its start zone ticked off: the tab's
+  objective 1 showed done at once).
+* *Problems* says when a script sets a line the Mission tab uses.
+
 ## 2026-10-26: the briefing on every map (#12)
 
 * The Mission tab's briefing is shown on maps whose laptop names its texts

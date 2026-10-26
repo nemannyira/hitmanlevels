@@ -53,6 +53,7 @@ add_library(h2fix SHARED
     src/engine/spawn.cpp
     src/engine/npc.cpp
     src/engine/lists.cpp
+    src/engine/collision.cpp
     src/engine/messages.cpp
     src/engine/game_events.cpp
     src/engine/scene_data.cpp

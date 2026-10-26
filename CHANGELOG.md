@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: items placed where they can be picked up (#13)
+
+* An item placed with a click (*Models > Pickup items*) goes 3 cm above the
+  ground's collision, not only above the drawn ground: on C2-2 the drawn snow
+  lies 9 cm under it, and the game did not offer "Pick up".
+
 ## 2026-10-25 (evening): guards that work on every map (#10, #11)
 
 * *NPCs > Place a character* offers the map's own behaviours: on C2-2 a new

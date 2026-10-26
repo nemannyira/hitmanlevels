@@ -175,7 +175,8 @@ characters; the export says so when a file mentions your Windows user name.
 
 * The game offers "Pick up" for an item only while its own point is above
   the ground's collision: the editor puts placed items 3 cm above the
-  surface. Moved by hand into the ground (or a long weapon on a slope) it is
+  surface, and above the collision of the object clicked (the game's own
+  line test: on C2-2's snowy park the drawn ground lies 9 cm under it). Moved by hand into the ground (or a long weapon on a slope) it is
   not offered: check the prompt when testing. Hitman picks up the first item
   of a pile: keep items apart.
 * *No buildings* turned off again: the buildings come back; the floor it put

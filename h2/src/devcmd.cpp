@@ -29,6 +29,7 @@ extern "C" {
 #include "editor/playtest.h"
 #include "editor/scene_panel.h"
 #include "editor/vehicles.h"
+#include "engine/collision.h"
 #include "engine/game_events.h"
 #include "engine/imports.h"
 #include "engine/ingame_map.h"
@@ -394,6 +395,23 @@ int Hover(lua_State* L)
     std::lock_guard<std::mutex> lock(g_mutex);
     g_ui.push_back({0, float(luaL_checknumber(L, 1)), float(luaL_checknumber(L, 2)), 0});
     return 0;
+}
+
+// h2.dev_collide(object, x1, y1, z1, x2, y2, z2 [, mask]) -> x, y, z where the segment meets the
+// object's collision (engine/collision.h), or nothing
+int Collide(lua_State* L)
+{
+    engine::ZGEOM* g = editor::Resolve(luaL_checkstring(L, 1));
+    float a[3], b[3], hit[3];
+    for (int i = 0; i < 3; ++i) {
+        a[i] = float(luaL_checknumber(L, 2 + i));
+        b[i] = float(luaL_checknumber(L, 5 + i));
+    }
+    if (!g || !engine::CollisionHit(g, a, b, uint32_t(luaL_optinteger(L, 8, engine::kCollideWalk)), hit))
+        return 0;
+    for (float v : hit)
+        lua_pushnumber(L, v);
+    return 3;
 }
 
 // h2.dev_uiwheel(notches): the editor's mouse wheel (+ up / - down) where its mouse is (a list, a popup)
@@ -1264,6 +1282,7 @@ void InstallDevCommands()
     script::Register("dev_hover", Hover);
     script::Register("dev_type", Type);
     script::Register("dev_uiwheel", UiWheel);
+    script::Register("dev_collide", Collide);
     script::Register("dev_uikey", UiKey);
     script::Register("dev_press", Press);
     script::Register("dev_press_status", PressStatus);

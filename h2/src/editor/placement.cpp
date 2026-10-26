@@ -7,6 +7,7 @@
 #include "imgui.h"
 
 #include "../display.h"
+#include "../engine/collision.h"
 #include "../fov.h"
 #include "../game.h"
 #include "../log.h"
@@ -38,6 +39,7 @@ std::string g_label;
 PartClones g_preview;          // the model's parts; Main() is the transform being placed
 engine::ZGEOM* g_previewRoom;  // room the preview was created in
 engine::ZGEOM* g_hitRoom;      // room of the surface under the mouse
+engine::ZGEOM* g_hitObject;    // the object drawn there
 
 // grabbing an existing object
 engine::ZGEOM* g_grab;
@@ -113,6 +115,7 @@ void OnPick(engine::ZGEOM* hit, const float* point, const float* normal)
     if (hit)
         if (engine::ZGEOM* room = RoomOf(hit))
             g_hitRoom = room;
+    g_hitObject = point ? hit : nullptr;
     if (point) {
         memcpy(g_point, point, sizeof(g_point));
         g_haveHit = true;
@@ -237,6 +240,14 @@ void KeepItemClear(Transform& item)
     if (d < kItemClearance)
         for (int i = 0; i < 3; ++i)
             item.pos[i] += n[i] * (kItemClearance - d);
+    // the drawn surface may lie under the collision Hitman walks on (C2-2's snowy park: 9 cm, #13): the
+    // clicked object's collision straight below the item decides (the game's own line test)
+    float from[3] = {item.pos[0], item.pos[1] + 100.0f, item.pos[2]}, to[3] = {item.pos[0], item.pos[1] - 100.0f, item.pos[2]};
+    float hit[3];
+    if (g_hitObject && IsLive(g_hitObject) &&
+        engine::CollisionHit(g_hitObject, from, to, engine::kCollideWalk, hit) &&
+        std::fabs(hit[1] - target[1]) < 50.0f && item.pos[1] < hit[1] + kItemClearance)
+        item.pos[1] = hit[1] + kItemClearance;
 }
 
 void DestroyPreview()
@@ -440,6 +451,7 @@ void BeginPlacement(const std::string& sourcePath, const std::string& label, con
     SetPickIgnore(g_preview.parts);
     g_previewRoom = RoomOf(g_preview.Main());
     g_hitRoom = nullptr;
+    g_hitObject = nullptr;
     g_label = templatePath.empty() ? label : label + " (working item)";
     ResetCommon(GetTransform(sources[0]));
     ImGuiIO& io = ImGui::GetIO();

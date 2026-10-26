@@ -3,6 +3,20 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-26: smaller things from the walkthrough (#21)
+
+* Level tab: the map's settings under *The map*; *Share* and *A map of its
+  own* at the end; *Hitman starts in* moved to the Mission tab; a script has
+  *open* (the program .lua files open with, Notepad else).
+* Launcher: the floor is offered only with *No buildings either*; the folder
+  the level is saved in is shown as it will be.
+* A long briefing line is shown wrapped under its box; texts that ran out of
+  the panel wrap.
+* The *Test* step is not green while there is nothing to test.
+* No *Vehicle* section for items.
+* The free camera is turned off with the editor (the game's camera again).
+* On an emptied map the laptop's empty *Additional files* boxes are hidden.
+
 ## 2026-10-26: the NPCs tab easier to read (#20)
 
 * Settings have plain names (*Hit points*, *Weapon*, *Guard point*, *Guard

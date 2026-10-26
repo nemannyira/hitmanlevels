@@ -375,7 +375,7 @@ void DrawLauncher()
                 ImGui::Checkbox("No buildings either", &g_blank);
                 ImGui::SameLine();
                 ImGui::TextDisabled("(only the sky: build with models)");
-                ImGui::BeginDisabled(!g_blank);
+                if (g_blank) {  // (#21: its floor only with it)
                 ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
                 if (ImGui::BeginCombo("floor", kFloors[g_floor].label)) {
                     for (int i = 0; i < int(sizeof(kFloors) / sizeof(kFloors[0])); ++i)
@@ -386,7 +386,7 @@ void DrawLauncher()
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                     ImGui::SetTooltip("A model of another level put under Hitman where he starts: it is an object of "
                                       "your level\n(move it, copy it, delete it like the others)");
-                ImGui::EndDisabled();
+                }
                 ImGui::Unindent();
                 ImGui::EndDisabled();
                 ImGui::Spacing();
@@ -404,7 +404,7 @@ void DrawLauncher()
                         g_message = "not saved: " + err;
                     StartOn(kMaps[g_map].scene);
                 }
-                ImGui::TextDisabled("saved to Mods\\<name>\\level.json");
+                ImGui::TextDisabled("saved to Mods\\%s\\level.json", LevelFolderFor(g_name).c_str());
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Open a level")) {

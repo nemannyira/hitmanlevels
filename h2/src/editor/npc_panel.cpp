@@ -1092,10 +1092,13 @@ void DrawTarget()
                               "the objectives made for it; scripts find it with h2.find(\"name\").");
     }
 
-    if (IsPendingNpc(actor))
+    if (IsPendingNpc(actor)) {
+        ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f),
                            "Not real yet: it gets its behaviour, can be bumped into and shot when the map "
                            "loads again (Test).");
+        ImGui::PopTextWrapPos();
+    }
     std::string current = g_targetHasBehaviour ? engine::ScriptShortName(g_targetEdit.name) : "";
     ImGui::Text("Behaviour: %s", BehaviourLabel(current).c_str());
     if (placed && g_targetHasBehaviour && IsStoryBehaviour(g_targetEdit)) {

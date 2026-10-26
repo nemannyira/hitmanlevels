@@ -1479,9 +1479,10 @@ void DrawWorkflow()
          goals ? std::to_string(goals) + " objectives of the level's own: Mission tab"
                : (L.emptyMap ? "The map was emptied: the mission needs objectives (Mission tab) or a script"
                              : "The base level's own mission (Mission tab changes it)")},
-        {problems ? "Test " + std::to_string(problems) + "!" : "Test", problems == 0,
+        {problems ? "Test " + std::to_string(problems) + "!" : "Test", problems == 0 && (placed > 0 || goals > 0),
          problems ? std::to_string(problems) + " problems below: fix them, then test (Testing tab)"
-                  : "No problems found: try it (Testing tab: test from here, freeze, game speed)"},
+         : placed > 0 || goals > 0 ? "No problems found: try it (Testing tab: test from here, freeze, game speed)"
+                                   : "Nothing to test yet: place something or set an objective first"},
         {L.dirty ? "Save *" : "Save", saved,
          L.folder.empty() ? "Not saved yet: click to give it a name"
                           : (L.dirty ? "Unsaved changes: click (or Ctrl+S) to save" : "Saved in Mods\\" + L.folder)},
@@ -1588,6 +1589,19 @@ void DrawScripts()
         if (!there) {
             ImGui::SameLine();
             ImGui::TextDisabled("(missing)");
+        } else {  // (#21: the level maker had to find the file)
+            ImGui::SameLine();
+            ImGui::PushID(s.c_str());
+            if (ImGui::SmallButton("open")) {
+                std::string file = ModsDir() + L.folder + "\\" + s;
+                if (reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", file.c_str(), nullptr, nullptr,
+                                                            SW_SHOWNORMAL)) <= 32)
+                    ShellExecuteA(nullptr, "open", "notepad.exe", ("\"" + file + "\"").c_str(), nullptr, SW_SHOWNORMAL);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Opens the script in the program .lua files open with (Notepad without one);\n"
+                                  "saved, Run now runs it again");
+            ImGui::PopID();
         }
     }
     ImGui::BeginDisabled(L.folder.empty());
@@ -1866,6 +1880,14 @@ void DrawShare()
 }
 
 // Level panel: the clothes Hitman starts the level in
+void DrawStartOutfit();
+
+} // namespace
+
+void DrawStartOutfitControl() { DrawStartOutfit(); }
+
+namespace {
+
 void DrawStartOutfit()
 {
     LevelDocument& L = g_level;
@@ -1910,8 +1932,8 @@ void DrawPanel()
     else
         ImGui::TextDisabled("Mods\\%s", L.folder.c_str());
     ImGui::TextDisabled("scene %s", L.baseScene.empty() ? "-" : L.baseScene.c_str());
-    ImGui::Text("%d edits, %d new objects, %d characters, %d routes, %d scripts", int(L.objects.size()),
-                int(L.spawned.size()), int(L.npcs.size()), int(L.lists.size()), int(L.scripts.size()));
+    ImGui::TextWrapped("%d edits, %d new objects, %d characters, %d routes, %d scripts", int(L.objects.size()),
+                       int(L.spawned.size()), int(L.npcs.size()), int(L.lists.size()), int(L.scripts.size()));
     ImGui::BeginDisabled(L.folder.empty());
     if (ImGui::Button("Save")) {
         std::string err;
@@ -1924,10 +1946,8 @@ void DrawPanel()
     }
     DrawProblems();
     DrawScripts();
-    DrawShare();
-    DrawStartOutfit();
-    DrawOwnMap();
 
+    ImGui::SeparatorText("The map");
     bool empty = L.emptyMap;
     if (ImGui::Checkbox("Empty map", &empty))
         SetEmptyMap(empty);
@@ -2075,6 +2095,10 @@ void DrawPanel()
         else
             L.objects.erase(toRevert), L.dirty = true;
     }
+    // passing the level on, a map of its own: done once a level is made (#21: they led the tab)
+    DrawShare();
+    ImGui::Spacing();
+    DrawOwnMap();
 }
 
 // File > Open level: the level and its map (another map is loaded, as the launcher does; #16)
@@ -2737,6 +2761,8 @@ std::string FreeFolder(const std::string& name)
         folder = Sanitize(name) + "_" + std::to_string(k);
     return folder;
 }
+
+std::string LevelFolderFor(const std::string& name) { return FreeFolder(name); }
 
 void WriteMainScript(const std::string& name)
 {

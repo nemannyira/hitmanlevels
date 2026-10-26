@@ -224,14 +224,14 @@ maps being the main use. Every finding is a GitHub issue.
 | W19 | 51 behaviours of other levels in a five-row popup, no filter, described only once chosen | fixed: a filter, taller lists, descriptions on hover (#20) |
 | W20 | After placing, the selected character's settings push *Place a character* down; setting rows packed tight | fixed: *Place another*; roomier rows (#20) |
 | W21 | The "placed ..." message stays after the map was loaded again | fixed: cleared with the map (#20) |
-| W22 | Launcher: *Empty map* on by default; the floor box shown with *No buildings either* off | #21 |
-| W23 | Level tab: *Share* (author key) near the top of a new level; *Hitman starts in* under *Share* | #21 |
-| W24 | Text cut at the panel's edge; the briefing box does not wrap | #21 |
-| W25 | Step chips *Test* / *Save* green on a new, empty level | #21 |
-| W26 | Inspector: *Make it drive a route* for a pickup item | #21 |
-| W27 | The free camera stays on after the editor is closed | #21 |
-| W28 | The laptop's *Additional files*: six empty boxes on an emptied map | #21 |
-| W29 | No *Open* for a script written from the template | #21 |
+| W22 | Launcher: *Empty map* on by default; the floor box shown with *No buildings either* off | fixed: the floor only with No buildings, the real folder shown; Empty map stays on by default (a new mission on the map: its own characters and goals would run otherwise) (#21) |
+| W23 | Level tab: *Share* (author key) near the top of a new level; *Hitman starts in* under *Share* | fixed: Share and A map of its own at the end, Hitman starts in on the Mission tab (#21) |
+| W24 | Text cut at the panel's edge; the briefing box does not wrap | fixed: wrapped; a long briefing line wrapped under the box (#21) |
+| W25 | Step chips *Test* / *Save* green on a new, empty level | fixed: Test not green with nothing to test (Save is: the launcher saves the new level) (#21) |
+| W26 | Inspector: *Make it drive a route* for a pickup item | fixed: no Vehicle section for items (#21) |
+| W27 | The free camera stays on after the editor is closed | fixed: off with the editor (#21) |
+| W28 | The laptop's *Additional files*: six empty boxes on an emptied map | fixed: the Files buttons and title hidden with the base level's files (#21) |
+| W29 | No *Open* for a script written from the template | fixed: open beside each script (#21) |
 
 Worked as meant: the launcher's *Open a level* (map, objectives, briefing),
 *Make it a target* and *Hitman has to take it* from the Inspector, the

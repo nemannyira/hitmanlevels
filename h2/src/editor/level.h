@@ -303,6 +303,10 @@ engine::ZGEOM* MakeNewRoute(const std::string& name, std::string* error = nullpt
 
 // Takes the scene's characters and items out (empty map) or puts them back.
 void SetEmptyMap(bool empty);
+// The Mission tab's "Hitman starts in" (the level's start_outfit).
+void DrawStartOutfitControl();
+// The folder (Mods\<folder>) a new level of that name gets.
+std::string LevelFolderFor(const std::string& name);
 // Takes the scene's buildings out too (blank map) or puts them back.
 void SetBlankMap(bool blank);
 // A copy of one of the map's models was made (shown also when the blank map took the model out).

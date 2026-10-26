@@ -593,6 +593,13 @@ void ShowLines(const std::vector<int>& removed = {})
     for (int slot = 1; slot <= kSlots; ++slot)
         if (g_hiddenLines[slot])
             HideLineElements(slot);
+    // the base level's files hidden: their six buttons and title too (#21: empty boxes); shown again with
+    // the map's next load (the window shows the ones the level has)
+    if (ForThisScene() && BaseFilesHidden()) {
+        for (int i = 1; i <= 6; ++i)
+            SetVisible(Element(("Files\\" + std::to_string(i)).c_str()), false);
+        SetVisible(Element("FilesTitle"), false);
+    }
     Relayout();
 }
 
@@ -640,6 +647,25 @@ void DrawBriefingEditor()
     }
     if (ImGui::IsItemHovered() && m.briefing.empty())
         ImGui::SetTooltip("Empty: the level's own briefing. The laptop shows it scrolled, the way it is written here.");
+    // the box does not wrap its lines (ImGui's multiline text): a long line read wrapped below it (#21)
+    float boxWidth = ImGui::GetItemRectSize().x - ImGui::GetStyle().FramePadding.x * 2;
+    bool longLine = false;
+    for (size_t start = 0; start < m.briefing.size() && !longLine;) {
+        size_t end = m.briefing.find('\n', start);
+        if (end == std::string::npos)
+            end = m.briefing.size();
+        longLine = ImGui::CalcTextSize(m.briefing.c_str() + start, m.briefing.c_str() + end).x > boxWidth;
+        start = end + 1;
+    }
+    if (!editing && longLine) {
+        float h = ImGui::GetTextLineHeightWithSpacing() * 5;
+        if (ImGui::BeginChild("##briefingwrapped", ImVec2(-1, h), ImGuiChildFlags_Borders)) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", m.briefing.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndChild();
+    }
     ImGui::BeginDisabled(m.briefing.empty());
     if (ImGui::SmallButton("The level's own briefing")) {
         m.briefing.clear();
@@ -1575,6 +1601,7 @@ void DrawPanel()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The base level's files in the laptop, e.g. its target's photo.\n"
                           "Hidden on an emptied map unless switched on. Takes effect when the map loads.");
+    DrawStartOutfitControl();  // (#21: from the Level tab)
     ImGui::SeparatorText("Objectives (the laptop's lines)");
     if (!g_briefing)
         ImGui::TextDisabled("(this map has no laptop briefing yet)");

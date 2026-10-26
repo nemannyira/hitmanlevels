@@ -133,6 +133,12 @@ void __fastcall hkFrameUpdate(void* self, void* edx)
     g_lastTick = now;
     dt = dt > 0.1f ? 0.1f : dt;
 
+    // the editor closed: the game's camera again (#21: the player saw no Hitman)
+    static bool wasOpen;
+    bool open = overlay::IsOpen();
+    if (wasOpen && !open && g_enabled)
+        SetFreeCamEnabled(false);
+    wasOpen = open;
     game::ZCAMERA* cam = game::MainCamera();
     if (!g_enabled || !cam) {
         TakeMouseDelta();

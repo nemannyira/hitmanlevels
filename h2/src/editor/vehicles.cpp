@@ -979,8 +979,11 @@ void DrawVehicleForSelection(engine::ZGEOM* geom)
         (!CurrentLevel().baseScene.empty() && CurrentLevel().baseScene != CurrentScene()))
         return;
     const SpawnedObject* spawned = FindSpawned(geom);
-    if (spawned && spawned->point)
-        return;  // a point: not a vehicle
+    if (spawned && (spawned->point || spawned->item))
+        return;  // a point, an item: not vehicles
+    for (engine::ZBaseGeom* n = geom->node; n; n = n->parent)  // (an item's model too, #21)
+        if (n->geom && (engine::IsA(n->geom, "ZItem") || engine::IsA(n->geom, "ZItemTemplate")))
+            return;
     engine::ZGEOM* whole = WholeVehicle(geom);
     if (whole && !ActorOf(whole) && !FindSpawned(geom))
         geom = whole;  // (a car clicked in the world: one of its parts; the car drives)

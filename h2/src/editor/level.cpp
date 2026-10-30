@@ -40,6 +40,7 @@
 #include "music.h"
 #include "launcher.h"
 #include "scene_panel.h"
+#include "stages.h"
 
 using json = nlohmann::json;
 
@@ -363,6 +364,31 @@ bool StateFromJson(const json& j, ObjectState& s)
     return true;
 }
 
+// an escalation's thing: "stage" (there from it on; absent: from the first), "gone_from" (absent: never)
+void SpanJson(const StageSpan& span, json& o)
+{
+    if (span.from > 1)
+        o["stage"] = span.from;
+    if (span.gone > 0)
+        o["gone_from"] = span.gone;
+}
+
+StageSpan SpanFromJson(const json& o)
+{
+    StageSpan span;
+    if (o.contains("stage") && o["stage"].is_number_integer())
+        span.from = o["stage"].get<int>();
+    if (o.contains("gone_from") && o["gone_from"].is_number_integer())
+        span.gone = o["gone_from"].get<int>();
+    if (span.from < 0 || span.from > kMaxStages)  // (levelfmt refuses them in a downloaded level)
+        span.from = 0;
+    if (span.gone < 0 || span.gone > kMaxStages || (span.gone > 0 && span.gone <= std::max(span.from, 1)))
+        span.gone = 0;
+    if (span.from == 1)
+        span.from = 0;
+    return span;
+}
+
 SpawnedObject* EntryOf(engine::ZGEOM* geom)
 {
     if (!geom)
@@ -562,6 +588,8 @@ std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
     if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
         return out;
     for (const SpawnedObject& s : g_level.spawned) {
+        if (!InStage(s.span))
+            continue;  // (an escalation's: not in the stage the map is loaded for)
         if (s.point) {  // the level's points: copies of the characters' aim helper record
             engine::SceneCopy c;
             c.name = s.id;
@@ -1160,6 +1188,9 @@ void RunLevelScripts()
                                      : "level script " + s + " stopped by its error");
         script::SetHandlerOwner("");
     }
+    script::SetHandlerOwner("level");
+    RunStageRules();  // (an escalation's: its handlers the level's too)
+    script::SetHandlerOwner("");
     script::OnLevelScriptsRan();  // a saved game's "load" event (state.h)
 }
 
@@ -1329,6 +1360,8 @@ std::vector<Problem> FindProblems()
             }
         for (const MissionObjective& o : L.mission.objectives)
         {
+            if (!InStage(o.span))
+                continue;  // (an escalation's objective of another stage: its target may not be there now)
             if (o.goal != MissionObjective::Level && o.goal != MissionObjective::Unseen &&
                 (o.target.empty() || !ResolveTarget(o.target)))
                 out.push_back({"objective " + std::to_string(o.slot) + ": its " +
@@ -1343,6 +1376,11 @@ std::vector<Problem> FindProblems()
         }
         if (!L.mission.exitPath.empty() && !ResolveTarget(L.mission.exitPath))
             out.push_back({"the mission's exit is missing", ""});
+        // an escalation's stage without an objective cannot be done (when the objectives end it)
+        for (int k = 1; k <= StageCount() && L.mission.endWhenDone; ++k)
+            if (std::none_of(L.mission.objectives.begin(), L.mission.objectives.end(),
+                             [&](const MissionObjective& o) { return InStage(o.span, k); }))
+                out.push_back({"stage " + std::to_string(k) + " has no objective", ""});
     }
     for (const std::string& s : L.scripts) {
         if (L.folder.empty()) {
@@ -2027,9 +2065,13 @@ void DrawPanel()
         ImGui::TextUnformatted(name.c_str());
         ImGui::SameLine();
         ImGui::TextDisabled(s.item ? "item" : s.point ? "point" : "object");
+        if (std::string stages = SpanText(s.span); !stages.empty()) {  // (an escalation's)
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", stages.c_str());
+        }
         if (!g) {
             ImGui::SameLine();
-            ImGui::TextDisabled("(not in this scene)");
+            ImGui::TextDisabled(InStage(s.span) ? "(not in this scene)" : "(not in this stage)");
         }
         if (ImGui::IsItemHovered() && !s.sourcePath.empty())
             ImGui::SetTooltip("%s\nfrom %s", s.id.c_str(), s.sourcePath.c_str());
@@ -2308,6 +2350,7 @@ bool SaveLevel(std::string* error)
         json o = StateJson(e.state);
         o["path"] = path;
         o["class"] = e.className;
+        SpanJson(e.span, o);
         j["objects"].push_back(o);
     }
     j["spawned"] = json::array();
@@ -2338,6 +2381,7 @@ bool SaveLevel(std::string* error)
         if (!s.mapIcon.empty())
             o["map_icon"] = s.mapIcon;
         o["hidden"] = s.hidden;
+        SpanJson(s.span, o);
         j["spawned"].push_back(o);
     }
     j["npcs"] = json::array();
@@ -2362,6 +2406,7 @@ bool SaveLevel(std::string* error)
                 o["behaviour_level"] = n.behaviourLevel;
             o["params"] = ParamsJson(n.params);
         }
+        SpanJson(n.span, o);
         j["npcs"].push_back(o);
     }
     j["npc_edits"] = json::array();
@@ -2385,6 +2430,7 @@ bool SaveLevel(std::string* error)
                 jo["place"] = o.place;
             if (o.goal == MissionObjective::Unseen)
                 jo["fails_mission"] = o.failsMission;
+            SpanJson(o.span, jo);
             objs.push_back(jo);
         }
         if (!objs.empty() || m.endWhenDone || !m.briefing.empty() || !m.baseEnds || m.baseFiles >= 0) {
@@ -2429,6 +2475,20 @@ bool SaveLevel(std::string* error)
     for (auto& [path, points] : g_level.lists)
         j["lists"].push_back({{"path", path}, {"points", points}});
     j["scripts"] = g_level.scripts;
+    if (!g_level.stages.empty()) {
+        j["stages"] = json::array();
+        for (const LevelStage& st : g_level.stages)
+            j["stages"].push_back({{"name", st.name}, {"text", st.text}});
+        j["rules"] = json::array();
+        for (const StageRule& r : g_level.rules) {
+            json o = {{"kind", r.kind}, {"broken", r.fails ? "fail" : "note"}};
+            if (r.kind == "time")
+                o["seconds"] = r.seconds;
+            SpanJson(r.span, o);
+            j["rules"].push_back(o);
+        }
+        j["replay"] = g_level.replay;
+    }
     if (!g_level.imports.empty()) {
         json imports = json::array();
         for (const ImportedModel& m : g_level.imports)
@@ -2530,6 +2590,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         for (const json& o : j.value("objects", json::array())) {
             ObjectEdit e;
             e.className = o.value("class", "");
+            e.span = SpanFromJson(o);
             if (StateFromJson(o, e.state) && o.contains("path") && L.objects.size() < kMaxLevelEdits)
                 L.objects[o["path"].get<std::string>()] = e;
         }
@@ -2576,6 +2637,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
                     Log("level: points' map icons beyond %zu left out", kMaxLevelMapIcons);
                 }
             }
+            s.span = SpanFromJson(o);
             L.spawned.push_back(s);
         }
         for (const json& o : j.value("npcs", json::array())) {
@@ -2599,6 +2661,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
             n.behaviourLevel = o.value("behaviour_level", "");
             n.hasBehaviour = !n.behaviour.empty();
             n.params = ParamsFromJson(o.value("params", json::array()));
+            n.span = SpanFromJson(o);
             L.npcs.push_back(n);
         }
         for (const json& o : j.value("npc_edits", json::array())) {
@@ -2633,6 +2696,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
                     mo.place = o["place"].get<std::string>();
                 if (o.contains("fails_mission") && o["fails_mission"].is_boolean())
                     mo.failsMission = o["fails_mission"].get<bool>();
+                mo.span = SpanFromJson(o);
                 if (mo.slot >= 1 && mo.slot <= 6)
                     L.mission.objectives.push_back(mo);
             }
@@ -2711,6 +2775,22 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 points.resize(std::min(points.size(), kMaxListPoints));
                 L.lists[o["path"].get<std::string>()] = points;
             }
+        if (j.contains("stages") && j["stages"].is_array()) {  // an escalation (checked: levelfmt)
+            for (const json& o : j["stages"])
+                if (o.is_object() && L.stages.size() < size_t(kMaxStages))
+                    L.stages.push_back({o.value("name", std::string()).substr(0, 63),
+                                        o.value("text", std::string()).substr(0, 1023)});
+            for (const json& o : j.value("rules", json::array())) {
+                StageRule r;
+                r.kind = o.value("kind", std::string());
+                r.fails = o.value("broken", std::string("fail")) != "note";
+                r.seconds = std::clamp(o.value("seconds", 300), 10, 4 * 3600);
+                r.span = SpanFromJson(o);
+                if (!L.stages.empty() && L.rules.size() < 64)
+                    L.rules.push_back(r);
+            }
+            L.replay = j.value("replay", true);
+        }
         for (const std::string& name : j.value("scripts", std::vector<std::string>{}))
             if (ValidScriptName(name) && L.scripts.size() < kMaxLevelScripts)
                 L.scripts.push_back(name);
@@ -2735,6 +2815,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
         return false;
     }
     g_level = std::move(L);
+    OnLevelLoaded();  // (its stage)
     CompleteImports();
     ClearHistory();
     Log("level loaded: %s (%d edits, %d new objects)", folder.c_str(), int(g_level.objects.size()),
@@ -3083,6 +3164,7 @@ engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error, const 
     engine::ZGEOM* g = Materialize(s, &err);
     if (!g)
         return fail(err.empty() ? "the engine refused to create it" : err);
+    s.span = NewSpan();
     g_level.spawned.push_back(s);
     g_level.dirty = true;
     std::string id = s.id;
@@ -3121,6 +3203,7 @@ engine::ZGEOM* PlaceItem(engine::ZGEOM* itemTemplate, const Transform& at, std::
     engine::ZGEOM* g = Materialize(s, &err);
     if (!g)
         return fail(err.empty() ? "the game did not create the item" : err);
+    s.span = NewSpan();
     g_level.spawned.push_back(s);
     g_level.dirty = true;
     std::string id = s.id;
@@ -3342,6 +3425,7 @@ engine::ZGEOM* PlaceNpc(const NpcSpec& spec, std::string* error)
         if (!used && !Resolve("ROOT/" + n.id + "_Group/" + n.id))
             break;
     }
+    n.span = NewSpan();
     std::string err;
     engine::ZGEOM* g = MaterializeNpc(n, &err);
     if (!g)
@@ -3541,6 +3625,7 @@ engine::ZGEOM* PlacePoint(const Transform& at, engine::ZGEOM* room, std::string*
     engine::ZGEOM* g = Materialize(s, &err);
     if (!g)
         return fail(err.empty() ? "the engine refused to create it" : err);
+    s.span = NewSpan();
     g_level.spawned.push_back(s);
     g_level.dirty = true;
     std::string id = s.id;
@@ -3791,6 +3876,8 @@ std::vector<engine::SceneNpc> NpcsFor(const std::string& scene)
     if (g_level.baseScene.empty() || !SameScene(scene, g_level.baseScene))
         return out;
     for (const LevelNpc& n : g_level.npcs) {
+        if (!InStage(n.span))
+            continue;
         engine::SceneNpc s;
         s.name = n.id;
         s.record = n.record;
@@ -3827,7 +3914,7 @@ std::vector<engine::SceneZone> ZonesFor(const std::string& scene)
         if (id.empty() || !(radius > 0.0f))
             return;
         for (const SpawnedObject& s : g_level.spawned)
-            if (s.point && s.id == id) {
+            if (s.point && s.id == id && InStage(s.span)) {
                 engine::SceneZone z;
                 z.name = GoalZoneName(slot);
                 memcpy(z.pos, s.transform.pos, sizeof(z.pos));
@@ -3837,6 +3924,8 @@ std::vector<engine::SceneZone> ZonesFor(const std::string& scene)
             }
     };
     for (const MissionObjective& o : g_level.mission.objectives) {
+        if (!InStage(o.span))
+            continue;
         if (o.goal == MissionObjective::Reach && !o.target.empty())
             zone(o.slot, o.target, o.radius);
         if (o.goal == MissionObjective::Deliver && !o.place.empty())  // (Hitman bringing a model there)
@@ -4231,8 +4320,8 @@ int ApplyLevel()
             if (engine::ZGEOM* src = Resolve(s.sourcePath))
                 FillCopySource(s, src);
     for (const SpawnedObject& s : g_level.spawned)
-        if (IsVehicleCopy(g_level.vehicles, s.id)) {
-            continue;  // (its car is made with the map instead)
+        if (IsVehicleCopy(g_level.vehicles, s.id) || !InStage(s.span)) {
+            continue;  // (its car is made with the map instead; an escalation's of another stage)
         } else if (s.sourceScene.empty() || s.sourceScene == CurrentScene() ||
             (!g_level.ownMapOf.empty() && s.sourceScene == g_level.ownMapOf))  // made on the original map
             n += Materialize(s) != nullptr;
@@ -4244,7 +4333,9 @@ int ApplyLevel()
             e.original = GetState(geom);
             e.hasOriginal = true;
         }
-        SetState(geom, e.state);
+        ObjectState st = e.state;
+        st.hidden |= !InStage(e.span);  // (an escalation's map object not there in this stage)
+        SetState(geom, st);
         SyncBlanked(geom);
         ++n;
     }
@@ -4256,6 +4347,8 @@ int ApplyLevel()
             Log("level: list %s: %s", path.c_str(), err.c_str());
     }
     for (const LevelNpc& npc : g_level.npcs) {
+        if (!InStage(npc.span))
+            continue;
         std::string err;
         if (MaterializeNpc(npc, &err))
             ++n;
@@ -4394,6 +4487,46 @@ std::vector<std::string> ListLevels()
     for (size_t i = 0; i < out.size(); ++i)
         out[i] = byTime[i].second;
     return out;
+}
+
+void DrawStagesForSelection(engine::ZGEOM* geom)
+{
+    if (!IsEscalation() || !geom || !IsLive(geom))
+        return;
+    StageSpan* span = nullptr;
+    bool mapObject = false;
+    std::string path;
+    if (SpawnedObject* s = EntryOf(geom)) {
+        span = &s->span;
+    } else if (LevelNpc* n = NpcEntryOf(geom)) {
+        span = &n->span;
+    } else {
+        path = PathOf(geom);
+        if (path.empty())
+            return;
+        mapObject = true;
+        auto it = g_level.objects.find(path);
+        if (it != g_level.objects.end())
+            span = &it->second.span;
+    }
+    StageSpan shown = span ? *span : StageSpan{};
+    if (!DrawStageSpan(shown, "##selstages"))
+        return;
+    if (!span) {  // a map object of every stage: an edit of it keeps its stages
+        ObjectEdit e;
+        e.className = engine::ClassName(geom);
+        e.original = GetState(geom);
+        e.hasOriginal = true;
+        e.state = e.original;
+        span = &(g_level.objects[path] = e).span;
+    }
+    *span = shown;
+    g_level.dirty = true;
+    if (mapObject) {  // (shown or hidden now; placed things come and go with the stage's next load)
+        ObjectState st = g_level.objects[path].state;
+        st.hidden |= !InStage(*span);
+        SetState(geom, st);
+    }
 }
 
 void InstallLevelPanel()

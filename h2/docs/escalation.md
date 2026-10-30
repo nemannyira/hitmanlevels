@@ -1,4 +1,4 @@
-# Escalations (design)
+# Escalations
 
 The new games' *Escalation* mode, as a kind of level the editor makes: a
 mission on a map in stages, each stage the one before plus a complication.
@@ -17,44 +17,45 @@ mission on a map in stages, each stage the one before plus a complication.
 ## As a level of ours
 
 An escalation is one level (`Mods\<folder>`), shared as one package. Its
-`level.json` gets `stages` (1 to 10): what each stage adds on top of the
-level, and `"replay"`: whether the player may play the stages done again (the
+`level.json` gets `stages` (1 to 10, each a name and the laptop's text of it),
+`rules`, and `"replay"`: whether the player may play the stages done again (the
 author's choice, on by default).
 
 ```json
-"stages": [
-  { "name": "The Courier", "text": "Kill the courier.",
-    "objectives": [1], "rules": [] },
-  { "name": "Quietly", "objectives": [1],
-    "rules": [ { "kind": "unseen", "broken": "fail" },
-               { "kind": "no_innocents", "broken": "note" } ] },
-  { "name": "On the clock", "objectives": [1, 2],
-    "rules": [ { "kind": "time", "seconds": 300 },
-               { "kind": "kill_with", "object": "FiberWire" } ] }
-]
+"stages": [ { "name": "The Courier", "text": "Kill the courier." },
+            { "name": "Quietly", "text": "He has a bodyguard now." },
+            { "name": "On the clock", "text": "" } ],
+"rules": [ { "kind": "unseen", "stage": 2, "broken": "fail" },
+           { "kind": "no_innocents", "stage": 2, "broken": "note" },
+           { "kind": "time", "seconds": 300, "stage": 3, "broken": "fail" } ],
+"replay": true
 ```
 
-* **The world grows with the stages.** Everything placed (characters,
-  objects, points, routes) has the stage it comes in (`"stage": 2`; none =
-  every stage). Stage 3 has what stages 1-3 placed. A thing can also be
-  *gone from stage N* (a door opened in stage 1 is locked from stage 3).
-* **Objectives** are the level's objectives; a stage names the ones it uses
-  (later stages usually keep the earlier ones and add one).
+* **Everything has its stages.** A placed object, item, point or character,
+  an edit of a map object, an objective and a rule have `"stage": N` (there
+  from stage N on; none: from the first) and `"gone_from": M` (not there from
+  stage M on; none: never gone). Stage 3 has what is there in stage 3. A map
+  object *gone* in a stage is hidden in it (a door, a crate); one that only
+  *comes* in a stage is hidden before it.
+* **Objectives** are the laptop's lines as in a plain level; a line can be one
+  objective in stages 1-2 and another from stage 3 (the same slot, other
+  stages).
 * **Rules** are checked while playing. What breaking one does is the
-  author's choice per rule (`"broken"`): `"fail"` fails the stage (with the
-  reason on screen), `"note"` only says so on screen and marks the stage's
-  result (done, but not clean: shown in the launcher; the rating as the game
-  counts it). Each rule writes its own laptop line and is shown on the screen
-  when the stage starts.
+  author's choice per rule (`"broken"`): `"fail"` fails the stage (the mission
+  ends failed, the reason on screen), `"note"` only says so on screen and
+  marks the stage's result (done, but not cleanly: shown in the launcher).
+  The stage's name and rules are in the laptop's briefing and on screen when
+  the stage starts; a time limit tells the time left (10, 5, 2, 1 minutes,
+  30 and 10 seconds).
 
 ### Rules (a first set)
 
 | rule | checked by | there now? |
 |---|---|---|
 | never spotted | the *unseen* goal | yes |
-| time limit | a timer (`h2.after`), the time left on screen | yes (Courier) |
+| time limit | game time played (`h2.time`; kept in saved games), the time left on screen | yes |
 | no innocents killed | the `kill` event's `kind` | yes |
-| no disguise / keep the start clothes | the `disguise` event | yes (event seen in scripts; check in game) |
+| no disguise / keep the start clothes | the `disguise` event | yes |
 | one disguise only (no change once taken) | the `disguise` event | as above |
 | kill a target only with X (an item, fiber wire, a firearm kind, an accident) | the `kill` event's `type` + the weapon Hitman holds | needs work: what `type` holds, the weapon in his hands |
 | no bodies found | the characters' "body found" reaction / the map's alarm | needs reverse engineering |
@@ -67,42 +68,42 @@ The ones marked yes are the first version; the others follow.
 ## In the editor
 
 * **Stage bar** (toolbar, only for an escalation): `Stage 1 2 3 [+]` (up to
-  10). The
-  world shows the chosen stage (what stages up to it placed). What is placed
-  while a stage is chosen comes in that stage; the Inspector shows *comes in
-  stage 2* (changeable) and *gone from stage …*.
-* **Mission tab** gets a *Stages* section: per stage its name, text, which
-  objectives it uses and its rules (picked from the list above, each with its
-  setting: seconds, the item, *fails the stage* or *only noted*); for the
-  whole escalation *the player may replay stages done*.
-* **New level** offers *Escalation (stages)* besides a plain level; a plain
-  level can be turned into one later (it becomes stage 1).
-* **Test** plays the chosen stage. *Problems* lists stages that cannot be
-  finished (no objective, a rule that contradicts another: "never spotted" +
-  "kill with a firearm in sight" is allowed, but e.g. "keep the start
-  clothes" with an objective to take a disguise is not).
+  10). The map shows the chosen stage (its button loads the map for it,
+  saved first). What is placed while a stage is shown comes in it; the
+  Inspector's *stages [2] to [the last]* row changes a selected thing's
+  stages (a map object's too: hidden out of them).
+* **Mission tab**, *Stages (escalation)*: *Make it an escalation*; per stage
+  its name, text and the rules coming in it (each with its setting and
+  *fails the stage* / *only noted*), *Take this stage away* (its things come
+  in the stage before); *Stages done can be played again*. Each objective
+  line has its stages row.
+* **Test** plays the stage shown. *Problems* lists a stage without an
+  objective (when the objectives end the mission).
+* Dev commands: `h2.dev_stage([n])` (the map for stage n), `h2.dev_launcher()`.
 
 ## Playing it
 
-* The launcher's level list shows an escalation with its stages:
-  *Stage 2 of 3*, a mark when all are done (and whether cleanly); the next
-  stage is open, the stages done can be played again when the author allows
-  it (`"replay"`).
-* At the start the stage's name and rules show on the screen and in the
-  laptop. Breaking a rule fails the stage with the reason ("You were seen").
-* Finishing a stage: the statistics screen as now, then "Stage 3 opened";
-  the last one: "Escalation complete".
-* Progress is the player's own, per level (next to the level's saves; not in
-  the package, so a shared level starts at stage 1).
+* The launcher's level list shows an escalation: *Escalation: stage 2 of 3*,
+  *all done* (and whether cleanly), and the stage to start: the next open
+  one, the stages done too when the author allows it (`"replay"`).
+* At the start the stage's name and rules show on screen (a subtitle) and in
+  the laptop. A rule broken: the stage fails with the reason ("You were
+  seen"), or it is only noted.
+* Finishing a stage (its mission completed): "Stage 3 opened"; the last one:
+  "Escalation complete".
+* Progress is the player's own, per level: `Save\escalations.json` (not in
+  the package: a shared level starts at stage 1). A saved game keeps its
+  stage (with its goals, `Save\<slot>.h2lua`; set again before the game
+  loads the map, `ZEngineDataBase::LoadGame` 0x41AF70).
 
 ## Order of work
 
 1. Format (`stages`, `stage` on placed things), the validator, loading the
-   chosen stage's world.
-2. Mission tab *Stages*, the stage bar, Test per stage.
+   chosen stage's world. (done, #24)
+2. Mission tab *Stages*, the stage bar, Test per stage. (done, #25)
 3. Rules of the first set, their laptop lines and on-screen notes, failing
-   a stage.
-4. Launcher: stages, progress, the next stage opened.
+   a stage. (done, #26)
+4. Launcher: stages, progress, the next stage opened. (done, #27)
 5. Rules that need reverse engineering (kill method, bodies found, drawn
    weapon).
 6. An example escalation in `examples/missions` and the docs.

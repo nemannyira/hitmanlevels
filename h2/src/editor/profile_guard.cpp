@@ -33,6 +33,7 @@ struct ComHeader {
 
 bool g_protected;
 bool g_completed;  // the level's mission was completed on this map
+void (*g_onCompleted)();
 ComHeader g_header;
 std::vector<uint8_t> g_variables;
 int g_skippedWrites;
@@ -108,6 +109,8 @@ void __fastcall hkMissionCompleted(void* self, void* edx)
 {
     if (g_protected)
         g_completed = true;
+    if (g_onCompleted)
+        g_onCompleted();
     std::string aids = g_protected ? AidsUsed() : "";
     if (!aids.empty()) {  // (the statistics do not see them: a Silent Assassin with god mode)
         NoteMissionEnd();
@@ -171,6 +174,8 @@ void ProtectProfile()
 }
 
 bool ProfileProtected() { return g_protected; }
+
+void SetMissionCompletedListener(void (*fn)()) { g_onCompleted = fn; }
 
 void InstallProfileGuard()
 {

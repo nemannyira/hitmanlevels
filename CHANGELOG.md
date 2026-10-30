@@ -3,6 +3,20 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-30: escalations, levels in stages (#23-#27)
+
+* A level can be an escalation: played in stages (1 to 10), one after
+  another, each the one before and more (Mission tab > *Stages*). The
+  toolbar's *Stage* buttons show and edit a stage; what is placed comes in the
+  stage shown; the Inspector's *stages ... to ...* row says in which stages an
+  object, character, map object or objective is there.
+* Rules of the stages: never be seen, a time limit, no innocents killed, no
+  disguise, one disguise at most; each fails the stage or is only noted. The
+  laptop's briefing and the screen show the stage's name and rules.
+* The launcher shows an escalation's progress and the stage to play; a stage
+  done opens the next; replaying the stages done is the author's choice. A
+  saved game keeps its stage.
+
 ## 2026-10-26: the map from above (#22)
 
 * The free camera above the map shows it from above (before: grey): the open

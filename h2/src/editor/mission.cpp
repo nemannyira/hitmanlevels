@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <ranges>
 #include <set>
 #include <string>
 #include <vector>
@@ -34,6 +35,7 @@
 #include "music.h"
 #include "npcs.h"
 #include "scene_panel.h"
+#include "stages.h"
 #include "viewport.h"
 #include "highlight.h"
 
@@ -98,6 +100,12 @@ bool g_nearPlace[kSlots + 1];                // Hitman at a Deliver goal's place
 constexpr float kAway = -100000.0f;          // a taken object's place: 1 km under the map
 
 MissionDoc& Doc() { return CurrentLevel().mission; }
+
+// the objectives of the stage played or edited (an escalation's: stages.h; all of a plain level's)
+auto StageObjectives()
+{
+    return Doc().objectives | std::views::filter([](const MissionObjective& o) { return InStage(o.span); });
+}
 
 template <typename T>
 T VFunc(void* obj, int index)
@@ -299,7 +307,7 @@ bool Owned(int slot)
 {
     if (!ForThisScene())
         return false;
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         if (o.slot == slot && o.goal != MissionObjective::Level && o.replacesOriginal)
             return true;
     return false;
@@ -496,13 +504,13 @@ void BuildTexts()
     // The briefing is the texts of "<folder>/MissionBriefing/1a", "2a", ...
     // as long as they exist (SetLocaleFolder 0x52D340): the level's own
     // further parts are answered "not there".
-    const std::string& briefing = g_scriptBriefing.empty() ? Doc().briefing : g_scriptBriefing;
+    const std::string briefing = StageBriefing(g_scriptBriefing.empty() ? Doc().briefing : g_scriptBriefing);
     if (!briefing.empty() && !g_folder.empty()) {
         g_texts[Lower(g_folder + "/MissionBriefing/1a")] = Node(briefing);
         for (int i = 2; i <= 40; ++i)
             g_texts[Lower(g_folder + "/MissionBriefing/" + std::to_string(i) + "a")] = "";
     }
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         if (!o.text.empty())
             g_texts[Lower(EditorKey(o.slot))] = Node(o.text, 256);
     // the base level's additional files (its target's photo: "<folder>/Laptop/Files/Photo1".. 5, read by
@@ -516,7 +524,7 @@ bool InDocument(int slot)
 {
     if (!ForThisScene())
         return false;
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         if (o.slot == slot)
             return true;
     return false;
@@ -528,7 +536,7 @@ std::string EditorText(int slot)
 {
     if (!ForThisScene())
         return "";
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         if (o.slot == slot)
             return o.text;
     return "";
@@ -579,7 +587,7 @@ void ShowLines(const std::vector<int>& removed = {})
     for (int slot = 1; slot <= kSlots; ++slot)  // the level's lines (taken out on an empty map)
         if (!InDocument(slot) && !g_lineKeys[slot].empty() && !g_hiddenLines[slot])
             RestoreLine(slot);
-    for (const MissionObjective& o : Doc().objectives) {
+    for (const MissionObjective& o : StageObjectives()) {
         bool own = !OwnText(o.slot).empty();
         if (!o.text.empty())
             CallSetObjective(o.slot, EditorKey(o.slot));
@@ -863,7 +871,7 @@ void CheckTakes()
     static uint16_t msg;
     if (!msg && (msg = engine::RegisterMessage("H2Editor_Take")) != 0)
         engine::WatchUse(msg);
-    for (const MissionObjective& o : Doc().objectives) {
+    for (const MissionObjective& o : StageObjectives()) {
         if ((o.goal != MissionObjective::Take && o.goal != MissionObjective::Deliver) || g_done[o.slot] ||
             g_taken.count(o.target))
             continue;
@@ -925,7 +933,7 @@ void Check()
     if (!LevelApplyPending())  // (the level's copies made with the map are put at their places then)
         ApplyPendingGoals();
     bool all = true;
-    for (const MissionObjective& o : Doc().objectives) {
+    for (const MissionObjective& o : StageObjectives()) {
         if (o.goal == MissionObjective::Level) {
             all &= LineChecked(o.slot);
             continue;
@@ -1074,7 +1082,7 @@ void Changed()
 
 MissionObjective* ObjectiveAt(int slot)
 {
-    for (MissionObjective& o : Doc().objectives)
+    for (MissionObjective& o : StageObjectives())
         if (o.slot == slot)
             return &o;
     return nullptr;
@@ -1087,6 +1095,7 @@ MissionObjective& Editable(int slot)
         return *o;
     MissionObjective o;
     o.slot = slot;
+    o.span = NewSpan();
     Doc().objectives.push_back(o);
     return Doc().objectives.back();
 }
@@ -1295,6 +1304,8 @@ void DrawLineEditor(int slot)
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
     ImGui::BeginChild("line", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
     ImGui::Text("Objective %d", slot);
+    if (o && IsEscalation() && DrawStageSpan(o->span, "##objstages"))  // (stages.h: its stages)
+        Changed();
     if (!own.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("(the level's line)");
@@ -1521,6 +1532,7 @@ void DrawObjectives()
         MissionObjective o;
         o.slot = free;
         o.goal = MissionObjective::Kill;
+        o.span = NewSpan();
         Doc().objectives.push_back(o);
         g_selSlot = free;
         Changed();
@@ -1590,6 +1602,7 @@ void DrawPanel()
     if (!g_status.empty())
         ImGui::TextWrapped("%s", g_status.c_str());
 
+    DrawStagesSection();
     ImGui::SeparatorText("Briefing (the laptop's text)");
     DrawBriefingEditor();
     bool files = !BaseFilesHidden();
@@ -1814,7 +1827,7 @@ void RevertMission()
     g_taken.clear();
     memset(g_takeObject, 0, sizeof(g_takeObject));
     std::vector<int> slots;
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         slots.push_back(o.slot);
     g_texts = g_scriptTexts;
     for (auto& [k, v] : g_fixedTexts)
@@ -1858,7 +1871,7 @@ bool SameTarget(const std::string& a, const std::string& b)
 // the line already having this target with this goal, 0 if none
 int LineWith(MissionObjective::Goal goal, const std::string& path)
 {
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         if (o.goal == goal && SameTarget(o.target, path))
             return o.slot;
     return 0;
@@ -1876,6 +1889,7 @@ void NewGoal(MissionObjective::Goal goal, const std::string& path)
     o.goal = goal;
     if (goal == MissionObjective::Take)
         o.radius = 150.0f;
+    o.span = NewSpan();
     Doc().objectives.push_back(o);
     SetTarget(Doc().objectives.back(), path);
     g_selSlot = slot;
@@ -1948,6 +1962,7 @@ std::string MissionUnseen(bool failsMission)
     o.goal = MissionObjective::Unseen;
     o.text = "Do not be spotted";
     o.failsMission = failsMission;
+    o.span = NewSpan();
     Doc().objectives.push_back(o);
     Changed();
     return "objective " + std::to_string(slot) + ": " + Summary(&Doc().objectives.back());
@@ -2125,19 +2140,24 @@ namespace {
 // the editor's goals done (and objects taken) in a saved game
 std::string SaveGoals()
 {
+    if (ForThisScene() && IsEscalation() && Doc().objectives.empty())  // (its stage: stages.h)
+        return nlohmann::json{{"scene", CurrentScene()}, {"level", CurrentLevel().name}, {"stage", CurrentStage()}}
+            .dump();
     if (!ForThisScene() || Doc().objectives.empty())
         return "";
     nlohmann::json done = nlohmann::json::array(), taken = nlohmann::json::array();
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         if (o.goal != MissionObjective::Level && g_done[o.slot])
             done.push_back(o.slot);
     for (const auto& [target, st] : g_taken)
         taken.push_back(target);
-    if (done.empty() && taken.empty() && !g_spotted)
+    if (done.empty() && taken.empty() && !g_spotted && !IsEscalation())
         return "";
-    return nlohmann::json{{"scene", CurrentScene()}, {"level", CurrentLevel().name}, {"done", done},
-                          {"taken", taken},          {"spotted", g_spotted}}
-        .dump();
+    nlohmann::json j{{"scene", CurrentScene()}, {"level", CurrentLevel().name}, {"done", done},
+                     {"taken", taken},          {"spotted", g_spotted}};
+    if (IsEscalation())
+        j["stage"] = CurrentStage();
+    return j.dump();
 }
 
 void LoadGoals(const std::string& text) { g_pendingGoals = text; }
@@ -2154,7 +2174,7 @@ void ApplyPendingGoals()
         return;
     for (const auto& t : j.value("taken", nlohmann::json::array()))
         if (t.is_string())
-            for (const MissionObjective& o : Doc().objectives)
+            for (const MissionObjective& o : StageObjectives())
                 if ((o.goal == MissionObjective::Take || o.goal == MissionObjective::Deliver) &&
                     o.target == t.get<std::string>())
                     TakeOut(o.target, Target(o));
@@ -2184,7 +2204,7 @@ void OnEditorEvent(const char* /*event*/, const engine::GameEvent& e)
     if (!ForThisScene())
         return;
     bool watched = false;  // only a level with an "unseen" goal counts it
-    for (const MissionObjective& o : Doc().objectives)
+    for (const MissionObjective& o : StageObjectives())
         watched |= o.goal == MissionObjective::Unseen;
     if (watched && !g_spotted) {
         g_spotted = true;

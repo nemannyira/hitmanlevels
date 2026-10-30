@@ -28,6 +28,8 @@ void OnLevelScriptsRan();
 // returns it ("" nothing to keep); `load` gets it back after a saved game was
 // loaded ("" when the slot had none).
 void SetSaveExtra(std::string (*save)(), void (*load)(const std::string&));
+// The file a saved game's state is kept in (Save\<slot>.h2lua; a downloaded level's of its own).
+std::string StateFile(unsigned slot);
 // Called when a saved game is being loaded, just before the objects get their
 // saved state (the map is loaded fresh then: as its files have it).
 void SetBeforeGameLoad(void (*fn)());

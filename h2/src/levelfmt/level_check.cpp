@@ -182,6 +182,24 @@ public:
 
     static std::string Clip(const std::string& s) { return s.size() > 40 ? s.substr(0, 40) + "..." : s; }
 
+    // an escalation's thing: "stage" (2..stages) and "gone_from" (after its stage, ..stages)
+    void Span(const json& o, const std::string& where)
+    {
+        if (!o.contains("stage") && !o.contains("gone_from"))
+            return;
+        if (stages_ == 0) {
+            Bad(where, "stages of a level without stages");
+            return;
+        }
+        Int(o, "stage", where, 1, stages_);
+        Int(o, "gone_from", where, 2, stages_);
+        if (o.contains("stage") && o.contains("gone_from") && o["stage"].is_number_integer() &&
+            o["gone_from"].is_number_integer() && o["gone_from"].get<long long>() <= o["stage"].get<long long>())
+            Bad(where + ".gone_from", "not after its stage");
+    }
+
+    int stages_ = 0;  // the level's (Span)
+
 private:
     Report& r_;
     bool strict_;
@@ -196,8 +214,10 @@ void CheckMission(Checker& c, const json& m)
     if (!c.Object(m, at, {"objectives", "end_when_done", "exit", "exit_radius", "base_ends", "base_files", "briefing"}))
         return;
     c.Array(m, "objectives", at, kMaxObjectives, [&](const json& o, const std::string& w) {
-        if (!c.Object(o, w, {"slot", "text", "goal", "target", "replaces_original", "radius", "place", "fails_mission"}))
+        if (!c.Object(o, w, {"slot", "text", "goal", "target", "replaces_original", "radius", "place", "fails_mission",
+                             "stage", "gone_from"}))
             return;
+        c.Span(o, w);
         c.Int(o, "slot", w, 1, 6);
         c.Text(o, "text", w, 256);
         if (o.contains("goal")) {
@@ -293,7 +313,8 @@ Report CheckLevel(const json& j, bool strict)
     c.Object(j, "level",
              {"format", "version", "name", "base_scene", "empty_map", "blank_map", "map_models", "own_map_of",
               "start_outfit", "place_floor", "floor_object", "sky", "objects", "spawned", "npcs", "npc_edits",
-              "mission", "music", "vehicles", "new_lists", "lists", "scripts", "imports", "package"});
+              "mission", "music", "vehicles", "new_lists", "lists", "scripts", "imports", "package", "stages", "rules",
+              "replay"});
     c.Int(j, "version", "level", 1, 1);
     c.Text(j, "name", "level", 64);
     c.Name(j, "base_scene", "level", 128, kSceneChars);
@@ -323,11 +344,37 @@ Report CheckLevel(const json& j, bool strict)
             c.Int(j[key], "mesh", std::string("level.") + key, 0, 0xFFFFFFFFLL);
         }
     c.Text(j, "floor_object", "level", 512);
+    // an escalation (docs/escalation.md): its stages, its rules, replaying the stages done
+    if (j.contains("stages") && j["stages"].is_array())
+        c.stages_ = int(std::min<size_t>(j["stages"].size(), kMaxStages));
+    c.Array(j, "stages", "", kMaxStages, [&](const json& o, const std::string& w) {
+        if (!c.Object(o, w, {"name", "text"}))
+            return;
+        c.Text(o, "name", w, 63);
+        c.Text(o, "text", w, 1023, true);
+    });
+    if (j.contains("stages") && j["stages"].is_array() && j["stages"].empty())
+        c.Bad("level.stages", "none (a level without stages has no \"stages\")");
+    c.Array(j, "rules", "", kMaxRules, [&](const json& o, const std::string& w) {
+        if (!c.Object(o, w, {"kind", "stage", "gone_from", "broken", "seconds"}))
+            return;
+        static const std::set<std::string> kinds = {"unseen", "time", "no_innocents", "no_disguise", "one_disguise"};
+        if (!o.contains("kind") || !o["kind"].is_string() || !kinds.count(o["kind"].get<std::string>()))
+            c.Bad(w + ".kind", "not a rule of the editor's");
+        if (o.contains("broken") && (!o["broken"].is_string() || (o["broken"] != "fail" && o["broken"] != "note")))
+            c.Bad(w + ".broken", "not fail / note");
+        c.Int(o, "seconds", w, 10, 4 * 3600);
+        c.Span(o, w);
+    });
+    if (j.contains("rules") && !j.contains("stages"))
+        c.Bad("level.rules", "rules of a level without stages");
+    c.Bool(j, "replay", "level");
 
     c.Array(j, "objects", "", kMaxEdits, [&](const json& o, const std::string& w) {
-        if (!c.Object(o, w, {"pos", "matrix", "hidden", "path", "class"}))
+        if (!c.Object(o, w, {"pos", "matrix", "hidden", "path", "class", "stage", "gone_from"}))
             return;
         c.Place(o, w);
+        c.Span(o, w);
         if (!o.contains("path"))
             c.Bad(w, "no path");
         c.Text(o, "path", w, 512);
@@ -338,9 +385,10 @@ Report CheckLevel(const json& j, bool strict)
     std::set<std::string> ids;
     c.Array(j, "spawned", "", kMaxSpawned, [&](const json& o, const std::string& w) {
         if (!c.Object(o, w, {"pos", "matrix", "hidden", "id", "source_scene", "source_path", "kind", "parent",
-                             "record", "parts", "import", "map_icon"}))
+                             "record", "parts", "import", "map_icon", "stage", "gone_from"}))
             return;
         c.Place(o, w);
+        c.Span(o, w);
         c.Text(o, "id", w, 64);
         if (o.contains("id") && o["id"].is_string() && !ids.insert(o["id"].get<std::string>()).second)
             c.Bad(w + ".id", "twice");
@@ -370,9 +418,10 @@ Report CheckLevel(const json& j, bool strict)
     std::set<std::string> npcIds;
     c.Array(j, "npcs", "", kMaxNpcs, [&](const json& o, const std::string& w) {
         if (!c.Object(o, w, {"pos", "matrix", "id", "label", "record", "model", "import_level", "import_mesh",
-                             "import_name", "behaviour", "behaviour_level", "params"}))
+                             "import_name", "behaviour", "behaviour_level", "params", "stage", "gone_from"}))
             return;
         c.Place(o, w);
+        c.Span(o, w);
         c.Name(o, "id", w, 64, "_-");
         c.Name(o, "label", w, 40, "_- ");  // its name in the editor and for scripts ("Volkov")
         if (o.contains("id") && o["id"].is_string() && !npcIds.insert(o["id"].get<std::string>()).second)

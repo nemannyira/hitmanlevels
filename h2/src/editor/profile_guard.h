@@ -20,5 +20,7 @@ void InstallProfileGuard();
 void ProtectProfile();
 // Whether the profile is kept from the level now.
 bool ProfileProtected();
+// Called when the level routine's MissionCompleted runs (an escalation's stage done: stages.h).
+void SetMissionCompletedListener(void (*fn)());
 
 } // namespace h2::editor

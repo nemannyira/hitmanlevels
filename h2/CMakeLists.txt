@@ -38,6 +38,7 @@ add_library(h2fix SHARED
     src/editor/npc_docs.cpp
     src/editor/playtest.cpp
     src/editor/profile_guard.cpp
+    src/editor/stages.cpp
     src/editor/vehicles.cpp
     src/editor/own_map.cpp
     src/editor/testtools.cpp

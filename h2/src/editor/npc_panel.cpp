@@ -1415,6 +1415,7 @@ void DrawPanel()
         DrawTarget();
         if (g_target)
             DrawMissionForSelection(g_target);
+            DrawStagesForSelection(g_target);
     } else
         ImGui::TextDisabled("Select a character (click it, or in the list below) to see and change its behaviour.");
     DrawList();

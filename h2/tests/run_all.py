@@ -44,6 +44,8 @@ TESTS = [
     ("saveload", ["saveload_test.py"], 600, False),
     ("knockout", ["knockout_test.py"], 600, False),
     ("behaviours", ["behaviours_test.py"], 600, False),
+    ("escalation", ["escalation_test.py"], 900, False),  # (#23: a level in stages)
+    ("escalation_example", ["escalation_example_test.py"], 900, False),  # (#29: played through)
     ("take_action", ["take_action_test.py"], 600, False),
     ("copies", ["copies_test.py"], 600, False),
     ("copies2", ["copies2_test.py"], 600, False),

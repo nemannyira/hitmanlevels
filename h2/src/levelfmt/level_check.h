@@ -22,7 +22,9 @@ constexpr size_t kMaxLists = 256;      // lists changed, new lists
 constexpr size_t kMaxListPoints = 256; //   points of one
 constexpr size_t kMaxScripts = 16;
 constexpr size_t kMaxVehicles = 64;
-constexpr size_t kMaxObjectives = 6;   // the laptop's lines
+constexpr size_t kMaxObjectives = 60;  // the laptop's lines (6; an escalation's stages each their own)
+constexpr size_t kMaxStages = 10;      // an escalation's stages
+constexpr size_t kMaxRules = 64;       //   their rules
 constexpr size_t kMaxImports = 256;    // models of other levels
 // points shown on the in-game map: the map draws 256 icons on a floor (engine::InstallIngameMap). (1800
 // of them on C1-1 overran the routines' arena once: fixed in engine/inject.cpp, RoutineArenaBytes.)

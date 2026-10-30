@@ -178,6 +178,31 @@ PC, so your next packages keep your fingerprint. The exported `preview.png` keep
 (its text and EXIF data stay home); names and titles may not hold invisible or direction-changing
 characters; the export says so when a file mentions your Windows user name.
 
+## Escalations: a level in stages
+
+A mission played in stages (1 to 10), one after another, each the one before
+and more: more characters, other objects, another objective, a rule (as the
+new games' *Escalation* contracts; [escalation.md](escalation.md)).
+
+* *Mission* tab > *Stages (escalation)* > *Make it an escalation*: the level
+  is stage 1 of 1. The toolbar gets *Stage 1 [+]*: *+* adds a stage after the
+  last; a stage's button loads the map for it (saved first).
+* The map shows the stage chosen: what is placed now comes in it (from it
+  on). The Inspector's *stages ... to ...* row of a selected object,
+  character or map object says in which stages it is there: a map object out
+  of its stages is hidden (a door locked from stage 3: *stages 1 to 2*).
+  Objectives have the same row (the Mission tab, each line).
+* Each stage in the *Stages* section: its name, the laptop's text of it, the
+  rules coming in it (*Add a rule*: never be seen, a time limit, no innocents
+  killed, no disguise, one disguise at most), each *fails the stage* or *only
+  noted*. *Stages done can be played again*: the player's choice of the stages
+  done (the next one is always open).
+* *Test* plays the stage shown. The *Problems* list names a stage without
+  an objective.
+* Playing: the launcher shows *Escalation: stage 2 of 3* and the stage to
+  start (the next one, or one done when the level allows it); a stage done
+  opens the next. The player's progress is `Save\escalations.json`.
+
 ## Good to know (from playing levels through)
 
 * The game offers "Pick up" for an item only while its own point is above

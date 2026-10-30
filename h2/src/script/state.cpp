@@ -430,6 +430,8 @@ void InstallState()
 
 void SetBeforeGameLoad(void (*fn)()) { g_beforeGameLoad = fn; }
 
+std::string StateFile(unsigned slot) { return StatePath(slot); }
+
 void SetSaveExtra(std::string (*save)(), void (*load)(const std::string&))
 {
     g_saveExtra = save;

@@ -103,6 +103,7 @@ place it without one (`h2.npc(..., false)` or in the editor).
 | `h2.info(text [, kind])` | the game's own info line ("Info: ...", "Warning:", "Hint:" in its colour, bottom left); `kind`: `"info"` (default), `"warning"`, `"hint"`; one paragraph. A subtitle takes the same place |
 | `h2.briefing(text)` | the laptop's briefing (`""`: the level's own) |
 | `h2.mission("complete" | "fail")` | ends the mission (statistics, saved progress) |
+| `h2.stage()` | an escalation's stage played, the count of its stages and the stage's name (`0, 0, ""` for a plain level); its rules keep their state in `h2.state.__stage` |
 | `h2.basemission([on])` | whether the base level's own logic (its targets, its exit) may end the mission; the level's setting: `"mission": { "base_ends": false }` or the Mission panel. Off: such an end is only reported (`"mission"` event, `e.stopped`); Hitman's death still fails it |
 | `h2.music()`, `h2.music(zone, track)` | music zones and tracks |
 | `h2.sky([level])` | the sky of another level (`"C3-3"`; `""`: the map's own) |

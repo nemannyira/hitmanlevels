@@ -11,6 +11,7 @@
 #include "../log.h"
 #include "level.h"
 #include "model.h"
+#include "stages.h"
 #include "vehicles.h"
 
 namespace h2::editor {
@@ -49,7 +50,7 @@ std::vector<PlanModel> PlanModels()
         return out;
     const LevelDocument& L = CurrentLevel();
     for (const SpawnedObject& s : L.spawned) {
-        if (s.item || s.point || s.hidden || IsVehicleCopy(L.vehicles, s.id) ||
+        if (s.item || s.point || s.hidden || IsVehicleCopy(L.vehicles, s.id) || !InStage(s.span) ||
             !(s.sourceScene.empty() || s.sourceScene == L.baseScene ||
               (!L.ownMapOf.empty() && s.sourceScene == L.ownMapOf)))
             continue;
@@ -182,7 +183,7 @@ std::string MissionMapIcon(const std::string& name)
     if (name.empty())
         return "";
     for (const MissionObjective& o : m.objectives)
-        if (IsTargetGoal(o) && NameOf(o.target) == name)
+        if (IsTargetGoal(o) && NameOf(o.target) == name && InStage(o.span))
             return "Icon_Target";
     return !m.exitPath.empty() && NameOf(m.exitPath) == name ? "Icon_Exit" : "";
 }
@@ -198,7 +199,7 @@ std::vector<engine::SceneMapIcon> MapIconsFor(const std::string& scene)
     if (!L.mission.baseEnds)
         out.push_back({"", "Icon_Enemy", "Icon_Target"});
     for (const MissionObjective& o : L.mission.objectives) {
-        if (!IsTargetGoal(o) || o.target.empty())
+        if (!IsTargetGoal(o) || o.target.empty() || !InStage(o.span))
             continue;
         std::string name = NameOf(o.target);
         bool own = std::any_of(L.npcs.begin(), L.npcs.end(), [&](const LevelNpc& n) { return n.id == name; });
@@ -287,7 +288,7 @@ void PlaceMapModels()
         }
     }
     for (const SpawnedObject& s : CurrentLevel().spawned)  // (SceneCopy::mapIcon: its own, else the mission's)
-        if (s.point && !(s.mapIcon.empty() && MissionMapIcon(s.id).empty()))
+        if (s.point && InStage(s.span) && !(s.mapIcon.empty() && MissionMapIcon(s.id).empty()))
             put(s.id + "_MapIcon", s.transform.pos, true);
     if (made)
         Log("level: %d/%d of its models and icons on the in-game map's floors", placed, made);

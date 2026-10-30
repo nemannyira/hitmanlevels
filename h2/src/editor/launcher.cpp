@@ -25,6 +25,7 @@
 #include "level.h"
 #include "mission.h"
 #include "model.h"
+#include "stages.h"
 
 namespace h2::editor {
 
@@ -96,9 +97,12 @@ struct Saved {
     std::vector<std::string> objectives;  // their lines
     int characters = 0;
     bool emptyMap = false, blankMap = false;
+    std::vector<std::string> stages;      // an escalation's stages (their names; none: a plain level)
+    bool replay = true;                   // the stages done can be played again
 };
 std::vector<Saved> g_saved;
 int g_pick = -1;
+int g_pickStage;  // an escalation's stage to play (0: the next open one)
 std::string g_message;
 
 // after the map is loaded: open the editor
@@ -271,6 +275,13 @@ void LoadSavedList()
             s.blankMap = j.contains("blank_map") && j["blank_map"].is_boolean() && j["blank_map"].get<bool>();
             if (j.contains("npcs") && j["npcs"].is_array())
                 s.characters = int(j["npcs"].size());
+            if (j.contains("stages") && j["stages"].is_array())
+                for (const auto& st : j["stages"])
+                    if (st.is_object() && s.stages.size() < size_t(kMaxStages))
+                        s.stages.push_back(st.contains("name") && st["name"].is_string()
+                                               ? st["name"].get<std::string>().substr(0, 63)
+                                               : "");
+            s.replay = !(j.contains("replay") && j["replay"].is_boolean() && !j["replay"].get<bool>());
             if (j.contains("mission") && j["mission"].is_object()) {
                 const auto& m = j["mission"];
                 if (m.contains("briefing") && m["briefing"].is_string())
@@ -317,6 +328,44 @@ void DrawSavedDetails(const Saved& s)
         ImGui::TextDisabled("%s", s.from.c_str());
     if (s.characters > 0)
         ImGui::TextDisabled("%d character%s of its own", s.characters, s.characters == 1 ? "" : "s");
+    if (!s.stages.empty()) {  // an escalation: the player's progress, the stage to play
+        int count = int(s.stages.size()), done = StagesDone(s.folder);
+        if (done >= count)
+            ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Escalation of %d stages: all done%s", count,
+                               [&] {
+                                   for (int k = 1; k <= count; ++k)
+                                       if (!StageDoneCleanly(s.folder, k))
+                                           return " (not all cleanly)";
+                                   return "";
+                               }());
+        else
+            ImGui::TextDisabled("Escalation: stage %d of %d", done + 1, count);
+        int next = std::min(done + 1, count);
+        if (g_pickStage < 1 || g_pickStage > count || !StagePlayable(s.folder, g_pickStage, count, s.replay))
+            g_pickStage = next;
+        auto label = [&](int k) {
+            std::string l = "Stage " + std::to_string(k);
+            if (!s.stages[size_t(k - 1)].empty())
+                l += ": " + s.stages[size_t(k - 1)];
+            if (k <= done)
+                l += StageDoneCleanly(s.folder, k) ? "  (done)" : "  (done, not cleanly)";
+            return l;
+        };
+        ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
+        if (ImGui::BeginCombo("stage", label(g_pickStage).c_str())) {
+            for (int k = 1; k <= count; ++k) {
+                bool playable = StagePlayable(s.folder, k, count, s.replay);
+                ImGui::BeginDisabled(!playable);
+                if (ImGui::Selectable(label(k).c_str(), k == g_pickStage))
+                    g_pickStage = k;
+                ImGui::EndDisabled();
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(s.replay ? "The next stage, or one done already" : "The next stage (the level does "
+                                                                                  "not let the stages done be played again)");
+    }
     for (const std::string& o : s.objectives)
         ImGui::BulletText("%s", o.c_str());
     if (!s.briefing.empty()) {
@@ -430,6 +479,8 @@ void DrawLauncher()
                         if (ImGui::Selectable(label, int(i) == g_pick,
                                               ImGuiSelectableFlags_SpanAllColumns |
                                                   ImGuiSelectableFlags_AllowDoubleClick)) {
+                            if (g_pick != int(i))
+                                g_pickStage = 0;
                             g_pick = int(i);
                             go = ImGui::IsMouseDoubleClicked(0);
                         }
@@ -456,6 +507,8 @@ void DrawLauncher()
                     std::string err;
                     const Saved& s = g_saved[g_pick];
                     if (LoadLevel(s.folder, &err) && !s.scene.empty()) {
+                        if (!s.stages.empty())  // (an escalation: the stage chosen; Edit any)
+                            SetCurrentStage(g_pickStage >= 1 ? g_pickStage : 1);
                         StartOn(s.scene);
                         g_editAfterStart = edit;
                     } else {
@@ -549,6 +602,8 @@ void DrawEntry()
 }
 
 } // namespace
+
+void OpenLevelLauncher() { OpenLauncher(); }
 
 std::string MapTitle(const std::string& scene)
 {

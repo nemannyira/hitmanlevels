@@ -78,6 +78,25 @@ CASES = [
     ("a huge string", base(name="x" * 100000), True, False),
     ("music not an object", base(music=["a"]), True, False),
     ("a list of 257 points", base(lists=[{"path": "ROOT/x", "points": ["ROOT/p"] * 257}]), True, False),
+    # an escalation (#24): stages, rules, the stages of what is placed
+    ("an escalation", base(stages=[{"name": "One", "text": "a\nb"}, {"name": "Two"}],
+                           rules=[{"kind": "time", "seconds": 60, "stage": 2, "broken": "note"}], replay=False,
+                           spawned=[dict(P, id="a", kind="point", stage=2)],
+                           npcs=[{"pos": [1.0, 2.0, 3.0], "matrix": M, "id": "n", "record": 1, "model": "M", "gone_from": 2}],
+                           mission={"objectives": [{"slot": 1, "goal": "level", "stage": 1, "gone_from": 2}]}),
+     False, False),
+    ("11 stages", base(stages=[{"name": "S"}] * 11), True, False),
+    ("no stages ([])", base(stages=[]), True, False),
+    ("a stage of a level without stages", base(spawned=[dict(P, id="a", kind="point", stage=2)]), True, False),
+    ("a stage past the last", base(stages=[{"name": "S"}], spawned=[dict(P, id="a", kind="point", stage=2)]),
+     True, False),
+    ("gone before it comes", base(stages=[{"name": "S"}] * 3, spawned=[dict(P, id="a", kind="point", stage=3,
+                                                                          gone_from=2)]), True, False),
+    ("a rule not of the editor's", base(stages=[{"name": "S"}], rules=[{"kind": "format_c"}]), True, False),
+    ("a rule broken neither fail nor note", base(stages=[{"name": "S"}], rules=[{"kind": "unseen", "broken": "x"}]),
+     True, False),
+    ("rules without stages", base(rules=[{"kind": "unseen"}]), True, False),
+    ("a time limit of 1 s", base(stages=[{"name": "S"}], rules=[{"kind": "time", "seconds": 1}]), True, False),
 ]
 
 if not os.path.exists(EXE):

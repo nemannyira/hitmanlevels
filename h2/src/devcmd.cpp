@@ -21,6 +21,7 @@ extern "C" {
 #include "config.h"
 #include "editor/highlight.h"
 #include "editor/history.h"
+#include "editor/launcher.h"
 #include "editor/level.h"
 #include "editor/mission.h"
 #include "editor/model.h"
@@ -28,6 +29,7 @@ extern "C" {
 #include "editor/own_map.h"
 #include "editor/playtest.h"
 #include "editor/scene_panel.h"
+#include "editor/stages.h"
 #include "editor/vehicles.h"
 #include "engine/collision.h"
 #include "engine/game_events.h"
@@ -179,6 +181,27 @@ int LoadGameCmd(lua_State* L)
         g_sceneAsked = asked;
     lua_pushboolean(L, ok);
     return 1;
+}
+
+// h2.dev_stage([n]) -> the stage, the count of stages: with n, the level's map loads again for stage n
+// (an escalation: editor/stages.h; as the stage bar does; false and why when it does not)
+int StageCmd(lua_State* L)
+{
+    if (lua_gettop(L) >= 1) {
+        editor::SetCurrentStage(int(luaL_checkinteger(L, 1)));
+        bool asked = g_sceneAsked;
+        g_sceneAsked = true;  // (before: the scene may come in while the call is under way)
+        std::string err;
+        if (!editor::ReloadLevelMap(&err)) {
+            g_sceneAsked = asked;
+            lua_pushboolean(L, false);
+            lua_pushstring(L, err.c_str());
+            return 2;
+        }
+    }
+    lua_pushinteger(L, editor::CurrentStage());
+    lua_pushinteger(L, editor::StageCount());
+    return 2;
 }
 
 // h2.dev_roomlists() -> free, all: the scene's room lists of moving objects (engine::RoomListsFree)
@@ -1304,6 +1327,11 @@ void InstallDevCommands()
     script::Register("dev_crash", CrashCmd);
     script::Register("dev_ready", Ready);
     script::Register("dev_roomlists", RoomListsCmd);
+    script::Register("dev_stage", StageCmd);
+    script::Register("dev_launcher", [](lua_State*) {  // the main menu's Level editor window
+        editor::OpenLevelLauncher();
+        return 0;
+    });
     script::Register("dev_export", ExportCmd);
     OnScenePushed([](const std::string&) {
         g_sceneAsked = false;

@@ -38,8 +38,14 @@
 //   "music": { "ROOT/.../MusicControl/InsideAndOutside/Location_01": "RussiaSlow" },
 //   "vehicles": [ { "object": "ROOT/.../CarFerrari+1", "route": ["ROOT/.../Point+4", ...],
 //                   "speed": 800, "loop": true, "reverse": false } ],  // driven along their points
-//   "scripts": ["main.lua"]                     // level scripts, relative to the folder
+//   "scripts": ["main.lua"],                    // level scripts, relative to the folder
+//   "stages": [ { "name": "Quietly", "text": "..." }, ... ],  // an escalation (#23, docs/escalation.md):
+//   "rules": [ { "kind": "unseen", "stage": 2, "broken": "fail" } ],  // played in stages, 1 to 10;
+//   "replay": true                              // the stages done can be played again
 // }
+// An escalation's placed objects, characters, edits of the map's objects and objectives have
+// "stage": N (there from stage N on; absent: from the first) and "gone_from": M (not there from
+// stage M on), as its rules.
 //
 // A level built "from scratch" later is the same document on an empty base scene.
 #include <map>
@@ -52,11 +58,19 @@
 
 namespace h2::editor {
 
+// The stages a thing of an escalation is there in (stages.h): from `from` (0: the first) until
+// `gone` (0: never gone).
+struct StageSpan {
+    int from = 0;
+    int gone = 0;
+};
+
 struct ObjectEdit {
     std::string className;
     ObjectState original;  // state before the level changed it (this session)
     ObjectState state;
     bool hasOriginal = false;
+    StageSpan span;  // out of it the object is hidden (an escalation's map object taken away or added)
 };
 
 struct SpawnedObject {
@@ -85,6 +99,7 @@ struct SpawnedObject {
     // A point's icon on the in-game map (engine::MapIconNames(); "": none),
     // made with the map (engine/inject.h SceneCopy::mapIcon).
     std::string mapIcon;
+    StageSpan span;
 };
 
 struct LevelNpc {
@@ -100,6 +115,7 @@ struct LevelNpc {
     std::string behaviour;   // full script name
     std::string behaviourLevel;  // the level whose scripts have it ("": this map's; engine/script_files.h)
     std::vector<ParamValue> params;
+    StageSpan span;
 };
 
 struct NpcEditEntry {        // changed behaviour settings of a character of the scene
@@ -119,6 +135,7 @@ struct MissionObjective {
     bool failsMission = false;     // Unseen: being spotted fails the mission too
     float radius = 250.0f;         // Reach: how near Hitman has to get; Take (not an item): to take it
     bool replacesOriginal = true;  // the level's own completion of this line no longer counts
+    StageSpan span;
 };
 
 struct MissionDoc {
@@ -140,6 +157,20 @@ struct ImportedModel {        // a model of another level the map is loaded with
     std::string animSet;      // a body's animations ("Reg_Male")
     uint32_t outfitMesh = 0;  // its clothes on Hitman and its body without them (loaded with it)
     uint32_t nudeMesh = 0;
+};
+
+// An escalation's stage (the stages a level is played in, one after another: stages.h)
+struct LevelStage {
+    std::string name;  // "Quietly"
+    std::string text;  // what the laptop's briefing says of it
+};
+
+// A rule of an escalation's stages, checked while playing (stages.h)
+struct StageRule {
+    std::string kind;     // "unseen", "time", "no_innocents", "no_disguise", "one_disguise"
+    StageSpan span;
+    bool fails = true;    // broken: the stage is failed; false: only noted (done, but not clean)
+    int seconds = 300;    // "time"
 };
 
 struct LevelDocument {
@@ -177,6 +208,10 @@ struct LevelDocument {
     std::vector<std::string> scripts;
     std::vector<ImportedModel> imports;
     std::vector<LevelVehicle> vehicles;  // objects driving routes when the level is played
+    // an escalation: its stages (none: a plain level), its rules, whether the stages done can be played again
+    std::vector<LevelStage> stages;
+    std::vector<StageRule> rules;
+    bool replay = true;
     // its package (levelfmt/package.h): the id it is installed under elsewhere, the version exported last
     std::string packageId;
     int packageVersion = 0;
@@ -344,6 +379,9 @@ bool ImportedModelOf(const std::string& sourcePath, std::string& level, uint32_t
 std::vector<std::string> ListLevels();
 // When a level was last saved: its level.json's time, local ("2026-10-06 14:32"; "" unknown).
 std::string LevelModified(const std::string& folder);
+
+// The Inspector's row of an escalation's stages for the selected object or character (stages.h).
+void DrawStagesForSelection(engine::ZGEOM* geom);
 
 // "Level" panel and automatic application when the base scene loads.
 void InstallLevelPanel();

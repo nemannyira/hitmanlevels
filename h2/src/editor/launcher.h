@@ -13,5 +13,7 @@ namespace h2::editor {
 void InstallLauncher();
 // The game's name of a map ("Kirov Park Meeting" for "C2-2\\C2-2__MAIN"); the scene's own name else.
 std::string MapTitle(const std::string& scene);
+// Opens the main menu's Level editor window (as its entry does).
+void OpenLevelLauncher();
 
 } // namespace h2::editor

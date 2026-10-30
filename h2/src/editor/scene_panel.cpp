@@ -290,6 +290,7 @@ void DrawInspector()
             ImGui::TextDisabled("level object, copy of %s", spawned->sourcePath.c_str());
     }
     DrawMissionForSelection(geom);
+    DrawStagesForSelection(geom);
     DrawVehicleForSelection(geom);
 }
 

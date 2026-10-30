@@ -23,6 +23,7 @@
 #include "playtest.h"
 #include "placement.h"
 #include "scene_panel.h"
+#include "stages.h"
 
 namespace h2::editor {
 
@@ -360,6 +361,12 @@ void DrawToolbar()
     ImGui::TextDisabled("|");
     ImGui::SameLine();
     DrawSaveControl();
+    if (IsEscalation()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        DrawStageBar();
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();

@@ -194,8 +194,12 @@ new games' *Escalation* contracts; [escalation.md](escalation.md)).
   Objectives have the same row (the Mission tab, each line).
 * Each stage in the *Stages* section: its name, the laptop's text of it, the
   rules coming in it (*Add a rule*: never be seen, a time limit, no innocents
-  killed, no disguise, one disguise at most), each *fails the stage* or *only
-  noted*. *Stages done can be played again*: the player's choice of the stages
+  killed, no disguise, one disguise at most, targets killed only with a
+  weapon, no firearm drawn), each *fails the stage* or *only noted*. *Targets
+  killed only with...* checks the weapon in Hitman's hands when a *Kill*
+  target of the stage dies (a kind: the fiber wire, a knife, close combat, a
+  pistol, a firearm; or one weapon of the map); with no target in the stage,
+  every kill of his. *Stages done can be played again*: the player's choice of the stages
   done (the next one is always open).
 * *Test* plays the stage shown. The *Problems* list names a stage without
   an objective.

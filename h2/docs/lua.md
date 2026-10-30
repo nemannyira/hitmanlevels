@@ -64,6 +64,7 @@ been given stops. Hitman can be moved anywhere too
 | call | |
 |---|---|
 | `h2.player()` | Hitman |
+| `h2.hand()` | the item in Hitman's hands, its kind (a weapon's: `"pistol"`, `"revolver"`, `"smg"`, `"machinegun"`, `"rifle"`, `"pumpgun"`, `"shotgun"`, `"rocketlauncher"`, `"knife"`, `"fiberwire"`, `"other"` (chloroform), `"grenade"`; `""`: not a weapon) and its template's name; `nil`: empty hands |
 | `h2.give(item | template [, character])` | the item goes to the character (default Hitman: into his inventory, as if picked up; a weapon can be drawn, a key is carried out of sight); a template name makes the item first. A character keeps it (it is not dropped when it dies: for that `npc:carry`). Not ammunition (it counts only when picked up: lay it down with `h2.item`); A given weapon has an empty clip |
 | `h2.outfit(model)` | Hitman in the clothes of a character model of the map (`"Postman"`, `"BodyguardMafia_01"`): one is made under the map, gives its clothes and stays out of sight. A level's own: Level tab > *Hitman starts in* (`"start_outfit"` in level.json) |
 | `h2.disguise(character | clothes item)` | Hitman takes its clothes (as from a body: the character is left in underwear) |

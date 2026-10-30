@@ -80,7 +80,9 @@ CASES = [
     ("a list of 257 points", base(lists=[{"path": "ROOT/x", "points": ["ROOT/p"] * 257}]), True, False),
     # an escalation (#24): stages, rules, the stages of what is placed
     ("an escalation", base(stages=[{"name": "One", "text": "a\nb"}, {"name": "Two"}],
-                           rules=[{"kind": "time", "seconds": 60, "stage": 2, "broken": "note"}], replay=False,
+                           rules=[{"kind": "time", "seconds": 60, "stage": 2, "broken": "note"},
+                                  {"kind": "kill_with", "weapon": "fiberwire"}, {"kind": "no_firearm"},
+                                  {"kind": "kill_with", "weapon": "GunHardballer"}], replay=False,
                            spawned=[dict(P, id="a", kind="point", stage=2)],
                            npcs=[{"pos": [1.0, 2.0, 3.0], "matrix": M, "id": "n", "record": 1, "model": "M", "gone_from": 2}],
                            mission={"objectives": [{"slot": 1, "goal": "level", "stage": 1, "gone_from": 2}]}),
@@ -96,6 +98,8 @@ CASES = [
     ("a rule broken neither fail nor note", base(stages=[{"name": "S"}], rules=[{"kind": "unseen", "broken": "x"}]),
      True, False),
     ("rules without stages", base(rules=[{"kind": "unseen"}]), True, False),
+    ("a weapon name with a path", base(stages=[{"name": "S"}], rules=[{"kind": "kill_with", "weapon": "../x"}]),
+     True, False),
     ("a time limit of 1 s", base(stages=[{"name": "S"}], rules=[{"kind": "time", "seconds": 1}]), True, False),
 ]
 

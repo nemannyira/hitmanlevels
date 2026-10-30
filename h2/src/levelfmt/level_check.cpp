@@ -356,14 +356,16 @@ Report CheckLevel(const json& j, bool strict)
     if (j.contains("stages") && j["stages"].is_array() && j["stages"].empty())
         c.Bad("level.stages", "none (a level without stages has no \"stages\")");
     c.Array(j, "rules", "", kMaxRules, [&](const json& o, const std::string& w) {
-        if (!c.Object(o, w, {"kind", "stage", "gone_from", "broken", "seconds"}))
+        if (!c.Object(o, w, {"kind", "stage", "gone_from", "broken", "seconds", "weapon"}))
             return;
-        static const std::set<std::string> kinds = {"unseen", "time", "no_innocents", "no_disguise", "one_disguise"};
+        static const std::set<std::string> kinds = {"unseen",       "time",      "no_innocents", "no_disguise",
+                                                    "one_disguise", "kill_with", "no_firearm"};
         if (!o.contains("kind") || !o["kind"].is_string() || !kinds.count(o["kind"].get<std::string>()))
             c.Bad(w + ".kind", "not a rule of the editor's");
         if (o.contains("broken") && (!o["broken"].is_string() || (o["broken"] != "fail" && o["broken"] != "note")))
             c.Bad(w + ".broken", "not fail / note");
         c.Int(o, "seconds", w, 10, 4 * 3600);
+        c.Name(o, "weapon", w, 64, "_-");  // (a kind of weapon or a weapon template's name)
         c.Span(o, w);
     });
     if (j.contains("rules") && !j.contains("stages"))

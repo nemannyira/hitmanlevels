@@ -3,6 +3,13 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-31: rules of the weapon in hand (#28)
+
+* Two more rules of an escalation's stages: *targets killed only with...*
+  (the fiber wire, a knife, close combat, a pistol, a firearm, or one weapon
+  of the map) and *no firearm drawn*.
+* Scripts: `h2.hand()`, the item in Hitman's hands and its kind.
+
 ## 2026-10-30: escalations, levels in stages (#23-#27)
 
 * A level can be an escalation: played in stages (1 to 10), one after

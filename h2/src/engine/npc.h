@@ -34,6 +34,17 @@ bool SetActorCollides(ZGEOM* actor, bool on);
 bool GiveItem(ZGEOM* item, ZGEOM* owner);
 // Whether a character (or Hitman) owns the item (ZITEM +0x64); its ref in `owner`.
 bool ItemHolder(ZGEOM* item, uint32_t& owner);
+// The item in Hitman's hands (the one drawn: ZHITMAN2 +0x3C5 is its ref, 0 when his hands are empty;
+// found drawing the anaesthetic and the Ballers on C1-1); null: none.
+ZGEOM* HandItem();
+// An item's template (ZITEM +0x60, a ref: the one it was made of); null: none.
+ZGEOM* ItemTemplate(ZGEOM* item);
+// A weapon item's kind: its template's "Type" (ZItemTemplateWeapon +0xB8, as the class describes it:
+// Pistol 0, Revolver, SubMachineGun, MachineGun, Rifle, PumpGun, ShotGun, RocketLauncher, Knife 8,
+// Piano 9 (the fiber wire), Other 10 (the anaesthetic), Grenade 11); -1: not a weapon.
+int WeaponKind(ZGEOM* item);
+// The kinds' names ("pistol", ..., "fiberwire", "other", "grenade"; "" out of range).
+const char* WeaponKindName(int kind);
 // Room left in the engine's buffers for new objects (sized while the scene
 // loads; full, the game goes down): nodes (0x70 bytes each) and the objects'
 // own memory (bytes; the largest free block too). -1: not known.

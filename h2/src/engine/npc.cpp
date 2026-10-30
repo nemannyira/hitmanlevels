@@ -13,6 +13,7 @@
 #include "imports.h"
 #include "inject.h"
 #include "lists.h"
+#include "messages.h"
 #include "spawn.h"
 
 namespace h2::engine {
@@ -826,6 +827,57 @@ bool ItemHolder(ZGEOM* item, uint32_t& owner)
         return false;
     ItemHeld(reinterpret_cast<char*>(item), owner);
     return owner != 0;
+}
+
+namespace {
+
+constexpr size_t kHitman_HandItem = 0x3C5;  // (unaligned, a ref)
+constexpr size_t kItem_Template = 0x60;
+constexpr size_t kWeaponTemplate_Type = 0xB8;
+
+uint32_t ReadRef(const void* at)
+{
+    __try {
+        return *reinterpret_cast<const uint32_t*>(at);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+} // namespace
+
+ZGEOM* HandItem()
+{
+    ZGEOM* hitman = Player();
+    if (!hitman || !IsReadable(reinterpret_cast<char*>(hitman) + kHitman_HandItem, 4))
+        return nullptr;
+    uint32_t ref = ReadRef(reinterpret_cast<char*>(hitman) + kHitman_HandItem);
+    ZGEOM* item = ref ? GeomOfRef(ref) : nullptr;
+    return item && IsA(item, "ZItem") ? item : nullptr;
+}
+
+ZGEOM* ItemTemplate(ZGEOM* item)
+{
+    if (!item || !IsReadable(reinterpret_cast<char*>(item) + kItem_Template, 4))
+        return nullptr;
+    uint32_t ref = ReadRef(reinterpret_cast<char*>(item) + kItem_Template);
+    return ref ? GeomOfRef(ref) : nullptr;
+}
+
+int WeaponKind(ZGEOM* item)
+{
+    ZGEOM* t = ItemTemplate(item);
+    if (!t || !IsA(t, "ZItemTemplateWeapon") || !IsReadable(reinterpret_cast<char*>(t) + kWeaponTemplate_Type, 1))
+        return -1;
+    int kind = *(reinterpret_cast<const uint8_t*>(t) + kWeaponTemplate_Type);
+    return kind <= 11 ? kind : -1;
+}
+
+const char* WeaponKindName(int kind)
+{
+    static const char* names[] = {"pistol", "revolver", "smg",       "machinegun", "rifle", "pumpgun",
+                                  "shotgun", "rocketlauncher", "knife", "fiberwire", "other", "grenade"};
+    return kind >= 0 && kind < 12 ? names[kind] : "";
 }
 
 bool GiveItem(ZGEOM* item, ZGEOM* owner)

@@ -103,13 +103,17 @@ try:
     level["stages"] = [{"name": "One", "text": "The first."}, {"name": "Two", "text": ""},
                        {"name": "Three", "text": ""}]
     level["rules"] = [{"kind": "time", "seconds": 600, "stage": 2, "broken": "note"},
+                      {"kind": "kill_with", "weapon": "fiberwire", "stage": 2, "broken": "note"},
+                      {"kind": "no_firearm", "stage": 2, "broken": "note"},
                       {"kind": "unseen", "stage": 3, "broken": "fail"},
                       {"kind": "time", "seconds": 15, "stage": 3, "broken": "fail"}]
     level["replay"] = False
     level["mission"] = {"objectives": [
         {"slot": 1, "text": "Get to A", "goal": "reach", "target": a, "radius": 250, "replaces_original": True},
         {"slot": 2, "text": "Get to B", "goal": "reach", "target": b, "radius": 250, "replaces_original": True,
-         "stage": 2}], "end_when_done": False, "exit": "", "exit_radius": 300}
+         "stage": 2},
+        {"slot": 3, "text": "Kill him", "goal": "kill", "target": "ROOT/%s_Group/%s" % (npc, npc),
+         "replaces_original": True, "stage": 2}], "end_when_done": False, "exit": "", "exit_radius": 300}
     with open(path, "w", encoding="utf-8") as f:
         json.dump(level, f, indent=2)
     if os.path.exists(PROGRESS):
@@ -129,11 +133,25 @@ try:
     check("stage 2: B comes", found(name[a]) and found(name[b]) and found(name[c]))
     check("stage 2: the map object gone (hidden)", hidden(crate))
     check("stage 2: its character", found(npc))
-    check("stage 2: its rule (time)", lua("local r = h2._stagerules() return #r .. r[1].kind") == "1time")
+    check("stage 2: its rules", lua("local r = h2._stagerules() return #r .. r[1].kind .. r[2].kind .. r[3].kind")
+          == "3timekill_withno_firearm")
+    # #28: the weapon in Hitman's hands (h2.hand): a firearm drawn, a kill with it
+    for _ in range(3):
+        if lua("local _, k = h2.hand() return k or ''") == "pistol":
+            break
+        lua("h2.dev_key(3, 0.3) return 1")  # (2: his pistols)
+        time.sleep(4)
+    check("stage 2: a pistol in Hitman's hands (h2.hand)", lua("local _, k = h2.hand() return k or ''") == "pistol")
+    time.sleep(1)
+    check("stage 2: no firearm drawn: broken", lua("return tostring(h2.state.__stage.broken['3'])") == "true")
+    lua('h2.find("%s"):kill() return 1' % npc)  # (a target of stage 2: its death)
+    time.sleep(3)
+    check("stage 2: killed with the pistol, not the wire: broken",
+          lua("return tostring(h2.state.__stage.broken['2'])") == "true")
 
     stage(3)
     check("stage 3: C gone", found(name[a]) and found(name[b]) and not found(name[c]))
-    check("stage 3: its rules and stage 2's", lua("return #h2._stagerules()") == "3")
+    check("stage 3: its rules and stage 2's", lua("return #h2._stagerules()") == "5")
     lua('ESC_RESULT = nil h2.on("mission", function(e) ESC_RESULT = e.result end) return 1')
     time.sleep(25)  # (its 15 s, game time)
     check("stage 3: the time up fails it", lua("return tostring(ESC_RESULT)") == "failed")

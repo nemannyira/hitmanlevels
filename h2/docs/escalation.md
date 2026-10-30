@@ -50,6 +50,14 @@ author's choice, on by default).
 
 ### Rules (a first set)
 
+The weapon in Hitman's hands (#28): `ZHITMAN2 +0x3C5` (unaligned) is the
+item's ref (0: empty hands), the item's template is `ZITEM +0x60`, a weapon
+template's *Type* `ZItemTemplateWeapon +0xB8`: pistol 0, revolver 1, SMG 2,
+machine gun 3, rifle 4, pump gun 5, shotgun 6, rocket launcher 7, knife 8,
+fiber wire 9 (*Piano*), other 10 (chloroform), grenade 11. Characters with no
+behaviour script report no kill to the level's statistics (no `kill` event),
+so a target's rule listens to its `death`.
+
 | rule | checked by | there now? |
 |---|---|---|
 | never spotted | the *unseen* goal | yes |
@@ -57,9 +65,9 @@ author's choice, on by default).
 | no innocents killed | the `kill` event's `kind` | yes |
 | no disguise / keep the start clothes | the `disguise` event | yes |
 | one disguise only (no change once taken) | the `disguise` event | as above |
-| kill a target only with X (an item, fiber wire, a firearm kind, an accident) | the `kill` event's `type` + the weapon Hitman holds | needs work: what `type` holds, the weapon in his hands |
-| no bodies found | the characters' "body found" reaction / the map's alarm | needs reverse engineering |
-| no firearm drawn | Hitman's drawn weapon | needs work |
+| kill a target only with X (fiber wire, a knife, close combat, a pistol, a firearm, one weapon of the map) | the stage's *Kill* targets' `death` (none: Hitman's `kill`), the weapon in his hands then (`h2.hand`) | yes (`kill_with`, #28) |
+| no firearm drawn | the weapon in Hitman's hands, twice a second | yes (`no_firearm`, #28) |
+| no bodies found | — | not yet: the game keeps no count of bodies found (the reaction is inside the characters' behaviour scripts); a TODO, #30 |
 | extra target | an objective of the stage | yes |
 | bring an object to a place | the *deliver* goal | yes |
 
@@ -104,6 +112,6 @@ The ones marked yes are the first version; the others follow.
 3. Rules of the first set, their laptop lines and on-screen notes, failing
    a stage. (done, #26)
 4. Launcher: stages, progress, the next stage opened. (done, #27)
-5. Rules that need reverse engineering (kill method, bodies found, drawn
-   weapon).
+5. Rules that need reverse engineering: kill method, drawn weapon (done,
+   #28); bodies found (later, #30).
 6. An example escalation in `examples/missions` and the docs.

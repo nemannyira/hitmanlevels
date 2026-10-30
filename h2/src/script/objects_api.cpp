@@ -346,6 +346,22 @@ int Player(lua_State* L)
     return 1;
 }
 
+// h2.hand() -> the item in Hitman's hands (nil: none), its weapon kind ("pistol", ..., "knife",
+// "fiberwire", "other": engine::WeaponKindName; "" not a weapon) and its template's name
+int Hand(lua_State* L)
+{
+    engine::ZGEOM* item = engine::HandItem();
+    if (!item) {
+        lua_pushnil(L);
+        return 1;
+    }
+    PushObject(L, editor::PathOf(item));
+    lua_pushstring(L, engine::WeaponKindName(engine::WeaponKind(item)));
+    engine::ZGEOM* t = engine::ItemTemplate(item);
+    lua_pushstring(L, t ? engine::SafeString(t->name).c_str() : "");
+    return 3;
+}
+
 // h2.sky([level]) -> level: the sky of another level ("C3-3"; "" = the map's own;
 // saved with the level, the map is loaded again for a sky not imported yet)
 int Sky(lua_State* L)
@@ -1383,6 +1399,7 @@ void RegisterObjectsApi()
     Register("npc", Npc);
     Register("point", Point);
     Register("player", Player);
+    Register("hand", Hand);
     Register("objective", Objective);
     Register("briefing", Briefing);
     Register("sky", Sky);

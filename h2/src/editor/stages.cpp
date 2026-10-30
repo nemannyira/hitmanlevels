@@ -20,6 +20,8 @@ extern "C" {
 #include "../script/events.h"
 #include "../script/lua_vm.h"
 #include "../script/state.h"
+#include "../engine/npc.h"
+#include "model.h"
 #include "mission.h"
 #include "profile_guard.h"
 
@@ -50,7 +52,28 @@ const RuleKind kRuleKinds[] = {
     {"no_innocents", "No innocents killed"},
     {"no_disguise", "No disguise (the start clothes)"},
     {"one_disguise", "One disguise at most"},
+    {"kill_with", "Targets killed only with..."},
+    {"no_firearm", "No firearm drawn"},
 };
+
+// "kill_with": the weapons a target may be killed with, by the kind of the weapon in Hitman's hands
+// (engine::WeaponKind, the template's "Type"), or one weapon (its template's name)
+struct WeaponChoice {
+    const char* value;
+    const char* label;
+};
+const WeaponChoice kWeaponChoices[] = {
+    {"fiberwire", "the fiber wire"},  {"knife", "a knife or blade"}, {"closecombat", "close combat (no firearm)"},
+    {"pistol", "a pistol or revolver"}, {"firearm", "a firearm"},
+};
+
+std::string WeaponText(const std::string& weapon)
+{
+    for (const WeaponChoice& c : kWeaponChoices)
+        if (weapon == c.value)
+            return c.label;
+    return weapon;  // (a weapon's own name: "GunHardballer")
+}
 
 const char* RuleLabel(const std::string& kind)
 {
@@ -68,6 +91,8 @@ std::string RuleText(const StageRule& r)
         snprintf(buf, sizeof(buf), "Within %d:%02d", r.seconds / 60, r.seconds % 60);
         return buf;
     }
+    if (r.kind == "kill_with")
+        return "Targets only with " + WeaponText(r.weapon);
     return RuleLabel(r.kind);
 }
 
@@ -98,6 +123,19 @@ int LuaStageRules(lua_State* s)
         lua_setfield(s, -2, "fails");
         lua_pushstring(s, RuleText(r).c_str());
         lua_setfield(s, -2, "text");
+        if (r.kind == "kill_with") {
+            lua_pushstring(s, r.weapon.c_str());
+            lua_setfield(s, -2, "weapon");
+            lua_newtable(s);  // the stage's targets (their objects' paths; none: every kill of Hitman's)
+            int t = 0;
+            for (const MissionObjective& o : CurrentLevel().mission.objectives)
+                if (o.goal == MissionObjective::Kill && InStage(o.span))
+                    if (engine::ZGEOM* g = ResolveTarget(o.target)) {
+                        lua_pushstring(s, PathOf(g).c_str());
+                        lua_rawseti(s, -2, ++t);
+                    }
+            lua_setfield(s, -2, "targets");
+        }
         lua_rawseti(s, -2, ++n);
     }
     return 1;
@@ -169,7 +207,8 @@ h2.on("load", function()
     if S.broken[tostring(r.i)] then h2._stagebroken(r.i, "", true) end
   end
 end)
-local disguises = 0
+local FIREARM = { pistol = true, revolver = true, smg = true, machinegun = true, rifle = true, pumpgun = true,
+                  shotgun = true, rocketlauncher = true }
 for _, r in ipairs(rules) do
   if r.kind == "unseen" then
     h2.on("spotted", function() broke(r, "You were seen") end)
@@ -181,6 +220,30 @@ for _, r in ipairs(rules) do
     h2.on("disguise", function()
       S.disguises = (S.disguises or 0) + 1
       if S.disguises > 1 then broke(r, "A second disguise") end
+    end)
+  elseif r.kind == "kill_with" then
+    -- the weapon in Hitman's hands when a target dies (h2.hand: its kind, its template's name)
+    local function check()
+      local _, kind, name = h2.hand()
+      kind, name = kind or "", (name or ""):lower()
+      local ok = (r.weapon == "fiberwire" and kind == "fiberwire") or (r.weapon == "knife" and kind == "knife") or
+        (r.weapon == "pistol" and (kind == "pistol" or kind == "revolver")) or
+        (r.weapon == "closecombat" and (kind == "knife" or kind == "fiberwire" or kind == "other")) or
+        (r.weapon == "firearm" and FIREARM[kind]) or (name ~= "" and name == r.weapon:lower())
+      if not ok then broke(r, "A target killed with another weapon") end
+    end
+    if #r.targets > 0 then  -- the stage's targets (their deaths: the editor's, a character without a behaviour too)
+      h2.on("death", function(who)
+        local p = who and who:path() or ""
+        for _, t in ipairs(r.targets) do if t == p then check() return end end
+      end)
+    else  -- no target: every kill the game counts as Hitman's
+      h2.on("kill", function(e) if e.kind ~= "other" then check() end end)
+    end
+  elseif r.kind == "no_firearm" then
+    h2.every(0.5, function(t)
+      local _, kind = h2.hand()
+      if kind and FIREARM[kind] then broke(r, "You drew a firearm") t:cancel() end
     end)
   elseif r.kind == "time" then
     local told = {}
@@ -330,6 +393,27 @@ void DrawRule(StageRule& r, int index, int& remove)
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Take the rule away");
     ImGui::Indent();
+    if (r.kind == "kill_with") {
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+        if (ImGui::BeginCombo("with", WeaponText(r.weapon).c_str())) {
+            for (const WeaponChoice& c : kWeaponChoices)
+                if (ImGui::Selectable(c.label, r.weapon == c.value)) {
+                    r.weapon = c.value;
+                    Changed();
+                }
+            ImGui::Separator();  // one weapon of the map (its template)
+            for (const engine::GeomInfo& g : RecentSceneModel().geoms)
+                if (g.geom && g.className.find("ItemTemplateWeapon") != std::string::npos &&
+                    ImGui::Selectable(g.name.c_str(), r.weapon == g.name)) {
+                    r.weapon = g.name;
+                    Changed();
+                }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The weapon in Hitman's hands when a target of the stage dies (no target: any kill\n"
+                              "of his): a kind of weapon, or one weapon of the map");
+    }
     if (r.kind == "time") {
         int minutes = r.seconds / 60, seconds = r.seconds % 60;
         ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4);

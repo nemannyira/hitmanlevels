@@ -171,6 +171,7 @@ struct StageRule {
     StageSpan span;
     bool fails = true;    // broken: the stage is failed; false: only noted (done, but not clean)
     int seconds = 300;    // "time"
+    std::string weapon = "fiberwire";  // "kill_with": a kind (stages.h WeaponChoices) or a weapon template's name
 };
 
 struct LevelDocument {

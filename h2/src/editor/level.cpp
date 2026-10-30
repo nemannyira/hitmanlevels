@@ -2484,6 +2484,8 @@ bool SaveLevel(std::string* error)
             json o = {{"kind", r.kind}, {"broken", r.fails ? "fail" : "note"}};
             if (r.kind == "time")
                 o["seconds"] = r.seconds;
+            if (r.kind == "kill_with")
+                o["weapon"] = r.weapon;
             SpanJson(r.span, o);
             j["rules"].push_back(o);
         }
@@ -2785,6 +2787,8 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 r.kind = o.value("kind", std::string());
                 r.fails = o.value("broken", std::string("fail")) != "note";
                 r.seconds = std::clamp(o.value("seconds", 300), 10, 4 * 3600);
+                if (o.contains("weapon") && o["weapon"].is_string())
+                    r.weapon = o["weapon"].get<std::string>().substr(0, 64);
                 r.span = SpanFromJson(o);
                 if (!L.stages.empty() && L.rules.size() < 64)
                     L.rules.push_back(r);

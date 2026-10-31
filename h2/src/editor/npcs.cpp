@@ -12,6 +12,7 @@
 #include "../engine/imports.h"
 #include "../engine/inject.h"
 #include "../engine/lists.h"
+#include "../engine/messages.h"
 #include "../engine/npc.h"
 #include "../engine/spawn.h"
 #include "../engine/script_files.h"
@@ -621,19 +622,22 @@ bool DeleteNpc(engine::ZGEOM* actor, std::string* error)
         return false;
     }
     // Actors cannot be destroyed while the scene runs (the engine keeps
-    // pointers to them): it is hidden and put far below the level, where it
-    // stays (and the level no longer creates it next time).
+    // pointers to them): it is hidden, put far below the level and made
+    // inactive as the levels' scripts take a character out (MakeInactive: out
+    // of its rooms, its routines stopped), where it stays (and the level no
+    // longer creates it next time). Not taken out of the actors' collision
+    // lists: that left the whole world undrawn (2026-10-31, a removed character).
     g_placed.erase(std::remove(g_placed.begin(), g_placed.end(), actor), g_placed.end());
     g_behaviour.erase(actor);
     g_noBehaviour.erase(actor);
     g_placedRecord.erase(actor);
     g_pending.erase(actor);
     g_now.erase(actor);
-    engine::SetActorCollides(actor, false);
     Transform t = GetTransform(actor);
     float away[3] = {t.pos[0], t.pos[1] - 50000.0f, t.pos[2]};
     engine::TeleportActor(actor, away);
     SetHidden(actor, true);
+    engine::SetGeomActive(actor, false);
     g_removed.push_back(actor);
     return true;
 }

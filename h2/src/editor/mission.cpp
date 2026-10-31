@@ -1591,11 +1591,23 @@ void DrawEnd()
 
 int g_simpleTextSlot;  // the line whose laptop text is being written (Simple mode; 0 none)
 
-// the blank of a sentence still to fill: what the next click picks
-void PickButton(const char* label, PickKind kind, int slot)
+// the next small button on the line of the one before when it fits there, else under it
+void Flow(const char* label)
+{
+    float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2;
+    float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+    if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + w <= right)
+        ImGui::SameLine();
+}
+
+// the blank of a sentence still to fill: what the next click picks (flow: after the button before)
+void PickButton(const char* label, PickKind kind, int slot, bool flow = false)
 {
     bool picking = g_pick == kind && g_pickSlot == slot;
-    if (ImGui::SmallButton(picking ? "click in the world... (Esc)" : label))
+    const char* text = picking ? "click in the world... (Esc)" : label;
+    if (flow)
+        Flow(text);
+    if (ImGui::SmallButton(text))
         picking ? (void)(g_pick = PickKind::None) : StartPick(kind, slot);
 }
 
@@ -1673,18 +1685,16 @@ void DrawSimpleMissionStep()
                 PickButton(o->target.empty() ? "Pick where" : "Another place", PickKind::Place, slot);
             else
                 button = false;
-            if (o->goal == MissionObjective::Deliver && !o->target.empty()) {
-                ImGui::SameLine();
-                PickButton(o->place.empty() ? "Pick where to" : "Another place to", PickKind::Place, 100 + slot);
-            }
+            if (o->goal == MissionObjective::Deliver && !o->target.empty())
+                PickButton(o->place.empty() ? "Pick where to" : "Another place to", PickKind::Place, 100 + slot, true);
             if (o->goal == MissionObjective::Unseen &&
                 ImGui::Checkbox("being spotted fails the mission", &o->failsMission))
                 Changed();
             if (button || o->goal == MissionObjective::Unseen)
-                ImGui::SameLine();
+                Flow("Change the text");
             if (ImGui::SmallButton("Change the text"))
                 g_simpleTextSlot = slot;
-            ImGui::SameLine();
+            Flow("Remove");
             if (ImGui::SmallButton("Remove"))
                 ImGui::OpenPopup("remove");
             if (ImGui::BeginPopup("remove")) {
@@ -1750,10 +1760,12 @@ void DrawSimpleMissionStep()
         m.endWhenDone = false;
         Changed();
     }
-    if (ImGui::RadioButton("When every objective above is done", m.endWhenDone)) {
+    if (ImGui::RadioButton("When the objectives you added are done", m.endWhenDone)) {
         m.endWhenDone = true;
         Changed();
     }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The original mission's lines no longer end it then (its own targets, its exit)");
     if (m.endWhenDone) {
         ImGui::Indent();
         std::string exit = Label(m.exitPath);

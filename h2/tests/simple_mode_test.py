@@ -57,6 +57,21 @@ def shot(name):
     time.sleep(0.5)
 
 
+def drawn(name):
+    """the world is drawn: the game's view (the editor closed) is not one plain colour"""
+    from PIL import Image  # noqa: PLC0415
+    import statistics  # noqa: PLC0415
+    lua('h2.dev_editor(false) return 1')
+    time.sleep(1)
+    shot(name)
+    time.sleep(0.5)
+    im = Image.open(os.path.join(dev.GAME, "Screens", "simple_%s.bmp" % name)).convert("L").resize((60, 30))
+    spread = statistics.pstdev(list(im.getdata()))
+    lua('h2.dev_editor(true) return 1')
+    time.sleep(0.5)
+    return spread > 12, "spread %.1f" % spread
+
+
 if os.path.isdir(FOLDER):
     shutil.rmtree(FOLDER)
 try:
@@ -166,6 +181,18 @@ try:
     guard = d["npcs"][0].get("id", "") if d.get("npcs") else ""
     real = lua('local o = h2.find(%s) return tostring(o ~= nil and o:alive())' % json.dumps(guard))
     check("the guard made with the map", real == "true", guard + ": " + real)
+    # removed again (People step), then the level reverted: the world still drawn (a removed character
+    # taken out of the actors' collision lists left it undrawn)
+    lua('h2.dev_editor(true) h2.dev_mode("simple") return 1')
+    time.sleep(1)
+    press("2 People")
+    check("the guard removed", press("Remove").startswith("pressed"))
+    ok, detail = drawn("removed")
+    check("the world drawn after the removal", ok, detail)
+    lua('return h2.dev_level("revert")')
+    time.sleep(1)
+    ok, detail = drawn("reverted")
+    check("the world drawn after the level reverted", ok, detail)
 finally:
     dev.run('h2.dev_mode("advanced") h2.dev_editor(false) return h2.dev_level("revert")', 10)
     shutil.rmtree(FOLDER, ignore_errors=True)

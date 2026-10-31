@@ -18,6 +18,7 @@
 #include "../scene.h"
 #include "freecam.h"
 #include "history.h"
+#include "launcher.h"
 #include "level.h"
 #include "mission.h"
 #include "model.h"
@@ -37,6 +38,7 @@ namespace {
 bool g_visible = true;
 int g_step = 0;
 char g_saveName[64];
+std::string g_saveStatus;  // the last save's result (step 6)
 char g_readme[4096];         // the level's README.md (step 6), read when the level's folder changes
 std::string g_readmeFolder;
 std::string g_pictureStatus;
@@ -128,7 +130,7 @@ void DrawAdvancedNote()
 {
     const LevelDocument& L = CurrentLevel();
     std::vector<std::string> has;
-    char buf[64];
+    char buf[128];
     if (int scripts = UserScriptCount()) {
         snprintf(buf, sizeof(buf), "%d script%s", scripts, scripts == 1 ? "" : "s");
         has.push_back(buf);
@@ -143,8 +145,11 @@ void DrawAdvancedNote()
         has.push_back("an emptied map");
     if (!L.skyLevel.empty())
         has.push_back("another sky");
-    if (IsEscalation())
-        has.push_back("stages (an escalation)");
+    if (IsEscalation()) {
+        snprintf(buf, sizeof(buf), "stages (an escalation: stage %d of %d is shown, what you add comes in it)",
+                 CurrentStage(), StageCount());
+        has.push_back(buf);
+    }
     if (!L.music.empty())
         has.push_back("music");
     if (!L.ownMapOf.empty())
@@ -245,8 +250,13 @@ void DrawMapStep()
 {
     engine::ZGEOM* sel = Selected();
     ImGui::SeparatorText("The selected object");
+    engine::ZGEOM* hitman = engine::Player();
     if (!sel || !IsLive(sel)) {
         ImGui::TextWrapped("Click an object in the world (a door, a crate, a car...).");
+    } else if (hitman && (sel == hitman || ActorOf(sel) == hitman)) {
+        ImGui::TextWrapped("Hitman: his clothes are step 1's, the people are step 2's. Click an object of the map.");
+    } else if (ActorOf(sel)) {
+        ImGui::TextWrapped("A person: step 2 (People) adds and takes them out. Click an object of the map.");
     } else {
         ImGui::TextUnformatted(engine::SafeString(sel->name).c_str());
         bool turning = GizmoTurning();
@@ -361,7 +371,7 @@ void DrawShareStep()
         ImGui::BeginDisabled(!g_saveName[0]);
         if (ImGui::Button("Save", ImVec2(-1, 0))) {
             std::string err;
-            SaveLevelAs(g_saveName, &err);
+            g_saveStatus = SaveLevelAs(g_saveName, &err) ? "saved" : "not saved: " + err;
         }
         ImGui::EndDisabled();
     } else {
@@ -369,9 +379,14 @@ void DrawShareStep()
         ImGui::BeginDisabled(!L.dirty);
         if (ImGui::Button("Save (Ctrl+S)", ImVec2(-1, 0))) {
             std::string err;
-            SaveLevel(&err);
+            g_saveStatus = SaveLevel(&err) ? "saved" : "not saved: " + err;
         }
         ImGui::EndDisabled();
+    }
+    if (!g_saveStatus.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", g_saveStatus.c_str());
+        ImGui::PopTextWrapPos();
     }
     if (!L.folder.empty()) {
         DrawDescription();
@@ -381,6 +396,29 @@ void DrawShareStep()
 
 void DrawGuide()
 {
+    const LevelDocument& L = CurrentLevel();
+    bool gameMap = !CurrentScene().empty() && MapTitle(CurrentScene()) != CurrentScene();  // (not a menu, an intro)
+    if (L.folder.empty() && L.baseScene.empty()) {  // no level open
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted("No level is open.");
+        ImGui::TextDisabled("Main menu > Level Editor: a new level on one of the game's maps, or one saved before.");
+        ImGui::PopTextWrapPos();
+        if (gameMap) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("Or make one on this map (%s):", MapTitle(CurrentScene()).c_str());
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##newname", "its name", g_saveName, sizeof(g_saveName));
+            ImGui::BeginDisabled(!g_saveName[0]);
+            if (ImGui::Button("Make a level of this map", ImVec2(-1, 0))) {
+                NewLevel(g_saveName, CurrentScene());
+                std::string err;
+                g_saveStatus = SaveLevel(&err) ? "" : "not saved: " + err;
+                g_step = 0;
+            }
+            ImGui::EndDisabled();
+        }
+        return;
+    }
     if (CurrentScene().empty()) {
         ImGui::TextWrapped("Load a map first: main menu > Level Editor > New level.");
         return;
@@ -456,6 +494,16 @@ void DrawSelectionCard()
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                          ImGuiWindowFlags_NoNav)) {
+        engine::ZGEOM* hitman = engine::Player();
+        if (hitman && (sel == hitman || ActorOf(sel) == hitman)) {  // (not an object to take, hide or copy)
+            ImGui::TextUnformatted("Hitman");
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 18);
+            ImGui::TextDisabled("He starts where the map starts him (Try it: Play from the start); his clothes: "
+                                "step 1, Hitman starts.");
+            ImGui::PopTextWrapPos();
+            ImGui::End();
+            return;
+        }
         engine::ZGEOM* actor = ActorOf(sel);
         bool placed = actor && IsPlacedNpc(actor);
         ImGui::TextUnformatted(actor ? PersonName(actor).c_str() : engine::SafeString(sel->name).c_str());
@@ -470,7 +518,9 @@ void DrawSelectionCard()
                 RemoveNpc(actor, &err);
             }
         } else if (actor) {
-            if (actor != engine::Player() && ImGui::SmallButton(IsHidden(actor) ? "Put back" : "Take out of the map")) {
+            bool out = HiddenByLevel(actor);  // (one the map starts hidden is not offered: it is the map's)
+            if (actor != engine::Player() && (out || !IsHidden(actor)) &&
+                ImGui::SmallButton(out ? "Put back" : "Take out of the map")) {
                 ObjectState before = GetState(actor), after = before;
                 after.hidden = !before.hidden;
                 Change(actor, before, after, after.hidden ? "hide" : "show");
@@ -514,6 +564,13 @@ void DrawSelectionCard()
 
 void DrawSimpleToolbar()
 {
+    if (CurrentLevel().folder.empty() && CurrentLevel().baseScene.empty()) {  // no level open (the guide says so)
+        float w = ImGui::CalcTextSize("Advanced mode").x + ImGui::GetStyle().FramePadding.x * 2;
+        ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);
+        if (ImGui::Button("Advanced mode"))
+            overlay::SetSimpleMode(false);
+        return;
+    }
     ImGui::BeginDisabled(!CanUndo());
     if (ImGui::Button("Undo"))
         Undo();

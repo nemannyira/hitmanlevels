@@ -400,9 +400,14 @@ void DrawLauncher()
                                                           ImGuiWindowFlags_NoMove)) {
         if (ImGui::BeginTabBar("launcher")) {
             if (ImGui::BeginTabItem("New level")) {
-                ImGui::TextWrapped("A level of your own on one of the game's maps. The editor opens on the map: "
-                                   "place characters, objects and items, give them routes, set the objectives and "
-                                   "the music, then save (Save in the toolbar, or Ctrl+S).");
+                if (overlay::SimpleMode())
+                    ImGui::TextWrapped("A mission of your own on one of the game's maps. The editor opens on the map "
+                                       "with a guide: what the player has to do, the people, the items, the map's "
+                                       "objects, trying it and sharing it, step by step.");
+                else
+                    ImGui::TextWrapped("A level of your own on one of the game's maps. The editor opens on the map: "
+                                       "place characters, objects and items, give them routes, set the objectives "
+                                       "and the music, then save (Save in the toolbar, or Ctrl+S).");
                 ImGui::Spacing();
                 ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
                 if (ImGui::BeginCombo("map", kMaps[g_map].name)) {

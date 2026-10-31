@@ -1942,6 +1942,12 @@ void DrawStartOutfit();
 void DrawStartOutfitControl() { DrawStartOutfit(); }
 void DrawProblemsList() { DrawProblems(); }
 
+bool HiddenByLevel(engine::ZGEOM* geom)
+{
+    auto it = geom ? g_level.objects.find(PathOf(geom)) : g_level.objects.end();
+    return it != g_level.objects.end() && it->second.state.hidden && !(it->second.hasOriginal && it->second.original.hidden);
+}
+
 int UserScriptCount()
 {
     int n = 0;

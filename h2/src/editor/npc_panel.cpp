@@ -1384,8 +1384,11 @@ std::string Readable(const std::string& model)
                 out += ' ';
             continue;
         }
-        if (i && std::isupper(static_cast<unsigned char>(c)) && std::islower(static_cast<unsigned char>(base[i - 1])) &&
-            !out.empty() && out.back() != ' ')
+        bool upper = std::isupper(static_cast<unsigned char>(c));
+        bool afterLower = i && std::islower(static_cast<unsigned char>(base[i - 1]));
+        bool acronymEnd = i && i + 1 < base.size() && std::isupper(static_cast<unsigned char>(base[i - 1])) &&
+                          std::islower(static_cast<unsigned char>(base[i + 1]));
+        if (upper && (afterLower || acronymEnd) && !out.empty() && out.back() != ' ')
             out += ' ';
         out += c;
     }
@@ -1593,7 +1596,7 @@ void DrawSimplePeopleStep()
     int shown = 0;
     for (engine::ZGEOM* a : AllCharacters()) {
         bool placed = IsPlacedNpc(a);
-        bool hidden = !placed && IsHidden(a);
+        bool hidden = !placed && HiddenByLevel(a);  // (not the map's own hidden ones)
         if (!placed && !hidden)
             continue;
         ++shown;
@@ -1628,7 +1631,7 @@ void DrawSimplePeopleStep()
     if (!shown)
         ImGui::TextDisabled("No one added or removed yet.");
     engine::ZGEOM* sel = ActorOf(Selected());
-    if (sel && !IsPlacedNpc(sel) && !IsHidden(sel) && sel != engine::Player()) {
+    if (sel && !IsPlacedNpc(sel) && !IsHidden(sel) && sel != engine::Player()) {  // (shown: one to take out)
         if (ImGui::Button(("Take " + ReadableName(sel) + " out of the map").c_str())) {
             ObjectState b = GetState(sel), after = b;
             after.hidden = true;

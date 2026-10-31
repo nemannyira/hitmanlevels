@@ -346,6 +346,8 @@ void DrawStartOutfitControl();
 void DrawProblemsList();
 // the level's scripts with something of the author's in them (not a new level's main.lua as it was made)
 int UserScriptCount();
+// an object of the map the level hides (not one the map itself starts hidden: C2-2's limousine's people)
+bool HiddenByLevel(engine::ZGEOM* geom);
 // A door of the map (engine::DoorOf the object) locked / unlocked now and by the level from now on;
 // the level's lock of it: -1 none (as the map has it), 0 unlocked, 1 locked.
 bool SetLevelDoorLock(engine::ZGEOM* geom, bool locked);

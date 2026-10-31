@@ -615,22 +615,30 @@ void DrawOtherLevels()
 
 // ---- Simple mode's Items step (docs/simple-mode.md, #35) ----
 
-// an item template's name to read: "GunHardballer" -> "Gun Hardballer", "Key_Gate01" -> "Key Gate"
+// an item template's name to read: "GunHardballer" -> "Gun Hardballer", "AmmoCal50" -> "Ammo Cal 50",
+// "GunBeretta92Silenced" -> "Gun Beretta 92 Silenced", "SmgMP5SD" -> "Smg MP5SD" (numbers kept: AmmoCal and
+// AmmoCal50 are two items)
 std::string ReadableItem(const std::string& name)
 {
-    std::string base = name;
-    while (!base.empty() && (std::isdigit(static_cast<unsigned char>(base.back())) || base.back() == '_'))
-        base.pop_back();
     std::string out;
-    for (size_t i = 0; i < base.size(); ++i) {
-        char c = base[i];
+    auto kind = [](char c) {
+        return std::isdigit(static_cast<unsigned char>(c)) ? 2 : std::isupper(static_cast<unsigned char>(c)) ? 1 : 0;
+    };
+    for (size_t i = 0; i < name.size(); ++i) {
+        char c = name[i];
         if (c == '_') {
             if (!out.empty() && out.back() != ' ')
                 out += ' ';
             continue;
         }
-        if (i && std::isupper(static_cast<unsigned char>(c)) && std::islower(static_cast<unsigned char>(base[i - 1])) &&
-            !out.empty() && out.back() != ' ')
+        bool start = false;
+        if (i && !out.empty() && out.back() != ' ') {
+            int k = kind(c), before = kind(name[i - 1]);
+            bool word = k == 1 && i + 1 < name.size() && kind(name[i + 1]) == 0;  // an upper case letter starting a word
+            start = (k == 1 && before == 0) || (k == 2 && before == 0) ||  // aB, a1
+                    (word && before != 0);  // 9Silenced, ACPx (a code as M4A1, MP5SD stays whole)
+        }
+        if (start)
             out += ' ';
         out += c;
     }
@@ -650,19 +658,17 @@ void DrawSimpleItemsStep()
         if (ImGui::SmallButton("Cancel"))
             CancelPlacement();
     }
-    // by kind: the game's weapon templates, the others (keys, tools, ...)
-    struct Kind {
-        const char* title;
-        bool weapons;
+    // by kind: the game's weapon templates, ammunition, the others (keys, tools, ...)
+    auto kindOf = [](const ModelEntry& e) {
+        return e.className.find("Weapon") != std::string::npos ? 0 : e.name.rfind("Ammo", 0) == 0 ? 1 : 2;
     };
-    for (Kind k : {Kind{"Weapons", true}, Kind{"Keys, tools and other things", false}}) {
-        ImGui::SeparatorText(k.title);
+    const char* titles[] = {"Weapons", "Ammunition", "Keys, tools and other things"};
+    for (int k = 0; k < 3; ++k) {
+        ImGui::SeparatorText(titles[k]);
         int n = 0;
         for (size_t i = 0; i < g_models.size(); ++i) {
             const ModelEntry& e = g_models[i];
-            if (e.category != Category::Pickup || e.templatePath.empty())
-                continue;
-            if ((e.className.find("Weapon") != std::string::npos) != k.weapons)
+            if (e.category != Category::Pickup || e.templatePath.empty() || kindOf(e) != k)
                 continue;
             ++n;
             ImGui::PushID(int(i));

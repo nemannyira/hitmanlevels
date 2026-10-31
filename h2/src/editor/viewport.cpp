@@ -9,6 +9,7 @@
 
 #include "../display.h"
 #include "../fov.h"
+#include "../engine/messages.h"
 #include "../game.h"
 #include "../overlay/overlay.h"
 #include "freecam.h"
@@ -18,6 +19,7 @@
 #include "level.h"
 #include "model.h"
 #include "mission.h"
+#include "npcs.h"
 #include "vehicles.h"
 #include "npc_panel.h"
 #include "playtest.h"
@@ -289,8 +291,9 @@ void Shortcuts()
             DeleteSelection();
         } else if (ImGui::IsKeyPressed(ImGuiKey_G)) {
             BeginGrab(sel);
-        } else if (ImGui::IsKeyPressed(ImGuiKey_H)) {
-            ObjectState before = GetState(sel), after = before;
+        } else if (ImGui::IsKeyPressed(ImGuiKey_H) &&
+                   !(overlay::SimpleMode() && engine::Player() && (sel == engine::Player() || ActorOf(sel) == engine::Player()))) {
+            ObjectState before = GetState(sel), after = before;  // (Simple mode: not Hitman himself)
             after.hidden = !before.hidden;
             Change(sel, before, after, after.hidden ? "hide" : "show");
         } else if (ImGui::IsKeyPressed(ImGuiKey_F)) {

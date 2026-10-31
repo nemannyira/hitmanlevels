@@ -3,6 +3,21 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-31: fixes from a walkthrough of every part
+
+* A placed character removed (the People step's Remove, the NPCs tab's,
+  a level reverted) left the whole world undrawn: it was taken out of the
+  actors' collision lists. Now it is made inactive as the levels' scripts
+  take a character out.
+* Simple mode: the map's own hidden characters (C2-2's limousine's people)
+  were listed as taken out, with a *Put back* that would have shown them;
+  an objective's buttons ran off the panel (its *Remove* unreachable);
+  Hitman selected was offered as an object to take, hide or copy (and H hid
+  him); with no level open (the intro, the menu) the guide offered to edit
+  objectives; a failed save said nothing; an escalation's stage shown is
+  named; items keep their numbers ("Ammo Cal 50") and ammunition is a group
+  of its own; the launcher's text follows the mode.
+
 ## 2026-10-31: no bodies found (#30)
 
 * One more rule of an escalation's stages: *no bodies found*: a body (dead

@@ -135,6 +135,7 @@ struct MissionObjective {
     bool failsMission = false;     // Unseen: being spotted fails the mission too
     float radius = 250.0f;         // Reach: how near Hitman has to get; Take (not an item): to take it
     bool replacesOriginal = true;  // the level's own completion of this line no longer counts
+    bool hidden = false;           // taken out (an original line removed): not on the laptop, not counted
     StageSpan span;
 };
 

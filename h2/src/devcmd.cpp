@@ -79,10 +79,12 @@ struct PressRequest {
     int seen = 0, frames = 0;
     bool found = false;
     float x = 0, y = 0;
+    bool disabled = false;   // the control found is disabled (BeginDisabled): status "pressed x y disabled"
     std::string status = "none";
 };
 PressRequest g_press;
 std::map<ImGuiID, ImRect> g_pressRects;  // the frame's items so far
+std::map<ImGuiID, bool> g_pressDisabled;
 
 void SetItemHooks(bool on)
 {
@@ -1315,6 +1317,10 @@ void InstallDevCommands()
     script::Register("dev_setscript", SetScriptCmd);
     script::Register("dev_panel", Panel);
     script::Register("dev_mode", Mode);
+    script::Register("dev_thumbnail", [](lua_State* L) {  // -> a model / character picture drawn (highlight.h)
+        lua_pushboolean(L, editor::ThumbnailTexture() != nullptr);
+        return 1;
+    });
     script::Register("dev_screen", Screen);
     script::Register("dev_select", SelectCmd);
     script::Register("dev_selected", SelectedCmd);
@@ -1405,7 +1411,7 @@ double g_holdUntil;
 // while a press is asked for, every item of a frame reports its box (ItemAdd) and its label
 // (ItemInfo); the one asked for gets a click in its middle, as h2.dev_click gives one
 // the n-th control of the label: its middle (half out of its panel: not yet, scrolled on)
-void PressMatch(const ImRect& rect)
+void PressMatch(const ImRect& rect, bool disabled)
 {
     if (++g_press.seen != g_press.nth)
         return;
@@ -1413,6 +1419,7 @@ void PressMatch(const ImRect& rect)
     if (!GImGui->CurrentWindow->ClipRect.Contains(mid))
         return;
     g_press.found = true;
+    g_press.disabled = disabled;
     g_press.x = mid.x;
     g_press.y = mid.y;
 }
@@ -1424,8 +1431,9 @@ void PressItemAdd(ImGuiID id, const ImRect& bb)
     if (!g_press.active || g_press.found)
         return;
     g_pressRects[id] = bb;
+    g_pressDisabled[id] = (GImGui->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0;
     if (id == GImGui->CurrentWindow->GetID(g_press.label.c_str()))
-        PressMatch(bb);
+        PressMatch(bb, g_pressDisabled[id]);
 }
 
 // a control whose label shows it ("edit##take": "edit") under another id
@@ -1438,7 +1446,7 @@ void PressItemInfo(ImGuiID id, const char* label)
     if (shown != g_press.label)
         return;
     if (auto it = g_pressRects.find(id); it != g_pressRects.end())
-        PressMatch(it->second);
+        PressMatch(it->second, g_pressDisabled[id]);
 }
 
 // a control below a panel's visible part is not drawn (ImGui clips it before its label is
@@ -1471,7 +1479,7 @@ void PressFrame()
         g_ui.push_back({1, g_press.x, g_press.y, 0});
         g_ui.push_back({2, g_press.x, g_press.y, 0});
         char buf[64];
-        snprintf(buf, sizeof(buf), "pressed %.0f %.0f", g_press.x, g_press.y);
+        snprintf(buf, sizeof(buf), "pressed %.0f %.0f%s", g_press.x, g_press.y, g_press.disabled ? " disabled" : "");
         g_press.status = buf;
         g_press.active = false;
         SetItemHooks(false);
@@ -1485,6 +1493,7 @@ void PressFrame()
     }
     g_press.seen = 0;
     g_pressRects.clear();
+    g_pressDisabled.clear();
 }
 
 void DevUiStep()

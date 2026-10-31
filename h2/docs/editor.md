@@ -21,6 +21,10 @@ something missing, grey: optional), each with one line of what to do, its
 controls and *Back* / *Next*.
 
 1. **Mission**: the laptop's lines (the original mission's, and your own).
+   An original line: *Change* puts an objective of yours on it (the
+   original's no longer counts), *Remove* takes it off the laptop and out of
+   the mission (the mission then ends when your objectives are done; *Put
+   back* brings it back).
    *Add an objective*: *Kill someone*, *Knock someone out*, *Get to a place*,
    *Take an object*, *Bring an object somewhere* (then click it in the world),
    *Never be spotted*; *Change the text* writes a line's laptop text by hand.
@@ -29,12 +33,15 @@ controls and *Back* / *Next*.
    briefing and Hitman's clothes at the start.
 2. **People**: *Add a person*: who (a guard, a civilian, a target: a target
    is an objective at once), what it looks like (the map's people of that
-   kind) and what it does (guards / stays where it stands, or walks a route:
-   click its points after placing, Esc ends); *Place it* and a click in the
+   kind; the mouse over one shows a picture of it) and what it does (guards /
+   stays where it stands, or walks a route: click its points after placing,
+   Esc ends; a behaviour of another level's that works anywhere when the
+   map's own people do not walk routes, as on C1-1 and C2-2); *Place it* and a click in the
    world. The level's people are listed; one of the map's is taken out with a
    click on it and *Remove from the map*. New people come to life when the
    level is tried.
-3. **Items**: the map's weapons and other items: click one, then where it
+3. **Items**: the map's weapons, ammunition and other items, with a search
+   field; the mouse over one shows a picture of it; click one, then where it
    goes.
 4. **The map**: click an object: move or turn it (the arrows / rings), hide
    it, copy it, put it onto the surface; a door: *Lock the door* (it opens
@@ -53,7 +60,8 @@ and what can be done with it (*Make it a target*, *Hitman has to take it*,
 *Make it the exit*, *Hide*, *Copy*, *Remove*; *More...* opens it in Advanced
 mode). A click on a person selects the person (not the wall behind).
 
-The toolbar: *Undo*, *Redo*, *Save*, *Try it*, *Advanced mode*. What the guide
+The toolbar: *Undo*, *Redo*, *Save*, *Try it*, *Free camera* (fly anywhere:
+hold the right mouse button, W A S D) and *To Hitman*, *Advanced mode*. What the guide
 does not show (scripts, cars, the sky, stages, ...) stays in the level; step
 1 names it.
 

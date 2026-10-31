@@ -467,7 +467,8 @@ void DrawGuide()
         ImGui::NewLine();  // (the last step: no Next)
     }
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("Camera: hold the right mouse button and use W A S D (the wheel: speed)");
+    ImGui::TextDisabled(FreeCamEnabled() ? "Camera: hold the right mouse button and use W A S D (the wheel: speed)"
+                                         : "Camera: the game's; Free camera (toolbar) flies anywhere");
     ImGui::PopTextWrapPos();
 }
 
@@ -595,6 +596,21 @@ void DrawSimpleToolbar()
         TestLevelFrom(TestStart::LevelStart);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Saves the level and plays it from its start (step 5 has more)");
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+    bool free = FreeCamEnabled();
+    if (ImGui::Checkbox("Free camera", &free))
+        SetFreeCamEnabled(free);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("On: fly anywhere (hold the right mouse button, W A S D, Q / E down / up, the wheel:\n"
+                          "speed). Off: the game's camera behind Hitman.");
+    ImGui::SameLine();
+    if (ImGui::Button("To Hitman"))
+        if (engine::ZGEOM* hitman = engine::Player())
+            FlyCameraTo(GetTransform(hitman).pos);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The free camera flies to Hitman (F: to the selected object)");
     ImGui::SameLine();
     float w = ImGui::CalcTextSize("Advanced mode").x + ImGui::GetStyle().FramePadding.x * 2;
     ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);

@@ -3,6 +3,21 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-31: Simple mode: the original objectives, the camera, pictures
+
+* The original mission's objectives can be changed (*Change*: an objective
+  of yours on the line) or removed (off the laptop, not counted; the mission
+  then ends with your objectives); *Put back*. Level files: an objective's
+  `"hidden": true` (Advanced mode: *taken out*).
+* The toolbar's *Free camera* and *To Hitman*.
+* *Walks a route* offers a behaviour of another level's that works anywhere
+  when the map's own people walk no routes (most maps), and says why when
+  there is none.
+* The mouse over a character (People step, NPCs tab) or an item (Items
+  step, Models tab) shows a picture of it; item pictures were empty (the
+  templates' parts are inactive in the scene: their clones are made
+  active). The Items step has a search field.
+
 ## 2026-10-31: fixes from a walkthrough of every part
 
 * A placed character removed (the People step's Remove, the NPCs tab's,

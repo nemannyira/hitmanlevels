@@ -308,7 +308,7 @@ bool Owned(int slot)
     if (!ForThisScene())
         return false;
     for (const MissionObjective& o : StageObjectives())
-        if (o.slot == slot && o.goal != MissionObjective::Level && o.replacesOriginal)
+        if (o.slot == slot && ((o.goal != MissionObjective::Level && o.replacesOriginal) || o.hidden))
             return true;
     return false;
 }
@@ -588,6 +588,11 @@ void ShowLines(const std::vector<int>& removed = {})
         if (!InDocument(slot) && !g_lineKeys[slot].empty() && !g_hiddenLines[slot])
             RestoreLine(slot);
     for (const MissionObjective& o : StageObjectives()) {
+        if (o.hidden) {  // an original line removed
+            CallSetObjective(o.slot, kEmptyKey);
+            HideLineElements(o.slot);
+            continue;
+        }
         bool own = !OwnText(o.slot).empty();
         if (!o.text.empty())
             CallSetObjective(o.slot, EditorKey(o.slot));
@@ -933,7 +938,11 @@ void Check()
     if (!LevelApplyPending())  // (the level's copies made with the map are put at their places then)
         ApplyPendingGoals();
     bool all = true;
+    int counted = 0;
     for (const MissionObjective& o : StageObjectives()) {
+        if (o.hidden)
+            continue;  // (an original line removed)
+        ++counted;
         if (o.goal == MissionObjective::Level) {
             all &= LineChecked(o.slot);
             continue;
@@ -972,7 +981,7 @@ void Check()
         }
         all &= g_done[o.slot];
     }
-    if (!Doc().endWhenDone || g_ended || !all || Doc().objectives.empty())
+    if (!Doc().endWhenDone || g_ended || !all || !counted)
         return;
     if (!Doc().exitPath.empty()) {
         engine::ZGEOM* exit = ResolveTarget(Doc().exitPath);
@@ -1450,6 +1459,16 @@ void DrawLineEditor(int slot)
             CurrentLevel().dirty = true;
         ImGui::Unindent();
     }
+    if (!own.empty()) {  // an original line taken out of the laptop (Simple mode's Remove)
+        bool hidden = o && o->hidden;
+        if (ImGui::Checkbox("taken out (not on the laptop, not counted)", &hidden)) {
+            Editable(slot).hidden = hidden;
+            Changed();
+            if (!hidden)
+                ShowLines({slot});
+        }
+        o = ObjectiveAt(slot);
+    }
     if (o && o->goal != MissionObjective::Level && !own.empty()) {
         if (ImGui::Checkbox("the original no longer counts", &o->replacesOriginal))
             Changed();
@@ -1649,6 +1668,19 @@ void DrawSimpleMissionStep()
         ImGui::PushID(slot);
         std::string text = LineText(slot);
         bool own = o && o->goal != MissionObjective::Level;
+        if (o && o->hidden) {  // an original line removed: shown greyed, it can come back
+            ImGui::Bullet();
+            ImGui::TextDisabled("%s (removed)", original.empty() ? "a line" : original.c_str());
+            ImGui::Indent();
+            if (ImGui::SmallButton("Put back")) {
+                Doc().objectives.erase(Doc().objectives.begin() + (o - Doc().objectives.data()));
+                CurrentLevel().dirty = true;
+                ShowLines({slot});
+            }
+            ImGui::Unindent();
+            ImGui::PopID();
+            continue;
+        }
         ImGui::Bullet();
         if (own && g_simpleTextSlot == slot) {  // its laptop text, written by hand
             char buf[256];
@@ -1674,6 +1706,57 @@ void DrawSimpleMissionStep()
         ImGui::Indent();
         if (!own) {
             ImGui::TextDisabled("the original mission's");
+            // change it (a goal of the editor's on its line: the original's no longer counts) or remove it
+            if (ImGui::SmallButton("Change"))
+                ImGui::OpenPopup("change");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Another objective on this line: the original's no longer counts");
+            if (ImGui::BeginPopup("change")) {
+                const std::pair<const char*, MissionObjective::Goal> goals[] = {
+                    {"Kill someone", MissionObjective::Kill},       {"Knock someone out", MissionObjective::KnockOut},
+                    {"Get to a place", MissionObjective::Reach},    {"Take an object", MissionObjective::Take},
+                    {"Bring an object somewhere", MissionObjective::Deliver}, {"Never be spotted", MissionObjective::Unseen}};
+                for (const auto& [label, goal] : goals)
+                    if (ImGui::Selectable(label)) {
+                        MissionObjective& e = Editable(slot);
+                        e.goal = goal;
+                        e.replacesOriginal = true;
+                        e.target.clear();
+                        e.place.clear();
+                        e.text = goal == MissionObjective::Unseen ? "Do not be spotted" : "";
+                        e.radius = goal == MissionObjective::Take ? 150.0f : 250.0f;
+                        Changed();
+                        if (goal != MissionObjective::Unseen)
+                            StartPick(goal == MissionObjective::Kill || goal == MissionObjective::KnockOut
+                                          ? PickKind::Character
+                                      : goal == MissionObjective::Reach ? PickKind::Place
+                                                                         : PickKind::Object,
+                                      slot);
+                    }
+                ImGui::EndPopup();
+            }
+            Flow("Remove");
+            if (ImGui::SmallButton("Remove"))
+                ImGui::OpenPopup("remove original");
+            if (ImGui::BeginPopup("remove original")) {
+                ImGui::Text("Remove \"%s\" from the mission?", text.c_str());
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24);
+                ImGui::TextDisabled("It goes from the laptop and no longer counts. The original mission would still "
+                                    "want it done, so the mission then ends when the objectives you added are done.");
+                ImGui::PopTextWrapPos();
+                if (ImGui::Button("Remove it")) {
+                    MissionObjective& e = Editable(slot);
+                    e.goal = MissionObjective::Level;
+                    e.hidden = true;
+                    Doc().endWhenDone = true;
+                    Changed();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Keep it"))
+                    ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
         } else {
             ImGui::TextDisabled("%s", Summary(o).c_str());
             bool button = true;
@@ -1766,6 +1849,13 @@ void DrawSimpleMissionStep()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The original mission's lines no longer end it then (its own targets, its exit)");
+    if (m.endWhenDone && std::none_of(m.objectives.begin(), m.objectives.end(), [](const MissionObjective& o) {
+            return !o.hidden && o.goal != MissionObjective::Level;
+        })) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f), "Add an objective above: there is none of yours to end it.");
+        ImGui::PopTextWrapPos();
+    }
     if (m.endWhenDone) {
         ImGui::Indent();
         std::string exit = Label(m.exitPath);
@@ -2444,11 +2534,18 @@ void DrawSimpleMission() { DrawSimpleMissionStep(); }
 bool MissionStepDone()
 {
     const LevelDocument& L = CurrentLevel();
-    for (const MissionObjective& o : L.mission.objectives)
+    int own = 0;
+    for (const MissionObjective& o : L.mission.objectives) {
+        if (o.hidden)
+            continue;
+        own += o.goal != MissionObjective::Level;
         if (o.goal != MissionObjective::Level && o.goal != MissionObjective::Unseen &&
             (o.target.empty() || (o.goal == MissionObjective::Deliver && o.place.empty())))
             return false;  // a blank not filled
-    return !L.mission.objectives.empty() || !L.emptyMap;  // own objectives, or the original's
+    }
+    if (L.mission.endWhenDone && !own)
+        return false;  // the objectives end it, and there are none
+    return own > 0 || !L.emptyMap;  // own objectives, or the original's
 }
 
 } // namespace h2::editor

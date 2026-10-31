@@ -1215,6 +1215,7 @@ Transform PlacingTransform()
 }
 
 void AfterGuidePlace(engine::ZGEOM* npc);
+void TypeTooltip(int t, const char* more = nullptr);
 
 void Place()
 {
@@ -1269,9 +1270,11 @@ void DrawPlace()
             snprintf(label, sizeof(label), "%s##t%d", t.model.c_str(), int(i));
             if (ImGui::Selectable(label, g_type == int(i), ImGuiSelectableFlags_AllowOverlap))
                 ChooseType(int(i));
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s\nbehaviour: %s\n%d in the level (e.g. %s)", t.model.c_str(),
-                                  t.script.empty() ? "none" : t.script.c_str(), t.count, t.group.c_str());
+            if (ImGui::IsItemHovered()) {
+                std::string more = "behaviour: " + (t.script.empty() ? std::string("none") : t.script) + " (e.g. " +
+                                   t.group + ")";
+                TypeTooltip(int(i), more.c_str());
+            }
             ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(t.script.c_str()).x);
             ImGui::TextDisabled("%s", t.script.c_str());
         }
@@ -1429,13 +1432,110 @@ bool BehaviourWalks(const std::string& name)
     return walks;
 }
 
-// a behaviour of the map's of that kind (guard or not) that walks a route ("" none)
+// a behaviour of that kind (guard or not) that walks a route: the map's own first, then one of another
+// level's that works anywhere (the map's own seldom have a route: C1-1's and C2-2's guards stand or go
+// between points) ("" none)
 std::string WalkingBehaviour(bool guard)
 {
     for (const std::string& b : g_behaviourNames)
         if (!g_storyBehaviours.count(b) && IsGuardBehaviour(b) == guard && BehaviourWalks(b))
             return b;
+    for (const std::string& b : ForeignBehaviourNames())
+        if (IsGuardBehaviour(b) == guard && BehaviourWalks(b))
+            return b;
     return "";
+}
+
+// ---- the hovered character's picture (People step, NPCs tab): a preview of it stands in front of the
+// camera, its draws go into the thumbnail (highlight.h), as the Models tab's models ----
+int g_hoverType = -1;      // hovered this frame (index in g_types)
+int g_hoverCandidate = -1; // hovered since g_hoverSince
+int g_thumbType = -1;      // the one in the thumbnail
+double g_hoverSince, g_lastTypeHover, g_thumbPlaced;
+constexpr double kTypeHoverDelay = 0.15, kTypeHoverLinger = 0.5;
+
+// in front of the camera, facing it
+Transform InFrontOfCamera()
+{
+    Transform t;
+    game::ZCAMERA* cam = game::MainCamera();
+    if (!cam)
+        return t;
+    float m[9], c[3];
+    game::GetWorldTransform(cam, m, c);
+    float fx = -m[0], fz = -m[2], len = std::sqrt(fx * fx + fz * fz);
+    if (len < 0.01f) {
+        fx = 0;
+        fz = 1;
+    } else {
+        fx /= len;
+        fz /= len;
+    }
+    float mat[9] = {fx, 0, fz, 0, 1, 0, fz, 0, -fx};
+    memcpy(t.mat, mat, sizeof(mat));
+    for (int i = 0; i < 3; ++i)
+        t.pos[i] = c[i] + m[i] * 350.0f;
+    t.pos[1] -= 90.0f;  // (its feet: the middle of it in the middle of the view)
+    return t;
+}
+
+void TypeThumbTick()
+{
+    double now = ImGui::GetTime();
+    int hovered = g_hoverType;
+    g_hoverType = -1;
+    if (g_placing) {  // (the placing's own preview: not taken over)
+        if (g_thumbType >= 0)
+            SetThumbnailGeoms({});
+        g_thumbType = -1;
+        return;
+    }
+    if (hovered >= 0 && hovered < int(g_types.size())) {
+        g_lastTypeHover = now;
+        if (hovered != g_hoverCandidate) {
+            g_hoverCandidate = hovered;
+            g_hoverSince = now;
+        }
+        if (now - g_hoverSince >= kTypeHoverDelay && g_thumbType != hovered) {
+            const NpcType& type = g_types[hovered];
+            std::string err;
+            if (engine::ZGEOM* a = ShowPreviewNpc(type.record, InFrontOfCamera(), &err, type.mesh)) {
+                // its room follows its place only as the world runs: a few frames of it while the editor
+                // holds the world (as a character moved across rooms, level.cpp)
+                if (ScenePaused())
+                    StepWorld(2);
+                std::vector<engine::ZGEOM*> parts = VisibleParts(a);  // (the character's own draws too: its body)
+                parts.push_back(a);
+                SetThumbnailGeoms(parts);
+                g_thumbType = hovered;
+                g_thumbPlaced = now;
+            }
+        }
+    } else if (g_thumbType >= 0 && now - g_lastTypeHover > kTypeHoverLinger) {
+        HidePreviewNpc();
+        SetThumbnailGeoms({});
+        ReleaseThumbnail();
+        g_thumbType = -1;
+    }
+}
+
+// the tooltip of a character of the list: its name, a picture of it
+void TypeTooltip(int t, const char* more)
+{
+    g_hoverType = t;
+    const NpcType& type = g_types[t];
+    ImGui::BeginTooltip();
+    ImGui::TextUnformatted(Readable(type.model).c_str());
+    ImGui::TextDisabled("%s, %d on the map", type.model.c_str(), type.count);
+    if (more)
+        ImGui::TextDisabled("%s", more);
+    float size = 220.0f * (ImGui::GetFontSize() / 16.0f);
+    void* tex = g_thumbType == t ? ThumbnailTexture() : nullptr;
+    if (tex)
+        ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size, size));
+    else
+        ImGui::Dummy(ImVec2(size, size));  // (the picture comes a moment later)
+    ImGui::EndTooltip();
 }
 
 // the guide's choice as the NPCs tab's: the type, then its behaviour (one that walks when asked)
@@ -1542,7 +1642,7 @@ void DrawSimplePeopleStep()
             if (ImGui::Selectable(label, g_look == i))
                 g_look = i;
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s: %d on the map", g_types[i].model.c_str(), g_types[i].count);
+                TypeTooltip(i);
         }
         ImGui::EndCombo();
     }
@@ -1556,11 +1656,15 @@ void DrawSimplePeopleStep()
     if (ImGui::RadioButton("Walks a route", g_walks && canWalk))
         g_walks = true;
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip(canWalk ? "After placing it, click the route's points in walking order (Esc ends)"
-                                  : "No one of this kind walks routes on this map");
-    if (!canWalk)
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && canWalk)
+        ImGui::SetTooltip("After placing it, click the route's points in walking order (Esc ends)");
+    if (!canWalk) {
         g_walks = false;
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("(no behaviour of this map or of the other levels walks a route for %s)",
+                            TypeIsGuard(g_types[g_look]) ? "a guard" : "someone of this kind");
+        ImGui::PopTextWrapPos();
+    }
 
     if (g_placing && g_guidePlacing) {
         ImGui::PushTextWrapPos(0.0f);
@@ -1962,11 +2066,15 @@ void InstallNpcPanel()
     overlay::AddPanel({nullptr, &always, [] {
                            if (!g_placing)
                                DrawAllRoutes();
+                           TypeThumbTick();
                        }});
-    // placing ended some other way (also with the editor closed): the preview goes
+    // placing ended some other way (also with the editor closed): the preview goes (not while it is the
+    // picture of a hovered character)
     overlay::AddAlwaysDraw([] {
-        if (!g_placing || !overlay::IsOpen())
+        if ((!g_placing && g_thumbType < 0) || !overlay::IsOpen())
             HidePreviewNpc();
+        if (!overlay::IsOpen())
+            g_thumbType = -1;
     });
     OnScenePushed([](const std::string&) {
         g_builtFor.clear();

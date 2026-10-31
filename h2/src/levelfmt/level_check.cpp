@@ -215,7 +215,7 @@ void CheckMission(Checker& c, const json& m)
         return;
     c.Array(m, "objectives", at, kMaxObjectives, [&](const json& o, const std::string& w) {
         if (!c.Object(o, w, {"slot", "text", "goal", "target", "replaces_original", "radius", "place", "fails_mission",
-                             "stage", "gone_from"}))
+                             "stage", "gone_from", "hidden"}))
             return;
         c.Span(o, w);
         c.Int(o, "slot", w, 1, 6);
@@ -227,6 +227,7 @@ void CheckMission(Checker& c, const json& m)
         }
         c.Text(o, "target", w, 512);
         c.Bool(o, "replaces_original", w);
+        c.Bool(o, "hidden", w);
         c.Number(o, "radius", w, 50, 5000);
         c.Text(o, "place", w, 512);
         c.Bool(o, "fails_mission", w);

@@ -93,7 +93,20 @@ try:
     time.sleep(2)  # (the list is made once a second)
     check("Problems: fix it there", press("fix it there").startswith("pressed"))
     check("... the Mission step shown", press("As the original mission ends", settle=0.2).startswith("pressed"))
-    check("the objective removed", press("Remove").startswith("pressed") and press("Remove", 2).startswith("pressed"))
+    # (C1-1's 4 original lines have their Remove first: the new line's is the 5th, its question's the 6th)
+    check("the objective removed", press("Remove", 5).startswith("pressed") and press("Remove", 6).startswith("pressed"))
+
+    # an original line removed (gone from the laptop, not counted), then put back
+    check("an original line: Remove", press("Remove").startswith("pressed") and press("Remove it").startswith("pressed"))
+    lua('return h2.dev_level("save")')
+    goals = doc().get("mission", {})
+    check("saved: the line taken out, the mission ends with the objectives added",
+          any(o.get("hidden") and o.get("slot") == 1 for o in goals.get("objectives", [])) and goals.get("end_when_done"),
+          str(goals)[:160])
+    check("Put back", press("Put back").startswith("pressed"))
+    lua('return h2.dev_level("save")')
+    check("saved: the line back", not any(o.get("hidden") for o in doc().get("mission", {}).get("objectives", [])))
+    press("As the original mission ends")
 
     # 1. Mission: a target from the selection card, never be spotted
     target = lua('for _, n in ipairs(h2.npcs()) do if n.object and n.object:alive() then return n.object:path() end end return ""')
@@ -105,7 +118,12 @@ try:
 
     # 2. People: a guard placed where the camera looks
     check("Next: People", press("Next: People >").startswith("pressed"))
+    check("A civilian", press("A civilian").startswith("pressed"))
+    walks = press("Walks a route")
+    check("a civilian walks a route (a behaviour of another level's when the map has none)",
+          walks.startswith("pressed") and "disabled" not in walks, walks)
     check("A guard", press("A guard").startswith("pressed"))
+    press("Guards the spot where it stands")
     check("Place it", press("Place it").startswith("pressed"))
     w, h = (float(v) for v in lua('local w, h = h2.dev_screen() return w .. " " .. h').split())
     for i in range(3):  # (the first frames look for the surface under the mouse)
@@ -118,8 +136,23 @@ try:
     check("a guard placed", "npcs=1" in info, info)
     shot("people")
 
-    # 3. Items: the first weapon of the map
+    # 3. Items: searched; a hovered one's picture (its clone drawn into the thumbnail)
     check("Next: Items", press("Next: Items >").startswith("pressed"))
+    press("##itemfilter", settle=0.2)
+    lua('h2.dev_type("key") return 1')
+    time.sleep(0.6)
+    check("the search: no weapon with key", press("Gun Hardballer", settle=0.2) == "not found")
+    found = press("Key Door", settle=0.1)
+    lua('h2.dev_uikey(526) return 1')  # (the click started placing it)
+    check("the search: Key Door", found.startswith("pressed"), found)
+    if found.startswith("pressed"):
+        _, kx, ky = found.split()
+        for _ in range(12):
+            lua('h2.dev_hover(%d, %s) return 1' % (int(kx) - 60, ky))
+            time.sleep(0.2)
+        check("its picture", lua("return tostring(h2.dev_thumbnail())") == "true")
+    for _ in range(3):
+        lua('h2.dev_uikey(523) return 1')  # (the search emptied)
     shot("items")
 
     # 4. The map: an object of the map hidden from its card

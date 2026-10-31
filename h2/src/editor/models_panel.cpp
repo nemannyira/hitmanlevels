@@ -12,6 +12,7 @@
 #include "imgui.h"
 
 #include "../engine/imports.h"
+#include "../engine/messages.h"
 #include "../engine/spawn.h"
 #include "../game.h"
 #include "../overlay/overlay.h"
@@ -245,6 +246,10 @@ void ThumbTick()
             std::string err;
             engine::ZGEOM* room = g_viewRoom && IsLive(g_viewRoom) ? g_viewRoom : nullptr;
             if (!sources.empty() && g_thumb.Spawn(sources, "EditorThumb", &err, room)) {
+                // an item template's parts are inactive in the scene (node 0x400: not drawn), their clones too
+                for (engine::ZGEOM* part : g_thumb.parts)
+                    if (!engine::GeomActive(part))
+                        engine::SetGeomActive(part, true);
                 PlaceThumb();
                 SetThumbnailGeoms(g_thumb.parts);
             }
@@ -658,6 +663,10 @@ void DrawSimpleItemsStep()
         if (ImGui::SmallButton("Cancel"))
             CancelPlacement();
     }
+    static char filter[48];
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##itemfilter", "search (key, pistol, ammo...)", filter, sizeof(filter));
+    std::string want = Lower(filter);
     // by kind: the game's weapon templates, ammunition, the others (keys, tools, ...)
     auto kindOf = [](const ModelEntry& e) {
         return e.className.find("Weapon") != std::string::npos ? 0 : e.name.rfind("Ammo", 0) == 0 ? 1 : 2;
@@ -670,21 +679,27 @@ void DrawSimpleItemsStep()
             const ModelEntry& e = g_models[i];
             if (e.category != Category::Pickup || e.templatePath.empty() || kindOf(e) != k)
                 continue;
+            std::string readable = ReadableItem(e.name);
+            if (!want.empty() && Lower(readable).find(want) == std::string::npos &&
+                Lower(e.name).find(want) == std::string::npos && Lower(titles[k]).find(want) == std::string::npos)
+                continue;
             ++n;
             ImGui::PushID(int(i));
             bool current = PlacementSource() == e.sourcePath;
-            if (ImGui::Selectable(ReadableItem(e.name).c_str(), current)) {
+            if (ImGui::Selectable(readable.c_str(), current)) {
                 if (current)
                     CancelPlacement();
                 else
                     BeginPlacement(e.sourcePath, e.name, e.templatePath);
             }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s: click, then click in the world", e.name.c_str());
+            if (ImGui::IsItemHovered() && !Placing()) {  // its picture, as the Models tab shows it
+                g_hoverPath = e.Key();
+                DrawTooltip(e);
+            }
             ImGui::PopID();
         }
         if (!n)
-            ImGui::TextDisabled("none on this map");
+            ImGui::TextDisabled(want.empty() ? "none on this map" : "none with that");
     }
 }
 

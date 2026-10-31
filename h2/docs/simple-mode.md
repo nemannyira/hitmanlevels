@@ -219,3 +219,9 @@ step's *What you changed* with *Undo this*; problems in plainer words with
 *fix it there* (the guide's step, Advanced mode's tab); step 6's description
 (README.md) and picture (preview.png: the next frame without the editor, 640
 wide). *Add an object* is the Models tab's list (its thumbnails on hover).
+
+Then (2026-10-31, the user's walkthrough): the original lines' *Change* /
+*Remove* / *Put back* (an objective's `hidden`); the toolbar's *Free camera*
+and *To Hitman*; routes walked with another level's behaviour when the map's
+own walk none; pictures of the hovered characters and items; the items'
+search.

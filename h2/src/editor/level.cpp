@@ -2490,6 +2490,8 @@ bool SaveLevel(std::string* error)
         for (const MissionObjective& o : m.objectives) {
             static const char* goals[] = {"level", "kill", "reach", "take", "knockout", "deliver", "unseen"};
             json jo = {{"slot", o.slot}, {"text", o.text}, {"goal", goals[o.goal]}};
+            if (o.hidden)
+                jo["hidden"] = true;
             if (o.goal != MissionObjective::Level) {
                 jo["target"] = o.target;
                 jo["replaces_original"] = o.replacesOriginal;
@@ -2771,6 +2773,7 @@ bool LoadLevel(const std::string& folder, std::string* error)
                 if (!(mo.radius >= 50.0f && mo.radius <= 5000.0f))  // also NaN
                     mo.radius = 250.0f;
                 mo.replacesOriginal = o.value("replaces_original", true);
+                mo.hidden = o.contains("hidden") && o["hidden"].is_boolean() && o["hidden"].get<bool>();
                 if (o.contains("place") && o["place"].is_string())
                     mo.place = o["place"].get<std::string>();
                 if (o.contains("fails_mission") && o["fails_mission"].is_boolean())

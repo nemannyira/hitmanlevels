@@ -245,7 +245,7 @@ new games' *Escalation* contracts; [escalation.md](escalation.md)).
 * Each stage in the *Stages* section: its name, the laptop's text of it, the
   rules coming in it (*Add a rule*: never be seen, a time limit, no innocents
   killed, no disguise, one disguise at most, targets killed only with a
-  weapon, no firearm drawn), each *fails the stage* or *only noted*. *Targets
+  weapon, no firearm drawn, no bodies found), each *fails the stage* or *only noted*. *Targets
   killed only with...* checks the weapon in Hitman's hands when a *Kill*
   target of the stage dies (a kind: the fiber wire, a knife, close combat, a
   pistol, a firearm; or one weapon of the map); with no target in the stage,

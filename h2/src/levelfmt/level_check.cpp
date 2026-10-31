@@ -359,7 +359,7 @@ Report CheckLevel(const json& j, bool strict)
         if (!c.Object(o, w, {"kind", "stage", "gone_from", "broken", "seconds", "weapon"}))
             return;
         static const std::set<std::string> kinds = {"unseen",       "time",      "no_innocents", "no_disguise",
-                                                    "one_disguise", "kill_with", "no_firearm"};
+                                                    "one_disguise", "kill_with", "no_firearm", "no_bodies"};
         if (!o.contains("kind") || !o["kind"].is_string() || !kinds.count(o["kind"].get<std::string>()))
             c.Bad(w + ".kind", "not a rule of the editor's");
         if (o.contains("broken") && (!o["broken"].is_string() || (o["broken"] != "fail" && o["broken"] != "note")))

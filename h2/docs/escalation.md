@@ -67,7 +67,7 @@ so a target's rule listens to its `death`.
 | one disguise only (no change once taken) | the `disguise` event | as above |
 | kill a target only with X (fiber wire, a knife, close combat, a pistol, a firearm, one weapon of the map) | the stage's *Kill* targets' `death` (none: Hitman's `kill`), the weapon in his hands then (`h2.hand`) | yes (`kill_with`, #28) |
 | no firearm drawn | the weapon in Hitman's hands, twice a second | yes (`no_firearm`, #28) |
-| no bodies found | — | not yet: the game keeps no count of bodies found (the reaction is inside the characters' behaviour scripts); a TODO, #30 |
+| no bodies found | the game's own sight: a dead or knocked out body is one of what the characters look out for (TrackLinkObjects, ZLIST_CheckVisible); `ObjectVisible` goes to a living character who sees it (`msg:objectvisible`) | yes (`no_bodies`, #30) |
 | extra target | an objective of the stage | yes |
 | bring an object to a place | the *deliver* goal | yes |
 
@@ -113,5 +113,5 @@ The ones marked yes are the first version; the others follow.
    a stage. (done, #26)
 4. Launcher: stages, progress, the next stage opened. (done, #27)
 5. Rules that need reverse engineering: kill method, drawn weapon (done,
-   #28); bodies found (later, #30).
+   #28); bodies found (done, #30).
 6. An example escalation in `examples/missions` and the docs.

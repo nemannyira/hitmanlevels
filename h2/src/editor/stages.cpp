@@ -54,6 +54,7 @@ const RuleKind kRuleKinds[] = {
     {"one_disguise", "One disguise at most"},
     {"kill_with", "Targets killed only with..."},
     {"no_firearm", "No firearm drawn"},
+    {"no_bodies", "No bodies found"},
 };
 
 // "kill_with": the weapons a target may be killed with, by the kind of the weapon in Hitman's hands
@@ -244,6 +245,17 @@ for _, r in ipairs(rules) do
     h2.every(0.5, function(t)
       local _, kind = h2.hand()
       if kind and FIREARM[kind] then broke(r, "You drew a firearm") t:cancel() end
+    end)
+  elseif r.kind == "no_bodies" then
+    -- the game's own sight (TrackLinkObjects, ZLIST_CheckVisible): a body is one of what the characters look
+    -- out for once dead (Msg_ObjectAdd); ObjectVisible goes to one who sees it (#30)
+    h2.on("msg:objectvisible", function(e)
+      local body, seer, hitman = e.object, e.to, h2.player()
+      if not body or not seer or not body:isa("ZActor") or not seer:isa("ZActor") then return end
+      if hitman and (body:path() == hitman:path() or seer:path() == hitman:path()) then return end
+      if (not body:alive() or body:knockedout()) and seer:alive() and not seer:knockedout() then
+        broke(r, "A body was found")
+      end
     end)
   elseif r.kind == "time" then
     local told = {}

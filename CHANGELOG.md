@@ -3,6 +3,11 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-31: no bodies found (#30)
+
+* One more rule of an escalation's stages: *no bodies found*: a body (dead
+  or knocked out) seen by a character, as the game's own sight tells it.
+
 ## 2026-10-31: Simple mode, more (#35, #36)
 
 * Doors of the map can be locked (Simple mode's card and The map step,

@@ -81,7 +81,7 @@ CASES = [
     # an escalation (#24): stages, rules, the stages of what is placed
     ("an escalation", base(stages=[{"name": "One", "text": "a\nb"}, {"name": "Two"}],
                            rules=[{"kind": "time", "seconds": 60, "stage": 2, "broken": "note"},
-                                  {"kind": "kill_with", "weapon": "fiberwire"}, {"kind": "no_firearm"},
+                                  {"kind": "kill_with", "weapon": "fiberwire"}, {"kind": "no_firearm"}, {"kind": "no_bodies"},
                                   {"kind": "kill_with", "weapon": "GunHardballer"}], replay=False,
                            spawned=[dict(P, id="a", kind="point", stage=2)],
                            npcs=[{"pos": [1.0, 2.0, 3.0], "matrix": M, "id": "n", "record": 1, "model": "M", "gone_from": 2}],

@@ -79,12 +79,22 @@ def knock_out():
     at(gx - 70, gy + 5, gz, 270)  # (yaw 270: towards +x)
     hand = lua('local _, kind, name = h2.hand() return tostring(kind) .. " " .. tostring(name)')
     clock = lua('return string.format("%.1f", h2.time())')
+    # the messages the guard and Hitman get or send during the attack, in order (#38)
+    lua(G + 'KO_MSGS = {} local gp, hp = g:path(), h2.player():path() '
+        'if not KO_WATCH then KO_WATCH = true h2.on("message", function(e) if not KO_MSGS then return end '
+        'local function who(o) if not o then return nil end local p = o:path() return p == KO_G and "g" or p == KO_H and "H" or nil end '
+        'local t, f = who(e.to), who(e.from) if (t or f) and #KO_MSGS < 60 then '
+        'KO_MSGS[#KO_MSGS + 1] = (f or "-") .. ">" .. (t or "-") .. ":" .. e.name end end) end '
+        'KO_G, KO_H = gp, hp return 1')
     lua("h2.dev_mouse(0, 3.0) return 1")
     time.sleep(5)
     clock2 = lua('return string.format("%.1f", h2.time())')
+    msgs = lua('local m = KO_MSGS or {} KO_MSGS = nil local seen, out = {}, {} for _, x in ipairs(m) do '
+               'if not seen[x] then seen[x] = true out[#out + 1] = x end end return table.concat(out, " ")')
     ctypes.windll.kernel32.GetTickCount64.restype = ctypes.c_ulonglong
     uptime = ctypes.windll.kernel32.GetTickCount64() / 3600000.0
-    return "before: %s, hand: %s, game time %s -> %s, Windows up %.1f h" % (before, hand, clock, clock2, uptime)
+    return "before: %s, hand: %s, game time %s -> %s, Windows up %.1f h; messages: %s" % (
+        before, hand, clock, clock2, uptime, msgs)
 
 
 def make(goal):

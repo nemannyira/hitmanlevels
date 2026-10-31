@@ -67,15 +67,21 @@ def guard_pos():
 
 
 def knock_out():
-    """Chloroform (placed beside the guard) picked up, drawn, used from behind."""
+    """Chloroform (placed beside the guard) picked up, drawn, used from behind; the guard's state, Hitman's
+    hand and the game's clock before the attack (for a failure: #38)."""
     gx, gy, gz = guard_pos()
+    before = lua(G + 'return g:state()')
     at(gx - 290, gy + 5, gz)
     key(DIK_E)
     key(DIK_1)
     lua(G + "g:faceto(%f, %f, %f) return 1" % (gx + 500, gy, gz))  # its back to Hitman
     at(gx - 70, gy + 5, gz, 270)  # (yaw 270: towards +x)
+    hand = lua('local _, kind, name = h2.hand() return tostring(kind) .. " " .. tostring(name)')
+    clock = lua('return string.format("%.1f", h2.time())')
     lua("h2.dev_mouse(0, 3.0) return 1")
     time.sleep(5)
+    clock2 = lua('return string.format("%.1f", h2.time())')
+    return "before: %s, hand: %s, game time %s -> %s" % (before, hand, clock, clock2)
 
 
 def make(goal):
@@ -93,9 +99,9 @@ try:
     make("knockout")
     lua('return h2.dev_level("save")')
     load()
-    knock_out()
+    how = knock_out()
     state = lua(G + 'return g:state() .. " " .. tostring(g:alive()) .. " " .. tostring(g:knockedout())')
-    check("knock-out: unconscious, alive", state == "Being2.Unconscious true true", state)
+    check("knock-out: unconscious, alive", state == "Being2.Unconscious true true", state + " | " + how)
     check("knock-out: goal done", done() == "5", done())
 
     # 2. a "dies" goal: not by a knock-out, by a death afterwards
@@ -103,13 +109,13 @@ try:
     make("target")
     lua('return h2.dev_level("save")')
     load()
-    knock_out()
+    how = knock_out()
     time.sleep(2)
     check("dies: not by a knock-out", done() == "", done())
     check("dies: npc:kill() on the knocked out one", lua(G + "return tostring(g:kill())") == "true")
     time.sleep(4)
     state = lua(G + 'return g:state() .. " " .. tostring(g:alive())')
-    check("dies: dead now", state == "Being2.Dead false", state)
+    check("dies: dead now", state == "Being2.Dead false", state + " | " + how)
     check("dies: goal done", done() == "5", done())
 
     # 3. a revolver brought to a point, dropped there with G

@@ -1587,6 +1587,171 @@ void DrawEnd()
     ImGui::Unindent();
 }
 
+// ---- Simple mode's Mission step (docs/simple-mode.md, #33) ----
+
+// the blank of a sentence still to fill: what the next click picks
+void PickButton(const char* label, PickKind kind, int slot)
+{
+    bool picking = g_pick == kind && g_pickSlot == slot;
+    if (ImGui::SmallButton(picking ? "click in the world... (Esc)" : label))
+        picking ? (void)(g_pick = PickKind::None) : StartPick(kind, slot);
+}
+
+// a new line of the laptop, its blank picked next (none free: false)
+bool NewSentence(MissionObjective::Goal goal)
+{
+    int slot = FreeSlot();
+    if (!slot)
+        return false;
+    MissionObjective o;
+    o.slot = slot;
+    o.goal = goal;
+    o.radius = goal == MissionObjective::Take ? 150.0f : 250.0f;
+    o.span = NewSpan();
+    Doc().objectives.push_back(o);
+    g_selSlot = slot;
+    Changed();
+    StartPick(goal == MissionObjective::Kill || goal == MissionObjective::KnockOut ? PickKind::Character
+              : goal == MissionObjective::Reach                                   ? PickKind::Place
+                                                                                   : PickKind::Object,
+              slot);
+    return true;
+}
+
+void DrawSimpleMissionStep()
+{
+    if (!ForThisScene()) {
+        ImGui::TextWrapped("The level is for %s: load its map first.", CurrentLevel().baseScene.c_str());
+        return;
+    }
+    ImGui::SeparatorText("What the player has to do");
+    int lines = 0;
+    for (int slot = 1; slot <= kSlots; ++slot) {
+        MissionObjective* o = ObjectiveAt(slot);
+        std::string original = OwnText(slot);
+        if (original.empty() && !o)
+            continue;
+        ++lines;
+        ImGui::PushID(slot);
+        std::string text = LineText(slot);
+        ImGui::Bullet();
+        ImGui::TextWrapped("%s", text.empty() ? "(a line without text yet)" : text.c_str());
+        bool own = o && o->goal != MissionObjective::Level;
+        ImGui::Indent();
+        if (!own) {
+            ImGui::TextDisabled("the original mission's");
+        } else {
+            ImGui::TextDisabled("%s", Summary(o).c_str());
+            bool button = true;
+            if (o->goal == MissionObjective::Kill || o->goal == MissionObjective::KnockOut)
+                PickButton(o->target.empty() ? "Pick who" : "Someone else", PickKind::Character, slot);
+            else if (o->goal == MissionObjective::Take || o->goal == MissionObjective::Deliver)
+                PickButton(o->target.empty() ? "Pick what" : "Something else", PickKind::Object, slot);
+            else if (o->goal == MissionObjective::Reach)
+                PickButton(o->target.empty() ? "Pick where" : "Another place", PickKind::Place, slot);
+            else
+                button = false;
+            if (o->goal == MissionObjective::Deliver && !o->target.empty()) {
+                ImGui::SameLine();
+                PickButton(o->place.empty() ? "Pick where to" : "Another place to", PickKind::Place, 100 + slot);
+            }
+            if (o->goal == MissionObjective::Unseen &&
+                ImGui::Checkbox("being spotted fails the mission", &o->failsMission))
+                Changed();
+            if (button)
+                ImGui::SameLine();
+            if (ImGui::SmallButton("Remove"))
+                ImGui::OpenPopup("remove");
+            if (ImGui::BeginPopup("remove")) {
+                ImGui::Text("Remove \"%s\"?", text.c_str());
+                if (ImGui::Button(original.empty() ? "Remove" : "Remove (the original's line comes back)")) {
+                    Doc().objectives.erase(Doc().objectives.begin() + (o - Doc().objectives.data()));
+                    CurrentLevel().dirty = true;
+                    ShowLines({slot});
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Keep it"))
+                    ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+        }
+        ImGui::Unindent();
+        ImGui::PopID();
+    }
+    if (!lines)
+        ImGui::TextDisabled("No objectives yet: add one below.");
+
+    ImGui::Spacing();
+    bool free = FreeSlot() != 0;
+    ImGui::BeginDisabled(!free);
+    ImGui::TextUnformatted("Add an objective:");
+    struct Sentence {
+        const char* label;
+        MissionObjective::Goal goal;
+        const char* tip;
+    };
+    const Sentence sentences[] = {
+        {"Kill someone", MissionObjective::Kill, "Then click the character in the world"},
+        {"Knock someone out", MissionObjective::KnockOut, "Then click the character: done when knocked out and alive"},
+        {"Get to a place", MissionObjective::Reach, "Then click the ground where Hitman has to get"},
+        {"Take an object", MissionObjective::Take, "Then click an item (a key, a weapon) or any object"},
+        {"Bring an object somewhere", MissionObjective::Deliver, "Then click the object; then where it has to go"},
+    };
+    float avail = ImGui::GetContentRegionAvail().x, x = 0;
+    for (const Sentence& st : sentences) {
+        float w = ImGui::CalcTextSize(st.label).x + ImGui::GetStyle().FramePadding.x * 2;
+        if (x > 0 && x + w < avail)
+            ImGui::SameLine();
+        else
+            x = 0;
+        x += w + ImGui::GetStyle().ItemSpacing.x;
+        if (ImGui::Button(st.label))
+            NewSentence(st.goal);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", st.tip);
+    }
+    if (ImGui::Button("Never be spotted"))
+        g_status = MissionUnseen(false);
+    ImGui::EndDisabled();
+    if (!free)
+        ImGui::TextDisabled("The laptop has 6 lines, all in use: remove one first.");
+    if (g_pick != PickKind::None)
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "Click in the world (Esc: cancel)");
+
+    ImGui::SeparatorText("When the mission ends");
+    MissionDoc& m = Doc();
+    if (ImGui::RadioButton("As the original mission ends", !m.endWhenDone)) {
+        m.endWhenDone = false;
+        Changed();
+    }
+    if (ImGui::RadioButton("When every objective above is done", m.endWhenDone)) {
+        m.endWhenDone = true;
+        Changed();
+    }
+    if (m.endWhenDone) {
+        ImGui::Indent();
+        std::string exit = Label(m.exitPath);
+        ImGui::TextWrapped("and Hitman leaves through: %s", exit.empty() ? "anywhere (it ends at once)" : exit.c_str());
+        PickButton(exit.empty() ? "Pick the exit" : "Another exit", PickKind::Place, 0);
+        if (!exit.empty()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("No exit")) {
+                m.exitPath.clear();
+                Changed();
+            }
+        }
+        ImGui::Unindent();
+    }
+
+    ImGui::SeparatorText("Briefing (the laptop's text)");
+    DrawBriefingEditor();
+    ImGui::SeparatorText("Hitman starts");
+    DrawStartOutfitControl();
+    if (!g_status.empty())
+        ImGui::TextDisabled("%s", g_status.c_str());
+}
+
 void DrawPanel()
 {
     if (CurrentScene().empty()) {
@@ -2235,6 +2400,18 @@ void InstallMission()
     overlay::AddPanel({"Mission", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     OnScenePushed(OnScene);
     OnFrameEnd(Check);
+}
+
+void DrawSimpleMission() { DrawSimpleMissionStep(); }
+
+bool MissionStepDone()
+{
+    const LevelDocument& L = CurrentLevel();
+    for (const MissionObjective& o : L.mission.objectives)
+        if (o.goal != MissionObjective::Level && o.goal != MissionObjective::Unseen &&
+            (o.target.empty() || (o.goal == MissionObjective::Deliver && o.place.empty())))
+            return false;  // a blank not filled
+    return !L.mission.objectives.empty() || !L.emptyMap;  // own objectives, or the original's
 }
 
 } // namespace h2::editor

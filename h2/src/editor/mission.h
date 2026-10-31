@@ -27,6 +27,9 @@ void SetLocText(const std::string& key, const std::string& text);
 // an object Hitman has to take, a place Hitman has to reach or the mission's
 // exit (or which line it is already).
 void DrawMissionForSelection(engine::ZGEOM* geom);
+// Simple mode's Mission step (the guide), and whether it is done (no blank left)
+void DrawSimpleMission();
+bool MissionStepDone();
 // The same from code (dev commands): "target" | "take" | "reach" | "exit"; what was done or why not.
 std::string MissionGoalFor(engine::ZGEOM* geom, const std::string& goal);
 // A "bring it to a place" line's place; a new "never spotted" line (dev commands).

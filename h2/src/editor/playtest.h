@@ -17,6 +17,9 @@ void InstallPlayTest();
 void DrawPlayTestControl();
 // Test (the toolbar's button): saves, loads the map again, plays.
 void TestLevel();
+// Test with Hitman starting there (Simple mode's guide: the level's start, the camera's point)
+enum class TestStart { Hitman, Camera, LevelStart };
+void TestLevelFrom(TestStart start);
 // Whether the editor holds the world still now.
 bool WorldFrozen();
 // The world also stands still with the editor closed (testtools.h).

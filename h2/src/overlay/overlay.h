@@ -35,13 +35,22 @@ void AddKeyHandler(bool (*handler)(int vk));
 // (gizmos, markers). A panel without a name is always Dock::None.
 enum class Dock { None, Floating, Toolbar, Left, Right, Bottom };
 
+// The editor's two faces (docs/simple-mode.md): a panel is drawn in the modes it is for.
+constexpr int kAdvanced = 1, kSimple = 2, kBothModes = kAdvanced | kSimple;
+
 struct Panel {
     const char* name;
     bool* visible;
     void (*draw)();
     Dock dock = Dock::Floating;
+    int modes = kAdvanced;  // (a panel without a name: both)
 };
 void AddPanel(const Panel& panel);
+
+// Simple mode: the guide instead of the tabs and sections; H2Fix.ini [Editor] Mode=simple|advanced
+// (none: simple), saved when switched.
+bool SimpleMode();
+void SetSimpleMode(bool on, bool save = true);
 
 // Brings a panel forward (its left tab selected, made visible).
 void ShowPanel(const char* name);

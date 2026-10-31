@@ -14,6 +14,7 @@
 #include "diag.h"
 #include "display.h"
 #include "editor/freecam.h"
+#include "editor/guide.h"
 #include "editor/highlight.h"
 #include "editor/level.h"
 #include "editor/playtest.h"
@@ -126,6 +127,7 @@ void Init()
     h2::editor::InstallFreeCam();
     h2::editor::InstallViewport();
     h2::editor::InstallHighlight();
+    h2::editor::InstallGuide();  // Simple mode's left panel
     h2::editor::InstallScenePanels();
     h2::editor::InstallModelsPanel();  // left tabs in this order: Scene, Models, NPCs, Level
     h2::editor::InstallNpcs();

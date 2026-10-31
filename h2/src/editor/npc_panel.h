@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 // NPCs tab: characters of the scene, their behaviour (SDL script and its
 // parameters), placing new NPCs with a chosen behaviour.
 
@@ -9,6 +10,10 @@ struct ZGEOM;
 namespace h2::editor {
 
 void InstallNpcPanel();
+// Simple mode's People step (the guide)
+void DrawSimplePeople();
+// a person's name to read ("Volkov", "Bodyguard Mafia")
+std::string PersonName(engine::ZGEOM* actor);
 
 // Placing an NPC: the viewport hands the mouse over while this is on.
 bool NpcPlacing();

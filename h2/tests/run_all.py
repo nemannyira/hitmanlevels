@@ -57,6 +57,7 @@ TESTS = [
     ("map_own", ["map_own_test.py"], 900, False),
     ("killswitch", ["killswitch_test.py"], 300, False),
     ("gui", ["gui_test.py"], 600, False),
+    ("simple_mode", ["simple_mode_test.py"], 600, False),  # (#31: the guided editor)
     ("maps_gameway", ["maps_gameway_test.py"], 3600, False),
     ("fuzz", ["fuzz_levels.py"], 1800, False),
     ("limits", ["limits_test.py"], 1500, True),  # (big levels: on a fresh game)
@@ -189,7 +190,10 @@ def log_since(at):
 def set_ini(text, values):
     for key, value in values.items():
         text = re.sub(r"(?m)^%s=[^\r\n]*" % key, "%s=%s" % (key, value), text)
-    return text
+    # the tests drive Advanced mode's panels (the first Mode of [Editor] counts; [Display] has a Mode too)
+    if re.search(r"(?m)^\[Editor\]", text):
+        return re.sub(r"(?m)^\[Editor\][^\r\n]*(\r?\n)", lambda m: m.group(0) + "Mode=advanced" + m.group(1), text, 1)
+    return text + "\r\n[Editor]\r\nMode=advanced\r\n"
 
 
 def main():

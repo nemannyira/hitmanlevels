@@ -23,6 +23,7 @@
 #include "playtest.h"
 #include "placement.h"
 #include "scene_panel.h"
+#include "guide.h"
 #include "stages.h"
 
 namespace h2::editor {
@@ -249,6 +250,11 @@ void Pick()
         PickSphere(g_clickX, g_clickY);
         return;
     }
+    if (overlay::SimpleMode())  // (no Objects / NPCs choice: a character by its place first, #15)
+        if (engine::ZGEOM* c = CharacterAt(g_clickX, g_clickY)) {
+            Select(c);
+            return;
+        }
     RequestPick(g_clickX, g_clickY, [](engine::ZGEOM* hit, const float*, const float*) {
         if (hit)
             Select(hit);
@@ -295,6 +301,10 @@ void Shortcuts()
 
 void DrawToolbar()
 {
+    if (overlay::SimpleMode()) {
+        DrawSimpleToolbar();
+        return;
+    }
     if (ImGui::RadioButton("Objects", !g_npcMode)) g_npcMode = false;
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("A click in the world selects an object (a model, an item, a point)");
@@ -371,8 +381,20 @@ void DrawToolbar()
     ImGui::TextDisabled("|");
     ImGui::SameLine();
     DrawPlayTestControl();
-    if (!g_message.empty()) {
-        ImGui::SameLine();
+    // the other face at the right end, before a message (never pushed out of the window by it)
+    ImGui::SameLine();
+    float w = ImGui::CalcTextSize("Simple mode").x + ImGui::GetStyle().FramePadding.x * 2;
+    float right = ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x;
+    float messageAt = ImGui::GetCursorPosX();
+    if (messageAt < right)
+        ImGui::SetCursorPosX(right);
+    if (ImGui::Button("Simple mode"))
+        overlay::SetSimpleMode(true);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The guided editor: Mission > People > Items > The map > Try it > Save & share\n"
+                          "(what it does not show stays in the level)");
+    if (!g_message.empty() && messageAt + ImGui::CalcTextSize(g_message.c_str()).x < right) {
+        ImGui::SameLine(messageAt);
         ImGui::TextDisabled("  %s", g_message.c_str());
     }
 }
@@ -522,11 +544,14 @@ bool CameraMatrices(float view[16], float proj[16])
     return true;
 }
 
+bool GizmoTurning() { return g_op == ImGuizmo::ROTATE; }
+void SetGizmoTurning(bool turning) { g_op = turning ? ImGuizmo::ROTATE : ImGuizmo::TRANSLATE; }
+
 void InstallViewport()
 {
     static bool always = true;
     overlay::AddPanel({nullptr, &always, DrawViewport});
-    overlay::AddPanel({"Toolbar", &g_toolbarVisible, DrawToolbar, overlay::Dock::Toolbar});
+    overlay::AddPanel({"Toolbar", &g_toolbarVisible, DrawToolbar, overlay::Dock::Toolbar, overlay::kBothModes});
     overlay::AddMenu("Edit", EditMenu);
 }
 

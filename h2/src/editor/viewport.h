@@ -24,6 +24,9 @@ engine::ZGEOM* CharacterAt(float x, float y);
 
 // Move snapping step in cm when snapping is on (toolbar "Snap"), else 0.
 float SnapMoveStep();
+// the gizmo turns (E) or moves (W) the selection
+bool GizmoTurning();
+void SetGizmoTurning(bool turning);
 
 // Current camera view/projection in the gizmo's convention (row vectors,
 // left-handed); false when there is no world camera.

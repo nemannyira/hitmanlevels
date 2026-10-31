@@ -613,6 +613,75 @@ void DrawOtherLevels()
     ImGui::End();
 }
 
+// ---- Simple mode's Items step (docs/simple-mode.md, #35) ----
+
+// an item template's name to read: "GunHardballer" -> "Gun Hardballer", "Key_Gate01" -> "Key Gate"
+std::string ReadableItem(const std::string& name)
+{
+    std::string base = name;
+    while (!base.empty() && (std::isdigit(static_cast<unsigned char>(base.back())) || base.back() == '_'))
+        base.pop_back();
+    std::string out;
+    for (size_t i = 0; i < base.size(); ++i) {
+        char c = base[i];
+        if (c == '_') {
+            if (!out.empty() && out.back() != ' ')
+                out += ' ';
+            continue;
+        }
+        if (i && std::isupper(static_cast<unsigned char>(c)) && std::islower(static_cast<unsigned char>(base[i - 1])) &&
+            !out.empty() && out.back() != ' ')
+            out += ' ';
+        out += c;
+    }
+    return out.empty() ? name : out;
+}
+
+void DrawSimpleItemsStep()
+{
+    if (CurrentScene().empty()) {
+        ImGui::TextWrapped("Load the level's map first.");
+        return;
+    }
+    if (g_builtFor != CurrentScene() || g_models.empty() || g_builtLibrary != ImportLibraryVersion())
+        Build();
+    if (Placing()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "Click in the world to put it there (Esc: cancel)");
+        if (ImGui::SmallButton("Cancel"))
+            CancelPlacement();
+    }
+    // by kind: the game's weapon templates, the others (keys, tools, ...)
+    struct Kind {
+        const char* title;
+        bool weapons;
+    };
+    for (Kind k : {Kind{"Weapons", true}, Kind{"Keys, tools and other things", false}}) {
+        ImGui::SeparatorText(k.title);
+        int n = 0;
+        for (size_t i = 0; i < g_models.size(); ++i) {
+            const ModelEntry& e = g_models[i];
+            if (e.category != Category::Pickup || e.templatePath.empty())
+                continue;
+            if ((e.className.find("Weapon") != std::string::npos) != k.weapons)
+                continue;
+            ++n;
+            ImGui::PushID(int(i));
+            bool current = PlacementSource() == e.sourcePath;
+            if (ImGui::Selectable(ReadableItem(e.name).c_str(), current)) {
+                if (current)
+                    CancelPlacement();
+                else
+                    BeginPlacement(e.sourcePath, e.name, e.templatePath);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s: click, then click in the world", e.name.c_str());
+            ImGui::PopID();
+        }
+        if (!n)
+            ImGui::TextDisabled("none on this map");
+    }
+}
+
 void DrawPanel()
 {
     if (CurrentScene().empty()) {
@@ -712,6 +781,9 @@ void DrawPanel()
 }
 
 } // namespace
+
+void DrawSimpleItems() { DrawSimpleItemsStep(); }
+void DrawModelsList() { DrawPanel(); }
 
 void InstallModelsPanel()
 {

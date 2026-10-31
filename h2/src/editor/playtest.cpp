@@ -209,6 +209,12 @@ void SetWorldFrozenWhilePlaying(bool on) { g_playFrozen = on; }
 
 void TestLevel() { Test(); }
 
+void TestLevelFrom(TestStart start)
+{
+    g_startAt = start == TestStart::Camera ? kAtCamera : start == TestStart::LevelStart ? kAtLevelStart : kAtHitman;
+    Test();
+}
+
 void DrawPlayTestControl()
 {
     if (!OnMap())

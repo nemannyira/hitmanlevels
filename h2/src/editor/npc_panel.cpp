@@ -1,6 +1,7 @@
 #include "npc_panel.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -596,7 +597,7 @@ void DrawAllRoutes()
             return;
         Transform t = GetTransform(actor);
         float from[3] = {t.pos[0], t.pos[1] + 100.0f, t.pos[2]};  // about the waist
-        DrawRoutes(from, RoutesOfActor(actor), true);
+        DrawRoutes(from, RoutesOfActor(actor), !overlay::SimpleMode());  // (setting names: Advanced mode)
     };
     if (g_routes == kRoutesSelected) {
         engine::ZGEOM* a = ActorOf(Selected());
@@ -1213,6 +1214,8 @@ Transform PlacingTransform()
     return t;
 }
 
+void AfterGuidePlace(engine::ZGEOM* npc);
+
 void Place()
 {
     if (g_type < 0 || !g_haveHit)
@@ -1249,6 +1252,7 @@ void Place()
     SetTarget(npc);
     g_message = std::string("placed ") + engine::SafeString(npc->name) + " (" + BehaviourLabel(g_newBehaviour) +
                 "), Ctrl+Z undoes";
+    AfterGuidePlace(npc);  // (its own message)
 }
 
 void DrawPlace()
@@ -1347,6 +1351,293 @@ void DrawList()
         ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(b.c_str()).x);
         ImGui::TextDisabled("%s", b.c_str());
         ImGui::PopID();
+    }
+}
+
+// ---- Simple mode's People step (docs/simple-mode.md, #34) ----
+
+enum class Who { Guard, Civilian, Target };
+Who g_who = Who::Guard;
+bool g_walks = false;          // walks a route (else: stays around where it is put)
+int g_look = -1;               // the type chosen for the guide (index in g_types)
+bool g_guidePlacing = false;   // the placing was started by the guide: its steps after placing
+Who g_guideWho = Who::Guard;
+bool g_guideWalks = false;
+std::map<std::string, bool> g_walksCache;  // behaviour -> has a route setting
+
+// a model's name to read: "BodyguardMafia_01" -> "Bodyguard Mafia" (an import keeps its "(C3-1)")
+std::string Readable(const std::string& model)
+{
+    std::string base = model, tail;
+    size_t paren = base.find(" (");
+    if (paren != std::string::npos) {
+        tail = base.substr(paren);
+        base = base.substr(0, paren);
+    }
+    while (!base.empty() && (std::isdigit(static_cast<unsigned char>(base.back())) || base.back() == '_'))
+        base.pop_back();
+    std::string out;
+    for (size_t i = 0; i < base.size(); ++i) {
+        char c = base[i];
+        if (c == '_') {
+            if (!out.empty() && out.back() != ' ')
+                out += ' ';
+            continue;
+        }
+        if (i && std::isupper(static_cast<unsigned char>(c)) && std::islower(static_cast<unsigned char>(base[i - 1])) &&
+            !out.empty() && out.back() != ' ')
+            out += ' ';
+        out += c;
+    }
+    return (out.empty() ? model : out) + tail;
+}
+
+// a person's name to read: its name in the level ("Volkov"), else its model's
+std::string ReadableName(engine::ZGEOM* actor)
+{
+    std::string name = engine::SafeString(actor->name);
+    for (const LevelNpc& n : CurrentLevel().npcs)
+        if (n.id == name && !n.label.empty())
+            return n.label;
+    return Readable(CharacterName(actor));
+}
+
+bool TypeIsGuard(const NpcType& t)
+{
+    return IsGuardBehaviour(t.script.empty() ? t.model : t.script) || IsGuardBehaviour(t.model);
+}
+
+bool HasRoute(const engine::ScriptInfo& s)
+{
+    for (const engine::ScriptParam& p : s.params)
+        if (p.type == engine::ParamType::Ref && IsRouteRef(p.name))
+            return true;
+    return false;
+}
+
+bool BehaviourWalks(const std::string& name)
+{
+    auto it = g_walksCache.find(name);
+    if (it != g_walksCache.end())
+        return it->second;
+    engine::ScriptInfo s;
+    bool walks = BehaviourTemplate(name, s) && HasRoute(s);
+    g_walksCache[name] = walks;
+    return walks;
+}
+
+// a behaviour of the map's of that kind (guard or not) that walks a route ("" none)
+std::string WalkingBehaviour(bool guard)
+{
+    for (const std::string& b : g_behaviourNames)
+        if (!g_storyBehaviours.count(b) && IsGuardBehaviour(b) == guard && BehaviourWalks(b))
+            return b;
+    return "";
+}
+
+// the guide's choice as the NPCs tab's: the type, then its behaviour (one that walks when asked)
+bool ChooseForGuide()
+{
+    if (g_look < 0 || g_look >= int(g_types.size()))
+        return false;
+    ChooseType(g_look);
+    if (!g_walks || HasRoute(g_new))
+        return true;
+    std::string b = WalkingBehaviour(TypeIsGuard(g_types[g_look]));
+    if (b.empty())
+        return false;
+    ChooseNewBehaviour(b);
+    return true;
+}
+
+// after a character placed by the guide: a target's objective, a route's points
+void AfterGuidePlace(engine::ZGEOM* npc)
+{
+    if (!g_guidePlacing || !npc)
+        return;
+    if (g_guideWho == Who::Target)
+        MissionGoalFor(npc, "target");
+    g_message = "Placed: " + ReadableName(npc) + (g_guideWho == Who::Target ? " (a target now)" : "") +
+                ". Ctrl+Z takes it back.";
+    if (!g_guideWalks)
+        return;
+    for (engine::ScriptParam& p : g_targetEdit.params) {
+        if (p.type != engine::ParamType::Ref || !IsRouteRef(p.name))
+            continue;
+        const LevelNpc* n = FindLevelNpc(npc);
+        std::string err;
+        engine::ZGEOM* list = MakeNewRoute((n ? n->id : std::string("Route")) + "_" + p.name, &err);
+        if (!list) {
+            g_message = "no route made: " + err;
+            return;
+        }
+        p.bits = engine::RefOf(list);
+        ApplyTarget();
+        g_addList = list;
+        g_placing = false;  // its points first
+        g_message = "Now click the route's points in walking order (Esc: done)";
+        return;
+    }
+}
+
+void DrawSimplePeopleStep()
+{
+    if (CurrentScene().empty() || engine::SceneRecords().empty() || !engine::SceneDataValid()) {
+        ImGui::TextWrapped("Load the level's map first.");
+        return;
+    }
+    if (g_builtFor != BuildKey()) {
+        Build();
+        g_look = -1;
+        g_walksCache.clear();
+    }
+    if (!g_message.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", g_message.c_str());
+        ImGui::PopTextWrapPos();
+    }
+
+    ImGui::SeparatorText("Add a person");
+    ImGui::TextUnformatted("Who?");
+    Who before = g_who;
+    if (ImGui::RadioButton("A guard", g_who == Who::Guard))
+        g_who = Who::Guard;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Armed; attacks Hitman when it sees him where he may not be");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("A civilian", g_who == Who::Civilian))
+        g_who = Who::Civilian;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Harmless; may run away or call the guards");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("A target", g_who == Who::Target))
+        g_who = Who::Target;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("A person Hitman has to kill: it becomes an objective (step 1)");
+    if (g_who != before)
+        g_look = -1;
+
+    // looks like: the map's characters of that kind, the most common first
+    std::vector<int> looks;
+    for (size_t i = 0; i < g_types.size(); ++i)
+        if (g_who == Who::Target || TypeIsGuard(g_types[i]) == (g_who == Who::Guard))
+            looks.push_back(int(i));
+    std::stable_sort(looks.begin(), looks.end(),
+                     [](int a, int b) { return g_types[a].count > g_types[b].count; });
+    if (looks.empty()) {
+        ImGui::TextDisabled("This map has no one of that kind to copy.");
+        return;
+    }
+    if (std::find(looks.begin(), looks.end(), g_look) == looks.end())
+        g_look = looks.front();
+    ImGui::TextUnformatted("Looks like:");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##look", Readable(g_types[g_look].model).c_str(), ImGuiComboFlags_HeightLarge)) {
+        for (int i : looks) {
+            char label[200];
+            snprintf(label, sizeof(label), "%s##%d", Readable(g_types[i].model).c_str(), i);
+            if (ImGui::Selectable(label, g_look == i))
+                g_look = i;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s: %d on the map", g_types[i].model.c_str(), g_types[i].count);
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::TextUnformatted("What does it do?");
+    bool canWalk = BehaviourWalks(g_types[g_look].script) || !WalkingBehaviour(TypeIsGuard(g_types[g_look])).empty();
+    if (ImGui::RadioButton(g_who == Who::Guard ? "Guards the spot where it stands" : "Stays around where it stands",
+                           !g_walks))
+        g_walks = false;
+    ImGui::BeginDisabled(!canWalk);
+    if (ImGui::RadioButton("Walks a route", g_walks && canWalk))
+        g_walks = true;
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip(canWalk ? "After placing it, click the route's points in walking order (Esc ends)"
+                                  : "No one of this kind walks routes on this map");
+    if (!canWalk)
+        g_walks = false;
+
+    if (g_placing && g_guidePlacing) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "Click in the world to place it (Shift: more, Esc: stop)");
+        ImGui::PopTextWrapPos();
+    } else if (ImGui::Button("Place it", ImVec2(-1, 0))) {
+        if (ChooseForGuide()) {
+            g_guidePlacing = true;
+            g_guideWho = g_who;
+            g_guideWalks = g_walks;
+            g_placing = true;
+            g_placePickPending = false;
+            g_haveHit = false;
+            g_rawPoint[0] = NAN;
+            g_message.clear();
+        } else {
+            g_message = "No behaviour of this map fits: try another look";
+        }
+    }
+    if (!g_placing && g_addList == nullptr)
+        g_guidePlacing = false;
+
+    if (int pending = PendingNpcCount()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled(pending == 1 ? "The new person comes to life when you try the level (step 5)."
+                                         : "The %d new people come to life when you try the level (step 5).",
+                            pending);
+        ImGui::PopTextWrapPos();
+    }
+
+    // the level's people
+    ImGui::SeparatorText("The level's people");
+    int shown = 0;
+    for (engine::ZGEOM* a : AllCharacters()) {
+        bool placed = IsPlacedNpc(a);
+        bool hidden = !placed && IsHidden(a);
+        if (!placed && !hidden)
+            continue;
+        ++shown;
+        ImGui::PushID(a);
+        std::string name = ReadableName(a) + (hidden ? " (taken out)" : " (new)");
+        const char* button = hidden ? "Put back" : "Remove";
+        float bw = ImGui::CalcTextSize(button).x + ImGui::GetStyle().FramePadding.x * 2;
+        if (ImGui::Selectable(name.c_str(), Selected() == a, ImGuiSelectableFlags_AllowOverlap,
+                              ImVec2(ImGui::GetContentRegionAvail().x - bw - ImGui::GetStyle().ItemSpacing.x, 0))) {
+            Select(a);
+            FlyCameraTo(GetTransform(a).pos);
+        }
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - bw);
+        if (hidden) {
+            if (ImGui::SmallButton(button)) {
+                ObjectState b = GetState(a), after = b;
+                after.hidden = false;
+                Change(a, b, after, "show");
+            }
+        } else {
+            if (ImGui::SmallButton(button)) {
+                std::string err;
+                g_message = RemoveNpc(a, &err) ? "removed (Ctrl+Z undoes)" : "not removed: " + err;
+                if (g_target == a)
+                    g_target = nullptr;
+                ImGui::PopID();
+                break;
+            }
+        }
+        ImGui::PopID();
+    }
+    if (!shown)
+        ImGui::TextDisabled("No one added or removed yet.");
+    engine::ZGEOM* sel = ActorOf(Selected());
+    if (sel && !IsPlacedNpc(sel) && !IsHidden(sel) && sel != engine::Player()) {
+        if (ImGui::Button(("Take " + ReadableName(sel) + " out of the map").c_str())) {
+            ObjectState b = GetState(sel), after = b;
+            after.hidden = true;
+            Change(sel, b, after, "hide");
+        }
+    } else {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("To take one of the map's people out: click it in the world.");
+        ImGui::PopTextWrapPos();
     }
 }
 
@@ -1517,6 +1808,9 @@ void OnNewPoint(engine::ZGEOM* hit, const float* point, const float*)
 
 } // namespace
 
+void DrawSimplePeople() { DrawSimplePeopleStep(); }
+std::string PersonName(engine::ZGEOM* actor) { return actor ? ReadableName(actor) : ""; }
+
 bool NpcPlacing() { return g_placing || !g_pickParam.empty() || g_addList || !g_newPointParam.empty(); }
 
 void CancelNpcPlacement()
@@ -1621,7 +1915,7 @@ void UpdateNpcPlacement()
     if (g_haveHit) {
         if (g_routes != kRoutesOff && !g_newBehaviour.empty()) {
             float from[3] = {g_point[0], g_point[1] + 100.0f, g_point[2]};
-            DrawRoutes(from, RoutesOf(g_new), true);
+            DrawRoutes(from, RoutesOf(g_new), !overlay::SimpleMode());
         }
         DrawSnapTarget(g_point, g_pointOff ? IM_COL32(255, 80, 64, 255) : IM_COL32(64, 224, 255, 255));
         if (!g_pointOff && (g_point[0] != g_rawPoint[0] || g_point[2] != g_rawPoint[2]))

@@ -679,6 +679,23 @@ int Panel(lua_State* L)
     return 0;
 }
 
+// h2.dev_mode(["simple" | "advanced"]) -> the editor's mode (switched for this run only: H2Fix.ini untouched)
+int Mode(lua_State* L)
+{
+    if (lua_gettop(L) >= 1)
+        overlay::SetSimpleMode(std::string(luaL_checkstring(L, 1)) == "simple", false);
+    lua_pushstring(L, overlay::SimpleMode() ? "simple" : "advanced");
+    return 1;
+}
+
+// h2.dev_screen() -> the overlay's width, height (the pixels of h2.dev_click)
+int Screen(lua_State* L)
+{
+    lua_pushnumber(L, ImGui::GetIO().DisplaySize.x);
+    lua_pushnumber(L, ImGui::GetIO().DisplaySize.y);
+    return 2;
+}
+
 // h2.dev_place_npc(record, x, y, z [, behaviour]): places a character as the
 // NPCs panel does (shown until the map loads again) -> its object name
 int PlaceNpcCmd(lua_State* L)
@@ -1297,6 +1314,8 @@ void InstallDevCommands()
     script::Register("dev_test", TestCmd);
     script::Register("dev_setscript", SetScriptCmd);
     script::Register("dev_panel", Panel);
+    script::Register("dev_mode", Mode);
+    script::Register("dev_screen", Screen);
     script::Register("dev_select", SelectCmd);
     script::Register("dev_selected", SelectedCmd);
     script::Register("dev_complete", CompleteCmd);

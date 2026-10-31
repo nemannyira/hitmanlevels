@@ -1923,6 +1923,8 @@ void DrawStartOutfit();
 } // namespace
 
 void DrawStartOutfitControl() { DrawStartOutfit(); }
+void DrawProblemsList() { DrawProblems(); }
+void DrawShareSection() { DrawShare(); }
 
 namespace {
 

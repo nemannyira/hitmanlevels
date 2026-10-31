@@ -416,6 +416,25 @@ void DrawLauncher()
                 }
                 ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
                 ImGui::InputText("name", g_name, sizeof(g_name));
+                // the editor's face (docs/simple-mode.md): remembered (H2Fix.ini [Editor] Mode)
+                bool simple = overlay::SimpleMode();
+                if (ImGui::RadioButton("Simple: step by step", simple))
+                    overlay::SetSimpleMode(true);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("A guide through the changes of a mission: its objectives, people, items,\n"
+                                      "the map's objects, trying it and sharing it");
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Advanced: every tool", !simple))
+                    overlay::SetSimpleMode(false);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("The whole editor: the scene's objects, characters' settings, scripts,\n"
+                                      "vehicles, an empty map, the sky, stages...");
+                if (simple) {
+                    g_empty = g_blank = false;
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextDisabled("The level starts as the map's own mission; you change it step by step.");
+                    ImGui::PopTextWrapPos();
+                } else {
                 ImGui::Checkbox("Empty map", &g_empty);
                 ImGui::SameLine();
                 ImGui::TextDisabled("(no characters, items or objectives of the level)");
@@ -438,6 +457,7 @@ void DrawLauncher()
                 }
                 ImGui::Unindent();
                 ImGui::EndDisabled();
+                }
                 ImGui::Spacing();
                 if (ImGui::Button("Create and start editing", ImVec2(-1, 0))) {
                     NewLevel(g_name, kMaps[g_map].scene);

@@ -3,6 +3,15 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-31: Simple mode (#31)
+
+* The editor's second face for small changes of a mission: a guide of six
+  steps (Mission, People, Items, The map, Try it, Save & share), objectives
+  as sentences, people added by who they are and what they do, the map's
+  items by kind, a card beside the selected object with what can be done
+  with it. *New level* asks Simple or Advanced; the toolbar switches.
+* Advanced mode is the editor as before (plus the *Simple mode* switch).
+
 ## 2026-10-31: rules of the weapon in hand (#28)
 
 * Two more rules of an escalation's stages: *targets killed only with...*

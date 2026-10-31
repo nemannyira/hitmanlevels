@@ -43,6 +43,12 @@ struct Menu {
 std::vector<Menu> g_menus;
 bool g_showDemo = false;
 bool g_panelsHidden = false;  // Tab: game view only (toolbar stays)
+
+// drawn now: visible and of the mode the editor is in
+bool Shown(const Panel& p)
+{
+    return *p.visible && (p.modes & (g_config.simpleMode ? kSimple : kAdvanced));
+}
 std::string g_selectTab;      // left tab to select on the next frame
 bool (*g_closeGuard)();       // SetCloseGuard
 std::vector<bool (*)(int)> g_keyHandlers;  // AddKeyHandler
@@ -191,8 +197,11 @@ void ViewMenu()
 {
     for (Dock dock : {Dock::Left, Dock::Right, Dock::Bottom, Dock::Floating, Dock::Toolbar})
         for (Panel& p : g_panels)
-            if (p.dock == dock && p.name)
+            if (p.dock == dock && p.name && (p.modes & (g_config.simpleMode ? kSimple : kAdvanced)))
                 ImGui::MenuItem(p.name, nullptr, p.visible);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Simple mode", nullptr, g_config.simpleMode))
+        SetSimpleMode(!g_config.simpleMode);
     ImGui::Separator();
     ImGui::MenuItem("Hide panels", "Tab", &g_panelsHidden);
     if (g_config.devCommands)  // a developer's tool
@@ -318,7 +327,7 @@ void DrawMenuBar()
 bool AnyVisible(Dock dock)
 {
     for (Panel& p : g_panels)
-        if (p.dock == dock && *p.visible)
+        if (p.dock == dock && Shown(p))
             return true;
     return false;
 }
@@ -335,7 +344,7 @@ float DrawToolbar(float top)
                  kDockedFlags | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
                      ImGuiWindowFlags_NoSavedSettings);
     for (Panel& p : g_panels)
-        if (p.dock == Dock::Toolbar && *p.visible)
+        if (p.dock == Dock::Toolbar && Shown(p))
             p.draw();
     float bottom = top + ImGui::GetWindowHeight();
     ImGui::End();
@@ -358,7 +367,7 @@ void DrawLayout()
         leftW = ImGui::GetWindowWidth();
         if (ImGui::BeginTabBar("left")) {
             for (Panel& p : g_panels) {
-                if (p.dock != Dock::Left || !*p.visible)
+                if (p.dock != Dock::Left || !Shown(p))
                     continue;
                 ImGuiTabItemFlags flags = g_selectTab == p.name ? ImGuiTabItemFlags_SetSelected : 0;
                 if (ImGui::BeginTabItem(p.name, nullptr, flags)) {
@@ -384,7 +393,7 @@ void DrawLayout()
         ImGui::SetWindowPos(ImVec2(W - rightW, top));
         bool first = true;
         for (Panel& p : g_panels) {
-            if (p.dock != Dock::Right || !*p.visible)
+            if (p.dock != Dock::Right || !Shown(p))
                 continue;
             if (!first)
                 ImGui::Spacing();
@@ -403,14 +412,13 @@ void DrawLayout()
         ImGui::Begin("Bottom panel", nullptr, kDockedFlags);
         ImGui::SetWindowPos(ImVec2(leftW, H - ImGui::GetWindowHeight()));
         for (Panel& p : g_panels)
-            if (p.dock == Dock::Bottom && *p.visible)
+            if (p.dock == Dock::Bottom && Shown(p))
                 p.draw();
         ImGui::End();
     }
     for (Panel& p : g_panels)
-        if ((p.dock == Dock::Floating && *p.visible) || p.dock == Dock::None)
-            if (*p.visible)
-                p.draw();
+        if ((p.dock == Dock::Floating && Shown(p)) || (p.dock == Dock::None && *p.visible))
+            p.draw();
     if (g_showDemo)
         ImGui::ShowDemoWindow(&g_showDemo);
     DrawKeysWindow();
@@ -526,8 +534,20 @@ void SetOpen(bool open)
 void AddPanel(const Panel& panel)
 {
     g_panels.push_back(panel);
-    if (!panel.name)
+    if (!panel.name) {
         g_panels.back().dock = Dock::None;
+        g_panels.back().modes = kBothModes;
+    }
+}
+
+bool SimpleMode() { return g_config.simpleMode; }
+
+void SetSimpleMode(bool on, bool save)
+{
+    g_config.simpleMode = on;
+    if (save)
+        WritePrivateProfileStringA("Editor", "Mode", on ? "simple" : "advanced", (GameDir() + "H2Fix.ini").c_str());
+    Log("editor: %s mode", on ? "simple" : "advanced");
 }
 
 void ShowPanel(const char* name)

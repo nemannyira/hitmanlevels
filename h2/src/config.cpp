@@ -43,6 +43,8 @@ void LoadConfig()
     GetPrivateProfileStringA("Editor", "ToggleKey", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.editorKey = int(strtol(buf, nullptr, 0));
+    GetPrivateProfileStringA("Editor", "Mode", "", buf, sizeof(buf), ini.c_str());
+    g_config.simpleMode = _stricmp(buf, "advanced") != 0;
     GetPrivateProfileStringA("Editor", "FreezeKey", "", buf, sizeof(buf), ini.c_str());
     if (*buf)
         g_config.freezeKey = int(strtol(buf, nullptr, 0));

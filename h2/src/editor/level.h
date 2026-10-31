@@ -341,6 +341,9 @@ engine::ZGEOM* MakeNewRoute(const std::string& name, std::string* error = nullpt
 void SetEmptyMap(bool empty);
 // The Mission tab's "Hitman starts in" (the level's start_outfit).
 void DrawStartOutfitControl();
+// the Level tab's Problems list and Share section (Simple mode's guide shows them too)
+void DrawProblemsList();
+void DrawShareSection();
 // The folder (Mods\<folder>) a new level of that name gets.
 std::string LevelFolderFor(const std::string& name);
 // Takes the scene's buildings out too (blank map) or puts them back.

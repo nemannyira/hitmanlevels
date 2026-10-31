@@ -7,7 +7,50 @@ its map; the editor applies the changes when the map has loaded.
 F8 opens and closes the editor (H2Fix.ini `[Editor] ToggleKey`), F1 lists
 every key.
 
-## The steps
+The editor has two faces: **Simple mode**, a guide through the changes of a
+mission, and **Advanced mode**, every tool at once (the rest of this page).
+*New level* asks which one; the toolbar's *Advanced mode* / *Simple mode* (or
+*View > Simple mode*) switches any time and nothing is lost. The choice is
+remembered (H2Fix.ini `[Editor] Mode=simple|advanced`). The design:
+[simple-mode.md](simple-mode.md).
+
+## Simple mode
+
+The left panel is the **guide**: a bar of six steps (green: done, amber:
+something missing, grey: optional), each with one line of what to do, its
+controls and *Back* / *Next*.
+
+1. **Mission**: the laptop's lines (the original mission's, and your own).
+   *Add an objective*: *Kill someone*, *Knock someone out*, *Get to a place*,
+   *Take an object*, *Bring an object somewhere* (then click it in the world),
+   *Never be spotted*. When it ends: as the original mission, or when every
+   objective is done (and Hitman leaves through a place you pick). The
+   briefing and Hitman's clothes at the start.
+2. **People**: *Add a person*: who (a guard, a civilian, a target: a target
+   is an objective at once), what it looks like (the map's people of that
+   kind) and what it does (guards / stays where it stands, or walks a route:
+   click its points after placing, Esc ends); *Place it* and a click in the
+   world. The level's people are listed; one of the map's is taken out with a
+   click on it and *Remove from the map*. New people come to life when the
+   level is tried.
+3. **Items**: the map's weapons and other items: click one, then where it
+   goes.
+4. **The map**: click an object: move or turn it (the arrows / rings), hide
+   it, copy it, put it onto the surface; *Add an object*: the map's models.
+5. **Try it**: play from the start or from where the camera looks; the
+   problems the editor sees, with their fixes.
+6. **Save & share**: a name, *Save*, the package for other players.
+
+A click on an object in the world opens its **card** beside it: what it is
+and what can be done with it (*Make it a target*, *Hitman has to take it*,
+*Make it the exit*, *Hide*, *Copy*, *Remove*; *More...* opens it in Advanced
+mode). A click on a person selects the person (not the wall behind).
+
+The toolbar: *Undo*, *Redo*, *Save*, *Try it*, *Advanced mode*. What the guide
+does not show (scripts, cars, the sky, stages, ...) stays in the level; step
+1 names it.
+
+## The steps (Advanced mode)
 
 The top of the Level tab shows them, green when done, amber when something
 is missing; a click goes where the step is done.

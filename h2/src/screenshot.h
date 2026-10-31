@@ -14,4 +14,8 @@ bool SaveBackBuffer(void* device, const std::string& path);
 // [Debug] ScreenshotEvery seconds.
 void PeriodicScreenshot(void* device);
 
+// The front buffer made `width` wide (its sides as they are, a box filter) and written as a PNG (8-bit
+// RGB, deflate's stored blocks: a package's preview.png, package.h ValidPng).
+bool SavePreviewPng(void* device, const std::string& path, int width);
+
 } // namespace h2

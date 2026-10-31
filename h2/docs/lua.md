@@ -43,6 +43,7 @@ the map is loaded (`obj:valid()`).
 | `obj:rot()`, `obj:setrot(yaw [, pitch, roll])` | degrees (yaw 0 = +Z, 90 = +X) |
 | `obj:hide()`, `obj:show()`, `obj:hidden()` | |
 | `obj:send(message [, number])` | a message as the levels' scripts send one (`"Msg_LockDoor"`, `"Msg_UnlockDoor"`, ...: their SendCommand) |
+| `obj:locked([on])` | a door of the map (the object or its parent) locked; `on`: locks / unlocks it as the levels' scripts do (`MSG_LOCKDOOR` / `MSG_UNLOCKDOOR`: a locked door opens only for its key's holder, others are told it is locked; kept in saved games); `nil`: not a door |
 | `obj:active([on])` | in the world or not, as the levels' scripts switch objects (MakeActive / MakeInactive: out of its rooms, its routines stopped, its children too) |
 | `obj:children()`, `obj:parent()` | |
 | `obj:spawn([x, y, z [, yaw]])`, `h2.spawn(source, x, y, z [, yaw])` | a copy of an object's model (runtime only) |

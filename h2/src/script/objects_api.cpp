@@ -1258,6 +1258,19 @@ int Hidden(lua_State* L)
     return 1;
 }
 
+// obj:locked([on]) -> a door (the object or its parent: engine::DoorOf) locked; on: locks / unlocks it as
+// the levels' scripts do (MSG_LOCKDOOR / MSG_UNLOCKDOOR); nil: not a door
+int Locked(lua_State* L)
+{
+    engine::ZGEOM* door = engine::DoorOf(Geom(L));
+    if (!door)
+        return 0;
+    if (!lua_isnoneornil(L, 2) && !engine::SetDoorLocked(door, lua_toboolean(L, 2) != 0))
+        return luaL_error(L, "locked: refused");
+    lua_pushboolean(L, engine::DoorLocked(door) == 1);
+    return 1;
+}
+
 // obj:active([on]) -> on: in the world (the scripts' MakeActive / MakeInactive: taken out of
 // its rooms, its routines stopped, its children too)
 int Active(lua_State* L)
@@ -1375,7 +1388,7 @@ void RegisterObjectsApi()
         {"points", Points}, {"setpoints", SetPoints}, {"alive", Alive}, {"knockedout", KnockedOutFn}, {"kill", Kill},
         {"walkto", WalkTo}, {"lookat", LookAt}, {"moveset", MoveSet}, {"animation", Animation}, {"faceto", FaceTo},
         {"active", Active}, {"draggable", DraggableFn}, {"noticed", NoticedFn}, {"send", Send},
-        {"unconsciousbody", UnconsciousBody}, {"sound", ObjSound},
+        {"unconsciousbody", UnconsciousBody}, {"sound", ObjSound}, {"locked", Locked},
         {nullptr, nullptr},
     };
     luaL_newmetatable(L, kMeta);

@@ -101,6 +101,10 @@ CASES = [
     ("a weapon name with a path", base(stages=[{"name": "S"}], rules=[{"kind": "kill_with", "weapon": "../x"}]),
      True, False),
     ("a time limit of 1 s", base(stages=[{"name": "S"}], rules=[{"kind": "time", "seconds": 1}]), True, False),
+    # doors locked by the level (#35)
+    ("a door locked", base(doors=[{"path": "ROOT/a/Door_01", "locked": True}]), False, False),
+    ("a door locked \"yes\"", base(doors=[{"path": "ROOT/a/Door_01", "locked": "yes"}]), True, False),
+    ("a door with a key it may not have", base(doors=[{"path": "ROOT/a/Door_01", "key": "x"}]), True, False),
 ]
 
 if not os.path.exists(EXE):

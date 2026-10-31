@@ -12,6 +12,7 @@
 #include "../engine/geoms.h"
 #include "../engine/imports.h"
 #include "../engine/inject.h"
+#include "../engine/messages.h"
 #include "../engine/spawn.h"
 #include "../fov.h"
 #include "../game.h"
@@ -219,6 +220,14 @@ void DrawInspector()
     ImGui::SameLine();
     if (ImGui::Button("Fly camera here (F)")) {
         FlyCameraTo(t.pos);
+    }
+    if (engine::ZGEOM* door = engine::DoorOf(geom)) {  // the map's doors: locked as the levels' scripts lock them
+        bool locked = engine::DoorLocked(door) == 1;
+        if (ImGui::Checkbox("door locked", &locked))
+            SetLevelDoorLock(door, locked);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Locked: it opens only for the holder of its key (or a lock pick, where the map allows);\n"
+                              "others are told it is locked. Kept in the level and in saved games.");
     }
     ImGui::BeginDisabled(actor || InActor(geom) || !engine::IsPlainModel(engine::MeshOf(geom)));  // (a body: NPCs tab)
     if (ImGui::Button("Duplicate (Ctrl+D)"))

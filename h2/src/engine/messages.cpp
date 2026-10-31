@@ -708,6 +708,47 @@ bool SendCommand(ZGEOM* to, const char* message, uint32_t value)
     return msg && SafeSendByRef(to, ref, msg, value);
 }
 
+namespace {
+// ZGEOM_SingleDoor (ctor 0x4CFC10, vtable 0x650CA8) holds the door at +0x72 (doors.cpp's door, ctor
+// 0x4CB720, there vtable 0x650D2C), whose +0x261 is the lock
+constexpr uintptr_t kSingleDoor_Vtable = 0x650CA8, kDoor_Vtable = 0x650D2C;
+constexpr size_t kSingleDoor_Door = 0x72, kDoor_Locked = 0x261;
+
+uint8_t* DoorRoutine(ZGEOM* geom)
+{
+    uint8_t* r = Usable(geom) ? GeomRoutine(geom, "SingleDoor") : nullptr;
+    if (!r || !IsReadable(r, kSingleDoor_Door + kDoor_Locked + 1))
+        return nullptr;
+    uintptr_t vt, doorVt;
+    memcpy(&vt, r, 4);
+    memcpy(&doorVt, r + kSingleDoor_Door, 4);
+    return vt == kSingleDoor_Vtable && doorVt == kDoor_Vtable ? r : nullptr;
+}
+} // namespace
+
+ZGEOM* DoorOf(ZGEOM* geom)
+{
+    for (int up = 0; geom && up < 2; ++up) {
+        if (DoorRoutine(geom))
+            return geom;
+        ZBaseGeom* parent = Usable(geom) && geom->node ? geom->node->parent : nullptr;
+        geom = parent && IsReadable(parent, sizeof(ZBaseGeom)) ? parent->geom : nullptr;
+    }
+    return nullptr;
+}
+
+int DoorLocked(ZGEOM* door)
+{
+    uint8_t* r = DoorRoutine(door);
+    return r ? (r[kSingleDoor_Door + kDoor_Locked] != 0) : -1;
+}
+
+bool SetDoorLocked(ZGEOM* door, bool locked)
+{
+    return DoorRoutine(door) && SendCommand(door, locked ? "MSG_LOCKDOOR" : "MSG_UNLOCKDOOR", 0) &&
+           DoorLocked(door) == int(locked);
+}
+
 uint32_t PlaySound2D(const char* name)
 {
     void* snd = SoundSystem();

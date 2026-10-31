@@ -3,6 +3,17 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-10-31: Simple mode, more (#35, #36)
+
+* Doors of the map can be locked (Simple mode's card and The map step,
+  Advanced mode's Inspector: *door locked*): a locked door opens only for the
+  holder of its key, as the game's own; kept in saved games. Scripts:
+  `obj:locked([on])`.
+* The map step lists what was changed, each with *Undo this*; a line's
+  laptop text can be written by hand; the Problems list has *fix it there*.
+* Step 6: a description (README.md) and a picture of the view (preview.png)
+  for the package.
+
 ## 2026-10-31: Simple mode (#31)
 
 * The editor's second face for small changes of a mission: a guide of six

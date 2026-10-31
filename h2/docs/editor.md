@@ -23,7 +23,8 @@ controls and *Back* / *Next*.
 1. **Mission**: the laptop's lines (the original mission's, and your own).
    *Add an objective*: *Kill someone*, *Knock someone out*, *Get to a place*,
    *Take an object*, *Bring an object somewhere* (then click it in the world),
-   *Never be spotted*. When it ends: as the original mission, or when every
+   *Never be spotted*; *Change the text* writes a line's laptop text by hand.
+   When it ends: as the original mission, or when every
    objective is done (and Hitman leaves through a place you pick). The
    briefing and Hitman's clothes at the start.
 2. **People**: *Add a person*: who (a guard, a civilian, a target: a target
@@ -36,10 +37,16 @@ controls and *Back* / *Next*.
 3. **Items**: the map's weapons and other items: click one, then where it
    goes.
 4. **The map**: click an object: move or turn it (the arrows / rings), hide
-   it, copy it, put it onto the surface; *Add an object*: the map's models.
+   it, copy it, put it onto the surface; a door: *Lock the door* (it opens
+   only for the holder of its key, as the game's locked doors; kept in saved
+   games). *What you changed* lists it all, each with *Undo this*; *Add an
+   object*: the map's models.
 5. **Try it**: play from the start or from where the camera looks; the
-   problems the editor sees, with their fixes.
-6. **Save & share**: a name, *Save*, the package for other players.
+   problems the editor sees, with their fixes (*onto the paths*, *fix it
+   there*: the step where it is fixed).
+6. **Save & share**: a name, *Save*, a description (README.md) and a picture
+   of the view (*Take a picture of this view*: preview.png, the editor left
+   out), the package for other players.
 
 A click on an object in the world opens its **card** beside it: what it is
 and what can be done with it (*Make it a target*, *Hitman has to take it*,

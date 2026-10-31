@@ -313,7 +313,7 @@ Report CheckLevel(const json& j, bool strict)
     c.Object(j, "level",
              {"format", "version", "name", "base_scene", "empty_map", "blank_map", "map_models", "own_map_of",
               "start_outfit", "place_floor", "floor_object", "sky", "objects", "spawned", "npcs", "npc_edits",
-              "mission", "music", "vehicles", "new_lists", "lists", "scripts", "imports", "package", "stages", "rules",
+              "mission", "music", "vehicles", "doors", "new_lists", "lists", "scripts", "imports", "package", "stages", "rules",
               "replay"});
     c.Int(j, "version", "level", 1, 1);
     c.Text(j, "name", "level", 64);
@@ -459,6 +459,16 @@ Report CheckLevel(const json& j, bool strict)
                     c.Bad("level.music." + Checker::Clip(it.key()), "not a place and a track's name");
     }
     c.Array(j, "vehicles", "", kMaxVehicles, [&](const json& v, const std::string& w) { CheckVehicle(c, v, w); });
+    // doors of the map locked / unlocked by the level
+    c.Array(j, "doors", "", 256, [&](const json& o, const std::string& w) {
+        if (!c.Object(o, w, {"path", "locked"}))
+            return;
+        if (!o.contains("path"))
+            c.Bad(w, "no path");
+        c.Text(o, "path", w, 512);
+        if (o.contains("locked") && !o["locked"].is_boolean())
+            c.Bad(w + ".locked", "not true / false");
+    });
     c.Array(j, "new_lists", "", kMaxLists, [&](const json& o, const std::string& w) {
         if (!c.Object(o, w, {"name", "copy_of", "record"}))
             return;

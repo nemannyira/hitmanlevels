@@ -209,6 +209,7 @@ struct LevelDocument {
     std::vector<std::string> scripts;
     std::vector<ImportedModel> imports;
     std::vector<LevelVehicle> vehicles;  // objects driving routes when the level is played
+    std::map<std::string, bool> doors;   // doors of the map locked (true) / unlocked by the level, by path
     // an escalation: its stages (none: a plain level), its rules, whether the stages done can be played again
     std::vector<LevelStage> stages;
     std::vector<StageRule> rules;
@@ -343,6 +344,15 @@ void SetEmptyMap(bool empty);
 void DrawStartOutfitControl();
 // the Level tab's Problems list and Share section (Simple mode's guide shows them too)
 void DrawProblemsList();
+// the level's scripts with something of the author's in them (not a new level's main.lua as it was made)
+int UserScriptCount();
+// A door of the map (engine::DoorOf the object) locked / unlocked now and by the level from now on;
+// the level's lock of it: -1 none (as the map has it), 0 unlocked, 1 locked.
+bool SetLevelDoorLock(engine::ZGEOM* geom, bool locked);
+int LevelDoorLock(engine::ZGEOM* geom);
+// back as the map has it: an edited object of the map (undoable), a door the level locked / unlocked
+void RevertObjectEdit(const std::string& path);
+void ForgetLevelDoor(const std::string& path);
 void DrawShareSection();
 // The folder (Mods\<folder>) a new level of that name gets.
 std::string LevelFolderFor(const std::string& name);

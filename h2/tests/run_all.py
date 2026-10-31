@@ -42,6 +42,7 @@ TESTS = [
     ("editor", ["editor_test.py"], 600, False),
     ("goals", ["goals_test.py"], 600, False),
     ("saveload", ["saveload_test.py"], 600, False),
+    ("door", ["door_test.py"], 600, False),  # (#35: doors locked by a level)
     ("knockout", ["knockout_test.py"], 600, False),
     ("behaviours", ["behaviours_test.py"], 600, False),
     ("escalation", ["escalation_test.py"], 900, False),  # (#23: a level in stages)

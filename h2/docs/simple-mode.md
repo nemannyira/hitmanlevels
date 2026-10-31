@@ -212,7 +212,10 @@ Escalations stay in Advanced mode for now; a later step may give Simple mode
 * Docs and the test (#37): editor.md's *Simple mode*, `simple_mode_test.py`
   (in run_all).
 
-Still to do: the laptop line's own text in Simple mode; doors' *Lock /
-Unlock*; the map step's list of changes with *Undo this*; problems in plain
-words with more fixes; a description (README.md) and a picture
-(preview.png) in step 6; the models' thumbnails in *Add an object*.
+Then (#35, #36): a line's laptop text by hand (*Change the text*); doors'
+*Lock / Unlock* (the game's MSG_LOCKDOOR / MSG_UNLOCKDOOR, `"doors"` in
+level.json, `obj:locked()`; a saved game keeps the door's own state); the map
+step's *What you changed* with *Undo this*; problems in plainer words with
+*fix it there* (the guide's step, Advanced mode's tab); step 6's description
+(README.md) and picture (preview.png: the next frame without the editor, 640
+wide). *Add an object* is the Models tab's list (its thumbnails on hover).

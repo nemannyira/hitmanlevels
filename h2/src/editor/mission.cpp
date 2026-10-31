@@ -1589,6 +1589,8 @@ void DrawEnd()
 
 // ---- Simple mode's Mission step (docs/simple-mode.md, #33) ----
 
+int g_simpleTextSlot;  // the line whose laptop text is being written (Simple mode; 0 none)
+
 // the blank of a sentence still to fill: what the next click picks
 void PickButton(const char* label, PickKind kind, int slot)
 {
@@ -1634,9 +1636,29 @@ void DrawSimpleMissionStep()
         ++lines;
         ImGui::PushID(slot);
         std::string text = LineText(slot);
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", text.empty() ? "(a line without text yet)" : text.c_str());
         bool own = o && o->goal != MissionObjective::Level;
+        ImGui::Bullet();
+        if (own && g_simpleTextSlot == slot) {  // its laptop text, written by hand
+            char buf[256];
+            snprintf(buf, sizeof(buf), "%s", o->text.c_str());
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::IsWindowAppearing() || !ImGui::IsAnyItemActive())
+                ImGui::SetKeyboardFocusHere();
+            if (ImGui::InputText("##linetext", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue))
+                g_simpleTextSlot = 0;
+            if (buf != o->text) {
+                o->text = buf;
+                CurrentLevel().dirty = true;
+            }
+            if (ImGui::IsItemDeactivated()) {
+                g_simpleTextSlot = 0;
+                Changed();
+            }
+        } else {
+            ImGui::TextWrapped("%s", text.empty() ? "(a line without text yet)" : text.c_str());
+            if (own && ImGui::IsItemHovered())
+                ImGui::SetTooltip("The laptop's line: Change the text writes your own");
+        }
         ImGui::Indent();
         if (!own) {
             ImGui::TextDisabled("the original mission's");
@@ -1658,8 +1680,11 @@ void DrawSimpleMissionStep()
             if (o->goal == MissionObjective::Unseen &&
                 ImGui::Checkbox("being spotted fails the mission", &o->failsMission))
                 Changed();
-            if (button)
+            if (button || o->goal == MissionObjective::Unseen)
                 ImGui::SameLine();
+            if (ImGui::SmallButton("Change the text"))
+                g_simpleTextSlot = slot;
+            ImGui::SameLine();
             if (ImGui::SmallButton("Remove"))
                 ImGui::OpenPopup("remove");
             if (ImGui::BeginPopup("remove")) {

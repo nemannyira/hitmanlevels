@@ -32,6 +32,7 @@
 #include "../script/lua_vm.h"
 #include "../script/objects_api.h"
 #include "../script/state.h"
+#include "guide.h"
 #include "history.h"
 #include "ingame_map.h"
 #include "mission.h"
@@ -1273,6 +1274,7 @@ struct Problem {
     std::string path;
     bool onto = false;  // off the path network: the nearest walkable place (8 m at most)
     float to[3] = {};
+    int step = -1;      // where it is fixed: Simple mode's guide step (0 Mission, 1 People; Advanced: its tab)
 };
 
 // a problem of an object off the path network, with where it can go (NearestWalkable, as h2.walkable)
@@ -1320,7 +1322,8 @@ std::vector<Problem> FindProblems()
         for (const LevelNpc& n : L.npcs)
             if (engine::OnPathNetwork(n.transform.pos) == 0) {
                 std::vector<int> at = snap.FindName(n.id);
-                out.push_back(OffNetwork("character " + n.id + " stands off the path network: it cannot walk",
+                out.push_back(OffNetwork("character " + n.id + " stands where characters cannot walk (off the path "
+                                         "network): it will not move from there",
                                          at.empty() ? "" : snap.geoms[at[0]].path, n.transform.pos));
             }
         // a behaviour without a setting it needs does not start (tested: BaseGuard (C1-1) without its panic
@@ -1336,6 +1339,7 @@ std::vector<Problem> FindProblems()
                                        ") does not start without " + v.name +
                                        (IsRouteRef(v.name) ? " (a route: its settings, New route)" : ""),
                                    at.empty() ? "" : snap.geoms[at[0]].path});
+                    out.back().step = 1;
                     break;
                 }
         }
@@ -1355,7 +1359,8 @@ std::vector<Problem> FindProblems()
                 if (missionPlace)
                     continue;
                 out.push_back(OffNetwork("point " + s.id.substr(0, s.id.find('+')) +
-                                             " is off the path network: characters do not reach it",
+                                             " is where characters cannot walk (off the path network): they do not "
+                                             "get there",
                                          g ? PathOf(g) : "", s.transform.pos));
             }
         for (const MissionObjective& o : L.mission.objectives)
@@ -1370,12 +1375,13 @@ std::vector<Problem> FindProblems()
                                         ? "object"
                                         : "place") +
                                    " is missing",
-                               ""});
+                               "", false, {}, 0});
             if (o.goal == MissionObjective::Deliver && (o.place.empty() || !ResolveTarget(o.place)))
-                out.push_back({"objective " + std::to_string(o.slot) + ": the place to bring it to is missing", ""});
+                out.push_back({"objective " + std::to_string(o.slot) + ": the place to bring it to is missing", "", false,
+                               {}, 0});
         }
         if (!L.mission.exitPath.empty() && !ResolveTarget(L.mission.exitPath))
-            out.push_back({"the mission's exit is missing", ""});
+            out.push_back({"the mission's exit is missing", "", false, {}, 0});
         // an escalation's stage without an objective cannot be done (when the objectives end it)
         for (int k = 1; k <= StageCount() && L.mission.endWhenDone; ++k)
             if (std::none_of(L.mission.objectives.begin(), L.mission.objectives.end(),
@@ -1479,6 +1485,17 @@ void DrawProblems()
                                       problems[i].to[0], problems[i].to[1], problems[i].to[2]);
             }
             ImGui::EndDisabled();
+            ImGui::SameLine();
+        }
+        if (problems[i].step >= 0) {  // where it is fixed
+            if (ImGui::SmallButton("fix it there")) {
+                if (overlay::SimpleMode())
+                    GuideGoToStep(problems[i].step);
+                else
+                    overlay::ShowPanel(problems[i].step == 0 ? "Mission" : "NPCs");
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(problems[i].step == 0 ? "The mission's objectives" : "The character's settings");
             ImGui::SameLine();
         }
         ImGui::PushTextWrapPos(0.0f);
@@ -1924,6 +1941,58 @@ void DrawStartOutfit();
 
 void DrawStartOutfitControl() { DrawStartOutfit(); }
 void DrawProblemsList() { DrawProblems(); }
+
+int UserScriptCount()
+{
+    int n = 0;
+    for (const std::string& s : g_level.scripts) {
+        std::string path = ModsDir() + g_level.folder + "\\" + s;
+        n += !g_level.folder.empty() && GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES && !IsStubScript(path);
+    }
+    return n;
+}
+
+void RevertObjectEdit(const std::string& path)
+{
+    auto it = g_level.objects.find(path);
+    if (it == g_level.objects.end())
+        return;
+    ObjectEdit e = it->second;
+    engine::ZGEOM* geom = Resolve(path);
+    if (geom && e.hasOriginal)
+        Change(geom, GetState(geom), e.original, "revert object");
+    else
+        g_level.objects.erase(it), g_level.dirty = true;
+}
+
+void ForgetLevelDoor(const std::string& path)
+{
+    auto it = g_level.doors.find(path);
+    if (it == g_level.doors.end())
+        return;
+    if (engine::ZGEOM* door = Resolve(path))
+        engine::SetDoorLocked(door, !it->second);
+    g_level.doors.erase(it);
+    g_level.dirty = true;
+}
+
+bool SetLevelDoorLock(engine::ZGEOM* geom, bool locked)
+{
+    engine::ZGEOM* door = engine::DoorOf(geom);
+    std::string path = door ? PathOf(door) : "";
+    if (path.empty() || !engine::SetDoorLocked(door, locked))
+        return false;
+    g_level.doors[path] = locked;
+    g_level.dirty = true;
+    return true;
+}
+
+int LevelDoorLock(engine::ZGEOM* geom)
+{
+    engine::ZGEOM* door = engine::DoorOf(geom);
+    auto it = door ? g_level.doors.find(PathOf(door)) : g_level.doors.end();
+    return it == g_level.doors.end() ? -1 : it->second;
+}
 void DrawShareSection() { DrawShare(); }
 
 namespace {
@@ -2131,14 +2200,8 @@ void DrawPanel()
             ImGui::SetTooltip("Back as the map has it (Ctrl+Z undoes)");
         ImGui::PopID();
     }
-    if (!toRevert.empty()) {
-        ObjectEdit e = L.objects[toRevert];
-        engine::ZGEOM* geom = Resolve(toRevert);
-        if (geom && e.hasOriginal)
-            Change(geom, GetState(geom), e.original, "revert object");
-        else
-            L.objects.erase(toRevert), L.dirty = true;
-    }
+    if (!toRevert.empty())
+        RevertObjectEdit(toRevert);
     // passing the level on, a map of its own: done once a level is made (#21: they led the tab)
     DrawShare();
     ImGui::Spacing();
@@ -2468,6 +2531,12 @@ bool SaveLevel(std::string* error)
         }
         j["vehicles"] = vs;
     }
+    if (!g_level.doors.empty()) {  // [{ "path": ..., "locked": true }]
+        json ds = json::array();
+        for (const auto& [path, locked] : g_level.doors)
+            ds.push_back({{"path", path}, {"locked", locked}});
+        j["doors"] = ds;
+    }
     if (!g_level.newLists.empty()) {
         j["new_lists"] = json::array();
         for (const LevelDocument::NewList& l : g_level.newLists)
@@ -2712,6 +2781,9 @@ bool LoadLevel(const std::string& folder, std::string* error)
             if (m.contains("base_files") && m["base_files"].is_boolean())
                 L.mission.baseFiles = m["base_files"].get<bool>() ? 1 : 0;
         }
+        for (const json& o : j.value("doors", json::array()))
+            if (o.is_object() && o.contains("path") && o["path"].is_string() && L.doors.size() < 256)
+                L.doors[o["path"].get<std::string>().substr(0, 512)] = o.value("locked", true);
         for (const json& o : j.value("vehicles", json::array())) {
             if (!o.is_object() || !o.contains("object") || !o["object"].is_string())
                 continue;
@@ -4345,6 +4417,12 @@ int ApplyLevel()
         SyncBlanked(geom);
         ++n;
     }
+    // as the levels' scripts lock them; a saved game's doors are as saved (the door keeps its lock in it:
+    // LoadGame2 gives it back, before or after this)
+    if (!g_hiddenAtLoadKnown)
+        for (const auto& [path, locked] : g_level.doors)
+            if (engine::ZGEOM* door = Resolve(path); !door || !engine::SetDoorLocked(door, locked))
+                Log("level: %s is no door to %s", path.c_str(), locked ? "lock" : "unlock");
     for (auto& [path, points] : g_level.lists) {
         std::string err;
         if (ApplyListEdit(path, points, &err))
@@ -4381,6 +4459,9 @@ void RevertLevel()
     RestoreBlank();
     RevertMission();
     RevertMusic();
+    for (const auto& [path, locked] : g_level.doors)  // (a door the level locked: as the map starts it, open)
+        if (engine::ZGEOM* door = Resolve(path))
+            engine::SetDoorLocked(door, !locked);
     for (auto& [path, points] : g_level.lists)  // the scene file's elements (before the points go)
         if (engine::ZGEOM* list = Resolve(path); list && IsLive(list))
             engine::SetListRefs(list, engine::AuthoredListRefs(list));

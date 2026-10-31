@@ -50,6 +50,15 @@ int Noticed(ZGEOM* actor);
 // scripts' are) with a number, sent to the object by its reference (geom vfunc
 // 0x11C; the object itself the sender here, the script's object there).
 bool SendCommand(ZGEOM* to, const char* message, uint32_t value);
+// A door (doors.cpp's ZGEOM_SingleDoor routine, "SingleDoor", vtable 0x650CA8; its door at +0x72, ctor
+// 0x4CB720): the object having it, the one given or its parent's (a door's model, a MultiDoor's part);
+// null none. Locked: the door's +0x261 (its message handler 0x4CE630: MSG_LOCKDOOR sets it and takes its
+// "Open door" action away; DoorOpen while locked opens only for the key's holder, else
+// "AllLevels/Info/DoorLocked"; MSG_UNLOCKDOOR clears it) -> -1 not a door. Locking sends those
+// messages as the levels' scripts do (SendCommand); saved with the game by the door itself.
+ZGEOM* DoorOf(ZGEOM* geom);
+int DoorLocked(ZGEOM* door);
+bool SetDoorLocked(ZGEOM* door, bool locked);
 // Sound_If FindWave + Play2DSound: a sound of the level by name (the sound
 // system, sys +0x189C: vfunc 0x6C, 0xFC) -> its reference (0: none);
 // StopSound (0x582ED0).

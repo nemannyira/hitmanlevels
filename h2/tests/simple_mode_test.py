@@ -9,8 +9,10 @@ back keep everything; saved and tried (the guard made with the map). Uses Mods/_
 import json
 import os
 import shutil
+import struct
 import sys
 import time
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "tools"))
@@ -68,6 +70,16 @@ try:
     check("Advanced mode's tabs are not drawn", press("Scene", settle=0.2) == "not found")
     shot("mission")
 
+    # an objective without its target: the Problems list's "fix it there" goes to step 1 (#36); removed then
+    press("Kill someone")
+    lua('h2.dev_uikey(526) return 1')  # (Escape: no target picked)
+    time.sleep(0.5)
+    check("step 5", press("5 Try it").startswith("pressed"))
+    time.sleep(2)  # (the list is made once a second)
+    check("Problems: fix it there", press("fix it there").startswith("pressed"))
+    check("... the Mission step shown", press("As the original mission ends", settle=0.2).startswith("pressed"))
+    check("the objective removed", press("Remove").startswith("pressed") and press("Remove", 2).startswith("pressed"))
+
     # 1. Mission: a target from the selection card, never be spotted
     target = lua('for _, n in ipairs(h2.npcs()) do if n.object and n.object:alive() then return n.object:path() end end return ""')
     lua('h2.dev_select(%s) return 1' % json.dumps(target))
@@ -101,6 +113,15 @@ try:
     time.sleep(0.5)
     check("the card: Hide", press("Hide (H)").startswith("pressed"))
     check("the object hidden", lua('return tostring(h2.find("%s"):hidden())' % HIDE) == "true")
+    # a door of the map locked from its card (#35), listed with its undo
+    door = lua('local hx, hy, hz = h2.player():pos() local best, bd = nil, 1e18 for _, o in ipairs(h2.objects("ZGEOM")) do '
+               'if o:locked() == false then local x, y, z = o:pos() local d = (x-hx)^2 + (y-hy)^2 + (z-hz)^2 '
+               'if d < bd then best, bd = o, d end end end return best and best:path() or "none"', 60)
+    lua('h2.dev_select([[%s]]) return 1' % door)
+    time.sleep(0.5)
+    check("the card: Lock the door", press("Lock the door").startswith("pressed")
+          and lua('return tostring(h2.find([[%s]]):locked())' % door) == "true", door[-40:])
+    shot("map")
 
     # Advanced mode and back: nothing lost
     check("Advanced mode", press("Advanced mode").startswith("pressed") and lua("return h2.dev_mode()") == "advanced")
@@ -115,6 +136,26 @@ try:
     check("saved: the target and never spotted", "kill" in goals and "unseen" in goals, str(goals))
     check("saved: the guard", len(d.get("npcs", [])) == 1)
     check("saved: the hidden object", any(o.get("hidden") for o in d.get("objects", [])), str(d.get("objects"))[:120])
+    check("saved: the locked door", d.get("doors") == [{"path": door, "locked": True}], str(d.get("doors"))[:120])
+    # the picture of the view (#36): a PNG a package takes
+    check("Take a picture", press("Take a picture of this view").startswith("pressed"))
+    time.sleep(1.5)
+    png_ok, png_detail = False, "none"
+    try:
+        with open(os.path.join(FOLDER, "preview.png"), "rb") as f:
+            png = f.read()
+        w_, h_ = struct.unpack(">II", png[16:24])
+        at, idat = 8, b""
+        while at < len(png):
+            n, kind = struct.unpack(">I4s", png[at:at + 8])
+            if kind == b"IDAT":
+                idat += png[at + 8:at + 8 + n]
+            at += 12 + n
+        png_ok = png[:8] == b"\x89PNG\r\n\x1a\n" and w_ == 640 and len(zlib.decompress(idat)) == h_ * (w_ * 3 + 1)
+        png_detail = "%d x %d, %d bytes" % (w_, h_, len(png))
+    except (OSError, ValueError, struct.error, zlib.error) as e:
+        png_detail = str(e)
+    check("preview.png: 640 wide, its pixels", png_ok, png_detail)
     shot("share")
 
     # 5. Try it: the map again with the guard

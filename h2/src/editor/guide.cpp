@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -9,8 +12,11 @@
 
 #include "../engine/geoms.h"
 #include "../engine/messages.h"
+#include "../log.h"
+#include "../screenshot.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
+#include "freecam.h"
 #include "history.h"
 #include "level.h"
 #include "mission.h"
@@ -31,6 +37,9 @@ namespace {
 bool g_visible = true;
 int g_step = 0;
 char g_saveName[64];
+char g_readme[4096];         // the level's README.md (step 6), read when the level's folder changes
+std::string g_readmeFolder;
+std::string g_pictureStatus;
 
 enum class State { Done, Missing, Optional };
 
@@ -120,8 +129,8 @@ void DrawAdvancedNote()
     const LevelDocument& L = CurrentLevel();
     std::vector<std::string> has;
     char buf[64];
-    if (!L.scripts.empty()) {
-        snprintf(buf, sizeof(buf), "%d script%s", int(L.scripts.size()), L.scripts.size() == 1 ? "" : "s");
+    if (int scripts = UserScriptCount()) {
+        snprintf(buf, sizeof(buf), "%d script%s", scripts, scripts == 1 ? "" : "s");
         has.push_back(buf);
     }
     if (!L.vehicles.empty())
@@ -149,6 +158,87 @@ void DrawAdvancedNote()
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("%s", text.c_str());
     ImGui::PopTextWrapPos();
+}
+
+// an object's name to read from its path (a character's part: with its group's)
+std::string NameOfPath(const std::string& path)
+{
+    size_t slash = path.rfind('/');
+    std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+    if (slash != std::string::npos && slash > 0 && (name == "Ground" || name.rfind('#', 0) == 0)) {
+        size_t up = path.rfind('/', slash - 1);
+        size_t from = up == std::string::npos ? 0 : up + 1;
+        name = path.substr(from, slash - from);
+    }
+    return name;
+}
+
+// one row: the name (a click selects it and flies there), what changed, a button at the right
+bool ChangeRow(const std::string& name, const std::string& what, const char* button, engine::ZGEOM* geom)
+{
+    float bw = ImGui::CalcTextSize(button).x + ImGui::GetStyle().FramePadding.x * 2;
+    std::string label = name + "  (" + what + ")";
+    if (ImGui::Selectable(label.c_str(), geom && Selected() == geom, ImGuiSelectableFlags_AllowOverlap,
+                          ImVec2(ImGui::GetContentRegionAvail().x - bw - ImGui::GetStyle().ItemSpacing.x, 0)) &&
+        geom && IsLive(geom)) {
+        Select(geom);
+        FlyCameraTo(GetTransform(geom).pos);
+    }
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - bw);
+    return ImGui::SmallButton(button);
+}
+
+// what the level changed of the map, each with its undo (#35)
+void DrawMapChanges()
+{
+    const LevelDocument& L = CurrentLevel();
+    ImGui::SeparatorText("What you changed");
+    std::string revert, door, removeCopy;
+    int rows = 0;
+    for (const auto& [path, e] : L.objects) {
+        engine::ZGEOM* g = Resolve(path);
+        if (g && ActorOf(g))
+            continue;  // (people: step 2)
+        std::string what;
+        if (e.hasOriginal && e.state.hidden != e.original.hidden)
+            what = e.state.hidden ? "hidden" : "shown";
+        if (!e.hasOriginal || memcmp(&e.state.transform, &e.original.transform, sizeof(Transform)) != 0)
+            what += what.empty() ? "moved" : ", moved";
+        ImGui::PushID(path.c_str());
+        if (ChangeRow(NameOfPath(path), what, "Undo this", g))
+            revert = path;
+        ImGui::PopID();
+        ++rows;
+    }
+    for (const auto& [path, locked] : L.doors) {
+        ImGui::PushID(("door" + path).c_str());
+        if (ChangeRow(NameOfPath(path), locked ? "locked" : "unlocked", "Undo this", Resolve(path)))
+            door = path;
+        ImGui::PopID();
+        ++rows;
+    }
+    for (const SpawnedObject& s : L.spawned) {
+        if (s.item)
+            continue;  // (items: step 3)
+        engine::ZGEOM* g = LevelObject(s.id);
+        ImGui::PushID(s.id.c_str());
+        std::string name = s.point ? "a place (" + s.id.substr(0, s.id.find('+')) + ")" : s.id.substr(0, s.id.find('+'));
+        if (ChangeRow(name, "added", "Remove", g) && g)
+            removeCopy = s.id;
+        ImGui::PopID();
+        ++rows;
+    }
+    if (!rows)
+        ImGui::TextDisabled("Nothing yet.");
+    if (!revert.empty())
+        RevertObjectEdit(revert);
+    if (!door.empty())
+        ForgetLevelDoor(door);
+    if (!removeCopy.empty())
+        if (engine::ZGEOM* g = LevelObject(removeCopy)) {
+            Select(g);
+            DeleteSelection();
+        }
 }
 
 void DrawMapStep()
@@ -181,12 +271,17 @@ void DrawMapStep()
             if (ImGui::Button("Remove (Del)"))
                 DeleteSelection();
         }
-        ImGui::SameLine();
         if (ImGui::Button("Onto the surface (G)"))
             BeginGrab(sel);
+        if (engine::ZGEOM* door = engine::DoorOf(sel)) {
+            bool locked = engine::DoorLocked(door) == 1;
+            if (ImGui::Button(locked ? "Unlock the door" : "Lock the door"))
+                SetLevelDoorLock(door, !locked);
+            ImGui::SameLine();
+            ImGui::TextDisabled(locked ? "(locked: only its key opens it)" : "(a door)");
+        }
     }
-    const LevelDocument& L = CurrentLevel();
-    ImGui::TextDisabled("%d objects of the map changed, %d added", int(L.objects.size()), int(L.spawned.size()));
+    DrawMapChanges();
     ImGui::SeparatorText("Add an object");
     if (ImGui::CollapsingHeader("The map's models (click one, then click in the world)"))
         DrawModelsList();
@@ -205,6 +300,54 @@ void DrawTryStep()
                         pending ? " The new people come to life then." : "");
     ImGui::PopTextWrapPos();
     DrawProblemsList();
+}
+
+std::string LevelFile(const char* name)
+{
+    return GameDir() + "Mods\\" + CurrentLevel().folder + "\\" + name;
+}
+
+// the picture of the view: the frame without the editor, 640 wide (package.h: a preview.png)
+void SavePicture(void* device)
+{
+    std::string path = LevelFile("preview.png");
+    g_pictureStatus = SavePreviewPng(device, path, 640) ? "preview.png: taken" : "preview.png: not written";
+    Log("guide: %s (%s)", g_pictureStatus.c_str(), path.c_str());
+}
+
+// the description and the picture a package carries (README.md, preview.png in the level's folder)
+void DrawDescription()
+{
+    const LevelDocument& L = CurrentLevel();
+    if (g_readmeFolder != L.folder) {
+        g_readmeFolder = L.folder;
+        g_readme[0] = 0;
+        g_pictureStatus.clear();
+        std::ifstream f(LevelFile("README.md"), std::ios::binary);
+        std::stringstream ss;
+        ss << f.rdbuf();
+        snprintf(g_readme, sizeof(g_readme), "%s", ss.str().c_str());
+    }
+    ImGui::SeparatorText("Description (README.md)");
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("What the mission is about and how to play it: players see it with the package.");
+    ImGui::PopTextWrapPos();
+    ImGui::InputTextMultiline("##readme", g_readme, sizeof(g_readme), ImVec2(-1, ImGui::GetTextLineHeight() * 6));
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        std::ofstream f(LevelFile("README.md"), std::ios::binary | std::ios::trunc);
+        f << g_readme;
+    }
+    if (ImGui::IsItemHovered() && !g_readme[0])
+        ImGui::SetTooltip("What the mission is about, how to play it: the players see it with the package");
+    ImGui::SeparatorText("Picture (preview.png)");
+    bool have = GetFileAttributesA(LevelFile("preview.png").c_str()) != INVALID_FILE_ATTRIBUTES;
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("%s", g_pictureStatus.empty() ? (have ? "preview.png: there" : "none yet")
+                                                      : g_pictureStatus.c_str());
+    ImGui::TextDisabled("Fly the camera to a good view first (hold the right mouse button, W A S D).");
+    ImGui::PopTextWrapPos();
+    if (ImGui::Button(have ? "Take it again from this view" : "Take a picture of this view", ImVec2(-1, 0)))
+        overlay::RequestCleanFrame(SavePicture);
 }
 
 void DrawShareStep()
@@ -230,8 +373,10 @@ void DrawShareStep()
         }
         ImGui::EndDisabled();
     }
-    if (!L.folder.empty())
+    if (!L.folder.empty()) {
+        DrawDescription();
         DrawShareSection();
+    }
 }
 
 void DrawGuide()
@@ -280,6 +425,8 @@ void DrawGuide()
         snprintf(next, sizeof(next), "Next: %s >", kSteps[g_step + 1].title);
         if (ImGui::Button(next, ImVec2(half, 0)))
             ++g_step;
+    } else {
+        ImGui::NewLine();  // (the last step: no Next)
     }
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("Camera: hold the right mouse button and use W A S D (the wheel: speed)");
@@ -299,8 +446,11 @@ void DrawSelectionCard()
     if (!WorldToScreen(t.pos, sx, sy))
         return;
     ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(std::min(sx + 40.0f, io.DisplaySize.x - 260.0f), std::max(sy - 40.0f, 60.0f)),
-                            ImGuiCond_Always);
+    // beside the object, on the side of the screen with room (right of it on the left half, else left of it)
+    sx = std::clamp(sx, 40.0f, io.DisplaySize.x - 40.0f);  // (off the screen: at its edge)
+    bool left = sx > io.DisplaySize.x * 0.5f;
+    ImGui::SetNextWindowPos(ImVec2(left ? sx - 40.0f : sx + 40.0f, std::clamp(sy - 40.0f, 60.0f, io.DisplaySize.y - 160.0f)),
+                            ImGuiCond_Always, ImVec2(left ? 1.0f : 0.0f, 0.0f));
     ImGui::SetNextWindowBgAlpha(0.88f);
     if (ImGui::Begin("##selcard", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
@@ -326,6 +476,14 @@ void DrawSelectionCard()
                 Change(actor, before, after, after.hidden ? "hide" : "show");
             }
         } else {
+            if (engine::ZGEOM* door = engine::DoorOf(sel)) {
+                bool locked = engine::DoorLocked(door) == 1;
+                if (ImGui::SmallButton(locked ? "Unlock the door" : "Lock the door"))
+                    SetLevelDoorLock(door, !locked);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("A locked door opens only for the holder of its key");
+                ImGui::SameLine();
+            }
             bool turning = GizmoTurning();
             if (ImGui::SmallButton(turning ? "Move (W)" : "Turn (E)"))
                 SetGizmoTurning(!turning);
@@ -388,6 +546,11 @@ void DrawSimpleToolbar()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Every tool of the editor: the scene's objects, characters' settings, scripts,\n"
                           "vehicles, the sky, stages... (View > Simple mode comes back)");
+}
+
+void GuideGoToStep(int step)
+{
+    g_step = step;
 }
 
 void InstallGuide()

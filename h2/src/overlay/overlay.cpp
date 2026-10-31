@@ -476,11 +476,24 @@ void OnDeviceCreated(void* device, HWND window)
     script::ExecFile(GameDir() + "Mods\\autoexec.lua");
 }
 
+static void (*g_cleanFrame)(void*);  // RequestCleanFrame
+static int g_cleanState;      // 1: this frame without the overlay, 2: then `g_cleanFrame`
+
 void OnPresent(void* device)
 {
     UpdateCursorClip(g_window);
     if (!g_ready || device != g_device)
         return;
+    if (g_cleanState == 1) {
+        g_cleanState = 2;
+        return;  // (nothing drawn: the game's frame alone)
+    }
+    if (g_cleanState == 2) {
+        g_cleanState = 0;
+        if (g_cleanFrame)
+            g_cleanFrame(device);
+        g_cleanFrame = nullptr;
+    }
     ImGui_ImplDX8_NewFrame();
     ImGui_ImplWin32_NewFrame();
     DevUiStep();
@@ -517,6 +530,12 @@ void OnDeviceReleased()
 bool IsOpen() { return g_open; }
 
 void AddAlwaysDraw(void (*draw)()) { g_always.push_back(draw); }
+
+void RequestCleanFrame(void (*fn)(void* device))
+{
+    g_cleanFrame = fn;
+    g_cleanState = 1;
+}
 ImFont* MenuFont() { return g_menuFont; }
 void SetExclusive(void (*draw)()) { g_exclusive = draw; }
 

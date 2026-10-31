@@ -8,6 +8,7 @@ with dev commands.
 
   python h2/tests/knockout_test.py
 """
+import ctypes
 import os
 import shutil
 import sys
@@ -81,7 +82,9 @@ def knock_out():
     lua("h2.dev_mouse(0, 3.0) return 1")
     time.sleep(5)
     clock2 = lua('return string.format("%.1f", h2.time())')
-    return "before: %s, hand: %s, game time %s -> %s" % (before, hand, clock, clock2)
+    ctypes.windll.kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+    uptime = ctypes.windll.kernel32.GetTickCount64() / 3600000.0
+    return "before: %s, hand: %s, game time %s -> %s, Windows up %.1f h" % (before, hand, clock, clock2, uptime)
 
 
 def make(goal):

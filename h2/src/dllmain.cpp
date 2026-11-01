@@ -17,6 +17,7 @@
 #include "editor/guide.h"
 #include "editor/highlight.h"
 #include "editor/level.h"
+#include "editor/playdebug.h"
 #include "editor/playtest.h"
 #include "editor/testtools.h"
 #include "editor/mission.h"
@@ -136,6 +137,7 @@ void Init()
     h2::editor::InstallPlayTest();
     h2::editor::InstallTestTools();
     h2::editor::InstallMission();
+    h2::editor::InstallPlayDebug();  // (its panel after Testing)
     h2::editor::InstallMusic();
     h2::editor::InstallProfileGuard();
     h2::editor::InstallStages();

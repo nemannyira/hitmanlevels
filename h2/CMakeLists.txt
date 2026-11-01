@@ -43,6 +43,7 @@ add_library(h2fix SHARED
     src/editor/vehicles.cpp
     src/editor/own_map.cpp
     src/editor/testtools.cpp
+    src/editor/playdebug.cpp
     src/editor/npc_panel.cpp
     src/editor/npcs.cpp
     src/editor/mission.cpp
@@ -84,7 +85,7 @@ add_library(h2fix SHARED
     src/ui.cpp
     src/watch.cpp
     src/dinput8.def)
-target_link_libraries(h2fix PRIVATE minhook lua imgui h2levelfmt dbghelp psapi)
+target_link_libraries(h2fix PRIVATE minhook lua imgui h2levelfmt dbghelp psapi windowscodecs ole32)
 target_include_directories(h2fix PRIVATE ${CMAKE_SOURCE_DIR}/third_party/json)
 target_compile_definitions(h2fix PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 target_compile_options(h2fix PRIVATE /W4 /permissive- /Zi)

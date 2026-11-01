@@ -175,3 +175,53 @@ Addresses are hitman2.exe (Steam build).
   neighbours Load / Options (theirs patched to it), text key
   `H2Editor/Menu/LevelEditor` (answered by the LOC hook); 0x54BF40 is hooked
   for id 7. Mouse focus, highlight and Enter work as for the game's buttons.
+
+## The laptop's files (Target Photo): what a level could give its own
+
+Read in the game (Ghidra, 2026-11-01):
+
+* `BriefingMenu_SetLocaleFolder` 0x52D340 looks for the briefing window's
+  child `BriefingPhotos` and its children `Photo1`..`Photo5` (GUI geoms).
+  One found: its entry's text is the LOC `"<folder>/Laptop/Files/Photo<n>"`
+  (this +0x15C + n*0x80), it is made visible (vfunc 0xC0(1)) and its
+  reference kept at this +0x5EC + (n-1)*4.
+* `BriefingMenu_FileAction` 0x52CED0 (action 0xC9..0xCE = file 1..6): the
+  file's kind is the string at this +0xDC + i*0x80: `photo` shows that geom
+  (this +0x158 = it, vfunc 0xC0), `map` the in-game map, `video` a
+  cutscene (CutSequence_Start to its reference).
+* The editor already answers the entries' texts (LOC hook) and hides the
+  base level's files (`base_files`, `hkBriefingAction`).
+
+So a level of its own could have:
+
+1. **Its own entries** (up to 5): their names are LOC texts the editor
+   answers (as the objectives' lines). Each needs a `PhotoN` geom of the
+   GUI to exist (to be checked per map: whether every level's laptop has
+   `BriefingPhotos/Photo1..5`, or only those with photos).
+2. **Its own pictures**, two ways:
+   * draw the picture over the shown photo (an ImGui image where the photo
+     geom is, while this +0x158 is that geom): no RE of the renderer, works
+     on every map; needs a PNG loader and a D3D texture for ImGui;
+   * or put the picture into the photo geom's own texture (RenderD3D's
+     texture of that GUI object, written with LockRect): the game draws it
+     itself; the texture mapping of a GUI geom still to be found.
+3. **A target's photo from its model**: the character's thumbnail
+   (`highlight.h`, the picture the People list shows) saved as a PNG in the
+   level's folder when the level is made (*Take the target's photo*), and
+   shown as in 2. Any picture of the level maker's the same way (a PNG of
+   theirs in the level's folder, packed with the level).
+
+Format idea: `mission.files: [{ "name": "Target: the courier", "image":
+"photo1.png" }]` (at most 5; the image a file of the level's folder).
+
+Done (2026-11-02): `mission.files` (at most 5, one per photo place the map's
+laptop has: `MapPhotoCount`). The entries' texts are answered in the LOC
+hook; a click on one of them goes through even where the base level's files
+are hidden. The picture is drawn over the shown photo (an ImGui image while
+the `PhotoN` node's flag 0x800 is clear: seen in the game on C1-1, the
+photo's half extents 256 x 195.5 in the virtual screen, `ui.h` UiScale),
+decoded by WIC (`highlight.h` ImageTexture). *Photo of ...* writes the last
+picture a list showed (`ThumbnailShown`: the thumbnail's render target read
+back with CopyRects twice a second while shown). Not yet: the pictures in a
+level's package (the package's file list is fixed and checked), more photo
+places than the map's GUI has.

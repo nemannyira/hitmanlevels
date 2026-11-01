@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 namespace h2 {
 
@@ -17,5 +18,7 @@ void PeriodicScreenshot(void* device);
 // The front buffer made `width` wide (its sides as they are, a box filter) and written as a PNG (8-bit
 // RGB, deflate's stored blocks: a package's preview.png, package.h ValidPng).
 bool SavePreviewPng(void* device, const std::string& path, int width);
+// 8-bit RGB pixels (rows top down) written as a PNG.
+bool WritePng(const std::string& path, int w, int h, const std::vector<unsigned char>& rgb);
 
 } // namespace h2

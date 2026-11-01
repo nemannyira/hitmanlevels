@@ -60,6 +60,7 @@ TESTS = [
     ("killswitch", ["killswitch_test.py"], 300, False),
     ("gui", ["gui_test.py"], 600, False),
     ("simple_mode", ["simple_mode_test.py"], 600, False),  # (#31: the guided editor)
+    ("playdebug", ["playdebug_test.py"], 600, False),  # (the debug view while playing, the last test's events)
     ("maps_gameway", ["maps_gameway_test.py"], 3600, False),
     ("fuzz", ["fuzz_levels.py"], 1800, False),
     ("limits", ["limits_test.py"], 1500, True),  # (big levels: on a fresh game)

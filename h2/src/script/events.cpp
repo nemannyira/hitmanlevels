@@ -1,9 +1,11 @@
 #include "events.h"
 
+#include <algorithm>
 #include <cctype>
 #include <iterator>
 #include <map>
 #include <set>
+#include <vector>
 
 #include "../engine/game_events.h"
 #include "../engine/inject.h"
@@ -24,8 +26,19 @@ namespace h2::script {
 namespace {
 
 bool g_levelScripts;  // handlers of the level's scripts may be there
-std::set<std::string> g_editorEvents;  // SetEditorEvents
-EditorEventFn g_editorFn;
+struct EditorListener {
+    std::set<std::string> events;
+    EditorEventFn fn;
+};
+std::vector<EditorListener> g_editorListeners;  // SetEditorEvents
+std::set<std::string> g_editorEvents;           // what any of them listens to
+
+void FireEditor(const char* event, const engine::GameEvent& e)
+{
+    for (const EditorListener& l : g_editorListeners)
+        if (l.events.count(event))
+            l.fn(event, e);
+}
 
 // registry: name -> { {fn = f, owner = "level"}, ... }
 constexpr const char* kHandlers = "h2.handlers";
@@ -300,6 +313,7 @@ const char* KindName(int type)
 
 void FireVictim(const char* event, const engine::GameEvent& e)
 {
+    FireEditor(event, e);
     Fire(event, [&](lua_State* L) {
         lua_createtable(L, 0, 3);
         PushCarriedGeom(L, e.value);
@@ -366,8 +380,8 @@ void FireGameMessage(const engine::GameEvent& e)
     Fire("message", push);
     Fire("msg:" + name, push);
     for (const Alias& a : kAliases) {
-        if (name == a.message && g_editorFn && g_editorEvents.count(a.event))
-            g_editorFn(a.event, e);
+        if (name == a.message && g_editorEvents.count(a.event))
+            FireEditor(a.event, e);
         if (name != a.message || !HasHandlers(a.event))
             continue;
         bool flag = a.flag < 0 ? e.param != 0 : a.flag != 0;
@@ -417,6 +431,7 @@ void FireGameEvents()
             break;
         case engine::GameEvent::MissionCompleted:
         case engine::GameEvent::MissionFailed:
+            FireEditor("mission", e);
             Fire("mission", [&](lua_State* L) {
                 lua_createtable(L, 0, 2);
                 lua_pushstring(L, e.kind == engine::GameEvent::MissionCompleted ? "completed" : "failed");
@@ -456,8 +471,15 @@ void FireGameEvents()
 
 void SetEditorEvents(const std::set<std::string>& events, EditorEventFn fn)
 {
-    g_editorEvents = events;
-    g_editorFn = fn;
+    auto it = std::find_if(g_editorListeners.begin(), g_editorListeners.end(),
+                           [&](const EditorListener& l) { return l.fn == fn; });
+    if (it == g_editorListeners.end())
+        g_editorListeners.push_back({events, fn});
+    else
+        it->events = events;
+    g_editorEvents.clear();
+    for (const EditorListener& l : g_editorListeners)
+        g_editorEvents.insert(l.events.begin(), l.events.end());
     if (State())
         UpdateWatch();
 }

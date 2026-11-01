@@ -25,6 +25,7 @@
 #include "model.h"
 #include "models_panel.h"
 #include "npc_panel.h"
+#include "playdebug.h"
 #include "npcs.h"
 #include "placement.h"
 #include "playtest.h"
@@ -306,16 +307,17 @@ void DrawTryStep()
         TestLevelFrom(TestStart::LevelStart);
     if (ImGui::Button("Play from where the camera looks", ImVec2(-1, 0)))
         TestLevelFrom(TestStart::Camera);
-    std::string routes = "Show the people's routes while playing (" + overlay::KeyNameOf(g_config.routesKey) + ")";
-    ImGui::Checkbox(routes.c_str(), PlayRoutesShown());
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Where each person walks: numbered points, arrows in walking order, the name above\n"
-                          "the head in the same colour (red point: off the paths, never reached)");
+    DrawPlayDebugSettings();
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("The level is saved first. %s while playing: back to the editor (the map loads again as "
                         "you made it).%s",
                         overlay::EditorKeyName().c_str(), pending ? " The new people come to life then." : "");
     ImGui::PopTextWrapPos();
+    if (LastTestHasEvents()) {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+        if (ImGui::CollapsingHeader("What happened in the last test"))
+            DrawLastTest();
+    }
     DrawProblemsList();
 }
 
@@ -495,13 +497,16 @@ void DrawSelectionCard()
     // beside the object, on the side of the screen with room (right of it on the left half, else left of it)
     sx = std::clamp(sx, 40.0f, io.DisplaySize.x - 40.0f);  // (off the screen: at its edge)
     bool left = sx > io.DisplaySize.x * 0.5f;
-    ImGui::SetNextWindowPos(ImVec2(left ? sx - 40.0f : sx + 40.0f, std::clamp(sy - 40.0f, 60.0f, io.DisplaySize.y - 160.0f)),
+    static float cardHeight = 160.0f;  // (last frame's: the whole card on the screen)
+    float top = std::max(60.0f, io.DisplaySize.y - cardHeight - 10.0f);
+    ImGui::SetNextWindowPos(ImVec2(left ? sx - 40.0f : sx + 40.0f, std::clamp(sy - 40.0f, 60.0f, top)),
                             ImGuiCond_Always, ImVec2(left ? 1.0f : 0.0f, 0.0f));
     ImGui::SetNextWindowBgAlpha(0.88f);
     if (ImGui::Begin("##selcard", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                          ImGuiWindowFlags_NoNav)) {
+        cardHeight = ImGui::GetWindowHeight();
         engine::ZGEOM* hitman = engine::Player();
         if (hitman && (sel == hitman || ActorOf(sel) == hitman)) {  // (not an object to take, hide or copy)
             ImGui::TextUnformatted("Hitman");
@@ -514,7 +519,10 @@ void DrawSelectionCard()
         }
         engine::ZGEOM* actor = ActorOf(sel);
         bool placed = actor && IsPlacedNpc(actor);
-        ImGui::TextUnformatted(actor ? PersonName(actor).c_str() : engine::SafeString(sel->name).c_str());
+        std::string own = ObjectName(sel);
+        ImGui::TextUnformatted(actor ? PersonName(actor).c_str()
+                               : own.empty() ? engine::SafeString(sel->name).c_str()
+                                             : own.c_str());
         ImGui::SameLine();
         ImGui::TextDisabled(actor ? (placed ? "(a new person)" : "(a person of the map)")
                             : FindSpawned(sel) ? "(added)" : "(of the map)");

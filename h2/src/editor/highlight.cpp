@@ -1,9 +1,11 @@
 #include "highlight.h"
 
+#include <algorithm>
 #include <array>
 #include <map>
 
 #include <windows.h>
+#include <wincodec.h>
 #include <intrin.h>
 #include <cmath>
 #include <cstring>
@@ -19,6 +21,7 @@
 #include "../loader.h"
 #include "../log.h"
 #include "../overlay/overlay.h"
+#include "../screenshot.h"
 #include "model.h"
 #include "scene_panel.h"
 #include "viewport.h"
@@ -1018,16 +1021,214 @@ void ReleaseThumbnail()
     g_thumbRefs = 0;
 }
 
+namespace {
+struct Image {
+    void* texture = nullptr;
+    int w = 0, h = 0;
+    float u = 1.0f, v = 1.0f;
+    unsigned long refs = 0;  // the device's references it holds
+};
+std::map<std::string, Image> g_images;  // by path (a failed one: no texture, not tried again)
+
+// BGRA pixels of an image file (at most 1024 a side: every second / third... pixel), through WIC
+bool DecodeImage(const std::string& path, std::vector<uint32_t>& px, int& w, int& h)
+{
+    HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IWICImagingFactory* factory = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICFormatConverter* conv = nullptr;
+    IWICBitmapScaler* scaler = nullptr;
+    bool ok = false;
+    std::wstring wpath(path.begin(), path.end());
+    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+        SUCCEEDED(factory->CreateDecoderFromFilename(wpath.c_str(), nullptr, GENERIC_READ,
+                                                      WICDecodeMetadataCacheOnDemand, &decoder)) &&
+        SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(factory->CreateFormatConverter(&conv)) &&
+        SUCCEEDED(conv->Initialize(frame, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
+                                   WICBitmapPaletteTypeCustom))) {
+        UINT iw = 0, ih = 0;
+        conv->GetSize(&iw, &ih);
+        IWICBitmapSource* src = conv;
+        if (iw > 1024 || ih > 1024) {
+            double f = 1024.0 / double(std::max(iw, ih));
+            UINT sw = std::max(1u, UINT(iw * f)), sh = std::max(1u, UINT(ih * f));
+            if (SUCCEEDED(factory->CreateBitmapScaler(&scaler)) &&
+                SUCCEEDED(scaler->Initialize(conv, sw, sh, WICBitmapInterpolationModeFant))) {
+                src = scaler;
+                iw = sw;
+                ih = sh;
+            }
+        }
+        if (iw && ih && iw <= 1024 && ih <= 1024) {
+            px.resize(size_t(iw) * ih);
+            ok = SUCCEEDED(src->CopyPixels(nullptr, iw * 4, iw * ih * 4, reinterpret_cast<BYTE*>(px.data())));
+            w = int(iw);
+            h = int(ih);
+        }
+    }
+    for (IUnknown* u : {static_cast<IUnknown*>(scaler), static_cast<IUnknown*>(conv), static_cast<IUnknown*>(frame),
+                        static_cast<IUnknown*>(decoder), static_cast<IUnknown*>(factory)})
+        if (u)
+            u->Release();
+    if (SUCCEEDED(init))
+        CoUninitialize();
+    return ok;
+}
+} // namespace
+
+namespace {
+constexpr int kDev_CreateImageSurface = 27, kDev_CopyRects = 28;
+std::vector<unsigned char> g_lastRgb;  // the last picture kept (ThumbnailShown)
+int g_lastW, g_lastH;
+std::string g_lastWhat;
+double g_lastKept = -1e9;
+
+// that part of the thumbnail's render target as RGB pixels
+bool ReadThumbnail(const float crop[4], float stretch, std::vector<unsigned char>& rgb, int& ow, int& oh)
+{
+    if (!g_device || !g_thumbSurface || !g_thumbDrawn)
+        return false;
+    void* mem = nullptr;
+    if (Call<HRESULT>(g_device, kDev_CreateImageSurface, kThumbSize, kThumbSize, DWORD(D3DFMT_X8R8G8B8), &mem) < 0 ||
+        !mem)
+        return false;
+    bool ok = false;
+    if (Call<HRESULT>(g_device, kDev_CopyRects, g_thumbSurface, static_cast<const RECT*>(nullptr), UINT(0), mem,
+                      static_cast<const POINT*>(nullptr)) >= 0) {
+        D3DLOCKED_RECT lr;
+        if (Call<HRESULT>(mem, kSurf_LockRect, &lr, static_cast<const RECT*>(nullptr), DWORD(0)) >= 0) {
+            float cw = (crop[2] - crop[0]) * kThumbSize, ch = (crop[3] - crop[1]) * kThumbSize;
+            oh = std::max(1, int(ch));
+            ow = std::max(1, int(cw * stretch));
+            rgb.resize(size_t(ow) * oh * 3);
+            const unsigned char* bits = static_cast<const unsigned char*>(lr.pBits);
+            for (int y = 0; y < oh; ++y)
+                for (int x = 0; x < ow; ++x) {
+                    int sx = std::clamp(int(crop[0] * kThumbSize + (x + 0.5f) * cw / ow), 0, int(kThumbSize) - 1);
+                    int sy = std::clamp(int(crop[1] * kThumbSize + (y + 0.5f) * ch / oh), 0, int(kThumbSize) - 1);
+                    const unsigned char* px = bits + sy * lr.Pitch + sx * 4;  // B G R X
+                    unsigned char* o = &rgb[(size_t(y) * ow + x) * 3];
+                    o[0] = px[2];
+                    o[1] = px[1];
+                    o[2] = px[0];
+                }
+            Call<HRESULT>(mem, kSurf_UnlockRect);
+            ok = true;
+        }
+    }
+    Call<ULONG>(mem, kSurf_Release);
+    return ok;
+}
+} // namespace
+
+void ThumbnailShown(float u0, float v0, float u1, float v1, float stretch, const std::string& what)
+{
+    double now = ImGui::GetTime();
+    if (now - g_lastKept < 0.5 && what == g_lastWhat)
+        return;
+    const float crop[4] = {u0, v0, u1, v1};
+    std::vector<unsigned char> rgb;
+    int w = 0, h = 0;
+    if (!ReadThumbnail(crop, stretch > 0.1f ? stretch : 1.0f, rgb, w, h))
+        return;
+    g_lastRgb.swap(rgb);
+    g_lastW = w;
+    g_lastH = h;
+    g_lastWhat = what;
+    g_lastKept = now;
+}
+
+std::string LastPictureWhat() { return g_lastRgb.empty() ? "" : g_lastWhat; }
+
+bool SaveLastPicturePng(const std::string& path, std::string* error)
+{
+    if (g_lastRgb.empty()) {
+        if (error)
+            *error = "no picture yet: hover a person (People) or an item (Items) until its picture shows";
+        return false;
+    }
+    if (!WritePng(path, g_lastW, g_lastH, g_lastRgb)) {
+        if (error)
+            *error = "not written (the level's folder?)";
+        return false;
+    }
+    Log("picture of %s: %s (%dx%d)", g_lastWhat.c_str(), path.c_str(), g_lastW, g_lastH);
+    return true;
+}
+
+void* ImageTexture(const std::string& path, int* w, int* h, float* u, float* v)
+{
+    auto it = g_images.find(path);
+    if (it == g_images.end()) {
+        Image img;
+        std::vector<uint32_t> px;
+        int iw = 0, ih = 0;
+        if (g_device && DecodeImage(path, px, iw, ih)) {
+            UINT tw = 1, th = 1;
+            while (tw < UINT(iw))
+                tw <<= 1;
+            while (th < UINT(ih))
+                th <<= 1;
+            ULONG before = DeviceRefCount(g_device);
+            void* tex = nullptr;
+            if (Call<HRESULT>(g_device, Dev_CreateTexture, tw, th, UINT(1), DWORD(0), DWORD(D3DFMT_A8R8G8B8),
+                              DWORD(D3DPOOL_MANAGED), &tex) >= 0 && tex) {
+                D3DLOCKED_RECT lr;
+                if (Call<HRESULT>(tex, kTex_LockRect, UINT(0), &lr, static_cast<const RECT*>(nullptr), DWORD(0)) >= 0) {
+                    for (int y = 0; y < int(th); ++y) {
+                        uint32_t* row = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(lr.pBits) + y * lr.Pitch);
+                        for (int x = 0; x < int(tw); ++x)
+                            row[x] = x < iw && y < ih ? px[size_t(y) * iw + x] : 0;
+                    }
+                    Call<HRESULT>(tex, kTex_UnlockRect, UINT(0));
+                    img.texture = tex;
+                    img.w = iw;
+                    img.h = ih;
+                    img.u = float(iw) / float(tw);
+                    img.v = float(ih) / float(th);
+                    img.refs = DeviceRefCount(g_device) - before;
+                } else {
+                    Call<ULONG>(tex, kTex_Release);
+                }
+            }
+        }
+        Log("image %s: %s (%dx%d)", path.c_str(), img.texture ? "loaded" : "not read", img.w, img.h);
+        it = g_images.emplace(path, img).first;
+    }
+    if (w)
+        *w = it->second.w;
+    if (h)
+        *h = it->second.h;
+    if (u)
+        *u = it->second.u;
+    if (v)
+        *v = it->second.v;
+    return it->second.texture;
+}
+
+void ReleaseImages()
+{
+    for (auto& [path, img] : g_images)
+        if (img.texture)
+            Call<ULONG>(img.texture, kTex_Release);
+    g_images.clear();
+}
+
 unsigned long HighlightDeviceRefs(void* device)
 {
     if (device != g_device)
         return 0;
-    return (g_thumbTexture ? g_thumbRefs : 0) + (g_rampCoarse ? g_rampRefs : 0);
+    unsigned long images = 0;
+    for (const auto& [path, img] : g_images)
+        images += img.texture ? img.refs : 0;
+    return (g_thumbTexture ? g_thumbRefs : 0) + (g_rampCoarse ? g_rampRefs : 0) + images;
 }
 
 void ReleaseHighlightResources()
 {
     ReleaseThumbnail();
+    ReleaseImages();
     if (g_rampCoarse)
         Call<ULONG>(g_rampCoarse, kTex_Release);
     if (g_rampFine)

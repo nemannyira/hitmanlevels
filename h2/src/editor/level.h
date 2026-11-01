@@ -139,6 +139,12 @@ struct MissionObjective {
     StageSpan span;
 };
 
+// A file of the laptop's (its "Additional files"): a picture shown in place of the map's photo of that place
+struct LaptopFile {
+    std::string name;   // the entry's text ("Target: the courier")
+    std::string image;  // a picture in the level's folder ("photo1.png"; PNG, JPG or BMP)
+};
+
 struct MissionDoc {
     std::vector<MissionObjective> objectives;
     bool endWhenDone = false;      // the mission is completed when every objective is done ...
@@ -146,6 +152,9 @@ struct MissionDoc {
     float exitRadius = 300.0f;
     std::string briefing;          // the laptop's mission briefing ("" = the level's own)
     bool baseEnds = true;          // the base level's own logic may end the mission
+    std::vector<LaptopFile> files;  // the laptop's files of the level's (1..5: the map's photos' places)
+    std::map<std::string, std::string> names;  // objects' names of the level maker's (path -> "the courier"):
+                                               // the objectives' texts made for them
     int baseFiles = -1;            // the laptop's additional files of the base level (Target Photo):
                                    // 1 shown, 0 hidden, -1 hidden on an emptied map
 };

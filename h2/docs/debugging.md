@@ -104,7 +104,16 @@ number of seconds: a reload of C1-1 is ready in under a second.
   `"looking"`, `"pressed x y"` or `"not found"` (after about 120 frames). The
   editor must be open and the control's panel shown (`h2.dev_editor(true)`,
   `h2.dev_panel(name)`). `h2.dev_selected()`: the selection's path (a copy
-  just made by Duplicate is selected).
+  just made by Duplicate is selected). `h2.dev_wmkey(vk)`: a key as Windows
+  sends it to the game's window (F8 back from a test, F9 the debug view).
+* The debug view while playing (`editor/playdebug.cpp`):
+  `h2.dev_playdebug([on])` switches it, `h2.dev_lasttest()` gives the last
+  test's events (a line each, as the list shows them), `h2.dev_seers()` the
+  game's sight table as the view reads it (name, range, view angle, actor,
+  sees Hitman, eye, direction, the suspicion it reported) after a
+  `stress N` line (the level's alarm level). The game's log has the first
+  12 suspicion reports of a scene (`game events: stress reported: who ...,
+  value ...`): whether `who` is the reporting character's reference.
 * `level_check_test.py` (no game): the level validator (`h2/src/levelfmt`,
   `build/Release/h2level_check.exe`) with hostile files, strict and lenient,
   and every level of Mods and examples accepted strictly.

@@ -52,9 +52,10 @@ void FireObjective(int slot);
 // "arrived" {vehicle (its id), object}: a vehicle at the end of its route (editor/vehicles.h)
 void FireArrived(int id, const std::string& path);
 void FireGameEvents();
-// The editor's own listener (its mission goals): called with the events
-// named (as h2.on names them: "spotted", "unconscious", ...) whether or not a
-// script listens, before the scripts get them.
+// The editor's own listeners (its mission goals, the play debug): called with
+// the events named (as h2.on names them: "spotted", "unconscious", ..., and
+// "kill", "harm", "mission") whether or not a script listens, before the
+// scripts get them. One listener a function: called again, its events change.
 using EditorEventFn = void (*)(const char* event, const engine::GameEvent& e);
 void SetEditorEvents(const std::set<std::string>& events, EditorEventFn fn);
 // "key" (triggers.h)

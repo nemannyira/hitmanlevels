@@ -7,6 +7,7 @@
 #include <cstring>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "../game.h"
 #include "npc.h"
@@ -685,6 +686,74 @@ int Noticed(ZGEOM* actor)
     if (!routine || !ref)
         return -1;
     return SafeInTable(routine, ref);
+}
+
+namespace {
+constexpr size_t kCheckVisible_Seers = 0x6BE, kSeer_Size = 0x1B0;
+constexpr size_t kSeer_Range = 0x4, kSeer_Cos = 0x8, kSeer_Offset = 0x10, kSeer_Flags = 0x1C, kSeer_Status = 0x20;
+constexpr uint16_t kStatus_Seen = 0x4000;
+constexpr uintptr_t kCheckVisible_SeerEyeAndDir = 0x48CFF0;
+using SeerEye_t = void(__stdcall*)(float* eye, float* dir, ZGEOM* seer, const float* offset, bool actor);
+
+bool SafeSeerEye(ZGEOM* g, const uint8_t* entry, float eye[3], float dir[3])
+{
+    __try {
+        float offset[3];
+        memcpy(offset, entry + kSeer_Offset, sizeof(offset));
+        reinterpret_cast<SeerEye_t>(kCheckVisible_SeerEyeAndDir)(eye, dir, g, offset, (entry[kSeer_Flags] & 1) != 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool SafeSeers(const uint8_t* routine, uint32_t hitman, std::vector<Seer>& out)
+{
+    __try {
+        int target = -1;
+        for (int i = 0; hitman && i < kCheckVisible_Entries; ++i)
+            if (*reinterpret_cast<const uint32_t*>(routine + kCheckVisible_Table + i * 8) == hitman)
+                target = i;
+        for (int i = 0; i < kCheckVisible_Entries; ++i) {
+            const uint8_t* e = routine + kCheckVisible_Seers + i * kSeer_Size;
+            uint32_t ref = *reinterpret_cast<const uint32_t*>(e);
+            ZGEOM* g = ref ? GeomOfRef(ref) : nullptr;
+            if (!g || !Usable(g))
+                continue;
+            Seer s;
+            s.geom = g;
+            s.range = *reinterpret_cast<const float*>(e + kSeer_Range);
+            s.cosHalf = *reinterpret_cast<const float*>(e + kSeer_Cos);
+            s.actor = (e[kSeer_Flags] & 1) != 0;
+            if (target >= 0)
+                s.seesHitman = (*reinterpret_cast<const uint16_t*>(e + kSeer_Status + target * 2) & kStatus_Seen) != 0;
+            if (!SafeSeerEye(g, e, s.eye, s.dir))
+                continue;
+            float len = std::sqrt(s.dir[0] * s.dir[0] + s.dir[1] * s.dir[1] + s.dir[2] * s.dir[2]);
+            if (!(len > 0.001f) || !(s.range > 0.0f))
+                continue;
+            for (float& d : s.dir)
+                d /= len;
+            out.push_back(s);
+        }
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+} // namespace
+
+std::vector<Seer> Seers()
+{
+    std::vector<Seer> out;
+    ZGEOM* list = TrackLinkObjects();
+    uint8_t* routine = list ? GeomRoutine(list, "CheckVisible") : nullptr;
+    if (!routine || !IsReadable(routine, kCheckVisible_Seers + kCheckVisible_Entries * kSeer_Size))
+        return out;
+    ZGEOM* hitman = Player();
+    if (!SafeSeers(routine, hitman ? RefOf(hitman) : 0, out))
+        out.clear();
+    return out;
 }
 
 namespace {

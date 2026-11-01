@@ -22,6 +22,7 @@
 #include "level.h"
 #include "model.h"
 #include "npcs.h"
+#include "playdebug.h"
 
 namespace h2::editor {
 
@@ -89,6 +90,7 @@ void OnFrame()
             SetFreeCamAngles(g_camYaw, g_camPitch);
         }
         Log("test: back in the editor");
+        PlayDebugBackInEditor();
     }
     bool want = OnMap() && ((g_freeze && overlay::IsOpen()) || g_playFrozen);
     if (want && g_stepFrames > 0) {
@@ -135,6 +137,7 @@ void Reload()
     g_message.clear();
     g_testing = true;
     g_testStart = GetTickCount64() / 1000.0;
+    PlayDebugTestStarted();
     overlay::SetOpen(false);  // playing
 }
 
@@ -163,7 +166,7 @@ void DrawTestHint()
     std::string text = g_back ? "Back to the editor: loading the map..."
                               : "Testing the level     " + overlay::EditorKeyName() + ": back to the editor" +
                                     (g_config.routesKey ? "     " + overlay::KeyNameOf(g_config.routesKey) +
-                                                              ": the people's routes"
+                                                              ": debug view (routes, what people see and do)"
                                                         : "");
     float age = float(GetTickCount64() / 1000.0 - g_testStart);
     float alpha = g_back || age < 8.0f ? 1.0f : 0.45f;

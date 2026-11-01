@@ -55,10 +55,23 @@ void SetThumbnailGeoms(const std::vector<engine::ZGEOM*>& geoms);
 // The picture turns from looking along world +Z: an object whose forward is -Z shows its front first.
 // Cleared by SetThumbnailGeoms with other objects.
 void SetThumbnailFrame(const float center[3], float radius, float tilt);
+// A list's picture shown now (a tooltip): the part of the thumbnail it is (texture coordinates), how much
+// wider it is drawn (a character's: its width stretched by the screen's shape) and what it shows. Twice a
+// second its pixels are kept (the render target copied to memory: CopyRects into an image surface), so the
+// last picture shown can be saved after the thumbnail is gone (SaveLastPicturePng).
+void ThumbnailShown(float u0, float v0, float u1, float v1, float stretch, const std::string& what);
+// What the last kept picture shows ("" none yet), and it written as a PNG; false with why.
+std::string LastPictureWhat();
+bool SaveLastPicturePng(const std::string& path, std::string* error = nullptr);
 // IDirect3DTexture8* of the thumbnail (null until something was drawn in it).
 void* ThumbnailTexture();
 // Frees the thumbnail texture.
 void ReleaseThumbnail();
+// A picture of an image file (PNG, JPG, BMP: decoded by Windows' WIC, made at most 1024 wide or tall) as an
+// IDirect3DTexture8* for ImGui, kept by its path until ReleaseImages; its size in `w` / `h` and the part of
+// the texture it fills in `u` / `v` (the texture is a power of two). Null: not read.
+void* ImageTexture(const std::string& path, int* w = nullptr, int* h = nullptr, float* u = nullptr, float* v = nullptr);
+void ReleaseImages();
 // References the highlight's resources (thumbnail, depth ramps) hold on
 // `device`, and freeing them all (for the device Release hook).
 unsigned long HighlightDeviceRefs(void* device);

@@ -79,6 +79,15 @@ bool WasKilled(ZGEOM* character);
 bool WasHarmed(ZGEOM* character);
 std::vector<ZGEOM*> TakeKilled();  // killed since the last call
 
+// How alarmed the level is: the scripts report a suspicion to the level routine (LevelControl_if
+// method 25 0x56D850 -> vfunc 0x90 0x5060F0 (who, value)), which keeps the largest at +0x24D and takes
+// one off it each frame (vfunc 0x94 0x506110); that is the HUD's stress meter (MSG_STRESSSETVAL, the
+// music changes above 50). LevelStress: -1 not known (no report in this scene yet).
+int LevelStress();
+// The last value a character reported (`who` being its ref or its pointer: the first reports of a scene
+// are logged), and how long ago (ms). False: none of its own.
+bool ReportedStress(ZGEOM* character, int& value, double& ageMs);
+
 // An action's message (messages.h AddUseAction): an object it reaches is kept
 // until TakeUsed (once; the objects a scene had go when it is left).
 void WatchUse(uint16_t msg);

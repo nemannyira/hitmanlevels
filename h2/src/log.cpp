@@ -30,6 +30,23 @@ double NowMs()
     return double(now.QuadPart - g_start.QuadPart) * 1000.0 / double(g_freq.QuadPart);
 }
 
+SlowGuard::SlowGuard(const char* what, const void* fn, double ms) : what_(what), fn_(fn), ms_(ms), start_(NowMs()) {}
+
+SlowGuard::~SlowGuard()
+{
+    double took = NowMs() - start_;
+    if (took < ms_)
+        return;
+    if (what_) {
+        Log("slow: %s %.1f ms", what_, took);
+        return;
+    }
+    HMODULE self = nullptr;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       static_cast<LPCSTR>(fn_), &self);
+    Log("slow: code at dinput8+%08X %.1f ms", unsigned(uintptr_t(fn_) - uintptr_t(self)), took);
+}
+
 void LogInit()
 {
     QueryPerformanceFrequency(&g_freq);

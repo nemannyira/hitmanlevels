@@ -32,6 +32,7 @@
 #include "model.h"
 #include "npc_docs.h"
 #include "npcs.h"
+#include "playdebug.h"
 #include "playtest.h"
 #include "scene_panel.h"
 #include "viewport.h"
@@ -265,6 +266,7 @@ void Build()
 void SetNewBehaviour(const engine::ScriptInfo& s)
 {
     g_new = s;
+    SetRouteInOrder(g_new);  // (the numbered points walked as numbered: a WayPointList walker picks at random)
     g_newMoves = StartMoves(g_new);
     SetRouteWarps(g_new, g_newMoves, !g_startHere);
 }
@@ -612,17 +614,16 @@ void DrawAllRoutes()
         drawActor(g);
 }
 
-// ---- the routes while a level is played (Try it: F9) ----
+// ---- the routes while a level is played (the play debug's routes: playdebug.h) ----
 
-bool g_playRoutes;
 std::string ReadableName(engine::ZGEOM* actor);
 
-// The routes the characters walk as they play: each one its colour, its points numbered in circles, arrows
-// in walking order halfway along each leg, its name above its head. Farther ones fainter.
+bool Walked(const Route& r) { return r.list && IsRouteRef(r.name) && !r.points.empty(); }
+
 void DrawPlayRoutes()
 {
-    if (!g_playRoutes || overlay::IsOpen() || engine::SceneRecords().empty() || !engine::SceneDataValid() ||
-        CurrentScene().empty())
+    if (!*PlayDebugShown() || !PlayDebugView().routes || overlay::IsOpen() || engine::SceneRecords().empty() ||
+        !engine::SceneDataValid() || CurrentScene().empty())
         return;
     game::ZCAMERA* cam = game::MainCamera();
     if (!cam)
@@ -631,12 +632,9 @@ void DrawPlayRoutes()
     game::GetWorldTransform(cam, cm, cp);
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     size_t n = 0;
-    for (engine::ZGEOM* actor : AllCharacters()) {
-        if (!actor || !IsLive(actor) || IsRemovedNpc(actor) || IsHidden(actor) || actor == engine::Player())
-            continue;
+    for (engine::ZGEOM* actor : PlayingCharacters()) {
         const std::vector<Route>& routes = RoutesOfActor(actor);
-        auto walked = [](const Route& r) { return r.list && IsRouteRef(r.name) && !r.points.empty(); };
-        if (std::none_of(routes.begin(), routes.end(), walked))
+        if (std::none_of(routes.begin(), routes.end(), Walked))
             continue;  // (one who stays: no lines, no name)
         Transform at = GetTransform(actor);
         float dx = at.pos[0] - cp[0], dz = at.pos[2] - cp[2];
@@ -644,7 +642,7 @@ void DrawPlayRoutes()
         float a = std::clamp(1.0f - (dist - 3000.0f) / 7000.0f, 0.35f, 1.0f);  // full within 30 m
         ImU32 c = Faded(RouteColor(n++), a), dark = IM_COL32(0, 0, 0, int(200 * a));
         for (const Route& r : routes) {
-            if (!walked(r))
+            if (!Walked(r))
                 continue;
             std::vector<Transform> pts;
             for (engine::ZGEOM* g : r.points)
@@ -684,14 +682,6 @@ void DrawPlayRoutes()
             dl->AddText(p, Faded(IM_COL32(255, 255, 255, 255), a), name.c_str());
         }
     }
-}
-
-bool OnPlayKey(int vk)
-{
-    if (vk != g_config.routesKey || !vk || CurrentScene().empty() || !engine::SceneDataValid())
-        return false;
-    g_playRoutes = !g_playRoutes;
-    return true;
 }
 
 // ---- settings table ----
@@ -1540,6 +1530,8 @@ std::string ReadableName(engine::ZGEOM* actor)
     for (const LevelNpc& n : CurrentLevel().npcs)
         if (n.id == name && !n.label.empty())
             return n.label;
+    if (std::string own = ObjectName(actor); !own.empty())  // (one of the map's, named for the mission)
+        return own;
     return Readable(CharacterName(actor));
 }
 
@@ -1572,11 +1564,18 @@ bool BehaviourWalks(const std::string& name)
 // between points) ("" none)
 std::string WalkingBehaviour(bool guard)
 {
+    auto ordered = [](const std::string& b) {  // (one that picks its points at random: not for a route)
+        engine::ScriptInfo s;
+        if (!BehaviourTemplate(b, s))
+            return false;
+        RouteOrderInfo o = RouteOrderOf(s);
+        return o.inOrder || o.settable;
+    };
     for (const std::string& b : g_behaviourNames)
-        if (!g_storyBehaviours.count(b) && IsGuardBehaviour(b) == guard && BehaviourWalks(b))
+        if (!g_storyBehaviours.count(b) && IsGuardBehaviour(b) == guard && BehaviourWalks(b) && ordered(b))
             return b;
     for (const std::string& b : ForeignBehaviourNames())
-        if (IsGuardBehaviour(b) == guard && BehaviourWalks(b))
+        if (IsGuardBehaviour(b) == guard && BehaviourWalks(b) && ordered(b))
             return b;
     return "";
 }
@@ -1683,8 +1682,10 @@ void TypeTooltip(int t, const char* more)
     if (wide > w)  // (in the middle under a wider text)
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (wide - w) * 0.5f);
     void* tex = g_thumbType == t ? ThumbnailTexture() : nullptr;
-    if (tex)
+    if (tex) {
         ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(w, h), uv0, uv1);
+        ThumbnailShown(uv0.x, uv0.y, uv1.x, uv1.y, aspect, Readable(type.model));  // (a laptop photo: mission.cpp)
+    }
     else
         ImGui::Dummy(ImVec2(w, h));  // (the picture comes a moment later)
     ImGui::EndTooltip();
@@ -1750,6 +1751,21 @@ void DrawSimpleRoute()
                                    : "Click in the world where it should walk next.");
     ImGui::TextDisabled("It walks the numbered points in order (the arrows) when you try the level. It goes on "
                         "the map's paths: a point marked red is off them and is never reached.");
+    engine::ScriptInfo info;
+    if (g_routeOf && CurrentBehaviour(g_routeOf, info)) {
+        RouteOrderInfo order = RouteOrderOf(info);
+        if (!order.inOrder) {  // (a level made before: its walker picks its points at random)
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "Now it does not: %s.", order.why.c_str());
+            if (order.settable && ImGui::Button("Walk the points in order")) {
+                SetRouteInOrder(info);
+                std::string err;
+                g_message = SetNpcBehaviour(g_routeOf, &info, &err) ? "it walks the points in order now"
+                                                                     : "not changed: " + err;
+            } else if (!order.settable) {
+                ImGui::TextDisabled("Its behaviour always does so: choose another one for it (Advanced mode).");
+            }
+        }
+    }
     ImGui::PopTextWrapPos();
     ImGui::Text(pts.size() == 1 ? "%d point" : "%d points", int(pts.size()));
     ImGui::BeginDisabled(pts.empty());
@@ -2090,6 +2106,19 @@ void OnAddPoint(engine::ZGEOM* hit, const float* point, const float*)
         parent = Resolve("ROOT");
     float at[3] = {point[0], point[1], point[2]};
     bool on = SnapToNetwork(at);
+    if (!on && overlay::SimpleMode()) {
+        // a point the character can never reach stops it there for good (it walks its points in order):
+        // the walkable place within 6 m, else none
+        float out[3];
+        if (g_snapNetwork && engine::NearestWalkable(at, kSnapRadius * 3.0f, out)) {
+            memcpy(at, out, sizeof(out));
+            on = true;
+        } else if (engine::OnPathNetwork(at) == 0) {
+            g_message = "Not there: people cannot walk there (off the map's paths). Click on a road or a floor "
+                        "they walk on.";
+            return;
+        }
+    }
     std::string err;
     engine::ZGEOM* np = PlacePoint(PointAt(at), parent, &err);
     if (!np) {
@@ -2146,7 +2175,46 @@ void OnNewPoint(engine::ZGEOM* hit, const float* point, const float*)
 void DrawSimplePeople() { DrawSimplePeopleStep(); }
 std::string PersonName(engine::ZGEOM* actor) { return actor ? ReadableName(actor) : ""; }
 
-bool* PlayRoutesShown() { return &g_playRoutes; }
+std::vector<engine::ZGEOM*> PlayingCharacters()
+{
+    std::vector<engine::ZGEOM*> out;
+    if (engine::SceneRecords().empty() || !engine::SceneDataValid() || CurrentScene().empty())
+        return out;
+    engine::ZGEOM* hitman = engine::Player();
+    for (engine::ZGEOM* a : AllCharacters())
+        if (a && IsLive(a) && !IsRemovedNpc(a) && !IsHidden(a) && a != hitman)
+            out.push_back(a);
+    return out;
+}
+
+bool WalkedRouteOf(engine::ZGEOM* actor, WalkedRoute& out)
+{
+    out = {};
+    if (!actor)
+        return false;
+    for (const Route& r : RoutesOfActor(actor)) {
+        if (!Walked(r))
+            continue;
+        for (engine::ZGEOM* g : r.points)
+            if (IsLive(g))
+                out.points.push_back(g);
+        engine::ScriptInfo info;
+        if (CurrentBehaviour(actor, info)) {
+            out.behaviour = engine::ScriptShortName(info.name);
+            out.order = RouteOrderOf(info);
+        }
+        return !out.points.empty();
+    }
+    return false;
+}
+
+bool WalksARoute(engine::ZGEOM* actor)
+{
+    if (!actor)
+        return false;
+    const std::vector<Route>& routes = RoutesOfActor(actor);
+    return std::any_of(routes.begin(), routes.end(), Walked);
+}
 
 bool PersonWalks(engine::ZGEOM* actor) { return actor && IsPlacedNpc(actor) && WalkRouteOf(actor); }
 
@@ -2327,8 +2395,8 @@ void InstallNpcPanel()
             g_thumbType = -1;
     });
     overlay::AddAlwaysDraw(DrawPlayRoutes);
-    overlay::AddKeyHandler(OnPlayKey);
     OnScenePushed([](const std::string&) {
+        engine::PrefetchLevelBehaviours();  // (once: the lists of behaviours open without a wait)
         g_builtFor.clear();
         g_types.clear();
         g_behaviourNames.clear();

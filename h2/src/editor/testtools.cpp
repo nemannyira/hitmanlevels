@@ -23,6 +23,7 @@
 #include "freecam.h"
 #include "guides.h"
 #include "npc_panel.h"
+#include "playdebug.h"
 #include "playtest.h"
 
 namespace h2::editor {
@@ -375,11 +376,7 @@ void DrawPanel()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Characters do not see anyone: they still hear shots and noise,\n"
                           "and bump into Hitman.");
-    ImGui::Checkbox("Routes while playing", PlayRoutesShown());
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("The editor closed: where each character walks (numbered points, arrows in walking\n"
-                          "order, its name above its head in the same colour). Key: %s.",
-                          overlay::KeyNameOf(g_config.routesKey).c_str());
+    DrawPlayDebugSettings();
     ImGui::Checkbox("Path network", &g_showPaths);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Green dots (editor open) where characters can walk (npc:walkto, h2.onpath):\n"

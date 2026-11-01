@@ -2512,7 +2512,8 @@ bool SaveLevel(std::string* error)
             SpanJson(o.span, jo);
             objs.push_back(jo);
         }
-        if (!objs.empty() || m.endWhenDone || !m.briefing.empty() || !m.baseEnds || m.baseFiles >= 0) {
+        if (!objs.empty() || m.endWhenDone || !m.briefing.empty() || !m.baseEnds || m.baseFiles >= 0 ||
+            !m.names.empty() || !m.files.empty()) {
             j["mission"] = {{"objectives", objs}, {"end_when_done", m.endWhenDone}, {"exit", m.exitPath},
                             {"exit_radius", m.exitRadius}};
             if (!m.baseEnds)
@@ -2521,6 +2522,18 @@ bool SaveLevel(std::string* error)
                 j["mission"]["base_files"] = m.baseFiles == 1;
             if (!m.briefing.empty())
                 j["mission"]["briefing"] = m.briefing;
+            if (!m.files.empty()) {
+                json files = json::array();
+                for (const LaptopFile& f : m.files)
+                    files.push_back({{"name", f.name}, {"image", f.image}});
+                j["mission"]["files"] = files;
+            }
+            if (!m.names.empty()) {
+                json names = json::object();
+                for (const auto& [path, name] : m.names)
+                    names[path] = name;
+                j["mission"]["names"] = names;
+            }
         }
     }
     if (!g_level.music.empty())
@@ -2792,6 +2805,15 @@ bool LoadLevel(const std::string& folder, std::string* error)
             L.mission.exitPath = m.value("exit", "");
             L.mission.exitRadius = m.value("exit_radius", 300.0f);
             L.mission.briefing = m.value("briefing", "");
+            if (m.contains("files") && m["files"].is_array())
+                for (const json& f : m["files"])
+                    if (f.is_object() && L.mission.files.size() < 5)
+                        L.mission.files.push_back({f.value("name", json()).is_string() ? f["name"].get<std::string>() : "",
+                                                   f.value("image", json()).is_string() ? f["image"].get<std::string>() : ""});
+            if (m.contains("names") && m["names"].is_object())
+                for (auto it = m["names"].begin(); it != m["names"].end(); ++it)
+                    if (it.value().is_string() && L.mission.names.size() < 200)
+                        L.mission.names[it.key()] = it.value().get<std::string>().substr(0, 40);
             L.mission.baseEnds = m.value("base_ends", true);
             if (m.contains("base_files") && m["base_files"].is_boolean())
                 L.mission.baseFiles = m["base_files"].get<bool>() ? 1 : 0;

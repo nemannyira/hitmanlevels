@@ -795,6 +795,70 @@ void SetRouteWarps(engine::ScriptInfo& s, const std::vector<StartMove>& moves, b
                 p.bits = on ? m.value : 0;
 }
 
+namespace {
+engine::ScriptParam* LongParam(engine::ScriptInfo& s, const char* name)
+{
+    for (engine::ScriptParam& p : s.params)
+        if (p.type == engine::ParamType::Long && _stricmp(p.name.c_str(), name) == 0)
+            return &p;
+    return nullptr;
+}
+} // namespace
+
+RouteOrderInfo RouteOrderOf(const engine::ScriptInfo& s)
+{
+    RouteOrderInfo r;
+    std::string name = Lower(engine::ScriptShortName(s.name));
+    for (const char* random : {"guardrandom", "entranceguard", "sheikgateguard", "movingstorageguard", "randomguest",
+                               "randompetronaguest"})
+        if (name == random) {
+            r.inOrder = false;
+            r.why = engine::ScriptShortName(s.name) + " picks its next point at random (its own way)";
+            return r;
+        }
+    engine::ScriptInfo copy = s;
+    if (engine::ScriptParam* p = LongParam(copy, "isWPListPath")) {
+        r.settable = true;
+        r.inOrder = p->bits != 0;
+        if (!r.inOrder)
+            r.why = "isWPListPath 0: picks its next point at random";
+    }
+    if (engine::ScriptParam* p = LongParam(copy, "bRandomPath")) {
+        r.settable = true;
+        if (p->bits) {
+            r.inOrder = false;
+            r.why = "bRandomPath 1: picks its next point at random";
+        }
+    }
+    if (engine::ScriptParam* p = LongParam(copy, "startAtRandomPathPoint"); p && p->bits) {
+        r.settable = true;
+        if (r.why.empty())
+            r.why = "startAtRandomPathPoint 1: starts at a random point";
+    }
+    if (engine::ScriptParam* p = LongParam(copy, "ReversePathOnCompletion"); p && p->bits && r.why.empty()) {
+        r.settable = true;
+        r.why = "ReversePathOnCompletion 1: walks back and forth";
+    }
+    return r;
+}
+
+bool SetRouteInOrder(engine::ScriptInfo& s)
+{
+    bool changed = false;
+    auto set = [&](const char* name, uint32_t v) {
+        if (engine::ScriptParam* p = LongParam(s, name); p && p->bits != v) {
+            p->bits = v;
+            changed = true;
+        }
+    };
+    set("isWPListPath", 1);
+    set("bRandomPath", 0);
+    set("startAtRandomPathPoint", 0);
+    set("LoopPath", 1);
+    set("ReversePathOnCompletion", 0);
+    return changed;
+}
+
 std::vector<ParamValue> SaveParams(const engine::ScriptInfo& s)
 {
     std::vector<ParamValue> out;

@@ -33,6 +33,9 @@ struct LevelBehaviour {
 };
 // The behaviours of a level's characters (cached; empty when it cannot be read).
 const std::vector<LevelBehaviour>& LevelBehaviours(const std::string& level);
+// Reads every level's behaviours on a thread of its own (their scene files: about 0.4 s, once), so the
+// first list of them (the People step, the NPCs tab) does not hold the editor up. Once.
+void PrefetchLevelBehaviours();
 
 // Reference parameters a behaviour cannot start without (a route list it
 // walks: the script engine stops the game on a missing one).

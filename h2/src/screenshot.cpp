@@ -197,11 +197,18 @@ bool SavePreviewPng(void* device, const std::string& path, int width)
     Call<ULONG>(surf, kSurf_Release);
     if (!ok)
         return false;
+    return WritePng(path, w, h, rgb);
+}
+
+bool WritePng(const std::string& path, int w, int h, const std::vector<unsigned char>& rgb)
+{
+    if (w <= 0 || h <= 0 || rgb.size() < size_t(w) * h * 3)
+        return false;
     std::string png = EncodePng(w, h, rgb);
     FILE* f = fopen(path.c_str(), "wb");
     if (!f)
         return false;
-    ok = fwrite(png.data(), 1, png.size(), f) == png.size();
+    bool ok = fwrite(png.data(), 1, png.size(), f) == png.size();
     fclose(f);
     return ok;
 }

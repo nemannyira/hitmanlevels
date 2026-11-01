@@ -283,8 +283,10 @@ void DrawTooltip(const ModelEntry& e)
     if (wide > size)
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (wide - size) * 0.5f);
     void* tex = g_thumbPath == e.Key() ? ThumbnailTexture() : nullptr;
-    if (tex)
+    if (tex) {
         ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size, size));
+        ThumbnailShown(0, 0, 1, 1, 1, e.name);  // (a laptop photo: mission.cpp)
+    }
     else
         ImGui::Dummy(ImVec2(size, size));  // keeps the tooltip from jumping when the picture arrives
     ImGui::TextDisabled("click to place");

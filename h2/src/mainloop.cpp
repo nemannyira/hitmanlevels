@@ -4,6 +4,7 @@
 
 #include "game.h"
 #include "hook.h"
+#include "log.h"
 
 namespace h2 {
 
@@ -17,8 +18,10 @@ MainLoop_t oMainLoop;
 void __fastcall hkMainLoop(void* self, void* edx, bool arg)
 {
     oMainLoop(self, edx, arg);
-    for (FrameCallback cb : g_frameEnd)
+    for (FrameCallback cb : g_frameEnd) {
+        SlowGuard slow(nullptr, reinterpret_cast<const void*>(cb));
         cb();
+    }
 }
 
 } // namespace

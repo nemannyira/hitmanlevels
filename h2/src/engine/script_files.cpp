@@ -6,6 +6,7 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <thread>
 
 #include "../hook.h"
 #include "../log.h"
@@ -221,8 +222,13 @@ bool ProvideLevelScripts(const std::string& level)
     return true;
 }
 
+namespace {
+std::recursive_mutex g_behavioursMutex;  // LevelBehaviours' cache (PrefetchLevelBehaviours fills it too)
+} // namespace
+
 const std::vector<LevelBehaviour>& LevelBehaviours(const std::string& level)
 {
+    std::lock_guard<std::recursive_mutex> lock(g_behavioursMutex);
     static std::map<std::string, std::vector<LevelBehaviour>> cache;
     auto it = cache.find(level);
     if (it != cache.end())
@@ -260,6 +266,23 @@ const std::vector<LevelBehaviour>& LevelBehaviours(const std::string& level)
         out.push_back(std::move(b));
     }
     return out;
+}
+
+void PrefetchLevelBehaviours()
+{
+    static bool started;
+    if (started)
+        return;
+    started = true;
+    std::vector<std::string> levels = GameLevels();  // (its list made here, on the game's thread)
+    std::thread([levels] {
+        ULONGLONG start = GetTickCount64();
+        size_t n = 0;
+        for (const std::string& level : levels)
+            n += LevelBehaviours(level).size();
+        Log("scripts: behaviours of %zu levels read ahead (%zu, %llu ms)", levels.size(), n,
+            GetTickCount64() - start);
+    }).detach();
 }
 
 bool IsRequiredRef(const std::string& param)

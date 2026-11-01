@@ -1,6 +1,7 @@
 #include "devcmd.h"
 
 #include <windows.h>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <intrin.h>
@@ -27,6 +28,7 @@ extern "C" {
 #include "editor/model.h"
 #include "editor/npcs.h"
 #include "editor/own_map.h"
+#include "editor/playdebug.h"
 #include "editor/playtest.h"
 #include "editor/scene_panel.h"
 #include "editor/stages.h"
@@ -246,6 +248,7 @@ int Ready(lua_State* L)
 //   "item", template, x, y, z  place an item -> path
 //   "point", x, y, z           place a point -> path
 //   "rename", path, name       rename a point of the level -> path
+//   "name", path, name         an object's name in the mission (mission.h SetObjectName) -> true / error
 //   "removenpc", path          remove a placed character
 //   "sky", level               the sky of another level ("" its own)
 int EditCmd(lua_State* L)
@@ -295,6 +298,10 @@ int EditCmd(lua_State* L)
         made = editor::PlacePoint(t, editor::RoomAt(t.pos), &err);
     } else if (op == "rename") {  // the Inspector's point name
         made = editor::RenamePoint(resolve(2), luaL_checkstring(L, 3), &err);
+    } else if (op == "name") {  // the card's / Inspector's "Name it"
+        bool ok = editor::SetObjectName(resolve(2), luaL_checkstring(L, 3), &err);
+        lua_pushstring(L, ok ? "true" : err.c_str());
+        return 1;
     } else if (op == "removenpc") {
         lua_pushboolean(L, editor::RemoveNpc(editor::ActorOf(resolve(2)), &err));
         return 1;
@@ -365,6 +372,46 @@ int WmKey(lua_State* L)
         PostMessageA(wnd, WM_KEYUP, vk, LPARAM(0xC0000001));
     }
     lua_pushboolean(L, wnd != nullptr);
+    return 1;
+}
+
+// h2.dev_playdebug([on]): the debug view while playing (playdebug.h) switched on / off; whether it is on
+int PlayDebug(lua_State* L)
+{
+    if (!lua_isnoneornil(L, 1))
+        *editor::PlayDebugShown() = lua_toboolean(L, 1) != 0;
+    lua_pushboolean(L, *editor::PlayDebugShown());
+    return 1;
+}
+
+// h2.dev_lasttest(): what happened in the last test, a line an event
+int LastTest(lua_State* L)
+{
+    lua_pushstring(L, editor::LastTestText().c_str());
+    return 1;
+}
+
+// h2.dev_seers(): who looks out for what (engine::Seers: name, range, view angle, actor, sees Hitman,
+// eye, direction) and the level's alarm level, a line each
+int SeersCmd(lua_State* L)
+{
+    std::string out;
+    char line[256];
+    snprintf(line, sizeof(line), "stress %d\n", engine::LevelStress());
+    out += line;
+    for (const engine::Seer& s : engine::Seers()) {
+        int stress = 0;
+        double age = 0.0;
+        bool reported = engine::ReportedStress(s.geom, stress, age);
+        snprintf(line, sizeof(line),
+                 "%s range %.0f angle %.0f actor %d sees %d eye %.0f %.0f %.0f dir %.2f %.2f %.2f%s\n",
+                 engine::SafeString(s.geom->name).c_str(), s.range,
+                 2.0 * std::acos(std::max(-1.0f, std::min(1.0f, s.cosHalf))) * 57.29578, s.actor ? 1 : 0,
+                 s.seesHitman ? 1 : 0, s.eye[0], s.eye[1], s.eye[2], s.dir[0], s.dir[1], s.dir[2],
+                 reported ? (" stress " + std::to_string(stress)).c_str() : "");
+        out += line;
+    }
+    lua_pushstring(L, out.c_str());
     return 1;
 }
 
@@ -1311,6 +1358,9 @@ void InstallDevCommands()
     script::Register("dev_key", Key);
     script::Register("dev_wmkey", WmKey);
     script::Register("dev_mouse", Mouse);
+    script::Register("dev_playdebug", PlayDebug);
+    script::Register("dev_lasttest", LastTest);
+    script::Register("dev_seers", SeersCmd);
     script::Register("dev_look", Look);
     script::Register("dev_wheel", Wheel);
     script::Register("dev_tracecams", TraceCams);

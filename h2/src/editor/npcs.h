@@ -136,6 +136,21 @@ std::vector<StartMove> StartMoves(const engine::ScriptInfo& s);
 // Sets the LONG ones of `moves` in `s`: 0 (off) or back to their value.
 void SetRouteWarps(engine::ScriptInfo& s, const std::vector<StartMove>& moves, bool on);
 
+// How a behaviour walks its route (from its compiled scripts, checked over every level's .ppo):
+// the patrols (WayPoints) and the paths (PathList: LoopPath, ReversePathOnCompletion) in order; the
+// WayPointList walkers (Pedestrian2, IndianPedestrian, afghanPedestrian) in order only with isWPListPath 1
+// (0: GetRndLocation, a point at random), PatrolBodyGuard unless bRandomPath; GuardRandom, EntranceGuard,
+// SheikGateGuard, MovingStorageGuard, RandomGuest pick their next point at random whatever the settings.
+struct RouteOrderInfo {
+    bool inOrder = true;
+    bool settable = false;  // its settings decide (SetRouteInOrder can make it walk in order)
+    std::string why;        // "isWPListPath 0: picks its next point at random"
+};
+RouteOrderInfo RouteOrderOf(const engine::ScriptInfo& s);
+// Its settings put to walking the points in order from the first (isWPListPath 1, bRandomPath 0,
+// startAtRandomPathPoint 0, LoopPath 1, ReversePathOnCompletion 0); true when one changed.
+bool SetRouteInOrder(engine::ScriptInfo& s);
+
 // Serialisation of behaviours: references as object paths.
 struct ParamValue {
     std::string name;

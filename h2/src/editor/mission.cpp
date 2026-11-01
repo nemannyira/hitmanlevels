@@ -1,6 +1,7 @@
 #include "mission.h"
 
 #include <windows.h>
+#include <commdlg.h>
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -30,6 +31,8 @@
 #include "../script/events.h"
 #include "../script/state.h"
 #include "freecam.h"
+#include "../ui.h"
+#include "history.h"
 #include "level.h"
 #include "model.h"
 #include "music.h"
@@ -256,7 +259,8 @@ BriefingAction_t oBriefingAction;
 
 bool __fastcall hkBriefingAction(void* self, void* edx, uint32_t action)
 {
-    if (action >= 0xC9 && action <= 0xCD && self == g_briefing && ForThisScene() && BaseFilesHidden())
+    bool own = action >= 0xC9 && size_t(action - 0xC9) < Doc().files.size() && !Doc().files[action - 0xC9].name.empty();
+    if (action >= 0xC9 && action <= 0xCD && self == g_briefing && ForThisScene() && BaseFilesHidden() && !own)
         return true;
     return oBriefingAction(self, edx, action);
 }
@@ -518,6 +522,11 @@ void BuildTexts()
     if (BaseFilesHidden() && !g_folder.empty())
         for (int i = 1; i <= 5; ++i)
             g_texts[Lower(g_folder + "/Laptop/Files/Photo" + std::to_string(i))] = Node("");
+    // the level's own files in their places (the map's photos': shown with its picture, LaptopPhotoTick)
+    if (!g_folder.empty())
+        for (size_t i = 0; i < Doc().files.size() && i < 5; ++i)
+            if (!Doc().files[i].name.empty())
+                g_texts[Lower(g_folder + "/Laptop/Files/Photo" + std::to_string(i + 1))] = Node(Doc().files[i].name, 64);
 }
 
 bool InDocument(int slot)
@@ -1059,6 +1068,8 @@ std::string Label(const std::string& path)
     engine::ZGEOM* g = ResolveTarget(path);
     if (!g || !IsLive(g))
         return "(missing) " + path.substr(path.rfind('/') + 1);
+    if (auto it = Doc().names.find(path); it != Doc().names.end() && !it->second.empty())
+        return it->second;
     if (engine::ZGEOM* a = ActorOf(g)) {
         if (const LevelNpc* n = FindLevelNpc(a); n && !n->label.empty())
             return n->label;
@@ -1651,6 +1662,196 @@ bool NewSentence(MissionObjective::Goal goal)
     return true;
 }
 
+// ---- the level's own laptop files: its pictures shown in place of the map's photos ----
+
+// The GUI's BriefingPhotos/Photo<n> (a ZWINPIC: SetLocaleFolder 0x52D340 gives it its entry; shown, its node
+// flag 0x800 is cleared, seen in the game 2026-11-01 on C1-1); null: the map's laptop has no photo there
+engine::ZGEOM* PhotoGeom(int n)
+{
+    static const void* builtFor;
+    static size_t builtSize;
+    static engine::ZGEOM* found[6];
+    const engine::SceneSnapshot& snap = SceneModel();
+    if (builtFor != snap.geoms.data() || builtSize != snap.geoms.size()) {
+        builtFor = snap.geoms.data();
+        builtSize = snap.geoms.size();
+        memset(found, 0, sizeof(found));
+        for (const engine::GeomInfo& g : snap.geoms)
+            for (int k = 1; k <= 5; ++k) {
+                std::string tail = "/BriefingPhotos/Photo" + std::to_string(k);
+                if (g.path.size() > tail.size() && g.path.compare(g.path.size() - tail.size(), tail.size(), tail) == 0)
+                    found[k] = g.geom;
+            }
+    }
+    return n >= 1 && n <= 5 && found[n] && IsLive(found[n]) ? found[n] : nullptr;
+}
+
+int MapPhotoCount()
+{
+    int n = 0;
+    while (n < 5 && PhotoGeom(n + 1))
+        ++n;
+    return n;
+}
+
+std::string LevelFolderFile(const std::string& name)
+{
+    return GameDir() + "Mods\\" + CurrentLevel().folder + "\\" + name;
+}
+
+bool PhotoShown(engine::ZGEOM* g)
+{
+    __try {
+        return g->node && !(g->node->flags & 0x800);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// while the laptop shows a photo of the level's own files: its picture over it (fitted, the rest dark)
+void DrawLaptopPhoto()
+{
+    if (overlay::IsOpen() || CurrentScene().empty() || !engine::SceneDataValid() || !ForThisScene() ||
+        Doc().files.empty())
+        return;
+    for (size_t i = 0; i < Doc().files.size() && i < 5; ++i) {
+        const LaptopFile& f = Doc().files[i];
+        engine::ZGEOM* g = f.image.empty() ? nullptr : PhotoGeom(int(i) + 1);
+        if (!g || !PhotoShown(g))
+            continue;
+        int w = 0, h = 0;
+        float u = 1, v = 1;
+        void* tex = ImageTexture(LevelFolderFile(f.image), &w, &h, &u, &v);
+        if (!tex || w <= 0 || h <= 0)
+            continue;
+        // the photo's place: the middle of the screen, its half extents in the virtual screen (ui.h)
+        ImVec2 size = ImGui::GetIO().DisplaySize;
+        float s = UiScale();
+        float hw = g->node->boundHalf[0] * s, hh = g->node->boundHalf[1] * s;
+        ImVec2 c(size.x * 0.5f, size.y * 0.5f);
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        dl->AddRectFilled(ImVec2(c.x - hw, c.y - hh), ImVec2(c.x + hw, c.y + hh), IM_COL32(12, 12, 12, 255));
+        float fit = std::min(2.0f * hw / float(w), 2.0f * hh / float(h));
+        float iw = float(w) * fit * 0.5f, ih = float(h) * fit * 0.5f;
+        dl->AddImage(reinterpret_cast<ImTextureID>(tex), ImVec2(c.x - iw, c.y - ih), ImVec2(c.x + iw, c.y + ih),
+                     ImVec2(0, 0), ImVec2(u, v));
+    }
+}
+
+// a picture chosen on the disk: copied into the level's folder as photo<n>.<ext>; its file name ("" none)
+std::string PickPicture(int n)
+{
+    char file[MAX_PATH] = "";
+    OPENFILENAMEA ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = static_cast<HWND>(overlay::GameWindow());
+    ofn.lpstrFilter = "Pictures (*.png, *.jpg, *.bmp)\0*.png;*.jpg;*.jpeg;*.bmp\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = sizeof(file);
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameA(&ofn))
+        return "";
+    std::string src = file;
+    size_t dot = src.find_last_of('.');
+    std::string ext = dot == std::string::npos ? "" : src.substr(dot);
+    for (char& ch : ext)
+        ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    if (ext == ".jpeg")
+        ext = ".jpg";
+    if (ext != ".png" && ext != ".jpg" && ext != ".bmp")
+        return "";
+    std::string name = "photo" + std::to_string(n) + ext;
+    if (!CopyFileA(src.c_str(), LevelFolderFile(name).c_str(), FALSE))
+        return "";
+    ReleaseImages();  // (a picture of that name read before)
+    return name;
+}
+
+// the laptop's files of the level: name, picture (Mission tab, Simple mode's Mission step)
+void DrawLaptopFiles()
+{
+    int places = MapPhotoCount();
+    ImGui::PushTextWrapPos(0.0f);
+    if (!places) {
+        ImGui::TextDisabled("This map's laptop has no place for photos (its Additional files).");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (places == 1)
+        ImGui::TextDisabled("The laptop's Additional files: this map has 1 place for a photo (the map's own photo "
+                            "is shown there unless you give one).");
+    else
+        ImGui::TextDisabled("The laptop's Additional files: this map has %d places for photos.", places);
+    ImGui::PopTextWrapPos();
+    std::vector<LaptopFile>& files = Doc().files;
+    for (int i = 0; i < places; ++i) {
+        ImGui::PushID(i);
+        if (i >= int(files.size())) {
+            if (ImGui::SmallButton("Add a photo")) {
+                files.push_back({"Target Photo", ""});
+                Changed();
+            }
+            ImGui::PopID();
+            break;
+        }
+        LaptopFile& f = files[i];
+        char name[65];
+        snprintf(name, sizeof(name), "%s", f.name.c_str());
+        ImGui::Text("%d", i + 1);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 2);
+        ImGui::InputText("##fname", name, sizeof(name));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The entry's text in the laptop's Additional files");
+        if (name != f.name) {
+            f.name = name;
+            Changed();
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("x")) {
+            files.erase(files.begin() + i);
+            Changed();
+            ImGui::PopID();
+            break;
+        }
+        ImGui::Indent();
+        ImGui::TextDisabled("picture: %s", f.image.empty() ? "none (the map's own photo)" : f.image.c_str());
+        if (ImGui::SmallButton("A file...")) {
+            std::string picked = PickPicture(i + 1);
+            g_status = picked.empty() ? "no picture taken (PNG, JPG or BMP)" : "picture " + picked + " in the level's folder";
+            if (!picked.empty()) {
+                f.image = picked;
+                Changed();
+            }
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("A picture of yours (PNG, JPG or BMP): copied into the level's folder, shown in the\n"
+                              "laptop when this file is opened.");
+        std::string last = LastPictureWhat();
+        ImGui::BeginDisabled(last.empty());
+        ImGui::SameLine();
+        std::string label = last.empty() ? std::string("The last picture shown") : "Photo of " + last;
+        if (ImGui::SmallButton(label.c_str())) {
+            std::string err, shot = "photo" + std::to_string(i + 1) + ".png";
+            if (SaveLastPicturePng(LevelFolderFile(shot), &err)) {
+                ReleaseImages();
+                f.image = shot;
+                Changed();
+                g_status = "photo of " + last + ": " + shot;
+            } else {
+                g_status = "no photo: " + err;
+            }
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("The picture the lists show of a person (People) or an item (Items): hover one\n"
+                              "until its picture shows, then this saves it as the file's photo.");
+        ImGui::Unindent();
+        ImGui::PopID();
+    }
+    ImGui::TextDisabled("Shown when the map loads again (Try it): the laptop is B while playing.");
+}
+
 void DrawSimpleMissionStep()
 {
     if (!ForThisScene()) {
@@ -1873,6 +2074,8 @@ void DrawSimpleMissionStep()
 
     ImGui::SeparatorText("Briefing (the laptop's text)");
     DrawBriefingEditor();
+    ImGui::SeparatorText("The laptop's photos");
+    DrawLaptopFiles();
     ImGui::SeparatorText("Hitman starts");
     DrawStartOutfitControl();
     if (!g_status.empty())
@@ -1906,6 +2109,10 @@ void DrawPanel()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The base level's files in the laptop, e.g. its target's photo.\n"
                           "Hidden on an emptied map unless switched on. Takes effect when the map loads.");
+    if (ImGui::TreeNode("The laptop's photos (the level's own)")) {
+        DrawLaptopFiles();
+        ImGui::TreePop();
+    }
     DrawStartOutfitControl();  // (#21: from the Level tab)
     ImGui::SeparatorText("Objectives (the laptop's lines)");
     if (!g_briefing)
@@ -2074,6 +2281,150 @@ bool BaseLevelEnd(bool completed)
 }
 
 std::string LevelObjectiveText(int slot) { return OwnText(slot); }
+
+namespace {
+engine::ZGEOM* CharacterOf(engine::ZGEOM* geom);
+
+// the objectives made for `path` (its target or its place) whose text the editor made: the new name
+void RefreshTexts(const std::string& path)
+{
+    for (MissionObjective& o : Doc().objectives)
+        if ((o.target == path || o.place == path) && AutoText(o.text)) {
+            o.text.clear();
+            SetTarget(o, o.target);
+        }
+    ShowLines();
+}
+
+// the path the objectives know an object by (a character: its actor's)
+std::string NamePath(engine::ZGEOM* geom)
+{
+    engine::ZGEOM* c = geom ? CharacterOf(geom) : nullptr;
+    return PathOf(c ? c : geom);
+}
+} // namespace
+
+std::string ObjectName(engine::ZGEOM* geom)
+{
+    if (!geom || !IsLive(geom))
+        return "";
+    if (engine::ZGEOM* a = ActorOf(geom))
+        if (const LevelNpc* n = FindLevelNpc(a); n && !n->label.empty())
+            return n->label;
+    auto it = Doc().names.find(NamePath(geom));
+    return it == Doc().names.end() ? "" : it->second;
+}
+
+bool SetObjectName(engine::ZGEOM* geom, const std::string& name, std::string* error)
+{
+    auto fail = [&](const std::string& why) {
+        if (error)
+            *error = why;
+        return false;
+    };
+    if (!geom || !IsLive(geom))
+        return fail("no object");
+    if (name.size() > 40 || std::any_of(name.begin(), name.end(), [](char c) { return unsigned(c) < 0x20; }))
+        return fail("40 letters at most, on one line");
+    std::string path = NamePath(geom);
+    if (path.empty())
+        return fail("the object has no path the level can keep");
+    engine::ZGEOM* a = ActorOf(geom);
+    if (a && FindLevelNpc(a)) {  // placed by the level: its label (scripts find it by it)
+        if (!SetNpcLabel(a, name, error))
+            return false;
+    } else {
+        std::string before = ObjectName(geom);
+        auto set = [path](const std::string& value) {
+            if (value.empty())
+                Doc().names.erase(path);
+            else
+                Doc().names[path] = value;
+            CurrentLevel().dirty = true;
+            RefreshTexts(path);
+            return true;
+        };
+        set(name);
+        PushAction("name an object", [set, before] { return set(before); }, [set, name] { return set(name); });
+    }
+    RefreshTexts(path);
+    Changed();
+    return true;
+}
+
+void DrawObjectNameRow(engine::ZGEOM* geom)
+{
+    static char name[41];
+    static engine::ZGEOM* nameOf;
+    if (!geom || !IsLive(geom))
+        return;
+    std::string current = ObjectName(geom);
+    if (nameOf != geom) {
+        snprintf(name, sizeof(name), "%s", current.c_str());
+        nameOf = geom;
+    }
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+    bool enter = ImGui::InputTextWithHint("##objname", Label(NamePath(geom)).c_str(), name, sizeof(name),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Its name in the mission: the objectives made for it say it (\"Kill the courier\",\n"
+                          "\"Take the ledger\"); empty: the model's name.");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(current == name);
+    if (ImGui::SmallButton("Name it") || (enter && current != name)) {
+        std::string err;
+        g_status = SetObjectName(geom, name, &err) ? (name[0] ? std::string("named: ") + name : "its own name taken off")
+                                                    : "not named: " + err;
+    }
+    ImGui::EndDisabled();
+}
+
+std::vector<GoalStatus> GoalStatuses()
+{
+    std::vector<GoalStatus> out;
+    if (!ForThisScene() || !engine::SceneDataValid())
+        return out;
+    static const char* const kWhat[] = {"the level's own", "kill", "reach", "take", "knock out", "bring", "never spotted"};
+    for (const MissionObjective& o : StageObjectives()) {
+        if (o.hidden)
+            continue;
+        GoalStatus g;
+        g.slot = o.slot;
+        g.text = o.text.empty() ? OwnText(o.slot) : o.text;
+        if (g.text.empty())
+            g.text = std::string(kWhat[o.goal]) + (o.target.empty() ? "" : " " + o.target);
+        engine::ZGEOM* t = o.goal == MissionObjective::Level || o.goal == MissionObjective::Unseen ? nullptr : Target(o);
+        g.where = o.goal == MissionObjective::Deliver && !o.place.empty() ? ResolveTarget(o.place) : t;
+        bool done = o.goal == MissionObjective::Level ? LineChecked(o.slot) : g_done[o.slot];
+        if (o.goal == MissionObjective::Unseen)
+            done = !g_spotted;
+        if (done) {
+            g.state = 1;
+        } else if (o.goal == MissionObjective::Unseen) {
+            g.state = -1;
+            g.why = "Hitman was spotted";
+        } else if (o.goal != MissionObjective::Level && !t) {
+            g.state = -1;
+            g.why = (o.goal == MissionObjective::Kill || o.goal == MissionObjective::KnockOut ? "the character "
+                                                                                               : "the object ") +
+                    o.target + " is not there";
+        } else if (o.goal == MissionObjective::KnockOut) {
+            engine::ZGEOM* actor = ActorOf(t);
+            engine::ZGEOM* who = actor ? actor : t;
+            if (engine::WasKilled(who) || (!engine::IsAlive(t) && !KnockedOut(t))) {
+                g.state = -1;
+                g.why = "killed, not knocked out";
+            }
+        }
+        if (g.state == 0 && g.where) {
+            char d[32];
+            snprintf(d, sizeof(d), "%.0f m", DistanceToPlayer(g.where) / 100.0f);
+            g.why = d;
+        }
+        out.push_back(std::move(g));
+    }
+    return out;
+}
 
 namespace {
 
@@ -2266,6 +2617,7 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
         (!CurrentLevel().baseScene.empty() && CurrentLevel().baseScene != CurrentScene()))
         return;
     ImGui::SeparatorText("Mission");
+    DrawObjectNameRow(geom);
     bool full = FreeSlot() == 0;
     if (engine::ZGEOM* c = CharacterOf(geom)) {
         std::string path = PathOf(c);
@@ -2525,6 +2877,7 @@ void InstallMission()
     Hook("BriefingMenu::SetObjectiveCompleted", kSetCompleted, hkSetCompleted, &oSetCompleted);
     Hook("BriefingMenu::Action", kBriefingAction, hkBriefingAction, &oBriefingAction);
     overlay::AddPanel({"Mission", &g_panelVisible, DrawPanel, overlay::Dock::Left});
+    overlay::AddAlwaysDraw(DrawLaptopPhoto);
     OnScenePushed(OnScene);
     OnFrameEnd(Check);
 }

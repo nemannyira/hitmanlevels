@@ -10,6 +10,7 @@
 // found in the LOC tree by 0x428FF0 (path, root): the editor answers its own
 // texts there. The level control object ends the mission (MissionCompleted).
 #include <string>
+#include <vector>
 
 namespace h2::engine {
 struct ZGEOM;
@@ -27,6 +28,14 @@ void SetLocText(const std::string& key, const std::string& text);
 // an object Hitman has to take, a place Hitman has to reach or the mission's
 // exit (or which line it is already).
 void DrawMissionForSelection(engine::ZGEOM* geom);
+// An object's name of the level maker's (a character, an item, any object an objective can be made for):
+// the objectives' texts made for it use it ("Kill the courier"). A character placed by the level keeps it
+// as its label (h2.find); any other object in the mission's names (level.json mission.names). Lines whose
+// text the editor made follow the new name. "" takes the name off. Undoable.
+bool SetObjectName(engine::ZGEOM* geom, const std::string& name, std::string* error = nullptr);
+std::string ObjectName(engine::ZGEOM* geom);  // "" none of its own
+// A row to name it: the Inspector's Mission row, Simple mode's card.
+void DrawObjectNameRow(engine::ZGEOM* geom);
 // Simple mode's Mission step (the guide), and whether it is done (no blank left)
 void DrawSimpleMission();
 bool MissionStepDone();
@@ -71,5 +80,15 @@ bool FailMission();
 bool BaseLevelEnd(bool completed);
 // The level's own text of a line ("" when the level has none or it is not known yet).
 std::string LevelObjectiveText(int slot);
+
+// The objectives of the stage as they stand while it is played (the play debug's list).
+struct GoalStatus {
+    int slot = 0;
+    std::string text;        // the laptop's line (or what the goal is)
+    int state = 0;           // 1 done, 0 not yet, -1 lost (can no longer be done)
+    std::string why;         // lost: why; not yet: how far Hitman is ("12 m"), or ""
+    engine::ZGEOM* where = nullptr;  // its target or place (the camera can go there)
+};
+std::vector<GoalStatus> GoalStatuses();
 
 } // namespace h2::editor

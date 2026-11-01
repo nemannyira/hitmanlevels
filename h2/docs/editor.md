@@ -40,6 +40,13 @@ controls and *Back* / *Next*.
    route: right after placing, the panel shows *Route of ...*: each click in
    the world adds its next point (numbered, arrows in walking order, red: off
    the paths, never reached); *Take back the last one*, *Clear*, *Done (Esc)*.
+   A click where people cannot walk puts the point on the walkable place
+   within 6 m, or says so and adds none (an unreachable point stops the
+   person there for good). The person walks the points in order: the
+   behaviours that pick their next point at random (the WayPointList walkers
+   with `isWPListPath` 0, `bRandomPath`) are set to walk in order when placed;
+   one made before shows *Now it does not: ...* and *Walk the points in
+   order* in its route's box.
    Its route changes later with *Route* beside it in the level's people (or
    on its card). The level's people are listed; one of the map's is taken out with a
    click on it and *Remove from the map*. New people come to life when the
@@ -56,10 +63,34 @@ controls and *Back* / *Next*.
    problems the editor sees, with their fixes (*onto the paths*, *fix it
    there*: the step where it is fixed). While playing, a line at the top
    says the keys: F8 goes back to the editor (the map loads again as you
-   made it, not as it was played; the camera where it was), F9 shows the
-   people's routes (also *Show the people's routes while playing*): each
-   walking person in a colour, its points numbered, arrows in walking order,
-   its name above its head ([Editor] RoutesKey in H2Fix.ini).
+   made it, not as it was played; the camera where it was), F9 switches the
+   debug view (also *Debug view while playing*; [Editor] RoutesKey in
+   H2Fix.ini). What it shows (each can be switched off):
+   * *Routes*: each walking person in a colour, its points numbered, arrows
+     in walking order, its name above its head; under it the points it
+     reached in that order, the one it heads to (a line to it) and how its
+     behaviour walks the route (random: why). A point reached out of order,
+     or a person standing still before a point it cannot reach, goes into
+     the test's events with the reason.
+   * *What they do*: under each name (within 40 m) the state of its
+     behaviour, how it reacts (suspicious, sees through the disguise,
+     hostile, spotted Hitman, calls for help), the suspicion it reports to
+     the level and *sees Hitman*.
+   * *What they see*: how far and how wide each one sees, a fan on the
+     floor, red while it sees Hitman; the small ring is 2 m, seen at any
+     angle. These are the game's own values (its sight check,
+     ZLIST_CheckVisible); being seen also needs a clear line of sight and
+     enough light.
+   * *Objectives and alarm level*: in the corner the alarm level (the game's
+     stress meter; above 50 the music changes), each objective (done, not
+     yet and how far, lost and why) and the latest events.
+   * *Stuck people*: a person with a route that has not moved for 15 s.
+
+   Back in the editor, *What happened in the last test* lists the test's
+   events with their time (spotted, suspicious, alarm, killed, knocked out,
+   clothes changed, objectives done or lost, someone stuck, the mission's
+   end); a click takes the camera to where it happened (Advanced: the *Last
+   test* panel).
 6. **Save & share**: a name, *Save*, a description (README.md) and a picture
    of the view (*Take a picture of this view*: preview.png, the editor left
    out), the package for other players.
@@ -158,6 +189,19 @@ level* / *File > Open level* loads a saved one.
 * Quicker from a selection: the Inspector's *Mission* row: *Make it a
   target* (a character), *Hitman has to take it* (an object), *Hitman has to
   get here*, *Make it the exit*.
+* **Names**: the same row (and Simple mode's card) names the object for the
+  mission (*Name it*): a character of the map or placed, an item, any
+  object; the objective lines the editor wrote follow the name ("Kill the
+  courier"). A placed character's name is also its label for scripts
+  (`h2.find`); the others are kept in `level.json` `mission.names`.
+* **The laptop's photos** (Mission tab; Simple mode: step 1): the level's own
+  *Additional files*, as many as the map's laptop has places for (C1-1: one,
+  its Target Photo). Each has a name (the entry's text) and a picture: *A
+  file...* (a PNG, JPG or BMP copied into the level's folder) or *Photo of
+  ...* (the last picture a list showed: hover a person in the People step or
+  an item, its picture is kept). Opened in the laptop (B while playing), the
+  picture shows in place of the map's photo. `level.json` `mission.files`
+  (`[{name, image}]`). The pictures are not packed with a shared level yet.
 * An object to take can be anything placed or on the map. An item (a key,
   a weapon: *Models > Pickup items*) is taken when Hitman picks it up the
   game's way. Any other model (a briefcase, a stack of books) is taken when
@@ -193,7 +237,8 @@ level* / *File > Open level* loads a saved one.
 
 **Test**: the toolbar's *Test* saves, loads the map again and starts it
 with Hitman where he is, where the camera looks or at the level's start. The
-*Testing* panel: game speed, freeze, god mode, invisible Hitman, the path
+*Testing* panel: game speed, freeze, god mode, invisible Hitman, the debug
+view while playing (F9, as in Simple mode's *Try it*), the path
 network (a mission completed after god mode, invisible Hitman or another
 speed was on says so over the statistics: not a real rating). The Level tab's *Problems* list shows what would go wrong: characters
 and route points off the path network, objectives whose target is gone,

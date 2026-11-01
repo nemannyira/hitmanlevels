@@ -31,6 +31,10 @@ constexpr int kLevel_Kill = 0xB4 / 4;              // (victim, kind)
 constexpr int kLevel_Harm = 0xB8 / 4;
 constexpr int kLevel_Failed = 0xC0 / 4;            // ()
 constexpr int kLevel_Completed = 0xC4 / 4;
+// (who, value): LevelControl_if method 25 (0x56D850) passes a script's two numbers; 0x5060F0 keeps the
+// largest at +0x24D (the stress), vfunc 0x94 (0x506110) takes one off it each call and returns it
+constexpr int kLevel_Stress = 0x90 / 4;
+constexpr size_t kLevel_StressValue = 0x24D;
 
 uint8_t g_flags[kMaxMessages];          // messages to keep (read by the hook)
 bool g_any;                             // any flag set
@@ -287,6 +291,7 @@ struct LevelEntries {
     void* harm = nullptr;
     void* failed = nullptr;
     void* completed = nullptr;
+    void* stress = nullptr;
 };
 std::map<void**, LevelEntries> g_levels;
 
@@ -398,6 +403,29 @@ void __fastcall hkCompleted(void* level, void* edx)
         reinterpret_cast<End_t>(o->completed)(level, edx);
 }
 
+// the suspicion reported (ReportedStress), the level routine whose stress it is
+struct StressReport {
+    int value = 0;
+    double at = 0.0;
+};
+std::unordered_map<uint32_t, StressReport> g_stress;
+void* g_stressLevel;
+int g_stressLogged;  // reports written to the log in this scene (what `who` is: seen in the game)
+
+using Stress_t = void(__fastcall*)(void* level, void* edx, uint32_t who, int value);
+
+void __fastcall hkStress(void* level, void* edx, uint32_t who, int value)
+{
+    g_stressLevel = level;
+    g_stress[who] = {value, double(GetTickCount64())};
+    if (g_stressLogged < 12) {
+        ++g_stressLogged;
+        Log("game events: stress reported: who %08X, value %d", who, value);
+    }
+    if (const LevelEntries* o = EntriesOf(level))
+        reinterpret_cast<Stress_t>(o->stress)(level, edx, who, value);
+}
+
 bool PatchEntry(void** vt, int index, void* detour)
 {
     DWORD old;
@@ -461,6 +489,9 @@ void InstallGameEvents()
         g_queue.clear();
         g_any = false;  // ids may be given again with the next scene
         g_mappedCount = ~0u;
+        g_stress.clear();
+        g_stressLevel = nullptr;
+        g_stressLogged = 0;
     });
     OnScenePushed([](const std::string&) { Remap(true); });
 }
@@ -485,13 +516,15 @@ void WatchLevel(void* level)
         return;
     LevelEntries o;
     if (!CopyMem(&o.kill, &vt[kLevel_Kill], 4) || !CopyMem(&o.harm, &vt[kLevel_Harm], 4) ||
-        !CopyMem(&o.failed, &vt[kLevel_Failed], 4) || !CopyMem(&o.completed, &vt[kLevel_Completed], 4))
+        !CopyMem(&o.failed, &vt[kLevel_Failed], 4) || !CopyMem(&o.completed, &vt[kLevel_Completed], 4) ||
+        !CopyMem(&o.stress, &vt[kLevel_Stress], 4))
         return;
     g_levels[vt] = o;  // before the entries change: a call finds its original
     bool ok = PatchEntry(vt, kLevel_Kill, reinterpret_cast<void*>(hkKill)) &&
               PatchEntry(vt, kLevel_Harm, reinterpret_cast<void*>(hkHarm)) &&
               PatchEntry(vt, kLevel_Failed, reinterpret_cast<void*>(hkFailed)) &&
-              PatchEntry(vt, kLevel_Completed, reinterpret_cast<void*>(hkCompleted));
+              PatchEntry(vt, kLevel_Completed, reinterpret_cast<void*>(hkCompleted)) &&
+              PatchEntry(vt, kLevel_Stress, reinterpret_cast<void*>(hkStress));
     Log("game events: level routine vtable %p %s", static_cast<void*>(vt), ok ? "watched" : "not writable");
 }
 
@@ -502,6 +535,29 @@ void WatchUse(uint16_t msg)
 }
 
 bool TakeUsed(ZGEOM* geom) { return geom && g_used.erase(geom) != 0; }
+
+int LevelStress()
+{
+    int v = -1;
+    if (!g_stressLevel || !SceneDataValid() ||
+        !CopyMem(&v, static_cast<uint8_t*>(g_stressLevel) + kLevel_StressValue, 4))
+        return -1;
+    return v;
+}
+
+bool ReportedStress(ZGEOM* character, int& value, double& ageMs)
+{
+    if (!character || g_stress.empty())
+        return false;
+    auto it = g_stress.find(RefOf(character));
+    if (it == g_stress.end())
+        it = g_stress.find(uint32_t(reinterpret_cast<uintptr_t>(character)));
+    if (it == g_stress.end())
+        return false;
+    value = it->second.value;
+    ageMs = double(GetTickCount64()) - it->second.at;
+    return true;
+}
 
 bool WasKilled(ZGEOM* character) { return character && g_killed.count(character); }
 bool WasHarmed(ZGEOM* character) { return character && g_harmed.count(character); }

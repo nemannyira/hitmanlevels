@@ -3,6 +3,36 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-02: route order, names, the laptop's photos, quicker lists
+
+* People walk their route's points in order: the walkers that pick a point
+  at random (WayPointList with `isWPListPath` 0, `bRandomPath`) are set to
+  walk in order when placed, older ones get *Walk the points in order*;
+  *Walks a route* no longer chooses a behaviour that always walks at random.
+  Simple mode does not add a point people cannot reach (it is moved onto the
+  paths within 6 m, or refused).
+* The debug view's routes say which points a person reached, in which
+  order, where it heads and why it walks out of order or stands still.
+* Objects of the mission can be named (Inspector / card: *Name it*): the
+  objective lines follow ("Kill the courier").
+* The laptop's photos of the level's own: a picture file or the photo of a
+  person or item as the lists show it, in place of the map's photo.
+* The behaviours of other levels are read in the background at the start
+  (the People step opened with a 0.4 s wait before); editor stalls over
+  40 ms are logged with their place (`slow: ...` in H2Fix.log).
+
+## 2026-11-01: the debug view while playing
+
+* F9 while playing is a debug view now (Try it / *Testing*: *Debug view
+  while playing*), its parts each switched on or off: the routes (as
+  before); what each person does, how it reacts, the suspicion it reports
+  and whether it sees Hitman; how far and how wide each one sees (the
+  game's own sight values, red while Hitman is seen); the objectives with
+  the alarm level and the latest events in the corner; people with a route
+  standing still for 15 s.
+* *What happened in the last test*: back in the editor, the test's events
+  with their time; a click takes the camera there (Advanced: *Last test*).
+
 ## 2026-11-01: back from a test, routes while playing
 
 * F8 while a test plays goes back to the editor: the map loads again as

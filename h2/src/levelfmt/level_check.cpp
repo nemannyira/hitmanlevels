@@ -211,7 +211,8 @@ constexpr const char* kLevelChars = "_-";        // a game level's name: "C3-2a"
 void CheckMission(Checker& c, const json& m)
 {
     const std::string at = "mission";
-    if (!c.Object(m, at, {"objectives", "end_when_done", "exit", "exit_radius", "base_ends", "base_files", "briefing"}))
+    if (!c.Object(m, at, {"objectives", "end_when_done", "exit", "exit_radius", "base_ends", "base_files", "briefing",
+                          "names", "files"}))
         return;
     c.Array(m, "objectives", at, kMaxObjectives, [&](const json& o, const std::string& w) {
         if (!c.Object(o, w, {"slot", "text", "goal", "target", "replaces_original", "radius", "place", "fails_mission",
@@ -238,6 +239,34 @@ void CheckMission(Checker& c, const json& m)
     c.Bool(m, "base_ends", at);
     c.Bool(m, "base_files", at);
     c.Text(m, "briefing", at, 4096, true);
+    // the laptop's files: [{name, image}] at most 5, the image a file of the level's folder (no path)
+    c.Array(m, "files", at, 5, [&](const json& f, const std::string& w) {
+        if (!c.Object(f, w, {"name", "image"}))
+            return;
+        c.Text(f, "name", w, 64);
+        c.Name(f, "image", w, 64, "_-. ");
+        if (f.contains("image") && f["image"].is_string()) {
+            std::string img = f["image"].get<std::string>();
+            std::string ext = img.size() > 4 ? img.substr(img.size() - 4) : "";
+            for (char& ch : ext)
+                ch = char(tolower(static_cast<unsigned char>(ch)));
+            if (img.find("..") != std::string::npos || (ext != ".png" && ext != ".jpg" && ext != ".bmp"))
+                c.Bad(w + ".image", "not a .png, .jpg or .bmp of the level's folder");
+        }
+    });
+    // objects' names of the level maker's: {path: name}
+    if (m.contains("names")) {
+        const json& n = m["names"];
+        if (!n.is_object() || n.size() > 200) {
+            c.Bad(at + ".names", "not an object of at most 200 names");
+        } else {
+            for (auto it = n.begin(); it != n.end(); ++it) {
+                if (it.key().size() > 512)
+                    c.Bad(at + ".names", "a path longer than 512");
+                c.Text(n, it.key().c_str(), at + ".names", 40);
+            }
+        }
+    }
 }
 
 void CheckVehicle(Checker& c, const json& v, const std::string& w)

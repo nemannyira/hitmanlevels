@@ -46,6 +46,23 @@ int Draggable(ZGEOM* actor);
 // (Hitman; a character added so). Noticed: -1 unknown.
 bool SetNoticed(ZGEOM* actor, bool on);
 int Noticed(ZGEOM* actor);
+// Who looks out for what, as the same routine keeps it (ZLIST_CheckVisible_Update 0x48D2C0): up to 200
+// seers of 0x1B0 bytes at +0x6BE (+0 the seer's ref, +4 how far it sees (cm), +8 the cosine of half its
+// view angle, +0x10 its eye's offset, +0x1C bit 0 an actor, +0x20 a status word per target: bit 14 "sees
+// it now", the bit ObjectVisible / ObjectNotVisible follow, CheckVisible_SetSeen 0x48D210). Nearer than
+// 2 m a target is seen at any angle; seen means a clear line of sight and light enough. The eye and the
+// way it looks are the game's own (CheckVisible_SeerEyeAndDir 0x48CFF0: an actor's head).
+struct Seer {
+    ZGEOM* geom = nullptr;
+    float eye[3] = {};
+    float dir[3] = {};       // where it looks (unit)
+    float range = 0.0f;      // cm
+    float cosHalf = 1.0f;    // dot(to the target, dir) at least this: within its view
+    bool actor = false;      // a character (the eye its head's)
+    bool seesHitman = false;
+};
+constexpr float kSeeNear = 200.0f;  // (0x63E7F0)
+std::vector<Seer> Seers();
 // Geom_If SendCommand / SendCommand_i: a message by name (registered as the
 // scripts' are) with a number, sent to the object by its reference (geom vfunc
 // 0x11C; the object itself the sender here, the script's object there).

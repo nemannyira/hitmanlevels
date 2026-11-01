@@ -333,6 +333,13 @@ bool AnyVisible(Dock dock)
     return false;
 }
 
+// a panel's contents; a slow one is logged (the editor's stalls)
+void DrawPanelTimed(Panel& p)
+{
+    SlowGuard slow(p.name, reinterpret_cast<const void*>(p.draw));
+    p.draw();
+}
+
 // Toolbar strip under the menu; returns its bottom edge.
 float DrawToolbar(float top)
 {
@@ -346,7 +353,7 @@ float DrawToolbar(float top)
                      ImGuiWindowFlags_NoSavedSettings);
     for (Panel& p : g_panels)
         if (p.dock == Dock::Toolbar && Shown(p))
-            p.draw();
+            DrawPanelTimed(p);
     float bottom = top + ImGui::GetWindowHeight();
     ImGui::End();
     return bottom;
@@ -374,7 +381,7 @@ void DrawLayout()
                 if (ImGui::BeginTabItem(p.name, nullptr, flags)) {
                     // the tab's own scroll region: the tabs stay at the top, whole (not narrowed by a scrollbar)
                     if (ImGui::BeginChild("content"))
-                        p.draw();
+                        DrawPanelTimed(p);
                     ImGui::EndChild();
                     ImGui::EndTabItem();
                 }
@@ -401,7 +408,7 @@ void DrawLayout()
             first = false;
             ImGui::PushID(p.name);
             if (ImGui::CollapsingHeader(p.name, ImGuiTreeNodeFlags_DefaultOpen))
-                p.draw();
+                DrawPanelTimed(p);
             ImGui::PopID();
         }
         ImGui::End();
@@ -414,12 +421,12 @@ void DrawLayout()
         ImGui::SetWindowPos(ImVec2(leftW, H - ImGui::GetWindowHeight()));
         for (Panel& p : g_panels)
             if (p.dock == Dock::Bottom && Shown(p))
-                p.draw();
+                DrawPanelTimed(p);
         ImGui::End();
     }
     for (Panel& p : g_panels)
         if ((p.dock == Dock::Floating && Shown(p)) || (p.dock == Dock::None && *p.visible))
-            p.draw();
+            DrawPanelTimed(p);
     if (g_showDemo)
         ImGui::ShowDemoWindow(&g_showDemo);
     DrawKeysWindow();
@@ -501,8 +508,10 @@ void OnPresent(void* device)
     ImGui_ImplWin32_NewFrame();
     DevUiStep();
     ImGui::NewFrame();
-    for (auto draw : g_always)
+    for (auto draw : g_always) {
+        SlowGuard slow(nullptr, reinterpret_cast<const void*>(draw));
         draw();
+    }
     if (g_open) {
         if (g_exclusive)
             g_exclusive();

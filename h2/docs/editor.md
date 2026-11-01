@@ -54,7 +54,12 @@ controls and *Back* / *Next*.
    object*: the map's models.
 5. **Try it**: play from the start or from where the camera looks; the
    problems the editor sees, with their fixes (*onto the paths*, *fix it
-   there*: the step where it is fixed).
+   there*: the step where it is fixed). While playing, a line at the top
+   says the keys: F8 goes back to the editor (the map loads again as you
+   made it, not as it was played; the camera where it was), F9 shows the
+   people's routes (also *Show the people's routes while playing*): each
+   walking person in a colour, its points numbered, arrows in walking order,
+   its name above its head ([Editor] RoutesKey in H2Fix.ini).
 6. **Save & share**: a name, *Save*, a description (README.md) and a picture
    of the view (*Take a picture of this view*: preview.png, the editor left
    out), the package for other players.

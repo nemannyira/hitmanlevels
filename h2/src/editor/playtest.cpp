@@ -8,6 +8,7 @@
 
 #include "imgui.h"
 
+#include "../config.h"
 #include "../display.h"
 #include "../engine/inject.h"
 #include "../engine/messages.h"
@@ -16,6 +17,7 @@
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
 #include "../scene.h"
+#include "freecam.h"
 #include "highlight.h"
 #include "level.h"
 #include "model.h"
@@ -40,6 +42,15 @@ int g_stepFrames;         // frames the world runs although the editor holds it
 bool g_askClose;          // the close question is to be opened
 bool g_picking;           // waiting for the camera's point
 std::string g_message;
+// a test plays (Reload): the editor key goes back to the editor, the map loaded again as edited (not as
+// played: moved characters, the dead, Hitman's place), the camera where it was
+bool g_testing;
+double g_testStart;       // when it began (the hint line fades)
+bool g_back;              // back to the editor: opened once the map has loaded
+bool g_backLeft;          // ... the old map has gone
+int g_backFrames;         // ... frames on the new map
+bool g_camFree;           // the camera before the test
+float g_camPos[3], g_camYaw, g_camPitch;
 
 char* Engine()
 {
@@ -67,6 +78,18 @@ bool OnMap()
 
 void OnFrame()
 {
+    if (overlay::IsOpen())
+        g_testing = false;  // (opened some other way: editing the played map)
+    if (g_back && g_backLeft && OnMap() && ++g_backFrames > 60) {  // (the game's camera behind Hitman by then)
+        g_back = false;
+        overlay::SetOpen(true);
+        if (g_camFree) {
+            SetFreeCamEnabled(true);
+            SetFreeCamPosition(g_camPos);
+            SetFreeCamAngles(g_camYaw, g_camPitch);
+        }
+        Log("test: back in the editor");
+    }
     bool want = OnMap() && ((g_freeze && overlay::IsOpen()) || g_playFrozen);
     if (want && g_stepFrames > 0) {
         --g_stepFrames;
@@ -92,18 +115,64 @@ void OnLeaving(const std::string&)
     // the next map runs a moment before the editor holds it: the game's
     // camera starts in Hitman's head and moves behind him only while it runs
     g_stepFrames = 60;
+    if (g_back) {
+        g_backLeft = true;
+        g_backFrames = 0;
+    }
 }
 
 void Reload()
 {
     g_playFrozen = false;  // testing plays
+    g_camFree = FreeCamEnabled();
+    FreeCamPosition(g_camPos);
+    FreeCamAngles(g_camYaw, g_camPitch);
     std::string err;
     if (!ReloadLevelMap(&err)) {
         g_message = "not tested: " + err;
         return;
     }
     g_message.clear();
+    g_testing = true;
+    g_testStart = GetTickCount64() / 1000.0;
     overlay::SetOpen(false);  // playing
+}
+
+// The editor key while a test plays: the map loaded again as the level makes it, then the editor
+bool OpenGuard()
+{
+    if (!g_testing)
+        return true;
+    g_testing = false;
+    g_back = true;  // (before the request: the old map is left inside it, OnLeaving)
+    g_backLeft = false;
+    std::string err;
+    if (!ReloadLevelMap(&err)) {
+        g_back = false;
+        Log("test: not loaded again (%s), the editor opens on the played map", err.c_str());
+        return true;
+    }
+    return false;
+}
+
+// while a test plays: how to get back (and the routes key), at the top of the screen; faint after a while
+void DrawTestHint()
+{
+    if (overlay::IsOpen() || (!g_testing && !g_back))
+        return;
+    std::string text = g_back ? "Back to the editor: loading the map..."
+                              : "Testing the level     " + overlay::EditorKeyName() + ": back to the editor" +
+                                    (g_config.routesKey ? "     " + overlay::KeyNameOf(g_config.routesKey) +
+                                                              ": the people's routes"
+                                                        : "");
+    float age = float(GetTickCount64() / 1000.0 - g_testStart);
+    float alpha = g_back || age < 8.0f ? 1.0f : 0.45f;
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImVec2 size = ImGui::CalcTextSize(text.c_str());
+    ImVec2 at((ImGui::GetIO().DisplaySize.x - size.x) * 0.5f, 6.0f);
+    dl->AddRectFilled(ImVec2(at.x - 10, at.y - 3), ImVec2(at.x + size.x + 10, at.y + size.y + 3),
+                      IM_COL32(0, 0, 0, int(150 * alpha)), 3.0f);
+    dl->AddText(at, IM_COL32(255, 220, 120, int(255 * alpha)), text.c_str());
 }
 
 void StartAt(const float pos[3], const float mat[9])
@@ -226,7 +295,7 @@ void DrawPlayTestControl()
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Saves the level, loads the map again and plays it (Hitman starts %s).%s\n"
-                          "The editor key opens the editor again.",
+                          "The editor key while playing: back to the editor (the map loads again as edited).",
                           kStartNames[g_startAt],
                           pending ? "\n* characters placed since are made then" : "");
     ImGui::SameLine();
@@ -250,7 +319,9 @@ void InstallPlayTest()
     OnFrameEnd(OnFrame);
     OnSceneLeaving(OnLeaving);
     overlay::SetCloseGuard(CloseGuard);
+    overlay::SetOpenGuard(OpenGuard);
     overlay::AddAlwaysDraw(DrawClosePrompt);
+    overlay::AddAlwaysDraw(DrawTestHint);
 }
 
 bool ScenePaused() { return EnginePaused(); }

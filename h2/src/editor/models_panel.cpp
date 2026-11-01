@@ -270,11 +270,18 @@ void DrawTooltip(const ModelEntry& e)
 {
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(e.name.c_str());
+    char line[256];
     if (!e.level.empty())
-        ImGui::TextDisabled("from %s, %.1f m", e.level.c_str(), e.radius * 2.0f / 100.0f);
+        snprintf(line, sizeof(line), "from %s, %.1f m", e.level.c_str(), e.radius * 2.0f / 100.0f);
     else
-        ImGui::TextDisabled("%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f, e.uses);
+        snprintf(line, sizeof(line), "%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f,
+                 e.uses);
+    ImGui::TextDisabled("%s", line);
     float size = 220.0f * ImGui::GetIO().FontGlobalScale * (ImGui::GetFontSize() / 16.0f);
+    // in the middle of the tooltip (its text may be wider than the picture)
+    float wide = std::max(ImGui::CalcTextSize(e.name.c_str()).x, ImGui::CalcTextSize(line).x);
+    if (wide > size)
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (wide - size) * 0.5f);
     void* tex = g_thumbPath == e.Key() ? ThumbnailTexture() : nullptr;
     if (tex)
         ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size, size));

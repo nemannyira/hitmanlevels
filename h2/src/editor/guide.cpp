@@ -10,6 +10,7 @@
 
 #include "imgui.h"
 
+#include "../config.h"
 #include "../engine/geoms.h"
 #include "../engine/messages.h"
 #include "../log.h"
@@ -305,9 +306,15 @@ void DrawTryStep()
         TestLevelFrom(TestStart::LevelStart);
     if (ImGui::Button("Play from where the camera looks", ImVec2(-1, 0)))
         TestLevelFrom(TestStart::Camera);
+    std::string routes = "Show the people's routes while playing (" + overlay::KeyNameOf(g_config.routesKey) + ")";
+    ImGui::Checkbox(routes.c_str(), PlayRoutesShown());
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Where each person walks: numbered points, arrows in walking order, the name above\n"
+                          "the head in the same colour (red point: off the paths, never reached)");
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("The level is saved first. %s opens the editor again.%s", overlay::EditorKeyName().c_str(),
-                        pending ? " The new people come to life then." : "");
+    ImGui::TextDisabled("The level is saved first. %s while playing: back to the editor (the map loads again as "
+                        "you made it).%s",
+                        overlay::EditorKeyName().c_str(), pending ? " The new people come to life then." : "");
     ImGui::PopTextWrapPos();
     DrawProblemsList();
 }

@@ -354,6 +354,20 @@ int Key(lua_State* L)
     return 0;
 }
 
+// h2.dev_wmkey(vk): a key pressed as Windows sends it to the game's window (WM_KEYDOWN, WM_KEYUP: the
+// editor key, the testing keys)
+int WmKey(lua_State* L)
+{
+    WPARAM vk = WPARAM(luaL_checkinteger(L, 1) & 0xFF);
+    HWND wnd = static_cast<HWND>(overlay::GameWindow());
+    if (wnd) {
+        PostMessageA(wnd, WM_KEYDOWN, vk, 1);
+        PostMessageA(wnd, WM_KEYUP, vk, LPARAM(0xC0000001));
+    }
+    lua_pushboolean(L, wnd != nullptr);
+    return 1;
+}
+
 // h2.dev_mouse(button, seconds): holds a mouse button (0 left, 1 right, 2 middle)
 int Mouse(lua_State* L)
 {
@@ -1295,6 +1309,7 @@ void InstallDevCommands()
     script::Register("dev_levelend", LevelEnd);
     script::Register("dev_edit", EditCmd);
     script::Register("dev_key", Key);
+    script::Register("dev_wmkey", WmKey);
     script::Register("dev_mouse", Mouse);
     script::Register("dev_look", Look);
     script::Register("dev_wheel", Wheel);

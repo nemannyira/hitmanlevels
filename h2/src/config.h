@@ -15,6 +15,7 @@ struct Config {
     bool simpleMode = true;    // the editor's guided face (Editor Mode=simple|advanced)
     int freezeKey = VK_PAUSE;  // while playing: the world stands still / goes on (0: none)
     int speedKey = 0;          // while playing: next game speed (0: none)
+    int routesKey = VK_F9;     // while testing: the people's routes drawn / not (0: none)
     unsigned hideFlag = 0x800; // ZBaseGeom flag bit the renderer skips (used to hide objects)
     int uiHeight = 600;        // virtual screen height for UI layout (0 = no UI scaling)
     bool diagnostics = true;  // periodic timing/IO statistics in H2Fix.log

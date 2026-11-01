@@ -12,6 +12,8 @@
 
 #include "imgui.h"
 
+#include "../config.h"
+#include "../display.h"
 #include "../engine/lists.h"
 #include "../engine/messages.h"
 #include "../engine/npc.h"
@@ -608,6 +610,88 @@ void DrawAllRoutes()
     }
     for (engine::ZGEOM* g : AllCharacters())
         drawActor(g);
+}
+
+// ---- the routes while a level is played (Try it: F9) ----
+
+bool g_playRoutes;
+std::string ReadableName(engine::ZGEOM* actor);
+
+// The routes the characters walk as they play: each one its colour, its points numbered in circles, arrows
+// in walking order halfway along each leg, its name above its head. Farther ones fainter.
+void DrawPlayRoutes()
+{
+    if (!g_playRoutes || overlay::IsOpen() || engine::SceneRecords().empty() || !engine::SceneDataValid() ||
+        CurrentScene().empty())
+        return;
+    game::ZCAMERA* cam = game::MainCamera();
+    if (!cam)
+        return;
+    float cm[9], cp[3];
+    game::GetWorldTransform(cam, cm, cp);
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    size_t n = 0;
+    for (engine::ZGEOM* actor : AllCharacters()) {
+        if (!actor || !IsLive(actor) || IsRemovedNpc(actor) || IsHidden(actor) || actor == engine::Player())
+            continue;
+        const std::vector<Route>& routes = RoutesOfActor(actor);
+        auto walked = [](const Route& r) { return r.list && IsRouteRef(r.name) && !r.points.empty(); };
+        if (std::none_of(routes.begin(), routes.end(), walked))
+            continue;  // (one who stays: no lines, no name)
+        Transform at = GetTransform(actor);
+        float dx = at.pos[0] - cp[0], dz = at.pos[2] - cp[2];
+        float dist = std::sqrt(dx * dx + dz * dz);
+        float a = std::clamp(1.0f - (dist - 3000.0f) / 7000.0f, 0.35f, 1.0f);  // full within 30 m
+        ImU32 c = Faded(RouteColor(n++), a), dark = IM_COL32(0, 0, 0, int(200 * a));
+        for (const Route& r : routes) {
+            if (!walked(r))
+                continue;
+            std::vector<Transform> pts;
+            for (engine::ZGEOM* g : r.points)
+                if (IsLive(g))
+                    pts.push_back(GetTransform(g));
+            for (size_t k = 0; k + 1 < pts.size(); ++k) {
+                const float* p = pts[k].pos;
+                const float* q = pts[k + 1].pos;
+                float mid[3] = {(p[0] + q[0]) * 0.5f, (p[1] + q[1]) * 0.5f, (p[2] + q[2]) * 0.5f};
+                DrawLine3D(p, q, dark, 6.0f);
+                DrawLine3D(mid, q, c, 3.0f);
+                DrawArrow3D(p, mid, c, 3.0f);  // (its head halfway)
+            }
+            for (size_t k = 0; k < pts.size(); ++k) {
+                ImVec2 s;
+                if (!WorldToScreen(pts[k].pos, s))
+                    continue;
+                char num[8];
+                snprintf(num, sizeof(num), "%d", int(k + 1));
+                ImVec2 ts = ImGui::CalcTextSize(num);
+                float rad = std::max(ts.x, ts.y) * 0.5f + 4.0f;
+                bool off = engine::OnPathNetwork(pts[k].pos) == 0;  // (never reached)
+                dl->AddCircleFilled(s, rad + 2.0f, dark);
+                dl->AddCircleFilled(s, rad, off ? Faded(IM_COL32(255, 60, 50, 255), a) : c);
+                dl->AddText(ImVec2(s.x - ts.x * 0.5f, s.y - ts.y * 0.5f), dark, num);
+            }
+        }
+        float head[3] = {at.pos[0], at.pos[1] + 200.0f, at.pos[2]};
+        ImVec2 s;
+        if (WorldToScreen(head, s)) {
+            std::string name = ReadableName(actor);
+            ImVec2 ts = ImGui::CalcTextSize(name.c_str());
+            ImVec2 p(s.x - ts.x * 0.5f, s.y - ts.y);
+            dl->AddRectFilled(ImVec2(p.x - 5, p.y - 2), ImVec2(p.x + ts.x + 5, p.y + ts.y + 2),
+                              IM_COL32(0, 0, 0, int(160 * a)), 3.0f);
+            dl->AddRectFilled(ImVec2(p.x - 5, p.y + ts.y + 2), ImVec2(p.x + ts.x + 5, p.y + ts.y + 4), c);
+            dl->AddText(p, Faded(IM_COL32(255, 255, 255, 255), a), name.c_str());
+        }
+    }
+}
+
+bool OnPlayKey(int vk)
+{
+    if (vk != g_config.routesKey || !vk || CurrentScene().empty() || !engine::SceneDataValid())
+        return false;
+    g_playRoutes = !g_playRoutes;
+    return true;
 }
 
 // ---- settings table ----
@@ -1582,13 +1666,22 @@ void TypeTooltip(int t, const char* more)
     const NpcType& type = g_types[t];
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(Readable(type.model).c_str());
-    ImGui::TextDisabled("%s, %d on the map", type.model.c_str(), type.count);
+    char line[160];
+    snprintf(line, sizeof(line), "%s, %d on the map", type.model.c_str(), type.count);
+    ImGui::TextDisabled("%s", line);
     if (more)
         ImGui::TextDisabled("%s", more);
     // the character stands in the same part of the picture whatever the camera (its skinned draws keep the
-    // camera's view): that part, enlarged
-    const ImVec2 uv0(0.30f, 0.33f), uv1(0.70f, 0.95f);
-    float h = 260.0f * (ImGui::GetFontSize() / 16.0f), w = h * (uv1.x - uv0.x) / (uv1.y - uv0.y);
+    // camera's view and projection: the whole screen squeezed into the square picture, so its width is
+    // stretched back by the screen's shape): that part, enlarged
+    const ImVec2 uv0(0.35f, 0.33f), uv1(0.65f, 0.95f);
+    float aspect = RenderHeight() > 0 ? float(RenderWidth()) / float(RenderHeight()) : 16.0f / 9.0f;
+    float h = 260.0f * (ImGui::GetFontSize() / 16.0f), w = h * aspect * (uv1.x - uv0.x) / (uv1.y - uv0.y);
+    float wide = std::max(ImGui::CalcTextSize(Readable(type.model).c_str()).x, ImGui::CalcTextSize(line).x);
+    if (more)
+        wide = std::max(wide, ImGui::CalcTextSize(more).x);
+    if (wide > w)  // (in the middle under a wider text)
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (wide - w) * 0.5f);
     void* tex = g_thumbType == t ? ThumbnailTexture() : nullptr;
     if (tex)
         ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(w, h), uv0, uv1);
@@ -2053,6 +2146,8 @@ void OnNewPoint(engine::ZGEOM* hit, const float* point, const float*)
 void DrawSimplePeople() { DrawSimplePeopleStep(); }
 std::string PersonName(engine::ZGEOM* actor) { return actor ? ReadableName(actor) : ""; }
 
+bool* PlayRoutesShown() { return &g_playRoutes; }
+
 bool PersonWalks(engine::ZGEOM* actor) { return actor && IsPlacedNpc(actor) && WalkRouteOf(actor); }
 
 void StartPersonRoute(engine::ZGEOM* actor)
@@ -2231,6 +2326,8 @@ void InstallNpcPanel()
         if (!overlay::IsOpen())
             g_thumbType = -1;
     });
+    overlay::AddAlwaysDraw(DrawPlayRoutes);
+    overlay::AddKeyHandler(OnPlayKey);
     OnScenePushed([](const std::string&) {
         g_builtFor.clear();
         g_types.clear();

@@ -17,6 +17,8 @@ std::string PersonName(engine::ZGEOM* actor);
 // A new person that walks a route (its behaviour has one); StartPersonRoute: its points are clicked next
 // (the People step shows the route).
 bool PersonWalks(engine::ZGEOM* actor);
+// The people's routes drawn while the level is played (the routes key, [Editor] RoutesKey, F9).
+bool* PlayRoutesShown();
 void StartPersonRoute(engine::ZGEOM* actor);
 
 // Placing an NPC: the viewport hands the mouse over while this is on.

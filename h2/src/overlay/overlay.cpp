@@ -51,6 +51,7 @@ bool Shown(const Panel& p)
 }
 std::string g_selectTab;      // left tab to select on the next frame
 bool (*g_closeGuard)();       // SetCloseGuard
+bool (*g_openGuard)();        // SetOpenGuard
 std::vector<bool (*)(int)> g_keyHandlers;  // AddKeyHandler
 
 constexpr ImGuiWindowFlags kDockedFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
@@ -64,7 +65,7 @@ bool IsInputMessage(UINT msg)
 LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_KEYDOWN && wp == static_cast<WPARAM>(g_config.editorKey) && !(lp & (1 << 30))) {
-        if (!g_open || !g_closeGuard || g_closeGuard())
+        if (g_open ? !g_closeGuard || g_closeGuard() : !g_openGuard || g_openGuard())
             SetOpen(!g_open);
         return 0;
     }
@@ -439,6 +440,8 @@ void DrawLayout()
 } // namespace
 
 std::string EditorKeyName() { return KeyName(g_config.editorKey); }
+std::string KeyNameOf(int vk) { return KeyName(vk); }
+void* GameWindow() { return g_window; }
 
 void OnDeviceCreated(void* device, HWND window)
 {
@@ -540,6 +543,7 @@ ImFont* MenuFont() { return g_menuFont; }
 void SetExclusive(void (*draw)()) { g_exclusive = draw; }
 
 void SetCloseGuard(bool (*guard)()) { g_closeGuard = guard; }
+void SetOpenGuard(bool (*guard)()) { g_openGuard = guard; }
 void AddKeyHandler(bool (*handler)(int vk)) { g_keyHandlers.push_back(handler); }
 
 void SetOpen(bool open)

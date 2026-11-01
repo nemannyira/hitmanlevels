@@ -264,6 +264,21 @@ try:
         states.append(lua('local o = h2.find(%s) return o and o:state() or "none"' % json.dumps(walker)))
         time.sleep(1.5)
     check("the civilian walks its route", any("walk" in st.lower() for st in states), walker + ": " + ", ".join(states))
+    shot("playing")
+
+    def backs():
+        with open(os.path.join(dev.GAME, "H2Fix.log"), encoding="latin1", errors="replace") as f:
+            return f.read().count("test: back in the editor")
+
+    # the editor key while playing: the map loaded again as edited, the editor open on it
+    before = backs()
+    lua('return h2.dev_wmkey(0x77)')  # (F8)
+    for _ in range(90):
+        time.sleep(1)
+        if backs() > before:
+            break
+    check("F8 while playing: back in the editor", backs() > before)
+    dev.wait_ready("C1-1__MAIN", 60)
     # removed again (People step), then the level reverted: the world still drawn (a removed character
     # taken out of the actors' collision lists left it undrawn)
     lua('h2.dev_editor(true) h2.dev_mode("simple") return 1')

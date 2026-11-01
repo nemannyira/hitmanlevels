@@ -21,6 +21,9 @@ void SetOpen(bool open);
 // Asked when the editor key would close the editor: false keeps it open
 // (e.g. the guard asks the user first).
 void SetCloseGuard(bool (*guard)());
+// Asked when the editor key would open the editor: false keeps it closed
+// (the guard opens it its own way, e.g. after loading the map again).
+void SetOpenGuard(bool (*guard)());
 // Keys pressed while the editor is closed (not repeats), asked in the order
 // added: true takes the key from the game (the later ones do not get it).
 void AddKeyHandler(bool (*handler)(int vk));
@@ -56,6 +59,10 @@ void SetSimpleMode(bool on, bool save = true);
 void ShowPanel(const char* name);
 // The key that opens and closes the editor, by its name ("F8").
 std::string EditorKeyName();
+// The game's window (HWND; null before the overlay starts).
+void* GameWindow();
+// A key's name ("F9"; "none" for 0).
+std::string KeyNameOf(int vk);
 
 // Items of a main menu ("File", "Edit", "View", "Help"): `items` is called
 // inside the open menu. Menus appear in the order of their first registration.

@@ -3,6 +3,18 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-01: back from a test, routes while playing
+
+* F8 while a test plays goes back to the editor: the map loads again as
+  the level makes it (not as it was played), the editor opens on it, the
+  free camera where it was. A line at the top of the screen says so.
+* F9 while playing (Try it: *Show the people's routes while playing*;
+  Advanced: *Testing > Routes while playing*): the routes the people walk,
+  each in its colour, points numbered, arrows halfway along each leg, the
+  name above the head; a point off the paths red. `[Editor] RoutesKey`.
+* Characters' pictures no longer squeezed (their draws keep the screen's
+  shape: the width stretched back); pictures in the middle of the tooltip.
+
 ## 2026-11-01: routes walked, characters' pictures
 
 * Routes seen while they are made: a new route was not drawn at all (it has

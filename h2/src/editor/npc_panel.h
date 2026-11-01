@@ -14,6 +14,10 @@ void InstallNpcPanel();
 void DrawSimplePeople();
 // a person's name to read ("Volkov", "Bodyguard Mafia")
 std::string PersonName(engine::ZGEOM* actor);
+// A new person that walks a route (its behaviour has one); StartPersonRoute: its points are clicked next
+// (the People step shows the route).
+bool PersonWalks(engine::ZGEOM* actor);
+void StartPersonRoute(engine::ZGEOM* actor);
 
 // Placing an NPC: the viewport hands the mouse over while this is on.
 bool NpcPlacing();

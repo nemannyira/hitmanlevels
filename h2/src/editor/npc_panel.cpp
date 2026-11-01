@@ -104,6 +104,7 @@ struct Route {
     std::string name;   // parameter
     bool list = false;  // a list of points walked in order, or a single place
     std::vector<engine::ZGEOM*> points;
+    engine::ZGEOM* geom = nullptr;  // the list (lists)
 };
 struct RouteCache {
     std::vector<Route> routes;
@@ -491,10 +492,8 @@ std::vector<Route> RoutesOf(const engine::ScriptInfo& s)
         if (!g || !IsLive(g))
             continue;
         int rec = engine::RecordOf(g);
-        if (IsList(rec)) {
-            std::vector<engine::ZGEOM*> pts = ListPoints(g, rec);
-            if (!pts.empty())
-                routes.push_back({p.name, true, pts});
+        if (IsList(rec) || engine::IsEditableList(g)) {  // (a new route has no record of the scene file)
+            routes.push_back({p.name, true, ListPoints(g, rec), g});
         } else if (Positional(g)) {
             routes.push_back({p.name, false, {g}});
         }
@@ -529,11 +528,14 @@ ImU32 Faded(ImU32 c, float a)
 }
 
 // From the NPC (at `from`) to the places of its behaviour; lists as numbered
-// routes with arrows in walking order.
-void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool labels)
+// routes with arrows in walking order. Without `names` (Simple mode) only its
+// own places and routes, the points just numbered.
+void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool names)
 {
     for (size_t i = 0; i < routes.size(); ++i) {
         const Route& r = routes[i];
+        if (!names && !IsOwnPlaceRef(r.name))
+            continue;  // (shared help and safe points: lines across the map)
         ImU32 c = RouteColor(i);
         std::vector<Transform> pts;
         std::vector<engine::ZGEOM*> geoms;
@@ -562,16 +564,16 @@ void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool labe
             ImVec2 s;
             if (WorldToScreen(pts[k].pos, s))
                 g_markers.push_back({s, geoms[k]});
-            if (labels && r.list) {
+            if (r.list) {
                 char n[80];
-                if (k == 0)
+                if (k == 0 && names)
                     snprintf(n, sizeof(n), "%s 1", r.name.c_str());
                 else
                     snprintf(n, sizeof(n), "%d", int(k + 1));
                 DrawLabel3D(pts[k].pos, n, k == 0 ? c : Faded(c, 0.8f));
             }
         }
-        if (labels && !r.list)
+        if (names && !r.list)
             DrawLabel3D(pts[0].pos, r.name.c_str(), c);
     }
 }
@@ -632,6 +634,30 @@ void ParamTooltip(const engine::ScriptParam& p)
     ImGui::TextDisabled("click: keep this in the info box");
     ImGui::PopTextWrapPos();
     ImGui::EndTooltip();
+}
+
+// A new route of the level's own in the route setting `p` (of table "target" or "new"); its points are
+// clicked next. True when `p` changed.
+bool StartNewRoute(engine::ScriptParam& p, const char* table)
+{
+    std::string owner = "Route";
+    if (std::string(table) == "target" && g_target)
+        if (const LevelNpc* n = FindLevelNpc(g_target))
+            owner = n->id;
+    std::string err;
+    engine::ZGEOM* list = MakeNewRoute(owner + "_" + p.name, &err);
+    if (!list) {
+        g_message = "no route made: " + err;
+        return false;
+    }
+    p.bits = engine::RefOf(list);
+    g_addList = list;
+    g_pickPending = false;
+    g_pickParam.clear();
+    g_newPointParam.clear();
+    g_message = p.name + " = new route " + engine::SafeString(list->name) +
+                ": click its points in walking order, Esc ends";
+    return true;
 }
 
 // Settings table; returns true when the user changed a value (numbers: when
@@ -736,25 +762,8 @@ bool DrawParams(engine::ScriptInfo& s, bool editable, const char* table)
                                       "(move it later: click its marker, then drag it)");
                 engine::ZGEOM* now = p.bits ? engine::GeomOfRef(p.bits) : nullptr;
                 bool route = IsRouteRef(p.name) || (now && IsLive(now) && engine::IsEditableList(now));
-                if (route && ImGui::MenuItem("New route (click its points)...")) {
-                    std::string owner = "Route";
-                    if (std::string(table) == "target" && g_target)
-                        if (const LevelNpc* n = FindLevelNpc(g_target))
-                            owner = n->id;
-                    std::string err;
-                    if (engine::ZGEOM* list = MakeNewRoute(owner + "_" + p.name, &err)) {
-                        p.bits = engine::RefOf(list);
-                        changed = true;
-                        g_addList = list;
-                        g_pickPending = false;
-                        g_pickParam.clear();
-                        g_newPointParam.clear();
-                        g_message = p.name + " = new route " + engine::SafeString(list->name) +
-                                    ": click its points in walking order, Esc ends";
-                    } else {
-                        g_message = "no route made: " + err;
-                    }
-                }
+                if (route && ImGui::MenuItem("New route (click its points)..."))
+                    changed |= StartNewRoute(p, table);
                 if (route && ImGui::IsItemHovered())
                     ImGui::SetTooltip("A route of this level's own: click its points in the world in walking\n"
                                       "order (Esc ends); the map makes it when it loads again");
@@ -861,15 +870,16 @@ int ListUsers(engine::ZGEOM* list)
     return c.count;
 }
 
-void SetPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& pts, const char* what)
+bool SetPoints(engine::ZGEOM* list, const std::vector<engine::ZGEOM*>& pts, const char* what)
 {
     std::string err;
-    if (SetListPoints(list, pts, &err)) {
-        g_message = std::string(what) + " (Ctrl+Z undoes)";
-        g_routeCache.clear();
-    } else {
+    if (!SetListPoints(list, pts, &err)) {
         g_message = std::string("route not changed: ") + err;
+        return false;
     }
+    g_message = std::string(what) + " (Ctrl+Z undoes)";
+    g_routeCache.clear();
+    return true;
 }
 
 void DrawRouteList(const std::string& param, engine::ZGEOM* list, ImU32 color)
@@ -971,19 +981,37 @@ void DrawRouteList(const std::string& param, engine::ZGEOM* list, ImU32 color)
     ImGui::PopID();
 }
 
-void DrawRouteLists(const engine::ScriptInfo& s, engine::ZGEOM* actor)
+// The edited character's routes; a route setting without one gets a "New route" button. True when a
+// setting changed (to be applied).
+bool DrawRouteLists(engine::ScriptInfo& s, engine::ZGEOM* actor)
 {
     const std::vector<Route>& routes = RoutesOfActor(actor);
     bool any = false;
-    for (const engine::ScriptParam& p : s.params) {
-        if (p.type != engine::ParamType::Ref || !p.bits)
+    for (engine::ScriptParam& p : s.params) {
+        if (p.type != engine::ParamType::Ref)
             continue;
-        engine::ZGEOM* list = engine::GeomOfRef(p.bits);
-        if (!list || !IsLive(list) || !engine::IsEditableList(list))
-            continue;
+        engine::ZGEOM* list = p.bits ? engine::GeomOfRef(p.bits) : nullptr;
+        bool isList = list && IsLive(list) && engine::IsEditableList(list);
+        if (!isList && !(IsRouteRef(p.name) && !(list && IsLive(list))))
+            continue;  // (a route setting may hold one place instead: kept as it is)
         if (!any) {
             ImGui::SeparatorText("Routes");
             any = true;
+        }
+        if (!isList) {
+            ImGui::PushID(p.name.c_str());
+            ImGui::TextUnformatted(p.name.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("no route");
+            ImGui::SameLine();
+            bool made = ImGui::SmallButton("New route...") && StartNewRoute(p, "target");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("A route of this level's own: click its points in the world in walking\n"
+                                  "order (Esc ends)");
+            ImGui::PopID();
+            if (made)
+                return true;
+            continue;
         }
         ImU32 color = IM_COL32(200, 200, 200, 255);
         for (size_t i = 0; i < routes.size(); ++i)
@@ -991,6 +1019,7 @@ void DrawRouteLists(const engine::ScriptInfo& s, engine::ZGEOM* actor)
                 color = RouteColor(i);
         DrawRouteList(p.name, list, color);
     }
+    return false;
 }
 
 // ---- the edited character ----
@@ -1164,7 +1193,11 @@ void DrawTarget()
         ImGui::TextDisabled("Settings (live; a change applies when you leave the field):");
         if (DrawParams(g_targetEdit, true, "target"))
             ApplyTarget();
-        DrawRouteLists(g_targetEdit, actor);
+        if (DrawRouteLists(g_targetEdit, actor)) {
+            std::string what = g_message;  // (how its points are given)
+            if (ApplyTarget())
+                g_message = what;
+        }
     }
 }
 
@@ -1217,6 +1250,7 @@ Transform PlacingTransform()
 void AfterGuidePlace(engine::ZGEOM* npc);
 void TypeTooltip(int t, const char* more = nullptr);
 engine::ZGEOM* g_guideRoute;  // the route made for the character the guide places (its points clicked next)
+engine::ZGEOM* g_routeOf;     // Simple mode: the character whose route's points are clicked (g_addList)
 bool GuideWalks();
 
 void Place()
@@ -1595,10 +1629,59 @@ void AfterGuidePlace(engine::ZGEOM* npc)
     }
     Select(npc);
     g_addList = g_guideRoute;  // its points next: each click in the world adds one
+    g_routeOf = npc;
     g_guideRoute = nullptr;
     g_placing = false;
-    g_message = "Placed: " + ReadableName(npc) + ". Now click the route's points in the world, in walking order "
-                "(Esc: done). It walks them when you try the level.";
+    g_message = "Placed: " + ReadableName(npc) + ".";
+}
+
+// the list of a character's walking route (its behaviour's route setting), if it has one
+engine::ZGEOM* WalkRouteOf(engine::ZGEOM* actor)
+{
+    for (const Route& r : RoutesOfActor(actor))
+        if (r.list && r.geom && IsRouteRef(r.name) && IsLive(r.geom) && engine::IsEditableList(r.geom))
+            return r.geom;
+    return nullptr;
+}
+
+// Simple mode's route of a character: its points clicked in the world, the last one taken back, all of
+// them cleared
+void DrawSimpleRoute()
+{
+    engine::ZGEOM* list = g_addList;
+    std::vector<engine::ZGEOM*> pts = ListPointsLive(list);
+    ImGui::SeparatorText(("Route of " + ReadableName(g_routeOf)).c_str());
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f),
+                       pts.empty() ? "Click in the world where it should walk first."
+                                   : "Click in the world where it should walk next.");
+    ImGui::TextDisabled("It walks the numbered points in order (the arrows) when you try the level. It goes on "
+                        "the map's paths: a point marked red is off them and is never reached.");
+    ImGui::PopTextWrapPos();
+    ImGui::Text(pts.size() == 1 ? "%d point" : "%d points", int(pts.size()));
+    ImGui::BeginDisabled(pts.empty());
+    if (ImGui::Button("Take back the last one")) {
+        engine::ZGEOM* last = pts.back();
+        pts.pop_back();
+        if (SetPoints(list, pts, "point taken back")) {
+            if (FindSpawned(last))
+                DeleteObject(last);  // (made for this route)
+            g_message.clear();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) {
+        std::vector<engine::ZGEOM*> old = pts;
+        if (SetPoints(list, {}, "route cleared")) {
+            for (engine::ZGEOM* p : old)
+                if (FindSpawned(p))
+                    DeleteObject(p);
+            g_message.clear();
+        }
+    }
+    ImGui::EndDisabled();
+    if (ImGui::Button("Done (Esc)", ImVec2(-1, 0)))
+        g_addList = nullptr;
 }
 
 bool GuideWalks() { return g_guidePlacing && g_guideWalks; }
@@ -1618,6 +1701,12 @@ void DrawSimplePeopleStep()
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", g_message.c_str());
         ImGui::PopTextWrapPos();
+    }
+    if (!g_addList || !g_routeOf || !IsLive(g_routeOf))
+        g_routeOf = nullptr;
+    if (g_routeOf) {  // its route's points clicked: only that
+        DrawSimpleRoute();
+        return;
     }
 
     ImGui::SeparatorText("Add a person");
@@ -1737,11 +1826,22 @@ void DrawSimplePeopleStep()
         ImGui::PushID(a);
         std::string name = ReadableName(a) + (hidden ? " (taken out)" : " (new)");
         const char* button = hidden ? "Put back" : "Remove";
-        float bw = ImGui::CalcTextSize(button).x + ImGui::GetStyle().FramePadding.x * 2;
+        engine::ZGEOM* route = placed ? WalkRouteOf(a) : nullptr;  // (one that walks: its route's points)
+        auto width = [](const char* b) { return ImGui::CalcTextSize(b).x + ImGui::GetStyle().FramePadding.x * 2; };
+        float bw = width(button), rw = route ? width("Route") + ImGui::GetStyle().ItemSpacing.x : 0.0f;
         if (ImGui::Selectable(name.c_str(), Selected() == a, ImGuiSelectableFlags_AllowOverlap,
-                              ImVec2(ImGui::GetContentRegionAvail().x - bw - ImGui::GetStyle().ItemSpacing.x, 0))) {
+                              ImVec2(ImGui::GetContentRegionAvail().x - bw - rw - ImGui::GetStyle().ItemSpacing.x,
+                                     0))) {
             Select(a);
             FlyCameraTo(GetTransform(a).pos);
+        }
+        if (route) {
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - bw - rw);
+            if (ImGui::SmallButton("Route"))
+                StartPersonRoute(a);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Its route: %d points. Click: change it (click more points in the world, take\n"
+                                  "points back, clear it)", int(ListPointsLive(route).size()));
         }
         ImGui::SameLine(ImGui::GetContentRegionMax().x - bw);
         if (hidden) {
@@ -1903,11 +2003,16 @@ void OnAddPoint(engine::ZGEOM* hit, const float* point, const float*)
         g_message = "no point made: " + err;
         return;
     }
-    g_message = on ? "" : "the point is off the path network: the character will not get there";
     auto it = std::find(pts.begin(), pts.end(), Selected());
     pts.insert(it == pts.end() ? pts.end() : it + 1, np);
-    SetPoints(list, pts, "point added");
-    Select(np);  // the next one comes after it
+    if (!SetPoints(list, pts, "point added"))
+        return;
+    if (!on)
+        g_message = "the point is off the path network: the character will not get there";
+    else if (overlay::SimpleMode())
+        g_message.clear();  // (the route's box counts them)
+    if (!overlay::SimpleMode())  // (Simple mode: the character stays selected, its route drawn, the next point last)
+        Select(np);  // the next one comes after it
 }
 
 // "new point" mode: a new point for a setting
@@ -1947,6 +2052,21 @@ void OnNewPoint(engine::ZGEOM* hit, const float* point, const float*)
 
 void DrawSimplePeople() { DrawSimplePeopleStep(); }
 std::string PersonName(engine::ZGEOM* actor) { return actor ? ReadableName(actor) : ""; }
+
+bool PersonWalks(engine::ZGEOM* actor) { return actor && IsPlacedNpc(actor) && WalkRouteOf(actor); }
+
+void StartPersonRoute(engine::ZGEOM* actor)
+{
+    engine::ZGEOM* route = actor && IsPlacedNpc(actor) ? WalkRouteOf(actor) : nullptr;
+    if (!route)
+        return;
+    CancelNpcPlacement();
+    Select(actor);
+    g_addList = route;
+    g_routeOf = actor;
+    g_pickPending = false;
+    g_message.clear();
+}
 
 bool NpcPlacing() { return g_placing || !g_pickParam.empty() || g_addList || !g_newPointParam.empty(); }
 
@@ -1992,14 +2112,19 @@ void UpdateNpcPlacement()
             return;
         }
         ImDrawList* dl = ImGui::GetForegroundDrawList();
-        std::string text = g_addList ? "click: add a point to " + engine::SafeString(g_addList->name) +
-                                           " (after the selected point)   Esc: done"
-                                     : "click: new point for " + g_newPointParam + "   Esc: cancel";
+        std::string text = !g_addList ? "click: new point for " + g_newPointParam + "   Esc: cancel"
+                           : overlay::SimpleMode()
+                               ? "click: point " + std::to_string(ListPointsLive(g_addList).size() + 1) +
+                                     " of the route   Esc: done"
+                               : "click: add a point to " + engine::SafeString(g_addList->name) +
+                                     " (after the selected point)   Esc: done";
         ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);
         ImVec2 size = ImGui::CalcTextSize(text.c_str());
-        dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4), IM_COL32(0, 0, 0, 170),
-                          4);
-        dl->AddText(p, IM_COL32(255, 220, 120, 255), text.c_str());
+        if (overWorld) {  // (not over the panels' buttons)
+            dl->AddRectFilled(ImVec2(p.x - 6, p.y - 4), ImVec2(p.x + size.x + 6, p.y + size.y + 4),
+                              IM_COL32(0, 0, 0, 170), 4);
+            dl->AddText(p, IM_COL32(255, 220, 120, 255), text.c_str());
+        }
         if (g_pickPending && ImGui::GetFrameCount() - g_pickFrame > 10)
             g_pickPending = false;
         if (overWorld && !g_pickPending && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {

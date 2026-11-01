@@ -34,10 +34,14 @@ controls and *Back* / *Next*.
 2. **People**: *Add a person*: who (a guard, a civilian, a target: a target
    is an objective at once), what it looks like (the map's people of that
    kind; the mouse over one shows a picture of it) and what it does (guards /
-   stays where it stands, or walks a route: click its points after placing,
-   Esc ends; a behaviour of another level's that works anywhere when the
-   map's own people do not walk routes, as on C1-1 and C2-2); *Place it* and a click in the
-   world. The level's people are listed; one of the map's is taken out with a
+   stays where it stands, or walks a route; a behaviour of another level's
+   that works anywhere when the map's own people do not walk routes, as on
+   C1-1 and C2-2); *Place it* and a click in the world. One that walks a
+   route: right after placing, the panel shows *Route of ...*: each click in
+   the world adds its next point (numbered, arrows in walking order, red: off
+   the paths, never reached); *Take back the last one*, *Clear*, *Done (Esc)*.
+   Its route changes later with *Route* beside it in the level's people (or
+   on its card). The level's people are listed; one of the map's is taken out with a
    click on it and *Remove from the map*. New people come to life when the
    level is tried.
 3. **Items**: the map's weapons, ammunition and other items, with a search
@@ -103,8 +107,9 @@ level* / *File > Open level* loads a saved one.
   this map's story* (a boss, its bodyguard, a limousine's guard) act out the
   map's own mission: their settings point to its characters and vehicles.
   A guard gets a guard point where it is put. A route setting (WayPoints,
-  ...) without a route: its value > *New route (click its points)*, then
-  click the points in walking order (Esc ends). A setting that names an
+  ...) without a route: *Routes* > *New route...* beside it (or its value >
+  *New route (click its points)*), then click the points in walking order
+  (Esc ends). A setting that names an
   object takes a character too: *Pick in the world* and a click on it, or
   its menu's *A character* (a bodyguard's *ProtectPoint*: your target). *Problems* lists characters
   whose behaviour cannot start without a setting.

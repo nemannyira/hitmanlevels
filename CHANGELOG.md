@@ -5,6 +5,15 @@ game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lu
 
 ## 2026-11-01: routes walked, characters' pictures
 
+* Routes seen while they are made: a new route was not drawn at all (it has
+  no record of the scene file), so its clicked points left no trace. Now its
+  points are numbered with arrows in walking order; Simple mode leaves out
+  the shared help and safe points' lines across the map.
+* Simple mode's *Route of ...* box while its points are clicked: how many,
+  *Take back the last one*, *Clear*, *Done (Esc)*; *Route* beside a new
+  person who walks (the level's people, its card) changes it later.
+* Advanced mode: a route setting without a route has *New route...* in the
+  character's *Routes* (it was only in the setting's menu).
 * *Walks a route* did nothing: the route was looked for in the placed
   character's settings, which a character not made yet has not. The route
   is now made before it is placed, its points clicked right after.

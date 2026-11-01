@@ -514,6 +514,15 @@ void DrawSelectionCard()
         DrawMissionForSelection(sel);  // make it a target, Hitman has to take it / get here, the exit
         ImGui::Separator();
         if (actor && placed) {
+            if (PersonWalks(actor)) {
+                if (ImGui::SmallButton("Route")) {
+                    StartPersonRoute(actor);
+                    g_step = 1;  // (People: the route's points)
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Change where it walks: click more points in the world, take points back");
+                ImGui::SameLine();
+            }
             if (ImGui::SmallButton("Remove")) {
                 std::string err;
                 RemoveNpc(actor, &err);

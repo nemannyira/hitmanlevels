@@ -144,16 +144,38 @@ try:
         time.sleep(0.4)
     lua('h2.dev_click(%f, %f) return 1' % (w * 0.40, h * 0.72))
     time.sleep(1.5)
-    for fx in (0.45, 0.50):
+    def route_point(fx):
         for i in range(2):
             lua('h2.dev_hover(%f, %f) return 1' % (w * fx, h * 0.74))
             time.sleep(0.3)
         lua('h2.dev_click(%f, %f) return 1' % (w * fx, h * 0.74))
         time.sleep(1)
-    lua('h2.dev_uikey(526) return 1')  # (the route's points done)
-    time.sleep(0.5)
+
+    def route_points():
+        lua('return h2.dev_level("save")')
+        lists = [lst for lst in doc().get("lists", []) if lst.get("path", "").startswith("ROOT/Route_")]
+        return len(lists[0].get("points", [])) if lists else -1
+
+    for fx in (0.45, 0.50, 0.55):
+        route_point(fx)
+    shot("route")
+    n = route_points()
+    check("the route's 3 points", n == 3, str(n))
+    check("Take back the last one", press("Take back the last one").startswith("pressed"))
+    n = route_points()
+    check("... 2 points", n == 2, str(n))
+    check("the route done", press("Done (Esc)").startswith("pressed"))
     info = lua('return h2.dev_level("info")')
     check("the civilian placed with a route of its own", "npcs=2" in info and "lists=1" in info, info)
+    # its route changed later: the level's people's "Route"
+    check("the people's Route", press("Route").startswith("pressed") and
+          press("Take back the last one", settle=0.1).startswith("pressed"))  # (its box shown: one taken back)
+    route_point(0.50)
+    route_point(0.55)
+    n = route_points()
+    check("... points added", n == 3, str(n))
+    lua('h2.dev_uikey(526) return 1')  # (Esc: done)
+    time.sleep(0.5)
 
     # 3. Items: searched; a hovered one's picture (its clone drawn into the thumbnail)
     check("Next: Items", press("Next: Items >").startswith("pressed"))

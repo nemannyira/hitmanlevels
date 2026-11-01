@@ -1049,9 +1049,14 @@ engine::ZGEOM* MakeNewRoute(const std::string& name, std::string* error)
     if (g_level.baseScene != CurrentScene())
         return fail("the level is for scene " + g_level.baseScene);
     // the list it copies: a route of the map's characters (a list a behaviour walks), else another list of
-    // places a behaviour has (C2-2's guards: the places they run to), else any list of the map
+    // places a behaviour has (C2-2's guards: the places they run to), else any list of the map. A
+    // ZConditionList first (a ZLIST of its own): the pedestrians' routes are (C5-2's afghanPedestrian on C1-1
+    // walking a copy of a plain ZLIST, Cricket_Volume_Control, took the game down at once: a method the
+    // plain list has not); a guard walks one as well as a ZLIST
     const auto& records = engine::SceneRecords();
+    std::string wanted = "ZConditionList";
     engine::ZGEOM* source = nullptr;
+    for (int round = 0; round < 2 && !source; ++round, wanted = "ZLIST")
     for (int pass = 0; pass < 2 && !source; ++pass)
         for (const engine::SceneRecord& r : records) {
             if (source || !r.script || r.classId != 0x2003E9)
@@ -1063,13 +1068,14 @@ engine::ZGEOM* MakeNewRoute(const std::string& name, std::string* error)
                 if (!source && p.type == engine::ParamType::Ref && p.bits && (pass == 1 || IsRouteRef(p.name)))
                     if (engine::ZGEOM* g = engine::GeomOfRef(engine::RemapRef(p.bits));
                         g && IsLive(g) && engine::IsEditableList(g) && engine::RecordOf(g) >= 0 &&
-                        engine::ClassName(g) == "ZLIST")
+                        engine::ClassName(g) == wanted)
                         source = g;
         }
-    for (size_t i = 0; i < records.size() && !source; ++i)
-        if (engine::ZGEOM* g = engine::RecordGeom(int(i));
-            g && IsLive(g) && engine::IsEditableList(g) && engine::ClassName(g) == "ZLIST")
-            source = g;
+    for (const char* cls : {"ZConditionList", "ZLIST"})
+        for (size_t i = 0; i < records.size() && !source; ++i)
+            if (engine::ZGEOM* g = engine::RecordGeom(int(i));
+                g && IsLive(g) && engine::IsEditableList(g) && engine::ClassName(g) == cls)
+                source = g;
     if (!source)
         return fail("the map has no list of points to make a route like");
     std::string unique = name;

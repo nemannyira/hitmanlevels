@@ -45,7 +45,7 @@ constexpr int kDev_DrawPrimitive = 70, kDev_DrawIndexedPrimitive = 71;
 constexpr int kSurf_Release = 2, kSurf_LockRect = 9, kSurf_UnlockRect = 10;
 constexpr int kTex_Release = 2, kTex_GetSurfaceLevel = 15;
 constexpr DWORD D3DUSAGE_RENDERTARGET = 1, D3DPOOL_DEFAULT = 0, D3DRS_AMBIENT = 139;
-constexpr UINT kThumbSize = 256;
+constexpr UINT kThumbSize = 512;  // (a character's picture is a part of it, enlarged)
 constexpr DWORD kThumbBackground = 0xFFEDEDEF;  // light: dark models stay visible
 // The pick target is 3x3 pixels, each seeing the screen kPickSpacing pixels
 // apart around the cursor: the centre gives the object, the depths of the
@@ -110,6 +110,7 @@ DWORD g_extraColor;
 std::vector<engine::ZGEOM*> g_thumbGeoms;
 float g_thumbCenter[3];  // world bounding sphere of the parts (this frame)
 float g_thumbRadius;
+float g_frameCenter[3], g_frameRadius, g_frameTilt = 0.35f;  // SetThumbnailFrame (radius 0: none)
 void* g_thumbTexture;   // IDirect3DTexture8*
 void* g_thumbSurface;   // its level 0
 void* g_thumbDepth;
@@ -231,6 +232,10 @@ void BuildCandidates()
         for (auto& [c, r] : spheres) {
             float dx = c[0] - g_thumbCenter[0], dy = c[1] - g_thumbCenter[1], dz = c[2] - g_thumbCenter[2];
             g_thumbRadius = std::fmax(g_thumbRadius, std::sqrt(dx * dx + dy * dy + dz * dz) + r);
+        }
+        if (g_frameRadius > 0.0f) {  // a frame given (a character's body)
+            memcpy(g_thumbCenter, g_frameCenter, sizeof(g_thumbCenter));
+            g_thumbRadius = g_frameRadius;
         }
     }
     if (wantExtra) {
@@ -403,7 +408,7 @@ void ThumbDraw(void* dev, Draw draw)
     const float* bc = g_thumbCenter;
     // world -> thumbnail view: centre, turn around up, tilt towards the camera, push away
     float ca = std::cos(g_thumbAngle), sa = std::sin(g_thumbAngle);
-    const float tilt = 0.35f;
+    const float tilt = g_frameRadius > 0.0f ? g_frameTilt : 0.35f;
     float ct = std::cos(tilt), st = std::sin(tilt);
     D3DMATRIX center = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {-bc[0], -bc[1], -bc[2], 1}}};
     D3DMATRIX turn = {{{ca, 0, -sa, 0}, {0, 1, 0, 0}, {sa, 0, ca, 0}, {0, 0, 0, 1}}};
@@ -979,9 +984,19 @@ void SetHighlightExtra(engine::ZGEOM* geom, unsigned long color)
 
 void SetThumbnailGeoms(const std::vector<engine::ZGEOM*>& geoms)
 {
-    if (geoms != g_thumbGeoms)
+    if (geoms != g_thumbGeoms) {
         g_thumbDrawn = false;
+        g_frameRadius = 0.0f;
+        g_thumbAngle = 0.0f;  // (from its front)
+    }
     g_thumbGeoms = geoms;
+}
+
+void SetThumbnailFrame(const float center[3], float radius, float tilt)
+{
+    memcpy(g_frameCenter, center, sizeof(g_frameCenter));
+    g_frameRadius = radius;
+    g_frameTilt = tilt;
 }
 void SetThumbnailGeom(engine::ZGEOM* geom)
 {

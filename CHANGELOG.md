@@ -3,6 +3,19 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-01: routes walked, characters' pictures
+
+* *Walks a route* did nothing: the route was looked for in the placed
+  character's settings, which a character not made yet has not. The route
+  is now made before it is placed, its points clicked right after.
+* New routes copy a ZConditionList of the map first (a list the pedestrians
+  walk; a guard walks one too): a pedestrian of another level walking a copy
+  of a plain list (C1-1's Cricket_Volume_Control) took the game down.
+* The characters' pictures: in front of the camera, facing it, the part of
+  the picture they stand in enlarged (a character's draws keep the camera's
+  view); pictures 512 pixels. The People step's looks: the same model with
+  more behaviours says which ("Bodyguard Mafia - Door Guard").
+
 ## 2026-10-31: Simple mode: the original objectives, the camera, pictures
 
 * The original mission's objectives can be changed (*Change*: an objective

@@ -1216,6 +1216,8 @@ Transform PlacingTransform()
 
 void AfterGuidePlace(engine::ZGEOM* npc);
 void TypeTooltip(int t, const char* more = nullptr);
+engine::ZGEOM* g_guideRoute;  // the route made for the character the guide places (its points clicked next)
+bool GuideWalks();
 
 void Place()
 {
@@ -1239,6 +1241,21 @@ void Place()
         if (g_startHere)
             points = PointStartsAt(spec.behaviour, g_newMoves, spec.transform, room);
         points += GuardPointAt(spec.behaviour, spec.transform, room);
+        // Simple mode's "walks a route": a new route in its behaviour's route setting before it is placed (a
+        // placed character is not real until the map loads again: its settings cannot be read back then)
+        g_guideRoute = nullptr;
+        if (GuideWalks())
+            for (engine::ScriptParam& p : spec.behaviour.params)
+                if (p.type == engine::ParamType::Ref && IsRouteRef(p.name)) {
+                    std::string rerr;
+                    if (engine::ZGEOM* list = MakeNewRoute("Route_" + type.model + "_" + p.name, &rerr)) {
+                        p.bits = engine::RefOf(list);
+                        g_guideRoute = list;
+                    } else {
+                        Log("npc: no route for the guide's character: %s", rerr.c_str());
+                    }
+                    break;
+                }
     }
     std::string err;
     engine::ZGEOM* npc = PlaceNpc(spec, &err);
@@ -1454,7 +1471,7 @@ int g_thumbType = -1;      // the one in the thumbnail
 double g_hoverSince, g_lastTypeHover, g_thumbPlaced;
 constexpr double kTypeHoverDelay = 0.15, kTypeHoverLinger = 0.5;
 
-// in front of the camera, facing it
+// in front of the camera (to be drawn), its front towards it
 Transform InFrontOfCamera()
 {
     Transform t;
@@ -1463,7 +1480,10 @@ Transform InFrontOfCamera()
         return t;
     float m[9], c[3];
     game::GetWorldTransform(cam, m, c);
-    float fx = -m[0], fz = -m[2], len = std::sqrt(fx * fx + fz * fz);
+    // a character's draws (skinned) take the game camera's view, not the thumbnail's turntable: what the
+    // camera sees of it is the picture. Near, facing the camera, its middle (its place: about its hips) at the
+    // camera's height
+    float fx = m[0], fz = m[2], len = std::sqrt(fx * fx + fz * fz);  // (its front then shows)
     if (len < 0.01f) {
         fx = 0;
         fz = 1;
@@ -1471,11 +1491,11 @@ Transform InFrontOfCamera()
         fx /= len;
         fz /= len;
     }
-    float mat[9] = {fx, 0, fz, 0, 1, 0, fz, 0, -fx};
+    float mat[9] = {fx, 0, fz, 0, 1, 0, fz, 0, -fx};  // rows forward, up, right
     memcpy(t.mat, mat, sizeof(mat));
     for (int i = 0; i < 3; ++i)
         t.pos[i] = c[i] + m[i] * 350.0f;
-    t.pos[1] -= 90.0f;  // (its feet: the middle of it in the middle of the view)
+    t.pos[1] = c[1];
     return t;
 }
 
@@ -1507,6 +1527,8 @@ void TypeThumbTick()
                 std::vector<engine::ZGEOM*> parts = VisibleParts(a);  // (the character's own draws too: its body)
                 parts.push_back(a);
                 SetThumbnailGeoms(parts);
+                Transform at = GetTransform(a);  // framed on its body (a character's place is about its hips)
+                SetThumbnailFrame(at.pos, 92.0f, 0.10f);
                 g_thumbType = hovered;
                 g_thumbPlaced = now;
             }
@@ -1529,12 +1551,15 @@ void TypeTooltip(int t, const char* more)
     ImGui::TextDisabled("%s, %d on the map", type.model.c_str(), type.count);
     if (more)
         ImGui::TextDisabled("%s", more);
-    float size = 220.0f * (ImGui::GetFontSize() / 16.0f);
+    // the character stands in the same part of the picture whatever the camera (its skinned draws keep the
+    // camera's view): that part, enlarged
+    const ImVec2 uv0(0.30f, 0.33f), uv1(0.70f, 0.95f);
+    float h = 260.0f * (ImGui::GetFontSize() / 16.0f), w = h * (uv1.x - uv0.x) / (uv1.y - uv0.y);
     void* tex = g_thumbType == t ? ThumbnailTexture() : nullptr;
     if (tex)
-        ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size, size));
+        ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(w, h), uv0, uv1);
     else
-        ImGui::Dummy(ImVec2(size, size));  // (the picture comes a moment later)
+        ImGui::Dummy(ImVec2(w, h));  // (the picture comes a moment later)
     ImGui::EndTooltip();
 }
 
@@ -1564,24 +1589,19 @@ void AfterGuidePlace(engine::ZGEOM* npc)
                 ". Ctrl+Z takes it back.";
     if (!g_guideWalks)
         return;
-    for (engine::ScriptParam& p : g_targetEdit.params) {
-        if (p.type != engine::ParamType::Ref || !IsRouteRef(p.name))
-            continue;
-        const LevelNpc* n = FindLevelNpc(npc);
-        std::string err;
-        engine::ZGEOM* list = MakeNewRoute((n ? n->id : std::string("Route")) + "_" + p.name, &err);
-        if (!list) {
-            g_message = "no route made: " + err;
-            return;
-        }
-        p.bits = engine::RefOf(list);
-        ApplyTarget();
-        g_addList = list;
-        g_placing = false;  // its points first
-        g_message = "Now click the route's points in walking order (Esc: done)";
+    if (!g_guideRoute || !IsLive(g_guideRoute)) {
+        g_message += " Its behaviour has no route to walk: it stays where it stands.";
         return;
     }
+    Select(npc);
+    g_addList = g_guideRoute;  // its points next: each click in the world adds one
+    g_guideRoute = nullptr;
+    g_placing = false;
+    g_message = "Placed: " + ReadableName(npc) + ". Now click the route's points in the world, in walking order "
+                "(Esc: done). It walks them when you try the level.";
 }
+
+bool GuideWalks() { return g_guidePlacing && g_guideWalks; }
 
 void DrawSimplePeopleStep()
 {
@@ -1635,10 +1655,20 @@ void DrawSimplePeopleStep()
         g_look = looks.front();
     ImGui::TextUnformatted("Looks like:");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::BeginCombo("##look", Readable(g_types[g_look].model).c_str(), ImGuiComboFlags_HeightLarge)) {
+    // a look of the map's: its model, and what it does there when the model is there with more behaviours
+    auto lookName = [&](int i) {
+        std::string name = Readable(g_types[i].model);
+        int same = 0;
+        for (int j : looks)
+            same += g_types[j].model == g_types[i].model;
+        if (same > 1 && !g_types[i].script.empty())
+            name += " - " + Readable(g_types[i].script);
+        return name;
+    };
+    if (ImGui::BeginCombo("##look", lookName(g_look).c_str(), ImGuiComboFlags_HeightLarge)) {
         for (int i : looks) {
             char label[200];
-            snprintf(label, sizeof(label), "%s##%d", Readable(g_types[i].model).c_str(), i);
+            snprintf(label, sizeof(label), "%s##%d", lookName(i).c_str(), i);
             if (ImGui::Selectable(label, g_look == i))
                 g_look = i;
             if (ImGui::IsItemHovered())

@@ -135,6 +135,25 @@ try:
     info = lua('return h2.dev_level("info")')
     check("a guard placed", "npcs=1" in info, info)
     shot("people")
+    # a civilian who walks a route: placed, then its route's points clicked
+    press("A civilian")
+    press("Walks a route")
+    check("Place it (walks a route)", press("Place it").startswith("pressed"))
+    for i in range(3):
+        lua('h2.dev_hover(%f, %f) return 1' % (w * 0.40, h * 0.72))
+        time.sleep(0.4)
+    lua('h2.dev_click(%f, %f) return 1' % (w * 0.40, h * 0.72))
+    time.sleep(1.5)
+    for fx in (0.45, 0.50):
+        for i in range(2):
+            lua('h2.dev_hover(%f, %f) return 1' % (w * fx, h * 0.74))
+            time.sleep(0.3)
+        lua('h2.dev_click(%f, %f) return 1' % (w * fx, h * 0.74))
+        time.sleep(1)
+    lua('h2.dev_uikey(526) return 1')  # (the route's points done)
+    time.sleep(0.5)
+    info = lua('return h2.dev_level("info")')
+    check("the civilian placed with a route of its own", "npcs=2" in info and "lists=1" in info, info)
 
     # 3. Items: searched; a hovered one's picture (its clone drawn into the thumbnail)
     check("Next: Items", press("Next: Items >").startswith("pressed"))
@@ -182,7 +201,10 @@ try:
     d = doc()
     goals = [o.get("goal") for o in d.get("mission", {}).get("objectives", [])]
     check("saved: the target and never spotted", "kill" in goals and "unseen" in goals, str(goals))
-    check("saved: the guard", len(d.get("npcs", [])) == 1)
+    check("saved: the guard and the civilian", len(d.get("npcs", [])) == 2)
+    route = [lst for lst in d.get("lists", []) if lst.get("path", "").startswith("ROOT/Route_")]
+    check("saved: the civilian's route and its points", route and len(route[0].get("points", [])) >= 1,
+          str(route)[:120])
     check("saved: the hidden object", any(o.get("hidden") for o in d.get("objects", [])), str(d.get("objects"))[:120])
     check("saved: the locked door", d.get("doors") == [{"path": door, "locked": True}], str(d.get("doors"))[:120])
     # the picture of the view (#36): a PNG a package takes
@@ -214,6 +236,12 @@ try:
     guard = d["npcs"][0].get("id", "") if d.get("npcs") else ""
     real = lua('local o = h2.find(%s) return tostring(o ~= nil and o:alive())' % json.dumps(guard))
     check("the guard made with the map", real == "true", guard + ": " + real)
+    walker = d["npcs"][1].get("id", "") if len(d.get("npcs", [])) > 1 else ""
+    states = []
+    for _ in range(4):  # (the world runs: Try it closed the editor)
+        states.append(lua('local o = h2.find(%s) return o and o:state() or "none"' % json.dumps(walker)))
+        time.sleep(1.5)
+    check("the civilian walks its route", any("walk" in st.lower() for st in states), walker + ": " + ", ".join(states))
     # removed again (People step), then the level reverted: the world still drawn (a removed character
     # taken out of the actors' collision lists left it undrawn)
     lua('h2.dev_editor(true) h2.dev_mode("simple") return 1')

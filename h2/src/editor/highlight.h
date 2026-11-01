@@ -50,6 +50,11 @@ void SetHighlightExtra(const std::vector<engine::ZGEOM*>& geoms, unsigned long c
 // objects (parts of one model) are shown together.
 void SetThumbnailGeom(engine::ZGEOM* geom);
 void SetThumbnailGeoms(const std::vector<engine::ZGEOM*>& geoms);
+// The thumbnail framed on this sphere (world) and seen from `tilt` (radians, from above) instead of around
+// the parts' bounding spheres (a character's: its body, not the bounds of its whole group); radius 0: none.
+// The picture turns from looking along world +Z: an object whose forward is -Z shows its front first.
+// Cleared by SetThumbnailGeoms with other objects.
+void SetThumbnailFrame(const float center[3], float radius, float tilt);
 // IDirect3DTexture8* of the thumbnail (null until something was drawn in it).
 void* ThumbnailTexture();
 // Frees the thumbnail texture.

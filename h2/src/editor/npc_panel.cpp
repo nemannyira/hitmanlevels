@@ -569,12 +569,10 @@ void DrawRoutes(const float from[3], const std::vector<Route>& routes, bool name
             if (WorldToScreen(pts[k].pos, s))
                 g_markers.push_back({s, geoms[k]});
             if (r.list) {
-                char n[80];
+                std::string n = RoutePointLabel(geoms, k);
                 if (k == 0 && names)
-                    snprintf(n, sizeof(n), "%s 1", r.name.c_str());
-                else
-                    snprintf(n, sizeof(n), "%d", int(k + 1));
-                DrawLabel3D(pts[k].pos, n, k == 0 ? c : Faded(c, 0.8f));
+                    n = r.name + " " + n;
+                DrawLabel3D(pts[k].pos, n.c_str(), k == 0 ? c : Faded(c, 0.8f));
             }
         }
         if (names && !r.list)
@@ -645,9 +643,12 @@ void DrawPlayRoutes()
             if (!Walked(r))
                 continue;
             std::vector<Transform> pts;
+            std::vector<engine::ZGEOM*> live;
             for (engine::ZGEOM* g : r.points)
-                if (IsLive(g))
+                if (IsLive(g)) {
                     pts.push_back(GetTransform(g));
+                    live.push_back(g);
+                }
             for (size_t k = 0; k + 1 < pts.size(); ++k) {
                 const float* p = pts[k].pos;
                 const float* q = pts[k + 1].pos;
@@ -660,8 +661,8 @@ void DrawPlayRoutes()
                 ImVec2 s;
                 if (!WorldToScreen(pts[k].pos, s))
                     continue;
-                char num[8];
-                snprintf(num, sizeof(num), "%d", int(k + 1));
+                std::string label = RoutePointLabel(live, k);
+                const char* num = label.c_str();
                 ImVec2 ts = ImGui::CalcTextSize(num);
                 float rad = std::max(ts.x, ts.y) * 0.5f + 4.0f;
                 bool off = engine::OnPathNetwork(pts[k].pos) == 0;  // (never reached)
@@ -1706,6 +1707,8 @@ bool ChooseForGuide()
     return true;
 }
 
+void AddStartPoint(engine::ZGEOM* list, engine::ZGEOM* actor);
+
 // after a character placed by the guide: a target's objective, a route's points
 void AfterGuidePlace(engine::ZGEOM* npc)
 {
@@ -1722,11 +1725,40 @@ void AfterGuidePlace(engine::ZGEOM* npc)
         return;
     }
     Select(npc);
+    AddStartPoint(g_guideRoute, npc);
     g_addList = g_guideRoute;  // its points next: each click in the world adds one
     g_routeOf = npc;
     g_guideRoute = nullptr;
     g_placing = false;
     g_message = "Placed: " + ReadableName(npc) + ".";
+}
+
+// A walker takes its route's first point as where it stands and walks to the second one first (the game's
+// GetSeqLocation, ZConditionList_GetNextLocation 0x46A660: the element after the current one): Simple mode's
+// route starts with a point at the character's place, named "<route>_start", so the points clicked are walked
+// from the first.
+bool IsStartPoint(engine::ZGEOM* point)
+{
+    std::string n = Lower(point ? engine::SafeString(point->name) : "");
+    return n.size() > 6 && n.compare(n.size() - 6, 6, "_start") == 0;
+}
+
+Transform PointAt(const float p[3]);
+
+void AddStartPoint(engine::ZGEOM* list, engine::ZGEOM* actor)
+{
+    if (!list || !actor || !ListPointsLive(list).empty())
+        return;
+    std::string err;
+    engine::ZGEOM* room = RoomOf(actor);
+    engine::ZGEOM* start = PlacePoint(PointAt(GetTransform(actor).pos), room ? room : Resolve("ROOT"), &err);
+    if (!start) {
+        Log("route of %s: no start point (%s)", ReadableName(actor).c_str(), err.c_str());
+        return;
+    }
+    if (engine::ZGEOM* named = RenamePoint(start, engine::SafeString(list->name) + "_start", &err))
+        start = named;
+    SetPoints(list, {start}, "route start");
 }
 
 // the list of a character's walking route (its behaviour's route setting), if it has one
@@ -1767,8 +1799,10 @@ void DrawSimpleRoute()
         }
     }
     ImGui::PopTextWrapPos();
-    ImGui::Text(pts.size() == 1 ? "%d point" : "%d points", int(pts.size()));
-    ImGui::BeginDisabled(pts.empty());
+    bool start = !pts.empty() && IsStartPoint(pts[0]);  // (where it stands: not one of the points clicked)
+    int clicked = int(pts.size()) - (start ? 1 : 0);
+    ImGui::Text(clicked == 1 ? "%d point" : "%d points", clicked);
+    ImGui::BeginDisabled(clicked == 0);
     if (ImGui::Button("Take back the last one")) {
         engine::ZGEOM* last = pts.back();
         pts.pop_back();
@@ -1780,8 +1814,12 @@ void DrawSimpleRoute()
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
-        std::vector<engine::ZGEOM*> old = pts;
-        if (SetPoints(list, {}, "route cleared")) {
+        std::vector<engine::ZGEOM*> old = pts, kept;
+        if (start) {
+            kept.push_back(pts[0]);
+            old.erase(old.begin());
+        }
+        if (SetPoints(list, kept, "route cleared")) {
             for (engine::ZGEOM* p : old)
                 if (FindSpawned(p))
                     DeleteObject(p);
@@ -2187,6 +2225,13 @@ std::vector<engine::ZGEOM*> PlayingCharacters()
     return out;
 }
 
+std::string RoutePointLabel(const std::vector<engine::ZGEOM*>& points, size_t k)
+{
+    if (!points.empty() && IsStartPoint(points[0]))
+        return k == 0 ? "start" : std::to_string(k);
+    return std::to_string(k + 1);
+}
+
 bool WalkedRouteOf(engine::ZGEOM* actor, WalkedRoute& out)
 {
     out = {};
@@ -2225,6 +2270,7 @@ void StartPersonRoute(engine::ZGEOM* actor)
         return;
     CancelNpcPlacement();
     Select(actor);
+    AddStartPoint(route, actor);  // (a route without points yet)
     g_addList = route;
     g_routeOf = actor;
     g_pickPending = false;

@@ -104,10 +104,14 @@ constexpr uint32_t kZoomedView = 0x100000;
 constexpr uintptr_t kVtbl_ZHM2BinocularCamera = 0x651BF0;
 constexpr uintptr_t kVtbl_ZHM2SniperCamera = 0x652870;
 constexpr uintptr_t kVtbl_ZHM2NightvisionCamera = 0x6522A0;
+// The GUI window system's cameras (ZWINDOWS 0x4BB5D0 sets 0x210000, 0x4BC900 0x218000): laid out in the GUI's
+// own units. The laptop's photo view is one without kOverlay (it clears the screen): widened, its photos were
+// drawn at 0.75 of their size on 16:9.
+constexpr uint32_t kGuiWindow = 0x200000;
 
 bool KeepFov(game::ZCAMERA* cam)
 {
-    if (cam->flags & (game::ZCAMERA::kOverlay | kZoomedView))
+    if (cam->flags & (game::ZCAMERA::kOverlay | kZoomedView | kGuiWindow))
         return true;
     uintptr_t vtbl = *reinterpret_cast<uintptr_t*>(cam);
     return vtbl == kVtbl_ZHM2BinocularCamera || vtbl == kVtbl_ZHM2SniperCamera || vtbl == kVtbl_ZHM2NightvisionCamera;

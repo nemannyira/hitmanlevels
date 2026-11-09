@@ -244,14 +244,13 @@ void CheckMission(Checker& c, const json& m)
         if (!c.Object(f, w, {"name", "image"}))
             return;
         c.Text(f, "name", w, 64);
-        c.Name(f, "image", w, 64, "_-. ");
-        if (f.contains("image") && f["image"].is_string()) {
-            std::string img = f["image"].get<std::string>();
-            std::string ext = img.size() > 4 ? img.substr(img.size() - 4) : "";
-            for (char& ch : ext)
-                ch = char(tolower(static_cast<unsigned char>(ch)));
-            if (img.find("..") != std::string::npos || (ext != ".png" && ext != ".jpg" && ext != ".bmp"))
-                c.Bad(w + ".image", "not a .png, .jpg or .bmp of the level's folder");
+        if (f.contains("image")) {  // "" (none) or photo1.png .. photo5.png of the level's folder
+            const json& img = f["image"];
+            std::string s = img.is_string() ? img.get<std::string>() : "-";
+            bool photo = s.size() == 10 && s.compare(0, 5, "photo") == 0 && s[5] >= '1' && s[5] <= '5' &&
+                         s.compare(6, 4, ".png") == 0;
+            if (!s.empty() && !photo)
+                c.Bad(w + ".image", "not photo1.png .. photo5.png");
         }
     });
     // objects' names of the level maker's: {path: name}

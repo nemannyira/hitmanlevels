@@ -40,7 +40,10 @@ controls and *Back* / *Next*.
    route: right after placing, the panel shows *Route of ...*: each click in
    the world adds its next point (numbered, arrows in walking order, red: off
    the paths, never reached); *Take back the last one*, *Clear*, *Done (Esc)*.
-   A click where people cannot walk puts the point on the walkable place
+   The route starts where the person stands (*start*): the game's walkers
+   take a route's first point as their own place and walk to the next one
+   first (ZConditionList_GetNextLocation 0x46A660), so the points clicked are
+   walked from the first. A click where people cannot walk puts the point on the walkable place
    within 6 m, or says so and adds none (an unreachable point stops the
    person there for good). The person walks the points in order: the
    behaviours that pick their next point at random (the WayPointList walkers
@@ -197,11 +200,13 @@ level* / *File > Open level* loads a saved one.
 * **The laptop's photos** (Mission tab; Simple mode: step 1): the level's own
   *Additional files*, as many as the map's laptop has places for (C1-1: one,
   its Target Photo). Each has a name (the entry's text) and a picture: *A
-  file...* (a PNG, JPG or BMP copied into the level's folder) or *Photo of
-  ...* (the last picture a list showed: hover a person in the People step or
-  an item, its picture is kept). Opened in the laptop (B while playing), the
-  picture shows in place of the map's photo. `level.json` `mission.files`
-  (`[{name, image}]`). The pictures are not packed with a shared level yet.
+  file...* (a PNG, JPG or BMP, written into the level's folder as
+  `photo<n>.png`) or *Photo of ...* (the last picture a list showed: hover a
+  person in the People step or an item, its picture is kept). Opened in the
+  laptop (B while playing), the picture shows in place of the map's photo.
+  `level.json` `mission.files` (`[{name, image}]`, the image `photo1.png` ..
+  `photo5.png`); they go with the level's package (checked as its
+  preview.png: a PNG of its picture only, at most 2048 a side).
 * An object to take can be anything placed or on the map. An item (a key,
   a weapon: *Models > Pickup items*) is taken when Hitman picks it up the
   game's way. Any other model (a briefcase, a stack of books) is taken when

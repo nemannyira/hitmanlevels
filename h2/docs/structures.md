@@ -162,7 +162,7 @@ The mover at vehicle +0x5C (vtable 0x65C884): +0x04 place on the track
 
 | Object | Field | What |
 |---|---|---|
-| ZCAMERA | +0x44 | flags (1 orthographic, 0x8000 overlay) |
+| ZCAMERA | +0x44 | flags (1 orthographic, 0x8000 overlay, 0x100000 zoomed view, 0x200000 a GUI window's: ZWINDOWS 0x4BB5D0, 0x4BC900) |
 | ZCAMERA | +0x4C / +0x50 | window size, +0x54 focal, +0x58 fov (radians), +0x60 / +0x64 near / far |
 | ZLIST_ActorCollision (vtable 0x649930) | +0x6E | its list; +0x72 / +0x76 per element arrays |
 | a list | +0x18 | its reference container (`lists.h`) |

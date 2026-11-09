@@ -106,6 +106,9 @@ number of seconds: a reload of C1-1 is ready in under a second.
   `h2.dev_panel(name)`). `h2.dev_selected()`: the selection's path (a copy
   just made by Duplicate is selected). `h2.dev_wmkey(vk)`: a key as Windows
   sends it to the game's window (F8 back from a test, F9 the debug view).
+  `h2.dev_mouse(button, 0)` lets a held mouse button go (knockout_test holds
+  the attack until the guard drops: the game's LinkedAttack_Step 0x5246C0
+  goes on only while it is held, #38).
 * The debug view while playing (`editor/playdebug.cpp`):
   `h2.dev_playdebug([on])` switches it, `h2.dev_lasttest()` gives the last
   test's events (a line each, as the list shows them), `h2.dev_seers()` the

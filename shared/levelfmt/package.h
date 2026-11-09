@@ -64,6 +64,9 @@ bool ValidManifestText(const std::string& s, size_t max);
 std::string CleanPng(const std::string& png);
 // A name a package may hold.
 bool AllowedPackageName(const std::string& name);
+// "photo1.png" .. "photo5.png": a picture of the laptop's files of the level (level.json mission.files), held
+// and checked as preview.png is (a PNG of its picture's chunks only, at most kMaxPreviewSide square).
+bool PhotoFileName(const std::string& name);
 // The licenses the editor offers (the first one its default); a manifest may name another (text).
 const std::vector<std::string>& LicenseChoices();
 // Who signed: 16 hex digits of the key's SHA-256 in groups of four ("3F2A-91C0-77AB-0D12").

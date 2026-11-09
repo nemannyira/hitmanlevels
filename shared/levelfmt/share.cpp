@@ -497,23 +497,33 @@ bool ExportLevelFolder(const std::string& gameId, const std::string& folder, std
                                    std::to_string(kMaxPackagedScript >> 10) + " KB");
         files.push_back(std::move(f));
     }
-    for (auto [name, max] : {std::pair<const char*, size_t>{"README.md", kMaxReadme}, {"preview.png", kMaxPreview}}) {
+    // the laptop's photos the level names (mission.files): photo1.png .. photo5.png of its folder
+    std::vector<std::pair<std::string, size_t>> extra = {{"README.md", kMaxReadme}, {"preview.png", kMaxPreview}};
+    if (j.contains("mission") && j["mission"].is_object() && j["mission"].contains("files") &&
+        j["mission"]["files"].is_array())
+        for (const json& pf : j["mission"]["files"])
+            if (pf.is_object() && pf.value("image", json()).is_string() && PhotoFileName(pf["image"].get<std::string>()))
+                extra.push_back({pf["image"].get<std::string>(), kMaxPreview});
+    for (const auto& [name, max] : extra) {
         PackageFile f{name};
-        if (!Exists(folder + "\\" + name))
+        if (!Exists(folder + "\\" + name)) {
+            if (PhotoFileName(name))
+                return Fail(error, "the laptop's photo " + name + " the level names is not in its folder");
             continue;
+        }
         if (!ReadFileA(folder + "\\" + name, f.data, max))
-            return Fail(error, std::string(name) + " is larger than " + std::to_string(max >> 10) + " KB");
-        if (f.name == "preview.png") {  // the picture only: its text / EXIF chunks stay here (issue #8)
+            return Fail(error, name + " is larger than " + std::to_string(max >> 10) + " KB");
+        if (f.name == "preview.png" || PhotoFileName(f.name)) {  // the picture only: its text / EXIF chunks stay here (issue #8)
             f.data = CleanPng(f.data);
             if (f.data.empty())
-                return Fail(error, "preview.png is not a PNG picture of at most " + std::to_string(kMaxPreviewSide) +
+                return Fail(error, name + " is not a PNG picture of at most " + std::to_string(kMaxPreviewSide) +
                                        " x " + std::to_string(kMaxPreviewSide));
         }
         files.push_back(std::move(f));
     }
     std::string userName = WindowsUserName();
     for (const PackageFile& f : files) {
-        if (f.name == "preview.png")
+        if (f.name == "preview.png" || PhotoFileName(f.name))
             continue;
         if (HoldsPrivatePath(f.data))
             return Fail(error, f.name + " holds a path of this PC (C:\\Users\\...: your Windows user name would go "
@@ -601,7 +611,8 @@ bool InstallPackage(const OpenedPackage& p, const std::string& gameDir, std::str
         if (!ok)
             break;
         std::string name = f.name.rfind("scripts/", 0) == 0 ? f.name.substr(8) : f.name;
-        if (name != "level.json" && name != "README.md" && name != "preview.png" && !ValidScriptName(name))
+        if (name != "level.json" && name != "README.md" && name != "preview.png" && !PhotoFileName(name) &&
+            !ValidScriptName(name))
             ok = false;
         else
             ok = put(name, f.data);

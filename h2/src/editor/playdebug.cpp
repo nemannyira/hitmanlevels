@@ -321,12 +321,13 @@ void Poll()
             std::string why = "its route?";
             WalkedRoute r;
             if (WalkedRouteOf(a, r)) {
-                auto t = g_routes.find(a);
-                int next = t == g_routes.end() || t->second.reached.empty()
+                auto track = g_routes.find(a);
+                int next = track == g_routes.end() || track->second.reached.empty()
                                ? 0
-                               : (t->second.reached.back() + 1) % int(r.points.size());
+                               : (track->second.reached.back() + 1) % int(r.points.size());
                 if (engine::OnPathNetwork(GetTransform(r.points[next]).pos) == 0)
-                    why = "its route point " + std::to_string(next + 1) + " is off the map's paths: it never gets there";
+                    why = "its route point " + RoutePointLabel(r.points, size_t(next)) +
+                          " is off the map's paths: it never gets there";
                 else if (!r.order.why.empty())
                     why = r.behaviour + ", " + r.order.why;
             }
@@ -372,16 +373,18 @@ void TrackRoutes()
             t.reached.push_back(atPoint);
             if (t.reached.size() > 12)
                 t.reached.erase(t.reached.begin());
-            int expected = before < 0 ? 0 : (before + 1) % n;
+            // (the first one reached is where it starts from: it takes the list's first point as its own place
+            // and walks to the next, ZConditionList_GetNextLocation 0x46A660)
+            int expected = before < 0 ? atPoint : (before + 1) % n;
             bool back = before >= 0 && atPoint == before - 1;  // (back and forth)
             if (atPoint != expected && !back && now - t.reportedAt > 20000.0 && n > 1) {
                 t.reportedAt = now;
                 char text[200];
-                snprintf(text, sizeof(text), "%s reached route point %d %s (in order: %d)", NameOf(a).c_str(),
-                         atPoint + 1, before < 0 ? "first" : ("after " + std::to_string(before + 1)).c_str(),
-                         expected + 1);
+                snprintf(text, sizeof(text), "%s reached route point %s after %s (in order: %s)", NameOf(a).c_str(),
+                         RoutePointLabel(r.points, size_t(atPoint)).c_str(),
+                         RoutePointLabel(r.points, size_t(before)).c_str(),
+                         RoutePointLabel(r.points, size_t(expected)).c_str());
                 std::string why = !r.order.why.empty() ? r.order.why
-                                  : before < 0         ? "it started nearer to that point"
                                                        : "a point in between not reached (off the paths? in the way?)";
                 Add(std::string(text) + ": " + r.behaviour + ", " + why, kOrange, a);
             }
@@ -504,10 +507,10 @@ float DrawRouteInfo(ImDrawList* dl, engine::ZGEOM* actor, float x, float y, floa
         line += ": reached";
         size_t from = it->second.reached.size() > 6 ? it->second.reached.size() - 6 : 0;
         for (size_t i = from; i < it->second.reached.size(); ++i)
-            line += " " + std::to_string(it->second.reached[i] + 1);
+            line += " " + RoutePointLabel(r.points, size_t(it->second.reached[i]));
     }
     if (it != g_routes.end() && it->second.heading >= 0 && it->second.heading < int(r.points.size())) {
-        line += ", to " + std::to_string(it->second.heading + 1);
+        line += ", to " + RoutePointLabel(r.points, size_t(it->second.heading));
         Transform at = GetTransform(actor), to = GetTransform(r.points[it->second.heading]);
         float from[3] = {at.pos[0], at.pos[1] + 20.0f, at.pos[2]}, dst[3] = {to.pos[0], to.pos[1] + 20.0f, to.pos[2]};
         DrawLine3D(from, dst, Faded(kWhite, 0.6f * a), 1.5f);

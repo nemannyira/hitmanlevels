@@ -24,8 +24,12 @@ public static class W {
   [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr dc);
   [DllImport("gdi32.dll")] public static extern uint GetPixel(IntPtr dc, int x, int y);
   public static uint Pixel(int x, int y) { IntPtr dc = GetDC(IntPtr.Zero); uint c = GetPixel(dc, x, y); ReleaseDC(IntPtr.Zero, dc); return c; }
-  public static void Click(int x, int y) { SetCursorPos(x, y); System.Threading.Thread.Sleep(250);
-    mouse_event(2, 0, 0, 0, 0); System.Threading.Thread.Sleep(100); mouse_event(4, 0, 0, 0, 0); }
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+  public struct POINT { public int X, Y; }
+  // a click on a Steam box (no other way to answer it); the mouse put back where the user had it
+  public static void Click(int x, int y) { POINT was; GetCursorPos(out was); SetCursorPos(x, y);
+    System.Threading.Thread.Sleep(250); mouse_event(2, 0, 0, 0, 0); System.Threading.Thread.Sleep(100);
+    mouse_event(4, 0, 0, 0, 0); SetCursorPos(was.X, was.Y); }
 }
 '@
 Start-Process "steam://run/6850"

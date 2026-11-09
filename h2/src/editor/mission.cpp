@@ -1666,15 +1666,15 @@ bool NewSentence(MissionObjective::Goal goal)
 
 // The GUI's BriefingPhotos/Photo<n> (a ZWINPIC: SetLocaleFolder 0x52D340 gives it its entry; shown, its node
 // flag 0x800 is cleared, seen in the game 2026-11-01 on C1-1); null: the map's laptop has no photo there
+bool g_photosFound;  // PhotoGeom's places looked up in this scene (forgotten when it is left: the next map's
+                     // snapshot can sit at the same address with as many objects, 2026-11-09)
+
 engine::ZGEOM* PhotoGeom(int n)
 {
-    static const void* builtFor;
-    static size_t builtSize;
     static engine::ZGEOM* found[6];
-    const engine::SceneSnapshot& snap = SceneModel();
-    if (builtFor != snap.geoms.data() || builtSize != snap.geoms.size()) {
-        builtFor = snap.geoms.data();
-        builtSize = snap.geoms.size();
+    if (!g_photosFound && engine::SceneDataValid()) {
+        const engine::SceneSnapshot& snap = SceneModel();
+        g_photosFound = !snap.geoms.empty();
         memset(found, 0, sizeof(found));
         for (const engine::GeomInfo& g : snap.geoms)
             for (int k = 1; k <= 5; ++k) {
@@ -1683,7 +1683,7 @@ engine::ZGEOM* PhotoGeom(int n)
                     found[k] = g.geom;
             }
     }
-    return n >= 1 && n <= 5 && found[n] && IsLive(found[n]) ? found[n] : nullptr;
+    return g_photosFound && n >= 1 && n <= 5 && found[n] && IsLive(found[n]) ? found[n] : nullptr;
 }
 
 int MapPhotoCount()
@@ -1708,11 +1708,28 @@ bool PhotoShown(engine::ZGEOM* g)
     }
 }
 
+// The photo's place in the virtual screen (ui.h): its own place in the GUI's screen (1067 x 600 at 16:9; its
+// window and the GUI's groups add nothing: their local places are 0 0 0, seen on C1-1 2026-11-09) and its half
+// extents: drawn so, the picture covers the map's photo (with the photo view's camera kept at the game's own
+// field of view, fov.cpp KeepFov: widened by Hor+, the photo was drawn at 0.75 of its size).
+bool PhotoRect(engine::ZGEOM* g, float center[2], float half[2])
+{
+    __try {
+        center[0] = g->node->pos[0];
+        center[1] = g->node->pos[1];
+        half[0] = g->node->boundHalf[0];
+        half[1] = g->node->boundHalf[1];
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // while the laptop shows a photo of the level's own files: its picture over it (fitted, the rest dark)
 void DrawLaptopPhoto()
 {
-    if (overlay::IsOpen() || CurrentScene().empty() || !engine::SceneDataValid() || !ForThisScene() ||
-        Doc().files.empty())
+    if (overlay::IsOpen() || CurrentScene().empty() || !engine::SceneDataValid() || LevelApplyPending() ||
+        !ForThisScene() || Doc().files.empty())
         return;
     for (size_t i = 0; i < Doc().files.size() && i < 5; ++i) {
         const LaptopFile& f = Doc().files[i];
@@ -1724,11 +1741,13 @@ void DrawLaptopPhoto()
         void* tex = ImageTexture(LevelFolderFile(f.image), &w, &h, &u, &v);
         if (!tex || w <= 0 || h <= 0)
             continue;
-        // the photo's place: the middle of the screen, its half extents in the virtual screen (ui.h)
-        ImVec2 size = ImGui::GetIO().DisplaySize;
+        // the photo's place in the virtual screen, made real-screen pixels (ui.h UiScale)
+        float vc[2], vh[2];
+        if (!PhotoRect(g, vc, vh))
+            continue;
         float s = UiScale();
-        float hw = g->node->boundHalf[0] * s, hh = g->node->boundHalf[1] * s;
-        ImVec2 c(size.x * 0.5f, size.y * 0.5f);
+        float hw = vh[0] * s, hh = vh[1] * s;
+        ImVec2 c(vc[0] * s, vc[1] * s);
         ImDrawList* dl = ImGui::GetForegroundDrawList();
         dl->AddRectFilled(ImVec2(c.x - hw, c.y - hh), ImVec2(c.x + hw, c.y + hh), IM_COL32(12, 12, 12, 255));
         float fit = std::min(2.0f * hw / float(w), 2.0f * hh / float(h));
@@ -1738,8 +1757,9 @@ void DrawLaptopPhoto()
     }
 }
 
-// a picture chosen on the disk: copied into the level's folder as photo<n>.<ext>; its file name ("" none)
-std::string PickPicture(int n)
+// a picture chosen on the disk: written into the level's folder as photo<n>.png (a package holds PNGs only); its
+// file name ("" none, `error` why)
+std::string PickPicture(int n, std::string& error)
 {
     char file[MAX_PATH] = "";
     OPENFILENAMEA ofn = {};
@@ -1749,19 +1769,12 @@ std::string PickPicture(int n)
     ofn.lpstrFile = file;
     ofn.nMaxFile = sizeof(file);
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-    if (!GetOpenFileNameA(&ofn))
+    if (!GetOpenFileNameA(&ofn)) {
+        error = "none chosen";
         return "";
-    std::string src = file;
-    size_t dot = src.find_last_of('.');
-    std::string ext = dot == std::string::npos ? "" : src.substr(dot);
-    for (char& ch : ext)
-        ch = char(std::tolower(static_cast<unsigned char>(ch)));
-    if (ext == ".jpeg")
-        ext = ".jpg";
-    if (ext != ".png" && ext != ".jpg" && ext != ".bmp")
-        return "";
-    std::string name = "photo" + std::to_string(n) + ext;
-    if (!CopyFileA(src.c_str(), LevelFolderFile(name).c_str(), FALSE))
+    }
+    std::string name = "photo" + std::to_string(n) + ".png";
+    if (!SavePictureAsPng(file, LevelFolderFile(name), &error))
         return "";
     ReleaseImages();  // (a picture of that name read before)
     return name;
@@ -1817,16 +1830,16 @@ void DrawLaptopFiles()
         ImGui::Indent();
         ImGui::TextDisabled("picture: %s", f.image.empty() ? "none (the map's own photo)" : f.image.c_str());
         if (ImGui::SmallButton("A file...")) {
-            std::string picked = PickPicture(i + 1);
-            g_status = picked.empty() ? "no picture taken (PNG, JPG or BMP)" : "picture " + picked + " in the level's folder";
+            std::string err, picked = PickPicture(i + 1, err);
+            g_status = picked.empty() ? "no picture taken: " + err : "picture " + picked + " in the level's folder";
             if (!picked.empty()) {
                 f.image = picked;
                 Changed();
             }
         }
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("A picture of yours (PNG, JPG or BMP): copied into the level's folder, shown in the\n"
-                              "laptop when this file is opened.");
+            ImGui::SetTooltip("A picture of yours (PNG, JPG or BMP): written into the level's folder as a PNG\n"
+                              "(it goes with the level's package), shown in the laptop when this file is opened.");
         std::string last = LastPictureWhat();
         ImGui::BeginDisabled(last.empty());
         ImGui::SameLine();
@@ -2878,6 +2891,7 @@ void InstallMission()
     Hook("BriefingMenu::Action", kBriefingAction, hkBriefingAction, &oBriefingAction);
     overlay::AddPanel({"Mission", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     overlay::AddAlwaysDraw(DrawLaptopPhoto);
+    OnSceneLeaving([](const std::string&) { g_photosFound = false; });
     OnScenePushed(OnScene);
     OnFrameEnd(Check);
 }

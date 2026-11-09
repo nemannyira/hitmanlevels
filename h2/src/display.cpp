@@ -92,6 +92,14 @@ void PrepareDeviceWindow(HWND wnd)
     SetWindowPos(wnd, HWND_TOP, mon.left, mon.top, mon.right - mon.left, mon.bottom - mon.top,
                  SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     Log("borderless window %ld,%ld %ldx%ld", mon.left, mon.top, mon.right - mon.left, mon.bottom - mon.top);
+    // a test run in the background: the game behind the others, the foreground back to the user's window (the
+    // game holds it now, so it may give it away); it runs on unfocused (overlay.cpp, DevCommands)
+    HWND user = reinterpret_cast<HWND>(uintptr_t(g_config.background));
+    if (g_config.devCommands && user && IsWindow(user)) {
+        SetWindowPos(wnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        SetForegroundWindow(user);
+        Log("test run: the game's window behind, the foreground back to %p", static_cast<void*>(user));
+    }
 }
 
 void UpdateCursorClip(HWND wnd)

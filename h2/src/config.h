@@ -27,6 +27,8 @@ struct Config {
     bool logRender = false;   // log cameras, projections, viewports and draw stats
     bool devCommands = false; // run Mods\_cmd.lua when it appears, h2.dev_* (automated testing)
     bool devCommandsOnline = false;  // ... also while a downloaded level (Mods\Online\) runs (testing it)
+    unsigned background = 0;  // [Debug] Background: a window (handle) given the foreground back when the game's
+                              // window is made, which goes behind the others (test runs: run_all.py; DevCommands only)
 };
 
 extern Config g_config;

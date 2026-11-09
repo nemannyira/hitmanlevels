@@ -100,10 +100,12 @@ try:
     lua("return tostring(h2.dev_savegame(%d))" % SLOT)
     time.sleep(3)
     check("saved game", os.path.exists(save_file) and os.path.getmtime(save_file) > before)
+    log_at = os.path.getsize(LOG)  # (only the load's lines: an earlier test's may be among the last ones)
     lua("return tostring(h2.dev_loadgame(%d))" % SLOT)
     wait_map()
     with open(LOG, encoding="latin1") as f:
-        crashed = any("EXCEPTION" in line and "hitman2.exe" in line for line in f.readlines()[-400:])
+        f.seek(log_at)
+        crashed = any("EXCEPTION" in line and "hitman2.exe" in line for line in f.readlines())
     check("loaded game: no exception", not crashed)
     gone = lua('local t = h2.find([[%s]]) local _, ty = t:pos() return tostring(t:hidden()) .. " " .. math.floor(ty)' % tree)
     check("loaded game: the model still taken", gone.startswith("true") and int(gone.split()[1]) < -50000, gone)

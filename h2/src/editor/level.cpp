@@ -2806,10 +2806,10 @@ bool LoadLevel(const std::string& folder, std::string* error)
             L.mission.exitRadius = m.value("exit_radius", 300.0f);
             L.mission.briefing = m.value("briefing", "");
             if (m.contains("files") && m["files"].is_array())
-                for (const json& f : m["files"])
-                    if (f.is_object() && L.mission.files.size() < 5)
-                        L.mission.files.push_back({f.value("name", json()).is_string() ? f["name"].get<std::string>() : "",
-                                                   f.value("image", json()).is_string() ? f["image"].get<std::string>() : ""});
+                for (const json& lf : m["files"])
+                    if (lf.is_object() && L.mission.files.size() < 5)
+                        L.mission.files.push_back({lf.value("name", json()).is_string() ? lf["name"].get<std::string>() : "",
+                                                   lf.value("image", json()).is_string() ? lf["image"].get<std::string>() : ""});
             if (m.contains("names") && m["names"].is_object())
                 for (auto it = m["names"].begin(); it != m["names"].end(); ++it)
                     if (it.value().is_string() && L.mission.names.size() < 200)

@@ -31,6 +31,9 @@ struct WalkedRoute {
     RouteOrderInfo order;
 };
 bool WalkedRouteOf(engine::ZGEOM* actor, WalkedRoute& out);
+// A route point's label as the drawings show it: "start" for the walker's own place (Simple mode's routes
+// begin there), the points clicked from 1.
+std::string RoutePointLabel(const std::vector<engine::ZGEOM*>& points, size_t k);
 void StartPersonRoute(engine::ZGEOM* actor);
 
 // Placing an NPC: the viewport hands the mouse over while this is on.

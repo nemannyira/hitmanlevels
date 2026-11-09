@@ -86,15 +86,22 @@ def knock_out():
         'local t, f = who(e.to), who(e.from) if (t or f) and #KO_MSGS < 60 then '
         'KO_MSGS[#KO_MSGS + 1] = (f or "-") .. ">" .. (t or "-") .. ":" .. e.name end end) end '
         'KO_G, KO_H = gp, hp return 1')
-    lua("h2.dev_mouse(0, 3.0) return 1")
-    time.sleep(5)
+    # the button held until the guard drops, as a player does: the game's attack goes on only while it is held
+    # (LinkedAttack_Step 0x5246C0: Hitman +0x112E, at most 5 steps; let go early: LinkedAttack_Abort, #38)
+    lua("h2.dev_mouse(0, 10.0) return 1")
+    t0 = time.time()
+    while time.time() - t0 < 10.0 and "Unconscious" not in lua(G + "return g:state()"):
+        time.sleep(0.25)
+    held = time.time() - t0
+    lua("h2.dev_mouse(0, 0) return 1")
+    time.sleep(2)
     clock2 = lua('return string.format("%.1f", h2.time())')
     msgs = lua('local m = KO_MSGS or {} KO_MSGS = nil local seen, out = {}, {} for _, x in ipairs(m) do '
                'if not seen[x] then seen[x] = true out[#out + 1] = x end end return table.concat(out, " ")')
     ctypes.windll.kernel32.GetTickCount64.restype = ctypes.c_ulonglong
     uptime = ctypes.windll.kernel32.GetTickCount64() / 3600000.0
-    return "before: %s, hand: %s, game time %s -> %s, Windows up %.1f h; messages: %s" % (
-        before, hand, clock, clock2, uptime, msgs)
+    return "before: %s, hand: %s, held %.1f s, game time %s -> %s, Windows up %.1f h; messages: %s" % (
+        before, hand, held, clock, clock2, uptime, msgs)
 
 
 def make(goal):

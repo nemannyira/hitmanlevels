@@ -72,6 +72,9 @@ void ReleaseThumbnail();
 // the texture it fills in `u` / `v` (the texture is a power of two). Null: not read.
 void* ImageTexture(const std::string& path, int* w = nullptr, int* h = nullptr, float* u = nullptr, float* v = nullptr);
 void ReleaseImages();
+// A picture file (PNG, JPG, BMP) written again as a PNG (at most 1024 a side): what a level's laptop photo is
+// (a package holds PNGs only); false with why.
+bool SavePictureAsPng(const std::string& source, const std::string& path, std::string* error = nullptr);
 // References the highlight's resources (thumbnail, depth ramps) hold on
 // `device`, and freeing them all (for the device Release hook).
 unsigned long HighlightDeviceRefs(void* device);

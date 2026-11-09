@@ -3,6 +3,20 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-09: the laptop's photos in packages
+
+* The laptop's photos go with a shared level: `photo1.png` .. `photo5.png`
+  of its folder, checked as its preview (a PNG of its picture only); a JPG
+  or BMP chosen is written as a PNG. The picture is drawn exactly over the
+  map's photo: the photo view no longer gets the widescreen field of view
+  (the map's photos were drawn at 0.75 of their size on 16:9).
+* A person's route in Simple mode starts where it stands (*start*): the
+  game's walkers take a route's first point as their own place and go to
+  the second first, so the first point clicked was skipped.
+* knockout_test holds the attack until the guard drops, as a player does
+  (the game's attack goes on only while the button is held); whether this
+  was #38's cause is not seen in the game yet.
+
 ## 2026-11-02: route order, names, the laptop's photos, quicker lists
 
 * People walk their route's points in order: the walkers that pick a point

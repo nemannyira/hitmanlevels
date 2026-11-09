@@ -191,9 +191,9 @@ bool CheckFile(const PackageFile& f, std::string* error)
             return Fail(error, "README.md is larger than " + std::to_string(kMaxReadme) + " bytes");
         if (!PlainText(f.data, true))
             return Fail(error, "README.md is not plain text (UTF-8)");
-    } else if (f.name == "preview.png") {
+    } else if (f.name == "preview.png" || PhotoFileName(f.name)) {
         if (f.data.size() > kMaxPreview || !ValidPng(f.data))
-            return Fail(error, "preview.png is not a PNG picture of at most " + std::to_string(kMaxPreviewSide) +
+            return Fail(error, f.name + " is not a PNG picture of at most " + std::to_string(kMaxPreviewSide) +
                                    " x " + std::to_string(kMaxPreviewSide) + " and " + std::to_string(kMaxPreview) +
                                    " bytes");
     } else {
@@ -391,7 +391,13 @@ std::string CleanPng(const std::string& png)
 bool AllowedPackageName(const std::string& name)
 {
     return name == "manifest.json" || name == "manifest.sig" || name == "level.json" || name == "README.md" ||
-           name == "preview.png" || ScriptFileName(name);
+           name == "preview.png" || PhotoFileName(name) || ScriptFileName(name);
+}
+
+bool PhotoFileName(const std::string& name)
+{
+    return name.size() == 10 && name.compare(0, 5, "photo") == 0 && name[5] >= '1' && name[5] <= '5' &&
+           name.compare(6, 4, ".png") == 0;
 }
 
 const std::vector<std::string>& LicenseChoices()

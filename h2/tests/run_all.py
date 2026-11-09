@@ -15,6 +15,7 @@ Start it from a shell outside any sandbox (PowerShell here): the files tests mak
 and the game folder (the author key in %LOCALAPPDATA%) must be the ones the game sees.
 """
 import argparse
+import ctypes
 import datetime
 import os
 import re
@@ -61,6 +62,8 @@ TESTS = [
     ("gui", ["gui_test.py"], 600, False),
     ("simple_mode", ["simple_mode_test.py"], 600, False),  # (#31: the guided editor)
     ("playdebug", ["playdebug_test.py"], 600, False),  # (the debug view while playing, the last test's events)
+    ("route_order", ["route_order_test.py"], 600, False),  # (a placed walker goes along its points in order)
+    ("laptop_photo", ["laptop_photo_test.py"], 600, False),  # (the level's photo where the map's is)
     ("maps_gameway", ["maps_gameway_test.py"], 3600, False),
     ("fuzz", ["fuzz_levels.py"], 1800, False),
     ("limits", ["limits_test.py"], 1500, True),  # (big levels: on a fresh game)
@@ -102,9 +105,26 @@ def why(text):
     log(text)
 
 
+def set_debug_key(key, value):
+    """H2Fix.ini's [Debug] key set (added when missing); the whole file is put back at the end"""
+    with open(INI, encoding="latin1", newline="") as f:
+        text = f.read()
+    if re.search(r"(?m)^%s=" % key, text):
+        text = re.sub(r"(?m)^%s=[^\r\n]*" % key, "%s=%s" % (key, value), text)
+    elif re.search(r"(?m)^\[Debug\]", text):
+        text = re.sub(r"(?m)^\[Debug\][^\r\n]*(\r?\n)", lambda m: m.group(0) + "%s=%s" % (key, value) + m.group(1),
+                      text, 1)
+    else:
+        text += "\r\n[Debug]\r\n%s=%s\r\n" % (key, value)
+    with open(INI, "w", encoding="latin1", newline="") as f:
+        f.write(text)
+
+
 def start(wait=90):
-    """the game through Steam, the intros skipped (Esc until the main menu) -> True when up"""
+    """the game through Steam, the intros skipped (Esc until the main menu) -> True when up. It runs behind the
+    user's windows (the window in front now gets the foreground back: [Debug] Background, display.cpp)"""
     kill()
+    set_debug_key("Background", ctypes.windll.user32.GetForegroundWindow() or 0)
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", START],
                              capture_output=True, text=True, timeout=120).stdout

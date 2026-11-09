@@ -375,6 +375,32 @@ bad_crc[-5] ^= 1
 code, out = pack("inspect", write("prev.h2lvl", py_package(k, extra_files=[("preview.png", bytes(bad_crc))])))
 check("refused: a preview with a wrong chunk CRC", code == 1, out.strip()[:90])
 
+# ---- the laptop's photos (mission.files): photo1.png .. photo5.png, checked as the preview ----
+code, out = pack("inspect", write("photo.h2lvl", py_package(k, extra_files=[("photo1.png", png())])))
+check("accepted: a clean laptop photo", code == 0, out.strip()[-80:])
+code, out = pack("inspect", write("photo.h2lvl", py_package(k, extra_files=[("photo2.png", secret)])))
+check("refused: a laptop photo carrying text chunks", code == 1 and "photo2.png" in out, out.strip()[:90])
+for name in ("photo6.png", "photo1.jpg", "Photo1.png", "photo1.png.lua"):
+    code, out = pack("inspect", write("photo.h2lvl", py_package(k, extra_files=[(name, png())])))
+    check("refused: a file named %s" % name, code == 1, out.strip()[:90])
+PHOTOS = os.path.join(TMP, "Photos")
+shutil.copytree(EXAMPLE, PHOTOS)
+with open(os.path.join(PHOTOS, "level.json"), encoding="utf-8") as f:
+    doc = json.load(f)
+doc.setdefault("mission", {})["files"] = [{"name": "Target Photo", "image": "photo1.png"}]
+with open(os.path.join(PHOTOS, "level.json"), "w", encoding="utf-8") as f:
+    json.dump(doc, f)
+code, out = pack("export", PHOTOS, os.path.join(TMP, "photos.h2lvl"))
+check("export: refused while the photo the level names is missing", code != 0 and "photo1.png" in out,
+      out.strip()[-120:])
+with open(os.path.join(PHOTOS, "photo1.png"), "wb") as f:
+    f.write(secret)
+code, out = pack("export", PHOTOS, os.path.join(TMP, "photos.h2lvl"))
+check("export with the laptop's photo", code == 0, out.strip()[-120:])
+if code == 0:
+    sent = zipfile.ZipFile(os.path.join(TMP, "photos.h2lvl")).read("photo1.png")
+    check("  the packaged photo is the picture only", sent == png())
+
 # ---- issue #4: the author key backed up and restored ----
 BACKUP = os.path.join(TMP, "me.h2key")
 code, out = pack_env(ENV, "author", "backup", BACKUP, stdin="short\n")

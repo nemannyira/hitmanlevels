@@ -1207,6 +1207,29 @@ void* ImageTexture(const std::string& path, int* w, int* h, float* u, float* v)
     return it->second.texture;
 }
 
+bool SavePictureAsPng(const std::string& source, const std::string& path, std::string* error)
+{
+    std::vector<uint32_t> px;
+    int w = 0, h = 0;
+    if (!DecodeImage(source, px, w, h)) {
+        if (error)
+            *error = "not a picture Windows can read";
+        return false;
+    }
+    std::vector<unsigned char> rgb(size_t(w) * h * 3);
+    for (size_t i = 0; i < px.size(); ++i) {  // B G R A -> R G B
+        rgb[i * 3] = static_cast<unsigned char>(px[i] >> 16);
+        rgb[i * 3 + 1] = static_cast<unsigned char>(px[i] >> 8);
+        rgb[i * 3 + 2] = static_cast<unsigned char>(px[i]);
+    }
+    if (!WritePng(path, w, h, rgb)) {
+        if (error)
+            *error = "not written (the level's folder?)";
+        return false;
+    }
+    return true;
+}
+
 void ReleaseImages()
 {
     for (auto& [path, img] : g_images)

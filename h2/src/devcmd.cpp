@@ -415,12 +415,17 @@ int SeersCmd(lua_State* L)
     return 1;
 }
 
-// h2.dev_mouse(button, seconds): holds a mouse button (0 left, 1 right, 2 middle)
+// h2.dev_mouse(button, seconds): holds a mouse button (0 left, 1 right, 2 middle); 0 seconds lets it go
 int Mouse(lua_State* L)
 {
     int button = int(luaL_checkinteger(L, 1)) & 3;
     double secs = luaL_optnumber(L, 2, 0.1);
     std::lock_guard<std::mutex> lock(g_mutex);
+    if (secs <= 0.0) {
+        g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Held& h) { return h.code == 0x100 + button; }),
+                     g_held.end());
+        return 0;
+    }
     g_held.push_back({0x100 + button, NowMs() + secs * 1000.0});
     return 0;
 }
@@ -772,6 +777,7 @@ int PlaceNpcCmd(lua_State* L)
     if (lua_isstring(L, 5)) {
         if (!editor::BehaviourTemplate(lua_tostring(L, 5), spec.behaviour))
             return luaL_error(L, "no behaviour %s", lua_tostring(L, 5));
+        editor::SetRouteInOrder(spec.behaviour);  // (as the panel's new character: its points walked in order)
         spec.hasBehaviour = true;
     }
     std::string err;

@@ -151,11 +151,19 @@ try:
         lua('h2.dev_click(%f, %f) return 1' % (w * fx, h * 0.74))
         time.sleep(1)
 
-    def route_points():
+    def route_list():
         lua('return h2.dev_level("save")')
         lists = [lst for lst in doc().get("lists", []) if lst.get("path", "").startswith("ROOT/Route_")]
-        return len(lists[0].get("points", [])) if lists else -1
+        return lists[0].get("points", []) if lists else None
 
+    def route_points():
+        """the points clicked (the start point, where the person stands, not counted)"""
+        pts = route_list()
+        return -1 if pts is None else len([p for p in pts if not str(p).lower().endswith("_start")])
+
+    start = route_list() or []
+    check("the route starts where the person stands (a walker goes from its first point to the next)",
+          len(start) == 1 and str(start[0]).lower().endswith("_start"), str(start))
     for fx in (0.45, 0.50, 0.55):
         route_point(fx)
     shot("route")

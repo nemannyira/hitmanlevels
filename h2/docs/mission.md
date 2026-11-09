@@ -222,6 +222,20 @@ the `PhotoN` node's flag 0x800 is clear: seen in the game on C1-1, the
 photo's half extents 256 x 195.5 in the virtual screen, `ui.h` UiScale),
 decoded by WIC (`highlight.h` ImageTexture). *Photo of ...* writes the last
 picture a list showed (`ThumbnailShown`: the thumbnail's render target read
-back with CopyRects twice a second while shown). Not yet: the pictures in a
-level's package (the package's file list is fixed and checked), more photo
-places than the map's GUI has.
+back with CopyRects twice a second while shown). Since 2026-11-09: the
+pictures are `photo1.png` .. `photo5.png` (any picture chosen is written as a
+PNG), packed with the level and checked as its preview.png
+(`shared/levelfmt` PhotoFileName). The picture is drawn at the photo's place
+in the GUI's screen (its local place: 533, 300 on C1-1; its window, ZWINDOWS
+and the GUI's groups add nothing; its world transform is no help: the GUI's
+group is put beside the game's camera in the world). The map's photo was drawn
+at 0.75 of its half extents on 16:9 (`laptop_photo_test.py`, 2026-11-09: the
+map's photo 0.319-0.679 x 0.256-0.744 of the screen, the level's picture
+0.260-0.740 x 0.174-0.826): our own Hor+ field of view widened the photo
+view's camera (apitrace: its projection 1.81 against the GUI's 2.41, (4/3) /
+(16/9)). That camera is one of the GUI window system's (flag 0x200000, set by
+ZWINDOWS 0x4BB5D0 and 0x4BC900) without the overlay flag, as it clears the
+screen; `fov.cpp` KeepFov keeps the game's field of view for every 0x200000
+camera now (with HorPlus=0 the map's photo was measured at 0.258-0.740 x
+0.174-0.826, where the level's picture is drawn). Not
+yet: more photo places than the map's GUI has.

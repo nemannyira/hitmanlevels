@@ -240,3 +240,46 @@ info box, the template not overwriting a script of the user's, *Test* loading
 the level's map, the editor's goals and exit completing the mission, the
 profile guard (nothing written). Not tried: *Share* (it makes the user's own
 author key: left for their test).
+
+## 2026-11-10: a mission in Simple mode, as a level maker
+
+The same kind of walkthrough in Simple mode only (the launcher, the guide's
+steps, the cards; dev commands drove the mouse and keys; the free camera was
+placed with `h2.setcampos` as it reads the real keyboard): *Snow Ambush* on
+C3-1 Tracking Hayamoto. The map's three lines removed; a cook placed who walks
+a route (start + 3 points), named, made the target; a hacking device placed,
+named, to take; an exit; a briefing; the laptop's photo (the device's
+picture); *Try it* with the debug view; README and preview. Played to the end
+(the kill stood in with `npc:kill`; the second time with `h2.god` /
+`h2.invisible`, as the map's own guards shot Hitman the first time): Silent
+Assassin. The level is kept in `dumps/walkthrough/Snow_Ambush`.
+
+| # | Found | Issue |
+|---|---|---|
+| W30 | Launcher: the name field holds "My level" as text: it has to be deleted before typing | open: #47 |
+| W31 | Removing an original objective is not in Undo (Undo stays grey) | open: #47 |
+| W32 | "Plant bug on Hayamoto JR's corpse (removed)" cut at the panel's edge | open: #47 |
+| W33 | C3-1: the characters' pictures stay black in *Looks like* (`dev_thumbnail` false; the preview character is made); C1-1 shows them, with or without the free camera. So no *Photo of* a character there | open: #41 |
+| W34 | The route's hint says "point 2 of the route" for the first point clicked (drawn as 1): it counts the start point | open: #45 |
+| W35 | Engine names in Simple mode: placing "ChefJapanese (afghanPedestrian (C5-2))", the world label `NPC_ChefJapanese_1` after naming it, "ZItemTemplate" in an item's tooltip, *Photo of BombRemoteSmall*, the exit "Point" | open: #44 |
+| W36 | The first objective of the maker's own is "objective 4" on the cards (the original lines keep 1-3) | open: #47 |
+| W37 | *Take Hacking device* though the item was named "the device": the name is kept for `ROOT/HackingDevice`, the objective's target is `level:HackingDevice_item+1` | open: #40 |
+| W38 | The exit is an invisible point: nothing shows where it is; the status says to move it "from the Scene tab" (Advanced mode) | open: #42 |
+| W39 | The Mission step says "This level also has routes of their own: they stay as they are; Advanced mode edits them" when its only route was made in Simple mode | open: #45 |
+| W40 | Simple mode starts from the map's own mission and cannot empty it: the map's guards (Hayamoto's bodyguards) alerted at the cook's death and shot Hitman | open, a decision: #43 |
+| W41 | The debug view reports the map's patrolling guards that stop to chat as "has not moved for 15 s (its route?)" | open: #46 |
+| W42 | After a test (the map loaded again) the cook's route is drawn only while its *Route* box is open; before the test it was drawn on every step | open: #45 |
+| W43 | The debug view stays drawn over the laptop and the *Mission Accomplished* screen | open: #46 |
+| W44 | The laptop lists 5 empty file boxes under the level's one file | open: #47 |
+| W45 | photo1.png and preview.png are written uncompressed (787 KB, 691 KB; a package takes 1 MB each) | open: #47 |
+
+Worked as meant: the launcher (map, name, Simple), removing the original lines
+(with the question), *Name it* and *Make it a target* on the card, the route
+with its start point (labels start, 1, 2, 3; walked start → 1 → 2 → 3 and
+back), the items' search and pictures, *Hitman has to take it*, *Pick the
+exit*, the briefing (wrapped under its box), the laptop's photo from *Photo
+of* (drawn at the map's photo's size), Save, *Try it* with the debug view and
+*What happened in the last test*, F8 back to the editor, the mission
+completed by the editor's goals and exit, the laptop's briefing, objectives
+and photo, README and preview. Not tried: *Share* (the user's author key),
+*A file...* (a Windows file dialog), the map step.

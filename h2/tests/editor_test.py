@@ -158,6 +158,10 @@ time.sleep(6)
 check("after test: map up", lambda: "C1-1__MAIN" in lua("return h2.scene()"))
 check("after test: editor closed", lambda: lua("return tostring(h2.freecam())") in ("false", "nil"))
 
+# the level folder removed, as the docstring says (the map as it was first)
+dev.run('return h2.dev_level("revert")', 30)
+shutil.rmtree(FOLDER, ignore_errors=True)
+
 print("\n%d passed, %d failed" % (sum(1 for r in results if r[1]), sum(1 for r in results if not r[1])))
 for r in results:
     if not r[1]:

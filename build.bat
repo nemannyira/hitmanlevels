@@ -22,5 +22,7 @@ if /i not "%BUILD%"=="build\%CONFIG%" copy /y %BUILD%\dinput8.dll build\%CONFIG%
 
 if /i "%2"=="install" (
     copy /y build\%CONFIG%\dinput8.dll "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\dinput8.dll" || exit /b 1
+    rem (its .pdb next to it: crashlog.cpp names the DLL's frames from it, a stale one gives wrong names)
+    if exist %BUILD%\dinput8.pdb copy /y %BUILD%\dinput8.pdb "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\dinput8.pdb" >nul
     if not exist "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\H2Fix.ini" copy /y h2\H2Fix.ini "C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\H2Fix.ini"
 )

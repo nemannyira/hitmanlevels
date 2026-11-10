@@ -322,6 +322,8 @@ LONG CALLBACK Handler(EXCEPTION_POINTERS* ep)
         ep->ExceptionRecord->NumberParameters > 1 ? unsigned(ep->ExceptionRecord->ExceptionInformation[1]) : 0);
     Log("  eax=%08lX ebx=%08lX ecx=%08lX edx=%08lX esi=%08lX edi=%08lX ebp=%08lX esp=%08lX", c->Eax, c->Ebx, c->Ecx,
         c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp);
+    InitSymbols();
+    LogStack(GetCurrentThread(), *c);  // (who called: a handled one is often our guarded call with a bad argument)
     return EXCEPTION_CONTINUE_SEARCH;  // (handled or not: the game's code decides; TopFilter reports a fatal one)
 }
 

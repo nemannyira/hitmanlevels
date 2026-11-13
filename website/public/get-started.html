@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get started - Hitman Levels</title>
+<meta name="description" content="How to install the level editor for Hitman 2: Silent Assassin, play a level from this site and make your own.">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="rain" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Hitman Levels<span>.</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">Levels</a>
+      <a class="on" href="get-started.html">Get started</a>
+      <a href="#">Editor &amp; tools</a>
+      <a href="#">Upload</a>
+    </nav>
+    <a class="btn small signin" href="#">Sign in</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="head">
+    <h1>Get started</h1>
+    <p>Four steps from a fresh install of Hitman 2: Silent Assassin to playing a level from this site, and to making your own.</p>
+  </div>
+
+  <div class="page-cols">
+    <ol class="steps">
+      <li class="step">
+        <div>
+          <h3>Put the editor next to the game</h3>
+          <p>The editor is one file the game loads by itself, with its settings beside it. Download it and copy both files into the game's folder, next to <b>hitman2.exe</b>:</p>
+          <code class="path">C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin\</code>
+          <p><a class="btn red" href="#">Download the editor</a> <span class="muted">&nbsp;dinput8.dll and H2Fix.ini</span></p>
+          <p class="muted">It changes none of the game's own files. To remove it, delete the two files.</p>
+        </div>
+      </li>
+      <li class="step">
+        <div>
+          <h3>Get a level</h3>
+          <p>Pick a level on the <a href="index.html">Levels</a> page and download it: a <b>.h2lvl</b> file. Open it with <b>levelpack.exe</b> (it comes with the editor), or from a command line:</p>
+          <code class="path">levelpack install Snow_Ambush_v1.h2lvl</code>
+          <p>It shows the level, its author and its license before it installs. The first level of an author asks whether you trust that author; later ones install without asking.</p>
+          <div class="note-box">A level changed by anyone but its author is refused: every level is signed. A downloaded level's scripts run with less memory and time than your own, and without the console.</div>
+        </div>
+      </li>
+      <li class="step">
+        <div>
+          <h3>Play it</h3>
+          <p>Start the game. In the main menu choose <b>Level Editor</b>, then <b>Open a level</b>, pick it and press <b>Play</b>. Its map loads with the level's people, objectives and briefing on the laptop.</p>
+          <p class="muted">F8 opens the editor on the level while you play; F1 lists the keys.</p>
+        </div>
+      </li>
+      <li class="step">
+        <div>
+          <h3>Make your own</h3>
+          <p>In the main menu choose <b>Level Editor</b>, then <b>New level</b>: pick a map and <b>Simple</b>. A guide takes you through the mission, the people, the items and trying it.</p>
+          <p>Its last step, <b>Save &amp; share</b>, writes a package of your level, signed with your own author key. <a href="#">Upload</a> it here.</p>
+        </div>
+      </li>
+    </ol>
+
+    <aside class="menubox">
+      <h2>You need</h2>
+      <dl>
+        <div class="row"><dt>Game</dt><dd>Hitman 2: Silent Assassin</dd></div>
+        <div class="row"><dt>Version</dt><dd>Steam (1.02)</dd></div>
+        <div class="row"><dt>System</dt><dd>Windows</dd></div>
+        <div class="row"><dt>Size</dt><dd>a few MB</dd></div>
+      </dl>
+      <a class="choice on" href="#">Download the editor</a>
+      <a class="choice" href="index.html">Browse levels</a>
+      <a class="choice dim" href="#">Codename 47, Contracts, Blood Money: soon</a>
+    </aside>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A fan site. Not affiliated with or endorsed by IO Interactive. Hitman and its games' names are trademarks of IO Interactive A/S.</span>
+    <span><a href="#">Terms</a> &middot; <a href="#">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
+  </div>
+</footer>
+</body>
+</html>

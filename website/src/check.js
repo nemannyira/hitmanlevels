@@ -30,7 +30,7 @@ const CHECKS = [
   "The level's file passes the game's own check",
 ];
 
-// { ok, error?, manifest?, checks: [names passed] }
+// { ok, error?, manifest?, page? { readme, briefing, objectives, preview (PNG bytes) }, checks: [names passed] }
 export async function checkPackage(bytes) {
   let instance;
   const imports = { wasi_snapshot_preview1: wasi(() => instance.exports.memory) };
@@ -43,7 +43,10 @@ export async function checkPackage(bytes) {
     const out = x.check_package(at, bytes.length);
     const text = new TextDecoder().decode(new Uint8Array(x.memory.buffer, out, x.check_result_size()));
     const r = JSON.parse(text);
-    return r.ok ? { ok: true, manifest: r.manifest, files: r.files, checks: CHECKS } : { ok: false, error: r.error, checks: [] };
+    if (!r.ok) return { ok: false, error: r.error, checks: [] };
+    const page = { readme: r.readme || "", briefing: r.briefing || "", objectives: r.objectives || [],
+      preview: r.preview ? Uint8Array.from(atob(r.preview), (c) => c.charCodeAt(0)) : null };
+    return { ok: true, manifest: r.manifest, files: r.files, page, checks: CHECKS };
   } catch (e) {
     return { ok: false, error: "The package could not be checked: it is not a level package this site takes.", checks: [] };
   }

@@ -94,18 +94,11 @@
   </div>
 </footer>
 
+<script src="site.js"></script>
 <script>
   var $ = function (id) { return document.getElementById(id); };
   var PROVIDERS = { discord: "Discord", github: "GitHub", google: "Google" };
   var picked = null;
-
-  // the key's fingerprint as the editor and levelpack show it: 16 hex digits of its SHA-256 in groups of four
-  async function fingerprint(keyHex) {
-    var bytes = new Uint8Array(keyHex.match(/../g).map(function (h) { return parseInt(h, 16); }));
-    var d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-    var hex = Array.from(d.slice(0, 8)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("").toUpperCase();
-    return hex.match(/..../g).join("-");
-  }
 
   function text(el, s) { el.textContent = s; return el; }
 

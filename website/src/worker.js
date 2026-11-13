@@ -54,17 +54,60 @@ async function upload(request, env, user) {
   const path = `/levels/${m.id}/${m.version}.h2lvl`;
   const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
   await env.FILES.put(path.slice(1), bytes, { httpMetadata: { contentType: "application/octet-stream" } });
+  const page = checked.page;
+  if (page.preview)
+    await env.FILES.put(`levels/${m.id}/${m.version}/preview.png`, page.preview, { httpMetadata: { contentType: "image/png" } });
   const now = Math.floor(Date.now() / 1000);
   await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO authors (key, user_id) VALUES (?, ?)").bind(m.author.key, user.id),
     env.DB.prepare("INSERT OR IGNORE INTO levels (id, game, author_key) VALUES (?, ?, ?)").bind(m.id, m.game, m.author.key),
     env.DB.prepare(
-      `INSERT INTO versions (level_id, version, title, base_scene, license, author_name, path, size, sha256, uploaded_by, created)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(m.id, m.version, m.title, m.base_scene, m.license, m.author.name, path, bytes.length, sha256, user.id, now),
+      `INSERT INTO versions (level_id, version, title, base_scene, license, author_name, path, size, sha256, uploaded_by, created,
+                             readme, briefing, objectives, preview)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(m.id, m.version, m.title, m.base_scene, m.license, m.author.name, path, bytes.length, sha256, user.id, now,
+      page.readme, page.briefing, JSON.stringify(page.objectives), page.preview ? 1 : 0),
   ]);
   await publishList(env);
   return json({ id: m.id, version: m.version, path, checks: checked.checks });
+}
+
+// the levels listed (as the signed list: each level's newest version not taken down, of an author not blocked),
+// for the site's own pages: GET /api/levels, GET /api/levels/<id>
+const LISTED = `FROM versions v JOIN levels l ON l.id = v.level_id JOIN authors a ON a.key = l.author_key
+  WHERE v.taken_down = 0 AND l.taken_down = 0 AND a.blocked = 0
+    AND v.version = (SELECT MAX(v2.version) FROM versions v2 WHERE v2.level_id = v.level_id AND v2.taken_down = 0)`;
+
+// a line for the list: the laptop's briefing, else the README's text (its headings and Markdown marks left out)
+function blurb(v) {
+  const readme = (v.readme || "").split("\n").filter((l) => !/^\s*#/.test(l)).join(" ").replace(/[*_`>]/g, "");
+  const t = (v.briefing || readme).replace(/\s+/g, " ").trim();
+  return t.length > 180 ? t.slice(0, 177).replace(/\s\S*$/, "") + "..." : t;
+}
+
+async function levels(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT v.level_id, l.game, v.title, v.base_scene, v.author_name, v.version, v.created, v.license, v.size,
+            v.briefing, v.readme, v.preview, l.downloads ${LISTED} ORDER BY v.created DESC`).all();
+  return json({ levels: results.map((v) => ({
+    id: v.level_id, game: v.game, title: v.title, base_scene: v.base_scene, author: v.author_name, version: v.version,
+    updated: v.created, license: v.license, size: v.size, blurb: blurb(v), downloads: v.downloads,
+    preview: v.preview ? `/levels/${v.level_id}/${v.version}/preview.png` : null,
+  })) });
+}
+
+async function level(env, id) {
+  const v = await env.DB.prepare(
+    `SELECT v.*, l.game, l.author_key, l.downloads ${LISTED} AND v.level_id = ?`).bind(id).first();
+  if (!v) return json({ error: "No such level" }, 404);
+  const { results } = await env.DB.prepare(
+    "SELECT version, created, size FROM versions WHERE level_id = ? AND taken_down = 0 ORDER BY version DESC").bind(id).all();
+  return json({
+    id, game: v.game, title: v.title, base_scene: v.base_scene, author: { name: v.author_name, key: v.author_key },
+    version: v.version, updated: v.created, license: v.license, size: v.size, downloads: v.downloads,
+    readme: v.readme, briefing: v.briefing, objectives: JSON.parse(v.objectives || "[]"), path: v.path,
+    preview: v.preview ? `/levels/${id}/${v.version}/preview.png` : null, versions: results,
+  });
 }
 
 // POST /api/report { level, version?, reason }
@@ -98,15 +141,22 @@ async function admin(request, env, action) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     let m;
     if (request.method === "GET") {
       if (path === "/api/v1/index.json") return file(env, "api/v1/index.json", "application/json; charset=utf-8");
       if (path === "/api/v1/index.sig") return file(env, "api/v1/index.sig", "application/octet-stream");
-      if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\.h2lvl$/)))
-        return file(env, `levels/${m[1]}/${m[2]}.h2lvl`, "application/octet-stream");
+      if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\.h2lvl$/))) {
+        const res = await file(env, `levels/${m[1]}/${m[2]}.h2lvl`, "application/octet-stream");
+        if (res.ok) ctx.waitUntil(env.DB.prepare("UPDATE levels SET downloads = downloads + 1 WHERE id = ?").bind(m[1]).run());
+        return res;
+      }
+      if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\/preview\.png$/)))
+        return file(env, `levels/${m[1]}/${m[2]}/preview.png`, "image/png");
+      if (path === "/api/levels") return levels(env);
+      if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})$/))) return level(env, m[1]);
       if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/start$/))) return start(request, env, m[1]);
       if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/callback$/))) return callback(request, env, m[1]);
       if (path === "/api/me") {

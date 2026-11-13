@@ -36,69 +36,14 @@
   </div>
 
   <section>
-    <div class="section-title"><h2>Silent Assassin</h2><span class="muted">7 levels &middot; <a href="get-started.html">how to play them</a></span></div>
+    <div class="section-title"><h2>Silent Assassin</h2><span class="muted"><span id="count"></span> &middot; <a href="get-started.html">how to play them</a></span></div>
     <div class="filters">
-      <input aria-label="Search" placeholder="Search by title or author">
-      <select aria-label="Map"><option>Every map</option><option>Anathema</option><option>St. Petersburg Stakeout</option><option>Kirov Park Meeting</option><option>Tracking Hayamoto</option></select>
-      <select aria-label="Sort"><option>Newest first</option><option>Most played</option><option>Title</option></select>
+      <input id="q" aria-label="Search" placeholder="Search by title or author">
+      <select id="map" aria-label="Map"><option value="">Every map</option></select>
+      <select id="sort" aria-label="Sort"><option value="new">Newest first</option><option value="played">Most downloaded</option><option value="title">Title</option></select>
     </div>
-
-    <div class="grid">
-      <a class="card" href="level.html">
-        <div class="shot none"><span>Tracking Hayamoto</span></div>
-        <div class="body">
-          <h3>Snow Ambush</h3>
-          <div class="meta">Tracking Hayamoto &middot; by nemannyira</div>
-          <div class="blurb">A cook walks the village street every night with a device that tracks our client.</div>
-          <div class="foot"><span>13 Nov 2026</span><span>128 downloads</span></div>
-        </div>
-      </a>
-      <a class="card" href="#">
-        <div class="shot none"><span>Anathema</span></div>
-        <div class="body">
-          <h3>The Accountant</h3>
-          <div class="meta">Anathema &middot; by silentcook &middot; 3 stages</div>
-          <div class="blurb">The don's books leave the villa tonight. Each stage harder than the last.</div>
-          <div class="foot"><span>9 Nov 2026</span><span>412 downloads</span></div>
-        </div>
-      </a>
-      <a class="card" href="#">
-        <div class="shot none"><span>St. Petersburg Stakeout</span></div>
-        <div class="body">
-          <h3>Dead Drop</h3>
-          <div class="meta">St. Petersburg Stakeout &middot; by agent_17</div>
-          <div class="blurb">Swap the package at the drop before the courier comes back.</div>
-          <div class="foot"><span>2 Nov 2026</span><span>96 downloads</span></div>
-        </div>
-      </a>
-      <a class="card" href="#">
-        <div class="shot none"><span>Anathema</span></div>
-        <div class="body">
-          <h3>Courier</h3>
-          <div class="meta">Anathema &middot; by nemannyira &middot; time limit</div>
-          <div class="blurb">Deliver the case to the church before the bell rings.</div>
-          <div class="foot"><span>28 Oct 2026</span><span>305 downloads</span></div>
-        </div>
-      </a>
-      <a class="card" href="#">
-        <div class="shot none"><span>Kirov Park Meeting</span></div>
-        <div class="body">
-          <h3>Park Meeting</h3>
-          <div class="meta">Kirov Park Meeting &middot; by agent_17</div>
-          <div class="blurb">An empty park, one boss, two bodyguards and a briefcase.</div>
-          <div class="foot"><span>25 Oct 2026</span><span>77 downloads</span></div>
-        </div>
-      </a>
-      <a class="card" href="#">
-        <div class="shot none"><span>Anathema</span></div>
-        <div class="body">
-          <h3>Estate Run</h3>
-          <div class="meta">Anathema &middot; by silentcook</div>
-          <div class="blurb">Four objectives, one way out of the estate.</div>
-          <div class="foot"><span>20 Oct 2026</span><span>58 downloads</span></div>
-        </div>
-      </a>
-    </div>
+    <div class="grid" id="grid"></div>
+    <p class="muted" id="empty" hidden></p>
   </section>
 </main>
 
@@ -108,5 +53,64 @@
     <span><a href="#">Terms</a> &middot; <a href="#">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
   </div>
 </footer>
+
+<script src="site.js"></script>
+<script>
+  var all = [];
+
+  function card(l) {
+    var a = el("a", "card");
+    a.href = "level.html?id=" + encodeURIComponent(l.id);
+    var shot = el("div", l.preview ? "shot" : "shot none");
+    if (l.preview) shot.style.backgroundImage = "url(" + l.preview + ")";
+    else shot.appendChild(el("span", null, mapName(l.base_scene)));
+    a.appendChild(shot);
+    var body = el("div", "body");
+    body.appendChild(el("h3", null, l.title));
+    body.appendChild(el("div", "meta", mapName(l.base_scene) + " · by " + l.author + (l.version > 1 ? " · v" + l.version : "")));
+    if (l.blurb) body.appendChild(el("div", "blurb", l.blurb));
+    var foot = el("div", "foot");
+    foot.appendChild(el("span", null, day(l.updated)));
+    foot.appendChild(el("span", null, l.downloads + (l.downloads === 1 ? " download" : " downloads")));
+    body.appendChild(foot);
+    a.appendChild(body);
+    return a;
+  }
+
+  function show() {
+    var q = document.getElementById("q").value.trim().toLowerCase();
+    var map = document.getElementById("map").value, sort = document.getElementById("sort").value;
+    var list = all.filter(function (l) {
+      return (!map || l.base_scene.split("\\")[0] === map) &&
+             (!q || l.title.toLowerCase().indexOf(q) >= 0 || l.author.toLowerCase().indexOf(q) >= 0);
+    });
+    list.sort(function (a, b) {
+      return sort === "title" ? a.title.localeCompare(b.title) : sort === "played" ? b.downloads - a.downloads : b.updated - a.updated;
+    });
+    var grid = document.getElementById("grid");
+    grid.textContent = "";
+    list.forEach(function (l) { grid.appendChild(card(l)); });
+    var empty = document.getElementById("empty");
+    empty.hidden = list.length > 0;
+    empty.textContent = all.length ? "No level matches that." : "No levels yet. Make one in the editor and upload it: it is listed at once.";
+  }
+
+  (async function () {
+    try {
+      var r = await fetch("/api/levels");
+      all = r.ok ? (await r.json()).levels.filter(function (l) { return l.game === "h2"; }) : [];
+    } catch (e) { all = []; }
+    document.getElementById("count").textContent = all.length + (all.length === 1 ? " level" : " levels");
+    var maps = {};
+    all.forEach(function (l) { maps[l.base_scene.split("\\")[0]] = true; });
+    Object.keys(maps).sort().forEach(function (m) {
+      var o = el("option", null, mapName(m));
+      o.value = m;
+      document.getElementById("map").appendChild(o);
+    });
+    ["q", "map", "sort"].forEach(function (id) { document.getElementById(id).addEventListener("input", show); });
+    show();
+  })();
+</script>
 </body>
 </html>

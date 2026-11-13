@@ -99,6 +99,18 @@ try {
   r = await post("/api/upload?agree=1", v2, me);
   check("the author's next version", r.status === 200 && (await r.json()).version === 2);
   check("... the list names version 2", (await (await get("/api/v1/index.json")).text()).includes(`"path":"/levels/${id}/2.h2lvl"`));
+
+  // the site's own pages' data: the list, the level's page (its README from the package), the downloads
+  const readme = readFileSync(join(work, "Courier", "README.md"), "utf8");
+  const listed = (await (await get("/api/levels")).json()).levels.find((l) => l.id === id);
+  check("the pages' list: the level at version 2, its blurb from its README", listed && listed.version === 2 &&
+    listed.blurb.length > 0 && readme.replace(/\s+/g, " ").includes(listed.blurb.replace(/\.\.\.$/, "").slice(0, 40)),
+    listed && listed.blurb.slice(0, 60));
+  const page = await (await get(`/api/levels/${id}`)).json();
+  check("the level's page: its README, both versions, the author's key", page.readme === readme &&
+    page.versions.length === 2 && /^[0-9a-f]{64}$/.test(page.author.key) && page.path === `/levels/${id}/2.h2lvl`);
+  check("... a downloaded package counted", page.downloads >= 1, String(page.downloads));
+  check("no page for a level not listed", (await get("/api/levels/nosuchlevel1")).status === 404);
   await post("/api/admin/takedown", JSON.stringify({ level: id }), me);
 } finally {
   rmSync(work, { recursive: true, force: true });

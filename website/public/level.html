@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Snow Ambush - Hitman Levels</title>
-<meta name="description" content="Snow Ambush: a level on Tracking Hayamoto for Hitman 2: Silent Assassin, by nemannyira.">
+<title>Level - Hitman Levels</title>
+<meta name="description" content="A level for Hitman 2: Silent Assassin, made by a player.">
 <link rel="stylesheet" href="site.css">
 </head>
 <body>
@@ -24,27 +24,31 @@
 </header>
 
 <main class="wrap">
-  <div class="crumbs"><a href="index.html">Silent Assassin levels</a> / Snow Ambush</div>
+  <div class="crumbs"><a href="index.html">Silent Assassin levels</a> / <span id="crumb"></span></div>
 
-  <div class="level">
+  <p class="muted" id="missing" hidden style="padding:40px 0">No such level here: it may have been taken down. <a href="index.html">All levels</a></p>
+
+  <div class="level" id="level" hidden>
     <div>
-      <h1>Snow Ambush</h1>
-      <div class="by">Tracking Hayamoto &middot; by <a href="#">nemannyira</a> &middot; 13 November 2026</div>
-      <div class="shot none"><span>Tracking Hayamoto</span></div>
+      <h1 id="title"></h1>
+      <div class="by" id="by"></div>
+      <div class="shot" id="shot"></div>
 
-      <div class="laptop">
+      <div class="laptop" id="laptop" hidden>
         <h2>Mission briefing</h2>
-        <p>A cook walks the village street every night with a device that tracks our client. Kill the cook, take the device and leave by the west road.</p>
-        <h2 style="margin-top:16px">Mission objectives</h2>
-        <ul>
-          <li>Kill the cook</li>
-          <li>Take the device</li>
-        </ul>
+        <p id="briefing" style="white-space:pre-line"></p>
+        <h2 style="margin-top:16px" id="objectives-title">Mission objectives</h2>
+        <ul id="objectives"></ul>
       </div>
 
+      <section id="readme-box" style="margin-top:28px" hidden>
+        <div class="section-title"><h2>About it</h2><span class="muted">from its author</span></div>
+        <p id="readme" style="white-space:pre-wrap"></p>
+      </section>
+
       <div class="versions">
-        <div class="section-title"><h2>Versions</h2><span class="muted">1 version</span></div>
-        <ul><li><b>Version 1</b> <span class="muted">&middot; 13 Nov 2026 &middot; 1.5 MB</span></li></ul>
+        <div class="section-title"><h2>Versions</h2><span class="muted" id="versions-count"></span></div>
+        <ul id="versions"></ul>
       </div>
     </div>
 
@@ -52,18 +56,18 @@
       <h2>Dossier</h2>
       <dl>
         <div class="row"><dt>Game</dt><dd>Silent Assassin</dd></div>
-        <div class="row"><dt>Map</dt><dd>Tracking Hayamoto</dd></div>
-        <div class="row"><dt>Author</dt><dd>nemannyira</dd></div>
-        <div class="row"><dt>Author key</dt><dd class="mono">5F2A-91C0-&hellip;-07DE</dd></div>
-        <div class="row"><dt>Version</dt><dd>1</dd></div>
-        <div class="row"><dt>License</dt><dd>CC BY 4.0</dd></div>
-        <div class="row"><dt>Size</dt><dd>1.5 MB</dd></div>
-        <div class="row"><dt>Downloads</dt><dd>128</dd></div>
+        <div class="row"><dt>Map</dt><dd id="d-map"></dd></div>
+        <div class="row"><dt>Author</dt><dd id="d-author"></dd></div>
+        <div class="row"><dt>Author key</dt><dd class="mono" id="d-key"></dd></div>
+        <div class="row"><dt>Version</dt><dd id="d-version"></dd></div>
+        <div class="row"><dt>License</dt><dd id="d-license"></dd></div>
+        <div class="row"><dt>Size</dt><dd id="d-size"></dd></div>
+        <div class="row"><dt>Downloads</dt><dd id="d-downloads"></dd></div>
       </dl>
-      <a class="choice on" href="#">Download</a>
+      <a class="choice on" id="download" href="#">Download</a>
       <a class="choice" href="get-started.html">How to play it</a>
-      <a class="choice dim" href="#">Report this level</a>
-      <div class="note">Installing checks the author's signature: a level changed by anyone else is refused.</div>
+      <a class="choice dim" id="report" href="#">Report this level</a>
+      <div class="note" id="note">Installing checks the author's signature: a level changed by anyone else is refused.</div>
     </aside>
   </div>
 </main>
@@ -74,5 +78,62 @@
     <span><a href="#">Terms</a> &middot; <a href="#">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
   </div>
 </footer>
+
+<script src="site.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var id = new URLSearchParams(location.search).get("id") || "";
+
+  (async function () {
+    var l = null;
+    if (/^[a-z0-9]{8,32}$/.test(id)) {
+      try { var r = await fetch("/api/levels/" + id); if (r.ok) l = await r.json(); } catch (e) { l = null; }
+    }
+    if (!l) { $("missing").hidden = false; $("crumb").textContent = "not found"; return; }
+    document.title = l.title + " - Hitman Levels";
+    $("crumb").textContent = l.title;
+    $("title").textContent = l.title;
+    $("by").textContent = mapName(l.base_scene) + " · by " + l.author.name + " · " + day(l.updated);
+    if (l.preview) $("shot").style.backgroundImage = "url(" + l.preview + ")";
+    else { $("shot").className = "shot none"; $("shot").appendChild(el("span", null, mapName(l.base_scene))); }
+
+    if (l.briefing || l.objectives.length) {
+      $("laptop").hidden = false;
+      $("briefing").textContent = l.briefing;
+      l.objectives.forEach(function (o) { $("objectives").appendChild(el("li", null, o)); });
+      $("objectives-title").hidden = !l.objectives.length;
+    }
+    if (l.readme) { $("readme-box").hidden = false; $("readme").textContent = l.readme; }
+    $("versions-count").textContent = l.versions.length + (l.versions.length === 1 ? " version" : " versions");
+    l.versions.forEach(function (v) {
+      var li = el("li");
+      li.appendChild(el("b", null, "Version " + v.version));
+      li.appendChild(el("span", "muted", " · " + day(v.created) + " · " + size(v.size)));
+      $("versions").appendChild(li);
+    });
+
+    $("d-map").textContent = mapName(l.base_scene);
+    $("d-author").textContent = l.author.name;
+    $("d-key").textContent = await fingerprint(l.author.key);
+    $("d-version").textContent = String(l.version);
+    $("d-license").textContent = l.license;
+    $("d-size").textContent = size(l.size);
+    $("d-downloads").textContent = String(l.downloads);
+    $("download").href = l.path;
+    $("download").setAttribute("download", l.title.replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/ +/g, "_") + "_v" + l.version + ".h2lvl");
+    $("level").hidden = false;
+
+    $("report").addEventListener("click", async function (ev) {
+      ev.preventDefault();
+      var me = await fetch("/api/me", { credentials: "same-origin" });
+      if (me.status !== 200) { location.href = "signin.html"; return; }
+      var reason = prompt("What is wrong with this level? (The owner of the site reads it.)");
+      if (!reason || !reason.trim()) return;
+      var r = await fetch("/api/report", { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ level: l.id, version: l.version, reason: reason }) });
+      $("note").textContent = r.ok ? "Thank you: the report reached the owner of the site." : "The report could not be sent.";
+    });
+  })();
+</script>
 </body>
 </html>

@@ -256,6 +256,20 @@ try:
     except (OSError, ValueError, struct.error, zlib.error) as e:
         png_detail = str(e)
     check("preview.png: 640 wide, its pixels", png_ok, png_detail)
+    # the picture is the game's view, not the screen (#48: the front buffer, read before, is the whole screen
+    # in a window; the game runs behind other windows here): close to the same view shot from the back buffer
+    if png_ok:
+        from PIL import Image, ImageChops, ImageStat  # noqa: PLC0415
+        lua('h2.dev_editor(false) return 1')
+        time.sleep(1)
+        shot("view")
+        time.sleep(0.5)
+        view = Image.open(os.path.join(dev.GAME, "Screens", "simple_view.bmp")).convert("RGB").resize((w_, h_))
+        pic = Image.open(os.path.join(FOLDER, "preview.png")).convert("RGB")
+        diff = sum(ImageStat.Stat(ImageChops.difference(view, pic)).mean) / 3
+        check("preview.png is the game's view, not the screen", diff < 30, "mean difference %.1f" % diff)
+        lua('h2.dev_editor(true) return 1')
+        time.sleep(0.5)
     shot("share")
 
     # 5. Try it: the map again with the guard

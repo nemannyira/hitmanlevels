@@ -71,8 +71,8 @@ void AddMenu(const char* menu, void (*items)());
 void AddAlwaysDraw(void (*draw)());
 // While set and the editor is open, only this window is drawn (the launcher).
 void SetExclusive(void (*draw)());
-// The next presented frame without the overlay; at the frame after it `fn` gets the device (its front
-// buffer holds that frame: a picture of the game's view, e.g. a package's preview).
+// At the next Present, before the overlay is drawn, `fn` gets the device: its back buffer holds the game's
+// frame alone (a picture of the game's view, e.g. a package's preview; screenshot.h).
 void RequestCleanFrame(void (*fn)(void* device));
 // The game's menu font (Copperplate Gothic Bold, loaded at 48 px), null when missing.
 ImFont* MenuFont();

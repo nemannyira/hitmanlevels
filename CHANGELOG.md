@@ -3,6 +3,13 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-13: the level's picture is the game's view
+
+* *Take a picture of this view* (Save & share) takes the game's own frame.
+  It read the whole screen before: in a window, other programs' windows
+  over the game or around it went into preview.png (#48). Take the picture
+  again for a level made before this.
+
 ## 2026-11-09: the laptop's photos in packages
 
 * The laptop's photos go with a shared level: `photo1.png` .. `photo5.png`

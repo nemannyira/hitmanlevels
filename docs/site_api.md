@@ -49,7 +49,8 @@ list still cannot change a package (its author signs it; the client asks about n
 when another key signs a level it has).
 
 The public key goes into the client (`kSiteKeys` in `shared/levelfmt/hub.cpp`, room for two so one can be
-rotated); until then the Hub is off. For a staging copy of the site, `HITMANLEVELS_SITE_KEYS` (comma
+rotated). The site's key was made 2026-11-13 (`website/tools/make_site_key.mjs`: the seed straight into the
+Worker's `SITE_SEED`, never shown): `239ef6a67cdacbfb7c7e5c031f5ebc5c97744e9d0d7047a76f1b3e47167b28e2`. For a staging copy of the site, `HITMANLEVELS_SITE_KEYS` (comma
 separated hex) names other keys, and `--source <folder>` reads a site from disk (tests).
 
 ## Decided (the owner, 2026-11-13)

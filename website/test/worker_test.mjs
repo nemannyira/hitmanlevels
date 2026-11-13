@@ -1,11 +1,12 @@
 // The Worker on wrangler dev (local D1 and R2; .dev.vars with a test SITE_SEED and test client ids):
-// the pages, sign-in's start and a forged callback, sessions, the POST rules, uploads closed until the
-// package check is built, the owner's take-down publishing a list the client (levelpack) accepts.
+// the pages, sign-in's start and a forged callback, sessions, the POST rules, real uploads (packages the
+// editor's levelpack made: checked by the WebAssembly check, listed; tampered, repeated, another account's
+// refused), the owner's take-down publishing a list the client (levelpack) accepts.
 //   npx wrangler d1 migrations apply hitmanlevels --local; npx wrangler dev --local --port 8787 --ip 127.0.0.1
 //   node test/worker_test.mjs ../build/Release/levelpack.exe
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,7 +62,47 @@ check("signed in", r.status === 200 && (await r.json()).name === "Tester");
 r = await post("/api/upload", "x", { ...me, "Content-Length": "1" });
 check("an upload needs the agreement", r.status === 400);
 r = await post("/api/upload?agree=1", new Uint8Array(16), me);
-check("uploads stay closed until the package check is built", r.status === 422, (await r.json()).error);
+check("not a package: refused by the check", r.status === 422, (await r.json()).error);
+
+// real packages: an author key of a test home, the example level Courier exported twice (versions 1, 2)
+const work = mkdtempSync(join(tmpdir(), "h2pkg-"));
+const pack = (...args) => execFileSync(levelpack, args, { env: { ...process.env, HITMANLEVELS_HOME: join(work, "home") }, encoding: "utf8" });
+const pid2 = "u" + Date.now();
+const token2 = b64url(randomBytes(32));
+sql(`INSERT INTO users (provider, provider_id, name, created) VALUES ('discord', '${pid2}', 'Someone Else', 0);` +
+  `INSERT INTO sessions (token_hash, user_id, expires) SELECT '${b64url(createHash("sha256").update(token2).digest())}', id, 4102444800 FROM users WHERE provider_id = '${pid2}';`);
+const other = { Cookie: `__Host-session=${token2}`, Origin: BASE };
+try {
+  pack("author", "Worker Tester", "CC BY 4.0");
+  cpSync(join("..", "h2", "examples", "missions", "Courier"), join(work, "Courier"), { recursive: true });
+  pack("export", join(work, "Courier"), join(work, "v1.h2lvl"));
+  pack("export", join(work, "Courier"), join(work, "v2.h2lvl"));
+  const v1 = readFileSync(join(work, "v1.h2lvl")), v2 = readFileSync(join(work, "v2.h2lvl"));
+  const id = JSON.parse(readFileSync(join(work, "Courier", "level.json"), "utf8")).package.id;
+
+  r = await post("/api/upload?agree=1", v1, me);
+  let body = await r.json();
+  check("a package the editor made: checked, listed", r.status === 200 && body.id === id && body.version === 1, JSON.stringify(body).slice(0, 120));
+  check("... in the list", (await (await get("/api/v1/index.json")).text()).includes(`"id":"${id}"`));
+  r = await get(`/levels/${id}/1.h2lvl`);
+  check("... its file served as uploaded", r.status === 200 && Buffer.from(await r.arrayBuffer()).equals(v1));
+  check("the same version again is refused", (await post("/api/upload?agree=1", v1, me)).status === 409);
+
+  const tampered = Buffer.from(v1);
+  const at = tampered.indexOf(Buffer.from('"title"'));  // (a byte of a signed file changed)
+  tampered[at + 1] ^= 0x20;
+  r = await post("/api/upload?agree=1", tampered, me);
+  check("a package changed after it was signed is refused", r.status === 422, (await r.json()).error);
+
+  r = await post("/api/upload?agree=1", v2, other);
+  check("another account cannot upload with the author's key", r.status === 403, (await r.json()).error);
+  r = await post("/api/upload?agree=1", v2, me);
+  check("the author's next version", r.status === 200 && (await r.json()).version === 2);
+  check("... the list names version 2", (await (await get("/api/v1/index.json")).text()).includes(`"path":"/levels/${id}/2.h2lvl"`));
+  await post("/api/admin/takedown", JSON.stringify({ level: id }), me);
+} finally {
+  rmSync(work, { recursive: true, force: true });
+}
 
 // the owner takes something down: the list is published, signed; the client accepts it
 const level = "wt" + Date.now().toString(36);

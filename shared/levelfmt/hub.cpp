@@ -23,9 +23,9 @@ using namespace files;
 namespace {
 
 constexpr char kIndexPrefix[] = "H2LVL index v1\n";
-// the site's public keys (two: one can be rotated); none yet: the site's operator makes them with
-// `levelpack site keygen` and puts the public halves here
-constexpr const char* kSiteKeys[] = {nullptr};
+// the site's public keys (two: one can be rotated). The first made 2026-11-13 by website/tools/make_site_key.mjs:
+// its secret half is the Worker's SITE_SEED only (docs/site_api.md "Signing")
+constexpr const char* kSiteKeys[] = {"239ef6a67cdacbfb7c7e5c031f5ebc5c97744e9d0d7047a76f1b3e47167b28e2", nullptr};
 
 bool HttpsGet(const std::wstring& host, const std::wstring& path, size_t max, std::string& out, std::string* error)
 {

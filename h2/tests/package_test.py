@@ -493,7 +493,8 @@ code, out = pack_env(ENVH, "hub", "install", LEVEL_ID, "--source", SITE, "--game
 check("hub install: downloaded, checked, installed", code == 0 and
       os.path.exists(os.path.join(GAMEH, "Mods", "Online", LEVEL_ID, "level.json")), out.strip()[-120:])
 code, out = pack_env(dict(ENVH, HITMANLEVELS_SITE_KEYS=""), "hub", "list", "--source", SITE)
-check("no site key: the Hub is off", code == 1 and "no site key" in out, out.strip()[:90])
+check("without the staging key: the built-in site key refuses the test site's list", code == 1 and
+      "not signed by the site" in out, out.strip()[:90])
 code, out = pack_env(dict(ENVH, HITMANLEVELS_SITE_KEYS=raw_key(Ed25519PrivateKey.generate()).hex()), "hub", "list",
                      "--source", SITE)
 check("refused: a list signed by another key", code == 1 and "not signed by the site" in out, out.strip()[:100])

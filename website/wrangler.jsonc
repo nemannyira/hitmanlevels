@@ -9,7 +9,7 @@
     "run_worker_first": ["/api/*", "/levels/*"]
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "hitmanlevels", "database_id": "local-only-until-created", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "hitmanlevels", "database_id": "fc6394a6-ff82-499e-85e9-045661de42e6", "migrations_dir": "migrations" }
   ],
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "hitmanlevels" }

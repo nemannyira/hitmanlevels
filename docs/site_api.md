@@ -78,8 +78,12 @@ separated hex) names other keys, and `--source <folder>` reads a site from disk 
 
 ## Still to do (the owner)
 
-* enable R2; two-factor sign-in on the Cloudflare account;
-* the OAuth apps at Discord, GitHub and Google (their client ids and secrets go in as Workers
-  secrets);
+* ~~enable R2; two-factor sign-in on the Cloudflare account~~ (done 2026-11-13);
+* the OAuth apps at Discord, GitHub and Google, named "Hitman Levels": redirect
+  `https://hitmanlevels.com/api/auth/<provider>/callback` (and `http://localhost:8787/...` for
+  `wrangler dev` where the provider takes a second one); scopes: Discord `identify`, GitHub none
+  (public profile), Google `openid profile` (no e-mail). Their client ids and secrets go in as
+  Workers secrets (`DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `GITHUB_...`, `GOOGLE_...`), typed by
+  the owner into `wrangler secret put`;
 * terms of use and a privacy notice (GDPR: the account's id and name, an author's name and key, the
   reports; play records later).

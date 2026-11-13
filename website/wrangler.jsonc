@@ -11,6 +11,8 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "hitmanlevels", "database_id": "fc6394a6-ff82-499e-85e9-045661de42e6", "migrations_dir": "migrations" }
   ],
+  // every day at 03:17 UTC: old reports and ended sessions deleted (src/worker.js cleanUp, privacy.html)
+  "triggers": { "crons": ["17 3 * * *"] },
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "hitmanlevels" }
   ],

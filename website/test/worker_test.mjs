@@ -2,7 +2,8 @@
 // the pages, sign-in's start and a forged callback, sessions, the POST rules, real uploads (packages the
 // editor's levelpack made: checked by the WebAssembly check, listed; tampered, repeated, another account's
 // refused), the owner's take-down publishing a list the client (levelpack) accepts.
-//   npx wrangler d1 migrations apply hitmanlevels --local; npx wrangler dev --local --port 8787 --ip 127.0.0.1
+//   npx wrangler d1 migrations apply hitmanlevels --local
+//   npx wrangler dev --local --port 8787 --ip 127.0.0.1 --test-scheduled   (the daily clean-up run by hand)
 //   node test/worker_test.mjs ../build/Release/levelpack.exe
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
@@ -69,7 +70,7 @@ const work = mkdtempSync(join(tmpdir(), "h2pkg-"));
 const pack = (...args) => execFileSync(levelpack, args, { env: { ...process.env, HITMANLEVELS_HOME: join(work, "home") }, encoding: "utf8" });
 const pid2 = "u" + Date.now();
 const token2 = b64url(randomBytes(32));
-sql(`INSERT INTO users (provider, provider_id, name, created) VALUES ('discord', '${pid2}', 'Someone Else', 0);` +
+sql(`INSERT INTO users (provider, provider_id, name, created) VALUES ('discord', '${pid2}', 'Someone ${pid2}', 0);` +
   `INSERT INTO sessions (token_hash, user_id, expires) SELECT '${b64url(createHash("sha256").update(token2).digest())}', id, 4102444800 FROM users WHERE provider_id = '${pid2}';`);
 const other = { Cookie: `__Host-session=${token2}`, Origin: BASE };
 try {
@@ -147,6 +148,33 @@ try {
 }
 r = await post("/api/admin/takedown", JSON.stringify({ level }), me);
 check("a level taken down leaves the list", !(await (await get("/api/v1/index.json")).text()).includes(level));
+
+// the owner's page: the overview, a report dealt with, the daily clean-up, a level put back, an account
+// blocked, unblocked and deleted with everything of it
+check("the overview is the owner's only", (await get("/api/admin/overview", other)).status === 403);
+check("a report", (await post("/api/report", JSON.stringify({ level, version: 1, reason: "test report" }), other)).status === 200);
+let ov = await (await get("/api/admin/overview", me)).json();
+const rep = ov.reports.find((x) => x.level_id === level && x.reason === "test report");
+check("... in the owner's overview, open", rep && !rep.handled);
+await post("/api/admin/handled", JSON.stringify({ report: rep.id }), me);
+sql(`INSERT INTO reports (level_id, user_id, reason, created, handled, handled_at)
+     SELECT '${level}', id, 'an old one', 0, 1, 1000 FROM users WHERE provider_id = '${pid}';`);
+await get("/__scheduled?cron=17+3+*+*+*");
+ov = await (await get("/api/admin/overview", me)).json();
+check("... dealt with; the clean-up deletes reports dealt with over a year ago only",
+  ov.reports.some((x) => x.id === rep.id && x.handled) && !ov.reports.some((x) => x.reason === "an old one"));
+r = await post("/api/admin/restore", JSON.stringify({ level }), me);
+check("a level put back is in the list again", r.status === 200 && (await (await get("/api/v1/index.json")).text()).includes(level));
+await post("/api/admin/takedown", JSON.stringify({ level }), me);
+const otherId = ov.users.find((u) => u.name === `Someone ${pid2}`).id;
+await post("/api/admin/block", JSON.stringify({ user: otherId }), me);
+check("a blocked account is signed out", (await get("/api/me", other)).status === 401);
+await post("/api/admin/unblock", JSON.stringify({ user: otherId }), me);
+check("the owner cannot block themself", (await post("/api/admin/block", JSON.stringify({ user: ov.users.find((u) => u.admin).id }), me)).status === 400);
+r = await post("/api/admin/delete-user", JSON.stringify({ user: otherId }), me);
+ov = await (await get("/api/admin/overview", me)).json();
+check("an account deleted with its reports", r.status === 200 && !ov.users.some((u) => u.id === otherId) &&
+  !ov.reports.some((x) => x.reporter === `Someone ${pid2}`));
 
 r = await post("/api/logout", "", me);
 check("signed out", r.status === 204 && (await get("/api/me", me)).status === 401);

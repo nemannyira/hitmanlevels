@@ -66,7 +66,11 @@ separated hex) names other keys, and `--source <folder>` reads a site from disk 
   level as theirs).
 * **No review before listing**: an upload that passes the checks is listed at once. Players can
   report a level; the owner (admin) can take a level or a version down and block an account or an
-  author key.
+  author key. The owner's page is `/admin.html` (reports, levels, accounts; an account deleted with
+  its levels, packages and reports on request). An account becomes the owner's once, after its first
+  sign-in: `npx wrangler d1 execute hitmanlevels --remote --command "UPDATE users SET admin = 1 WHERE
+  id = <its id>"`. Every day at 03:17 UTC the Worker deletes reports dealt with more than a year ago and
+  sessions that ended (privacy.html).
 * **Checks on upload**: the package reader and the strict level check of the client
   (`shared/levelfmt`, `h2/src/levelfmt`), built to WebAssembly and run by the Worker: the site lists
   exactly what the client accepts, and a hostile file meets the parser in WebAssembly's sandbox.

@@ -120,24 +120,88 @@ async function report(request, env, user) {
   return json({ ok: true });
 }
 
-// POST /api/admin/takedown { level, version? } | /api/admin/block { user? , key? }: the owner's
-async function admin(request, env, action) {
+// the owner's (users.admin = 1): GET /api/admin/overview (the reports, levels, accounts) and the actions
+// POST /api/admin/<action> { ... }: takedown / restore { level, version? }, block / unblock { user | key },
+// handled { report }, delete-user { user } (an account and everything of it: privacy.html "your rights")
+async function adminOverview(env) {
+  const [reports, levels, users] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT r.id, r.level_id, r.version, r.reason, r.created, r.handled, r.handled_at, u.name AS reporter,
+              (SELECT title FROM versions v WHERE v.level_id = r.level_id ORDER BY version DESC LIMIT 1) AS title
+         FROM reports r JOIN users u ON u.id = r.user_id ORDER BY r.handled, r.created DESC LIMIT 500`),
+    env.DB.prepare(
+      `SELECT l.id, l.taken_down, l.downloads, l.author_key, a.blocked AS key_blocked, a.user_id, u.name AS account,
+              (SELECT title FROM versions v WHERE v.level_id = l.id ORDER BY version DESC LIMIT 1) AS title,
+              (SELECT author_name FROM versions v WHERE v.level_id = l.id ORDER BY version DESC LIMIT 1) AS author,
+              (SELECT json_group_array(json_object('version', version, 'taken_down', taken_down, 'created', created))
+                 FROM versions v WHERE v.level_id = l.id) AS versions
+         FROM levels l JOIN authors a ON a.key = l.author_key JOIN users u ON u.id = a.user_id ORDER BY title`),
+    env.DB.prepare(
+      `SELECT u.id, u.name, u.provider, u.created, u.blocked, u.admin,
+              (SELECT COUNT(*) FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = u.id) AS levels
+         FROM users u ORDER BY u.created DESC LIMIT 1000`),
+  ]);
+  return json({
+    reports: reports.results,
+    levels: levels.results.map((l) => ({ ...l, versions: JSON.parse(l.versions) })),
+    users: users.results,
+  });
+}
+
+async function deleteUser(env, id) {
+  const levels = await env.DB.prepare(
+    "SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?").bind(id).all();
+  for (const { id: level } of levels.results) {
+    const files = await env.FILES.list({ prefix: `levels/${level}/` });
+    if (files.objects.length) await env.FILES.delete(files.objects.map((o) => o.key));
+  }
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM versions WHERE level_id IN
+      (SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?)`).bind(id),
+    env.DB.prepare(`DELETE FROM levels WHERE author_key IN (SELECT key FROM authors WHERE user_id = ?)`).bind(id),
+    env.DB.prepare("DELETE FROM authors WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM reports WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id),
+  ]);
+}
+
+async function admin(request, env, action, me) {
   const b = await request.json().catch(() => ({}));
-  if (action === "takedown" && typeof b.level === "string") {
-    await (Number.isInteger(b.version)
-      ? env.DB.prepare("UPDATE versions SET taken_down = 1 WHERE level_id = ? AND version = ?").bind(b.level, b.version)
-      : env.DB.prepare("UPDATE levels SET taken_down = 1 WHERE id = ?").bind(b.level)).run();
-  } else if (action === "block" && Number.isInteger(b.user)) {
+  const level = typeof b.level === "string" ? b.level : null, version = Number.isInteger(b.version) ? b.version : null;
+  const flag = action === "takedown" || action === "block" ? 1 : 0;
+  if ((action === "takedown" || action === "restore") && level) {
+    await (version !== null
+      ? env.DB.prepare("UPDATE versions SET taken_down = ? WHERE level_id = ? AND version = ?").bind(flag, level, version)
+      : env.DB.prepare("UPDATE levels SET taken_down = ? WHERE id = ?").bind(flag, level)).run();
+  } else if ((action === "block" || action === "unblock") && Number.isInteger(b.user)) {
+    if (b.user === me.id) return json({ error: "Not your own account" }, 400);
     await env.DB.batch([
-      env.DB.prepare("UPDATE users SET blocked = 1 WHERE id = ?").bind(b.user),
-      env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(b.user),
+      env.DB.prepare("UPDATE users SET blocked = ? WHERE id = ?").bind(flag, b.user),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND ? = 1").bind(b.user, flag),
     ]);
-  } else if (action === "block" && typeof b.key === "string") {
-    await env.DB.prepare("UPDATE authors SET blocked = 1 WHERE key = ?").bind(b.key).run();
+  } else if ((action === "block" || action === "unblock") && typeof b.key === "string") {
+    await env.DB.prepare("UPDATE authors SET blocked = ? WHERE key = ?").bind(flag, b.key).run();
+  } else if (action === "handled" && Number.isInteger(b.report)) {
+    await env.DB.prepare("UPDATE reports SET handled = 1, handled_at = ? WHERE id = ?")
+      .bind(Math.floor(Date.now() / 1000), b.report).run();
+    return json({ ok: true });
+  } else if (action === "delete-user" && Number.isInteger(b.user)) {
+    if (b.user === me.id) return json({ error: "Not your own account" }, 400);
+    await deleteUser(env, b.user);
   } else {
-    return json({ error: "What to take down or block?" }, 400);
+    return json({ error: "What to do, to what?" }, 400);
   }
   return json({ list: (await publishList(env)).serial });
+}
+
+// every day: reports dealt with more than a year ago and sessions that ended are deleted (privacy.html)
+async function cleanUp(env) {
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM reports WHERE handled = 1 AND handled_at < ?").bind(now - 365 * 86400),
+    env.DB.prepare("DELETE FROM sessions WHERE expires < ?").bind(now),
+  ]);
 }
 
 export default {
@@ -156,6 +220,10 @@ export default {
       if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\/preview\.png$/)))
         return file(env, `levels/${m[1]}/${m[2]}/preview.png`, "image/png");
       if (path === "/api/levels") return levels(env);
+      if (path === "/api/admin/overview") {
+        const user = await currentUser(request, env);
+        return user && user.admin ? adminOverview(env) : json({ error: "The owner's only" }, 403);
+      }
       if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})$/))) return level(env, m[1]);
       if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/start$/))) return start(request, env, m[1]);
       if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/callback$/))) return callback(request, env, m[1]);
@@ -179,12 +247,16 @@ export default {
       if (!user) return json({ error: "Sign in first" }, 401);
       if (path === "/api/upload") return upload(request, env, user);
       if (path === "/api/report") return report(request, env, user);
-      if ((m = path.match(/^\/api\/admin\/(takedown|block)$/))) {
+      if ((m = path.match(/^\/api\/admin\/(takedown|restore|block|unblock|handled|delete-user)$/))) {
         if (!user.admin) return json({ error: "The owner's only" }, 403);
-        return admin(request, env, m[1]);
+        return admin(request, env, m[1], user);
       }
     }
     if (path.startsWith("/api/") || path.startsWith("/levels/")) return json({ error: "Not found" }, 404);
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cleanUp(env));
   },
 };

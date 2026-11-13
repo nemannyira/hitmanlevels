@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Owner - Hitman Levels</title>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="rain" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Hitman Levels<span>.</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">Levels</a>
+      <a href="get-started.html">Get started</a>
+      <a href="#">Editor &amp; tools</a>
+      <a href="upload.html">Upload</a>
+    </nav>
+    <a class="btn small signin" href="signin.html">Sign in</a>
+  </div>
+</header>
+
+<main class="wrap legal" style="max-width:none">
+  <div class="head">
+    <h1>The owner's page</h1>
+    <p id="status">Loading...</p>
+  </div>
+
+  <div id="owner" hidden>
+    <section>
+      <div class="section-title"><h2>Reports</h2><span class="muted" id="reports-count"></span></div>
+      <table id="reports"><tr><th>When</th><th>Level</th><th>From</th><th>Why</th><th></th></tr></table>
+    </section>
+    <section>
+      <div class="section-title"><h2>Levels</h2><span class="muted" id="levels-count"></span></div>
+      <table id="levels"><tr><th>Level</th><th>Author / account</th><th>Versions</th><th>Downloads</th><th></th></tr></table>
+    </section>
+    <section>
+      <div class="section-title"><h2>Accounts</h2><span class="muted" id="users-count"></span></div>
+      <table id="users"><tr><th>Name</th><th>Signed in with</th><th>Since</th><th>Levels</th><th></th></tr></table>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A fan site. Not affiliated with or endorsed by IO Interactive. Hitman and its games' names are trademarks of IO Interactive A/S.</span>
+    <span><a href="terms.html">Terms</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+
+  // an action of the owner's, then the page again
+  async function act(action, body, question) {
+    if (question && !confirm(question)) return;
+    var r = await fetch("/api/admin/" + action, { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    var j = await r.json().catch(function () { return {}; });
+    $("status").textContent = r.ok ? "Done: " + action + (j.list ? " (the list signed again: " + j.list + ")" : "") : "Refused: " + (j.error || r.status);
+    load();
+  }
+
+  function button(label, fn, cls) {
+    var b = el("button", "btn small" + (cls ? " " + cls : ""), label);
+    b.addEventListener("click", fn);
+    b.style.margin = "2px";
+    return b;
+  }
+
+  function row(table, cells) {
+    var tr = el("tr");
+    cells.forEach(function (c) {
+      var td = el("td");
+      if (c instanceof Node) td.appendChild(c); else td.textContent = c;
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  }
+
+  function clear(table) { while (table.rows.length > 1) table.deleteRow(1); }
+
+  async function load() {
+    var r = await fetch("/api/admin/overview", { credentials: "same-origin" });
+    if (r.status !== 200) { $("status").textContent = "The owner's only: sign in with the owner's account."; return; }
+    var d = await r.json();
+    $("owner").hidden = false;
+    if ($("status").textContent === "Loading...") $("status").textContent = "Signed in as the owner.";
+
+    var open = d.reports.filter(function (x) { return !x.handled; }).length;
+    $("reports-count").textContent = open + " open, " + d.reports.length + " in all";
+    clear($("reports"));
+    d.reports.forEach(function (x) {
+      var actions = el("span");
+      if (!x.handled) actions.appendChild(button("Dealt with", function () { act("handled", { report: x.id }); }));
+      else actions.appendChild(el("span", "muted", "dealt with " + day(x.handled_at)));
+      actions.appendChild(button("Take the level down", function () { act("takedown", { level: x.level_id }, "Take down every version of " + (x.title || x.level_id) + "?"); }, "red"));
+      var link = el("a", null, (x.title || x.level_id) + (x.version ? " v" + x.version : ""));
+      link.href = "level.html?id=" + encodeURIComponent(x.level_id);
+      row($("reports"), [day(x.created), link, x.reporter, x.reason, actions]);
+    });
+
+    $("levels-count").textContent = d.levels.length + " levels";
+    clear($("levels"));
+    d.levels.forEach(function (l) {
+      var actions = el("span");
+      actions.appendChild(l.taken_down
+        ? button("Put back", function () { act("restore", { level: l.id }); })
+        : button("Take down", function () { act("takedown", { level: l.id }, "Take down every version of " + l.title + "?"); }, "red"));
+      actions.appendChild(l.key_blocked
+        ? button("Unblock the key", function () { act("unblock", { key: l.author_key }); })
+        : button("Block the key", function () { act("block", { key: l.author_key }, "Block the author key of " + l.author + "? Its levels leave the list."); }));
+      var versions = el("span");
+      l.versions.sort(function (a, b) { return a.version - b.version; }).forEach(function (v) {
+        versions.appendChild(button("v" + v.version + (v.taken_down ? " (down)" : ""), function () {
+          act(v.taken_down ? "restore" : "takedown", { level: l.id, version: v.version });
+        }));
+      });
+      var name = el("span", l.taken_down ? "muted" : null, l.title + (l.taken_down ? " (taken down)" : ""));
+      row($("levels"), [name, l.author + " / " + l.account, versions, String(l.downloads), actions]);
+    });
+
+    $("users-count").textContent = d.users.length + " accounts";
+    clear($("users"));
+    d.users.forEach(function (u) {
+      var actions = el("span");
+      if (!u.admin) {
+        actions.appendChild(u.blocked
+          ? button("Unblock", function () { act("unblock", { user: u.id }); })
+          : button("Block", function () { act("block", { user: u.id }, "Block " + u.name + "? They are signed out and cannot upload."); }));
+        actions.appendChild(button("Delete with everything", function () {
+          act("delete-user", { user: u.id }, "Delete " + u.name + "'s account, levels, packages and reports? This cannot be undone.");
+        }, "red"));
+      } else {
+        actions.appendChild(el("span", "muted", "the owner"));
+      }
+      row($("users"), [u.name + (u.blocked ? " (blocked)" : ""), u.provider, day(u.created), String(u.levels), actions]);
+    });
+  }
+
+  load();
+</script>
+</body>
+</html>

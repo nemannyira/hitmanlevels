@@ -1,0 +1,6 @@
+#pragma once
+// The release's version (CMakeLists.txt project(... VERSION)); made by CMake into the build folder.
+#define HL_VERSION "@PROJECT_VERSION@"
+#define HL_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define HL_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define HL_VERSION_PATCH @PROJECT_VERSION_PATCH@

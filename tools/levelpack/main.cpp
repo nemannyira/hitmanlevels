@@ -11,6 +11,7 @@
 //   levelpack hub list|install <id> [--source https://hitmanlevels.com | <folder>]   (the site's levels)
 //   levelpack site keygen <key file> | site sign <index.json> <key file>             (the site's operator)
 //   levelpack selftest
+//   levelpack --version
 //   levelpack <package>                                      (a double click: install, asking)
 //
 // Exit codes: 0 done, 1 refused (a check failed), 2 usage / unreadable, 3 needs a confirmation
@@ -31,6 +32,7 @@
 #include "levelfmt/crypto.h"
 #include "levelfmt/games.h"
 #include "levelfmt/h2_game.h"
+#include "hitmanlevels_version.h"
 #include "levelfmt/hub.h"
 #include "levelfmt/package.h"
 #include "levelfmt/share.h"
@@ -425,7 +427,8 @@ int Usage()
                  "[--allow-other-author]\n"
                  "       levelpack site keygen <key file>\n"
                  "       levelpack site sign <index.json> <key file>\n"
-                 "       levelpack selftest\n");
+                 "       levelpack selftest\n"
+                 "       levelpack --version\n");
     return 2;
 }
 
@@ -438,6 +441,10 @@ int main(int argc, char** argv)
     if (argc < 2)
         return Usage();
     std::string cmd = argv[1];
+    if (cmd == "--version") {
+        std::printf("levelpack (Hitman Levels) %s\n", HL_VERSION);
+        return 0;
+    }
     if (cmd == "selftest") {
         bool ok = h2::levelfmt::crypto::Ed25519SelfTest();
         std::printf("Ed25519 RFC 8032 vectors: %s\n", ok ? "ok" : "FAILED");

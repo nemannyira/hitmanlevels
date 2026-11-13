@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(HitmanLevels C CXX)
+project(HitmanLevels VERSION 0.1.0 LANGUAGES C CXX)
 
 # The games' editors (h2/: Hitman 2: Silent Assassin; h3/, h4/ to come), what they share (shared/), the
 # tools for every game (tools/) and the site (website/, not built here).
@@ -53,11 +53,24 @@ target_link_libraries(levelfmt PUBLIC bcrypt crypt32 shell32 ole32)
 add_library(levelhub STATIC shared/levelfmt/hub.cpp)
 target_link_libraries(levelhub PUBLIC levelfmt winhttp)
 
+# the release's version: a header for the code (hitmanlevels_version.h) and each file's Windows version
+# information (hl_version_resource(target "what it is" "file.ext" VFT_DLL|VFT_APP))
+configure_file(shared/version/version.h.in ${CMAKE_BINARY_DIR}/generated/hitmanlevels_version.h)
+include_directories(${CMAKE_BINARY_DIR}/generated)
+function(hl_version_resource target description file type)
+    set(HL_FILE_DESCRIPTION "${description}")
+    set(HL_FILE_NAME "${file}")
+    set(HL_FILE_TYPE "${type}")
+    configure_file(${PROJECT_SOURCE_DIR}/shared/version/version.rc.in ${CMAKE_BINARY_DIR}/generated/${target}_version.rc)
+    target_sources(${target} PRIVATE ${CMAKE_BINARY_DIR}/generated/${target}_version.rc)
+endfunction()
+
 add_subdirectory(h2)
 
 # levelpack.exe: installs any game's packages (the Level Hub's installer), exports, signs the site's list
 add_executable(levelpack tools/levelpack/main.cpp)
 target_link_libraries(levelpack PRIVATE levelhub h2levelfmt)
+hl_version_resource(levelpack "Hitman Levels: level package installer" "levelpack.exe" VFT_APP)
 if(H2_FUZZ)
     add_executable(package_fuzz tools/fuzz/package_fuzz.cpp)
     target_compile_options(package_fuzz PRIVATE -fsanitize=fuzzer,address)

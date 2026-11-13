@@ -8,6 +8,7 @@
 #include <MinHook.h>
 
 #include "config.h"
+#include "hitmanlevels_version.h"
 #include "crashlog.h"
 #include "devcmd.h"
 #include "d3dhook.h"
@@ -90,7 +91,7 @@ void Init()
         h2::Log("unexpected executable / build, fixes disabled");
         return;
     }
-    h2::Log("H2Fix loaded into %s", h2::GameDir().c_str());
+    h2::Log("H2Fix (Hitman Levels %s) loaded into %s", HL_VERSION, h2::GameDir().c_str());
     if (MH_Initialize() != MH_OK) {
         h2::Log("MinHook init failed");
         return;

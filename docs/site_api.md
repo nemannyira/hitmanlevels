@@ -1,9 +1,8 @@
 # hitmanlevels.com: what the client expects of the site
 
 The client side of the Level Hub is built (`shared/levelfmt/hub.h`, `levelpack hub ...`, issue #6);
-this is the contract the site has to keep. Everything here is static files: the site can be a plain
-static host (for example Cloudflare Pages or R2 behind the hitmanlevels.com domain), with uploads,
-accounts and moderation as a separate part later (docs/online_levels.md sections 7-9).
+this is the contract the site has to keep. What the client reads is static files; the site behind
+them (accounts, uploads, reports) is decided below (docs/online_levels.md sections 7-9).
 
 ## Files
 
@@ -35,22 +34,52 @@ client never uses plain HTTP and does not follow a redirect from HTTPS to HTTP.
 
 ## Signing
 
-The site key signs the list, never the packages (their authors do). The key is made and kept on the
-operator's PC, sealed for that Windows user, and the list is signed there:
+The site key signs the list, never the packages (their authors do). With uploads and no review before
+listing (below), the site signs the list itself after each change: the key is a Workers secret
+(encrypted, not readable back from the dashboard), used by the Worker only (Ed25519 in Workers'
+WebCrypto). `levelpack site keygen|sign` stay for a staging copy and for tests:
 
 ```
-levelpack site keygen site.key            (once: prints the public key)
+levelpack site keygen site.key            (prints the public key)
 levelpack site sign index.json site.key   (writes index.sig beside it)
 ```
+
+Who holds the Cloudflare account can sign any list: the account needs two-factor sign-in. A forged
+list still cannot change a package (its author signs it; the client asks about new authors and warns
+when another key signs a level it has).
 
 The public key goes into the client (`kSiteKeys` in `shared/levelfmt/hub.cpp`, room for two so one can be
 rotated); until then the Hub is off. For a staging copy of the site, `HITMANLEVELS_SITE_KEYS` (comma
 separated hex) names other keys, and `--source <folder>` reads a site from disk (tests).
 
-## Still to decide (the owner)
+## Decided (the owner, 2026-11-13)
 
-* hosting of the static files (Cloudflare Pages / R2 fit the domain, the free tiers cover a level list
-  of a few MB) and who publishes;
-* uploads and accounts (sign-in through GitHub / Discord / Google, or accounts of the site's own);
-* moderation: who looks at a level before it is listed;
-* terms of use and privacy (GDPR: an author's name and key, play records later).
+* **Hosting**: Cloudflare, behind hitmanlevels.com: Pages for the site's own pages, a Worker for the
+  API and uploads, D1 for the accounts and the levels' records, R2 for the packages (to be enabled
+  in the dashboard by the owner: it asks for billing details).
+* **Accounts**: sign-in with Discord, GitHub or Google (OAuth 2.0 with PKCE); no passwords of the
+  site's own. Kept: the provider's user id, a display name; no e-mail unless a provider gives it
+  and it is needed.
+* **Uploads**: any signed-in user. A level's author key is bound to the account that first uploads
+  it; a package signed with that key from another account is refused (no one re-uploads another's
+  level as theirs).
+* **No review before listing**: an upload that passes the checks is listed at once. Players can
+  report a level; the owner (admin) can take a level or a version down and block an account or an
+  author key.
+* **Checks on upload**: the package reader and the strict level check of the client
+  (`shared/levelfmt`, `h2/src/levelfmt`), built to WebAssembly and run by the Worker: the site lists
+  exactly what the client accepts, and a hostile file meets the parser in WebAssembly's sandbox.
+  Then the author's signature, the id / version / key against what the site has (versions only
+  grow), the size limits.
+* **Language**: English.
+* **Look**: after Hitman: Contracts' mood (night, rain, film noir: near-black, silver grey type, one
+  blood-red accent; the menus' label left, value right), not its logos, art or fonts (IO
+  Interactive's): a logo of the site's own and a "not affiliated with IO Interactive" notice.
+
+## Still to do (the owner)
+
+* enable R2; two-factor sign-in on the Cloudflare account;
+* the OAuth apps at Discord, GitHub and Google (their client ids and secrets go in as Workers
+  secrets);
+* terms of use and a privacy notice (GDPR: the account's id and name, an author's name and key, the
+  reports; play records later).

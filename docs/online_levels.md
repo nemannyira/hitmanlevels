@@ -120,12 +120,13 @@ usage, 3 a confirmation missing.
 
 * **Transport**: HTTPS only (WinHTTP / Schannel, TLS 1.2+, the system's
   certificate checks; no HTTP fallback, no "ignore certificate errors").
-* **Signatures**: the site signs each published package's manifest with an
+* **Signatures**: the site signs the list of published levels with an
   Ed25519 key (Monocypher 4.0.3 in the client, third_party/monocypher); the Hub has the public
-  key built in (two keys, so one can be rotated). A package without a valid
-  signature is refused even when it came over HTTPS: a compromised web
-  server or CDN cannot serve altered levels unless it also has the signing
-  key, which should live offline / in the server's signing service.
+  key built in (two keys, so one can be rotated). The packages carry their
+  authors' signatures, which the client checks whatever the list says: a
+  compromised web server or CDN cannot serve altered levels. The site's key
+  is a Workers secret, as uploads are listed without review (decided
+  2026-11-13, [site_api.md](site_api.md)).
 * **Authors' keys** (done 2026-10-24 for packages passed on by hand,
   section 3): the editor makes an Ed25519 key per author once (DPAPI, the
   PC's own LocalAppData) and signs each package with it; the installer shows

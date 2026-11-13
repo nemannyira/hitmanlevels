@@ -21,6 +21,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { background: var(--bg); }
 body { margin: 0; color: var(--text); font: 15px/1.65 var(--sans);
   background: var(--bg) radial-gradient(ellipse at 50% 0%, #1a2023 0%, var(--bg) 60%) no-repeat; }

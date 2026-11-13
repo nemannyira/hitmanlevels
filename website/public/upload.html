@@ -19,7 +19,7 @@
       <a href="#">Editor &amp; tools</a>
       <a class="on" href="upload.html">Upload</a>
     </nav>
-    <a class="btn small signin" href="#">nemannyira</a>
+    <a class="btn small signin" href="signin.html" id="who">Sign in</a>
   </div>
 </header>
 
@@ -29,7 +29,18 @@
     <p>The package the editor wrote (Save &amp; share in Simple mode, or Level &gt; Share &gt; Export package). It is checked as the game will check it, then listed at once.</p>
   </div>
 
-  <div class="page-cols">
+  <!-- not signed in -->
+  <div id="signed-out" hidden>
+    <div class="menubox signin-box">
+      <h2>Sign in first</h2>
+      <a class="choice on" href="/api/auth/discord/start">Discord</a>
+      <a class="choice" href="/api/auth/github/start">GitHub</a>
+      <a class="choice" href="/api/auth/google/start">Google</a>
+      <div class="note">Uploading needs an account; playing levels does not.</div>
+    </div>
+  </div>
+
+  <div class="page-cols" id="signed-in" hidden>
     <div>
       <section>
         <div class="section-title"><h2>The package</h2><span class="muted">.h2lvl &middot; at most 2 MB</span></div>
@@ -42,36 +53,35 @@
       </section>
 
       <section>
-        <div class="section-title"><h2>The checks</h2><span class="muted">Snow_Ambush_v2.h2lvl (sample)</span></div>
-        <ul class="checks">
-          <li class="ok"><span class="mark">&#10003;</span><div>A level package and nothing else<small>Only the files a level may hold; no game files.</small></div></li>
-          <li class="ok"><span class="mark">&#10003;</span><div>Signed by its author<small>Key 5F2A-91C0-&hellip;-07DE, nemannyira: yours, from your first upload.</small></div></li>
-          <li class="ok"><span class="mark">&#10003;</span><div>The level's file passes the game's check<small>The same check the editor runs before it loads a downloaded level.</small></div></li>
-          <li class="ok"><span class="mark">&#10003;</span><div>A new version<small>Version 2 of Snow Ambush (version 1 is listed).</small></div></li>
-          <li class="wait"><span class="mark">&middot;</span><div>Its picture and description<small>preview.png and README.md are shown on the level's page; none is needed.</small></div></li>
-        </ul>
-      </section>
-
-      <section>
         <div class="form-row">
-          <label class="check"><input type="checkbox" id="own"> <span>It is my own work (or I may share it), under the license it names: <b>CC BY 4.0</b>. I agree to the <a href="#">terms</a>.</span></label>
+          <label class="check"><input type="checkbox" id="own"> <span>It is my own work (or I may share it), under the license it names. I agree to the <a href="#">terms</a>.</span></label>
         </div>
         <button class="btn red" id="send" disabled>Publish the level</button>
         <p class="muted" style="margin-top:12px">It is listed at once. Players can report a level; one that breaks the terms is taken down.</p>
+      </section>
+
+      <section>
+        <div class="section-title"><h2>The checks</h2><span class="muted" id="checks-of"></span></div>
+        <ul class="checks" id="checks">
+          <li class="wait"><span class="mark">&middot;</span><div>A level package and nothing else<small>Only the files a level may hold; no game files.</small></div></li>
+          <li class="wait"><span class="mark">&middot;</span><div>Signed by its author<small>Every file as the author signed it. The first upload with an author key binds that key to your account.</small></div></li>
+          <li class="wait"><span class="mark">&middot;</span><div>The level's file passes the game's check<small>The same check the editor runs before it loads a downloaded level.</small></div></li>
+          <li class="wait"><span class="mark">&middot;</span><div>A new version<small>Higher than the one on the site, of a level of yours.</small></div></li>
+        </ul>
+        <p id="result" style="margin-top:14px" hidden></p>
       </section>
     </div>
 
     <aside class="menubox">
       <h2>Your account</h2>
       <dl>
-        <div class="row"><dt>Name</dt><dd>nemannyira</dd></div>
-        <div class="row"><dt>Signed in with</dt><dd>GitHub</dd></div>
-        <div class="row"><dt>Author key</dt><dd class="mono">5F2A-91C0-&hellip;-07DE</dd></div>
-        <div class="row"><dt>Levels</dt><dd>2</dd></div>
+        <div class="row"><dt>Name</dt><dd id="me-name"></dd></div>
+        <div class="row"><dt>Signed in with</dt><dd id="me-provider"></dd></div>
+        <div class="row"><dt>Author key</dt><dd class="mono" id="me-key">none yet</dd></div>
+        <div class="row"><dt>Levels</dt><dd id="me-count">0</dd></div>
       </dl>
-      <a class="choice on" href="#">Your levels</a>
-      <a class="choice" href="#">Change your name</a>
-      <a class="choice dim" href="#">Sign out</a>
+      <div id="me-levels"></div>
+      <a class="choice dim" href="#" id="signout">Sign out</a>
       <div class="note">The author key is the one your packages are signed with. Packages signed with it can come only from this account.</div>
     </aside>
   </div>
@@ -85,19 +95,96 @@
 </footer>
 
 <script>
-  // the sample's behaviour only: the chosen file's name, the button once the agreement is ticked
-  var file = document.getElementById("file"), drop = document.getElementById("drop");
-  var own = document.getElementById("own"), send = document.getElementById("send");
-  file.addEventListener("change", function () {
-    document.getElementById("chosen").textContent = file.files.length ? file.files[0].name : "No file chosen.";
+  var $ = function (id) { return document.getElementById(id); };
+  var PROVIDERS = { discord: "Discord", github: "GitHub", google: "Google" };
+  var picked = null;
+
+  // the key's fingerprint as the editor and levelpack show it: 16 hex digits of its SHA-256 in groups of four
+  async function fingerprint(keyHex) {
+    var bytes = new Uint8Array(keyHex.match(/../g).map(function (h) { return parseInt(h, 16); }));
+    var d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    var hex = Array.from(d.slice(0, 8)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("").toUpperCase();
+    return hex.match(/..../g).join("-");
+  }
+
+  function text(el, s) { el.textContent = s; return el; }
+
+  async function loadMe() {
+    var r = await fetch("/api/me", { credentials: "same-origin" });
+    if (r.status !== 200) { $("signed-out").hidden = false; return; }
+    var me = await r.json();
+    $("signed-in").hidden = false;
+    text($("who"), me.name).href = "upload.html";
+    text($("me-name"), me.name);
+    text($("me-provider"), PROVIDERS[me.provider] || me.provider);
+    text($("me-key"), me.keys.length ? (await fingerprint(me.keys[0])) + (me.keys.length > 1 ? " +" + (me.keys.length - 1) : "") : "none yet");
+    text($("me-count"), String(me.levels.length));
+    var list = $("me-levels");
+    list.textContent = "";
+    me.levels.forEach(function (l) {
+      var a = document.createElement("a");
+      a.className = "choice";
+      a.href = "#";
+      a.textContent = l.title + " (v" + l.version + ")";
+      list.appendChild(a);
+    });
+  }
+
+  function pick(f) {
+    picked = f || null;
+    text($("chosen"), picked ? picked.name + " (" + Math.round(picked.size / 1024) + " KB)" : "No file chosen.");
+    ready();
+  }
+  function ready() { $("send").disabled = !(picked && $("own").checked); }
+
+  // the checks as the site answered them: each passed one ticked, the reason of a refusal under them
+  function showResult(ok, body) {
+    var items = $("checks").children, passed = body.checks || [];
+    for (var i = 0; i < items.length; i++) {
+      var good = ok || i < passed.length;
+      items[i].className = good ? "ok" : (i === passed.length ? "bad" : "wait");
+      items[i].querySelector(".mark").textContent = good ? "✓" : (i === passed.length ? "✗" : "·");
+    }
+    var p = $("result");
+    p.hidden = false;
+    if (ok) {
+      p.innerHTML = "";
+      p.appendChild(document.createTextNode("Published: version " + body.version + ". It is in the list the Level Hub reads now."));
+    } else {
+      p.textContent = body.error || "The upload was refused.";
+    }
+  }
+
+  $("file").addEventListener("change", function () { pick($("file").files[0]); });
+  ["dragenter", "dragover"].forEach(function (e) { $("drop").addEventListener(e, function (ev) { ev.preventDefault(); $("drop").classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (e) { $("drop").addEventListener(e, function () { $("drop").classList.remove("over"); }); });
+  $("drop").addEventListener("drop", function (ev) { ev.preventDefault(); pick(ev.dataTransfer.files[0]); });
+  $("own").addEventListener("change", ready);
+
+  $("send").addEventListener("click", async function () {
+    if (!picked) return;
+    if (picked.size > 2 * 1024 * 1024) { showResult(false, { error: "A package is at most 2 MB." }); return; }
+    $("send").disabled = true;
+    text($("checks-of"), picked.name);
+    try {
+      var r = await fetch("/api/upload?agree=1", { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/octet-stream" }, body: await picked.arrayBuffer() });
+      var body = await r.json().catch(function () { return { error: "The site gave no answer (" + r.status + ")." }; });
+      showResult(r.ok, body);
+      if (r.ok) loadMe();
+    } catch (e) {
+      showResult(false, { error: "The upload did not reach the site." });
+    }
+    ready();
   });
-  ["dragenter", "dragover"].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.add("over"); }); });
-  ["dragleave", "drop"].forEach(function (e) { drop.addEventListener(e, function () { drop.classList.remove("over"); }); });
-  drop.addEventListener("drop", function (ev) {
+
+  $("signout").addEventListener("click", async function (ev) {
     ev.preventDefault();
-    if (ev.dataTransfer.files.length) document.getElementById("chosen").textContent = ev.dataTransfer.files[0].name;
+    await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+    location.reload();
   });
-  own.addEventListener("change", function () { send.disabled = !own.checked; });
+
+  loadMe();
 </script>
 </body>
 </html>

@@ -40,16 +40,16 @@ async function upload(request, env, user) {
   const m = checked.manifest;  // id, version, title, base_scene, game, license, author { key, name }
 
   const author = await env.DB.prepare("SELECT user_id, blocked FROM authors WHERE key = ?").bind(m.author.key).first();
-  if (author && author.blocked) return json({ error: "This author key is blocked." }, 403);
+  if (author && author.blocked) return json({ error: "This author key is blocked.", checks: checked.checks }, 403);
   if (author && author.user_id !== user.id)
-    return json({ error: "This author key belongs to another account: only its first uploader may upload with it." }, 403);
+    return json({ error: "This author key belongs to another account: only its first uploader may upload with it.", checks: checked.checks }, 403);
   const level = await env.DB.prepare("SELECT author_key, taken_down FROM levels WHERE id = ?").bind(m.id).first();
   if (level && level.author_key !== m.author.key)
-    return json({ error: "A level with this id is another author's." }, 403);
-  if (level && level.taken_down) return json({ error: "This level was taken down." }, 403);
+    return json({ error: "A level with this id is another author's.", checks: checked.checks }, 403);
+  if (level && level.taken_down) return json({ error: "This level was taken down.", checks: checked.checks }, 403);
   const newest = await env.DB.prepare("SELECT MAX(version) AS v FROM versions WHERE level_id = ?").bind(m.id).first();
   if (newest && newest.v !== null && m.version <= newest.v)
-    return json({ error: `Version ${m.version} is not newer than version ${newest.v} on the site.` }, 409);
+    return json({ error: `Version ${m.version} is not newer than version ${newest.v} on the site.`, checks: checked.checks }, 409);
 
   const path = `/levels/${m.id}/${m.version}.h2lvl`;
   const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
@@ -111,7 +111,15 @@ export default {
       if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/callback$/))) return callback(request, env, m[1]);
       if (path === "/api/me") {
         const user = await currentUser(request, env);
-        return user ? json({ name: user.name, provider: user.provider, admin: !!user.admin }) : json({ error: "Not signed in" }, 401);
+        if (!user) return json({ error: "Not signed in" }, 401);
+        // the account's author keys and levels (the upload page's box)
+        const keys = await env.DB.prepare("SELECT key FROM authors WHERE user_id = ?").bind(user.id).all();
+        const levels = await env.DB.prepare(
+          `SELECT l.id, v.title, MAX(v.version) AS version FROM levels l JOIN authors a ON a.key = l.author_key
+             JOIN versions v ON v.level_id = l.id WHERE a.user_id = ? AND l.taken_down = 0 GROUP BY l.id ORDER BY v.title`,
+        ).bind(user.id).all();
+        return json({ name: user.name, provider: user.provider, admin: !!user.admin,
+          keys: keys.results.map((k) => k.key), levels: levels.results });
       }
     }
     if (request.method === "POST" && path.startsWith("/api/")) {

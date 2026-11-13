@@ -6,6 +6,7 @@
     "wrangler": "wrangler"
   },
   "devDependencies": {
+    "@fontsource/cinzel": "5.2.8",
     "@napi-rs/keyring": "1.3.0",
     "wrangler": "4.149.0"
   }

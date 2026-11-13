@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upload a level - Hitman Levels</title>
+<meta name="description" content="Upload a level package made with the editor to Hitman Levels.">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="rain" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Hitman Levels<span>.</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">Levels</a>
+      <a href="get-started.html">Get started</a>
+      <a href="#">Editor &amp; tools</a>
+      <a class="on" href="upload.html">Upload</a>
+    </nav>
+    <a class="btn small signin" href="#">nemannyira</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="head">
+    <h1>Upload a level</h1>
+    <p>The package the editor wrote (Save &amp; share in Simple mode, or Level &gt; Share &gt; Export package). It is checked as the game will check it, then listed at once.</p>
+  </div>
+
+  <div class="page-cols">
+    <div>
+      <section>
+        <div class="section-title"><h2>The package</h2><span class="muted">.h2lvl &middot; at most 2 MB</span></div>
+        <label class="dropzone" id="drop">
+          <span class="big">Drop the .h2lvl here</span>
+          <span class="muted">or click to choose it in <span class="mono">Mods\Packages</span></span>
+          <input type="file" accept=".h2lvl" id="file">
+        </label>
+        <p class="muted" id="chosen" style="margin-top:10px">No file chosen.</p>
+      </section>
+
+      <section>
+        <div class="section-title"><h2>The checks</h2><span class="muted">Snow_Ambush_v2.h2lvl (sample)</span></div>
+        <ul class="checks">
+          <li class="ok"><span class="mark">&#10003;</span><div>A level package and nothing else<small>Only the files a level may hold; no game files.</small></div></li>
+          <li class="ok"><span class="mark">&#10003;</span><div>Signed by its author<small>Key 5F2A-91C0-&hellip;-07DE, nemannyira: yours, from your first upload.</small></div></li>
+          <li class="ok"><span class="mark">&#10003;</span><div>The level's file passes the game's check<small>The same check the editor runs before it loads a downloaded level.</small></div></li>
+          <li class="ok"><span class="mark">&#10003;</span><div>A new version<small>Version 2 of Snow Ambush (version 1 is listed).</small></div></li>
+          <li class="wait"><span class="mark">&middot;</span><div>Its picture and description<small>preview.png and README.md are shown on the level's page; none is needed.</small></div></li>
+        </ul>
+      </section>
+
+      <section>
+        <div class="form-row">
+          <label class="check"><input type="checkbox" id="own"> <span>It is my own work (or I may share it), under the license it names: <b>CC BY 4.0</b>. I agree to the <a href="#">terms</a>.</span></label>
+        </div>
+        <button class="btn red" id="send" disabled>Publish the level</button>
+        <p class="muted" style="margin-top:12px">It is listed at once. Players can report a level; one that breaks the terms is taken down.</p>
+      </section>
+    </div>
+
+    <aside class="menubox">
+      <h2>Your account</h2>
+      <dl>
+        <div class="row"><dt>Name</dt><dd>nemannyira</dd></div>
+        <div class="row"><dt>Signed in with</dt><dd>GitHub</dd></div>
+        <div class="row"><dt>Author key</dt><dd class="mono">5F2A-91C0-&hellip;-07DE</dd></div>
+        <div class="row"><dt>Levels</dt><dd>2</dd></div>
+      </dl>
+      <a class="choice on" href="#">Your levels</a>
+      <a class="choice" href="#">Change your name</a>
+      <a class="choice dim" href="#">Sign out</a>
+      <div class="note">The author key is the one your packages are signed with. Packages signed with it can come only from this account.</div>
+    </aside>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A fan site. Not affiliated with or endorsed by IO Interactive. Hitman and its games' names are trademarks of IO Interactive A/S.</span>
+    <span><a href="#">Terms</a> &middot; <a href="#">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
+  </div>
+</footer>
+
+<script>
+  // the sample's behaviour only: the chosen file's name, the button once the agreement is ticked
+  var file = document.getElementById("file"), drop = document.getElementById("drop");
+  var own = document.getElementById("own"), send = document.getElementById("send");
+  file.addEventListener("change", function () {
+    document.getElementById("chosen").textContent = file.files.length ? file.files[0].name : "No file chosen.";
+  });
+  ["dragenter", "dragover"].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (e) { drop.addEventListener(e, function () { drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (ev) {
+    ev.preventDefault();
+    if (ev.dataTransfer.files.length) document.getElementById("chosen").textContent = ev.dataTransfer.files[0].name;
+  });
+  own.addEventListener("change", function () { send.disabled = !own.checked; });
+</script>
+</body>
+</html>

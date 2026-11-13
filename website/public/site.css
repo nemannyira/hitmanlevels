@@ -62,6 +62,9 @@ h3 { font-size: 16px; }
 .btn.red { background: var(--red); color: #fff; }
 .btn.red:hover { background: var(--red-hi); }
 .btn.small { padding: 5px 12px; font-size: 12px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled:hover { background: var(--red); color: #fff; }
+.mono { font-family: Consolas, "Courier New", monospace; }
 
 /* a page's head */
 .head { padding: 44px 0 26px; }
@@ -139,6 +142,29 @@ section { margin-bottom: 44px; }
   font: 13.5px Consolas, "Courier New", monospace; color: var(--title); overflow-wrap: anywhere; }
 .page-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px; align-items: start; }
 .note-box { border-left: 3px solid var(--red-hi); background: var(--surface); padding: 12px 16px; margin: 12px 0 0; font-size: 14px; }
+
+/* sign in: the menu box alone, its choices the providers */
+.signin-box { max-width: 420px; margin: 0 auto; }
+.signin-box a.choice { display: flex; justify-content: space-between; align-items: center; }
+.signin-box a.choice small { font-family: var(--sans); text-transform: none; font-size: 12px; color: inherit; opacity: 0.7; }
+.under { max-width: 420px; margin: 18px auto 0; color: var(--muted); font-size: 14px; }
+
+/* upload: the file, the checks, the agreement */
+.dropzone { display: block; border: 2px dashed #56605f; background: var(--surface); padding: 34px 20px; text-align: center; cursor: pointer; }
+.dropzone:hover, .dropzone.over { border-color: var(--menu); background: var(--surface-hi); }
+.dropzone .big { font-family: var(--caps); text-transform: uppercase; font-size: 20px; color: var(--title); display: block; margin-bottom: 6px; }
+.dropzone input { display: none; }
+.form-row { margin: 20px 0; }
+.form-row label.check { display: flex; gap: 10px; align-items: flex-start; }
+.form-row label.check input { margin-top: 5px; }
+.checks { list-style: none; margin: 0; padding: 0; }
+.checks li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.checks li:last-child { border-bottom: 0; }
+.checks .mark { font-family: var(--caps); font-weight: 700; text-align: center; }
+.checks .ok .mark { color: #7fbf7f; }
+.checks .bad .mark { color: var(--red-hi); }
+.checks .wait .mark { color: var(--muted); }
+.checks small { display: block; color: var(--muted); font-size: 13px; }
 
 footer { position: relative; z-index: 1; border-top: 1px solid var(--line); margin-top: 60px; padding: 22px 0 34px; color: var(--muted); font-size: 13px; }
 footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }

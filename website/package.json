@@ -1,6 +1,7 @@
 {
   "name": "hitmanlevels-site",
   "private": true,
+  "type": "module",
   "description": "hitmanlevels.com: the Level Hub's site (docs/site_api.md); deployed with Cloudflare's wrangler",
   "scripts": {
     "wrangler": "wrangler"

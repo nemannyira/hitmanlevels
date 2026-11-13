@@ -1,0 +1,3 @@
+# every page and file: not to be indexed while the site is not open (robots.txt; the Worker sets it on the API)
+/*
+  X-Robots-Tag: noindex, nofollow

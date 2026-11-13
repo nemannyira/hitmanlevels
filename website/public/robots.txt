@@ -1,0 +1,3 @@
+# hitmanlevels.com is not open yet: no robots (the Worker also sends X-Robots-Tag: noindex, nofollow)
+User-agent: *
+Disallow: /

@@ -31,6 +31,8 @@ const b64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g
 
 check("the front page", (await get("/")).status === 200);
 check("Get started", (await get("/get-started")).status === 200);
+check("not for search engines: noindex on pages and the API, robots.txt", (await get("/")).headers.get("X-Robots-Tag") === "noindex, nofollow" &&
+  (await get("/api/levels")).headers.get("X-Robots-Tag") === "noindex, nofollow" && (await (await get("/robots.txt")).text()).includes("Disallow: /"));
 check("an unknown API path", (await get("/api/nothing")).status === 404);
 check("not signed in", (await get("/api/me")).status === 401);
 check("a POST from elsewhere is refused", (await post("/api/upload?agree=1", "x", { Origin: "https://evil.example" })).status === 403);
@@ -55,11 +57,11 @@ check("no such provider", (await get("/api/auth/facebook/start")).status === 404
 const token = b64url(randomBytes(32));
 const hash = b64url(createHash("sha256").update(token).digest());
 const pid = "t" + Date.now();
-sql(`INSERT INTO users (provider, provider_id, name, created, admin) VALUES ('github', '${pid}', 'Tester', 0, 1);` +
+sql(`INSERT INTO users (provider, provider_id, name, created, admin) VALUES ('github', '${pid}', 'Tester ${pid}', 0, 1);` +
   `INSERT INTO sessions (token_hash, user_id, expires) SELECT '${hash}', id, 4102444800 FROM users WHERE provider_id = '${pid}';`);
 const me = { Cookie: `__Host-session=${token}`, Origin: BASE };
 r = await get("/api/me", me);
-check("signed in", r.status === 200 && (await r.json()).name === "Tester");
+check("signed in", r.status === 200 && (await r.json()).name === `Tester ${pid}`);
 r = await post("/api/upload", "x", { ...me, "Content-Length": "1" });
 check("an upload needs the agreement", r.status === 400);
 r = await post("/api/upload?agree=1", new Uint8Array(16), me);
@@ -170,7 +172,7 @@ const otherId = ov.users.find((u) => u.name === `Someone ${pid2}`).id;
 await post("/api/admin/block", JSON.stringify({ user: otherId }), me);
 check("a blocked account is signed out", (await get("/api/me", other)).status === 401);
 await post("/api/admin/unblock", JSON.stringify({ user: otherId }), me);
-check("the owner cannot block themself", (await post("/api/admin/block", JSON.stringify({ user: ov.users.find((u) => u.admin).id }), me)).status === 400);
+check("the owner cannot block themself", (await post("/api/admin/block", JSON.stringify({ user: ov.users.find((u) => u.name === `Tester ${pid}`).id }), me)).status === 400);
 r = await post("/api/admin/delete-user", JSON.stringify({ user: otherId }), me);
 ov = await (await get("/api/admin/overview", me)).json();
 check("an account deleted with its reports", r.status === 200 && !ov.users.some((u) => u.id === otherId) &&

@@ -204,59 +204,70 @@ async function cleanUp(env) {
   ]);
 }
 
+// every answer, the pages' too: not to be indexed while the site is not open (robots.txt says the same)
+function noIndex(res) {
+  const out = new Response(res.body, res);
+  out.headers.set("X-Robots-Tag", "noindex, nofollow");
+  return out;
+}
+
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-    let m;
-    if (request.method === "GET") {
-      if (path === "/api/v1/index.json") return file(env, "api/v1/index.json", "application/json; charset=utf-8");
-      if (path === "/api/v1/index.sig") return file(env, "api/v1/index.sig", "application/octet-stream");
-      if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\.h2lvl$/))) {
-        const res = await file(env, `levels/${m[1]}/${m[2]}.h2lvl`, "application/octet-stream");
-        if (res.ok) ctx.waitUntil(env.DB.prepare("UPDATE levels SET downloads = downloads + 1 WHERE id = ?").bind(m[1]).run());
-        return res;
-      }
-      if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\/preview\.png$/)))
-        return file(env, `levels/${m[1]}/${m[2]}/preview.png`, "image/png");
-      if (path === "/api/levels") return levels(env);
-      if (path === "/api/admin/overview") {
-        const user = await currentUser(request, env);
-        return user && user.admin ? adminOverview(env) : json({ error: "The owner's only" }, 403);
-      }
-      if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})$/))) return level(env, m[1]);
-      if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/start$/))) return start(request, env, m[1]);
-      if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/callback$/))) return callback(request, env, m[1]);
-      if (path === "/api/me") {
-        const user = await currentUser(request, env);
-        if (!user) return json({ error: "Not signed in" }, 401);
-        // the account's author keys and levels (the upload page's box)
-        const keys = await env.DB.prepare("SELECT key FROM authors WHERE user_id = ?").bind(user.id).all();
-        const levels = await env.DB.prepare(
-          `SELECT l.id, v.title, MAX(v.version) AS version FROM levels l JOIN authors a ON a.key = l.author_key
-             JOIN versions v ON v.level_id = l.id WHERE a.user_id = ? AND l.taken_down = 0 GROUP BY l.id ORDER BY v.title`,
-        ).bind(user.id).all();
-        return json({ name: user.name, provider: user.provider, admin: !!user.admin,
-          keys: keys.results.map((k) => k.key), levels: levels.results });
-      }
-    }
-    if (request.method === "POST" && path.startsWith("/api/")) {
-      if (!sameOrigin(request, env)) return json({ error: "From the site's own pages only" }, 403);
-      if (path === "/api/logout") return logout(request, env);
-      const user = await currentUser(request, env);
-      if (!user) return json({ error: "Sign in first" }, 401);
-      if (path === "/api/upload") return upload(request, env, user);
-      if (path === "/api/report") return report(request, env, user);
-      if ((m = path.match(/^\/api\/admin\/(takedown|restore|block|unblock|handled|delete-user)$/))) {
-        if (!user.admin) return json({ error: "The owner's only" }, 403);
-        return admin(request, env, m[1], user);
-      }
-    }
-    if (path.startsWith("/api/") || path.startsWith("/levels/")) return json({ error: "Not found" }, 404);
-    return env.ASSETS.fetch(request);
+    return noIndex(await route(request, env, ctx));
   },
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil(cleanUp(env));
   },
 };
+
+async function route(request, env, ctx) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  let m;
+  if (request.method === "GET") {
+    if (path === "/api/v1/index.json") return file(env, "api/v1/index.json", "application/json; charset=utf-8");
+    if (path === "/api/v1/index.sig") return file(env, "api/v1/index.sig", "application/octet-stream");
+    if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\.h2lvl$/))) {
+      const res = await file(env, `levels/${m[1]}/${m[2]}.h2lvl`, "application/octet-stream");
+      if (res.ok) ctx.waitUntil(env.DB.prepare("UPDATE levels SET downloads = downloads + 1 WHERE id = ?").bind(m[1]).run());
+      return res;
+    }
+    if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\/preview\.png$/)))
+      return file(env, `levels/${m[1]}/${m[2]}/preview.png`, "image/png");
+    if (path === "/api/levels") return levels(env);
+    if (path === "/api/admin/overview") {
+      const user = await currentUser(request, env);
+      return user && user.admin ? adminOverview(env) : json({ error: "The owner's only" }, 403);
+    }
+    if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})$/))) return level(env, m[1]);
+    if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/start$/))) return start(request, env, m[1]);
+    if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/callback$/))) return callback(request, env, m[1]);
+    if (path === "/api/me") {
+      const user = await currentUser(request, env);
+      if (!user) return json({ error: "Not signed in" }, 401);
+      // the account's author keys and levels (the upload page's box)
+      const keys = await env.DB.prepare("SELECT key FROM authors WHERE user_id = ?").bind(user.id).all();
+      const levels = await env.DB.prepare(
+        `SELECT l.id, v.title, MAX(v.version) AS version FROM levels l JOIN authors a ON a.key = l.author_key
+           JOIN versions v ON v.level_id = l.id WHERE a.user_id = ? AND l.taken_down = 0 GROUP BY l.id ORDER BY v.title`,
+      ).bind(user.id).all();
+      return json({ name: user.name, provider: user.provider, admin: !!user.admin,
+        keys: keys.results.map((k) => k.key), levels: levels.results });
+    }
+  }
+  if (request.method === "POST" && path.startsWith("/api/")) {
+    if (!sameOrigin(request, env)) return json({ error: "From the site's own pages only" }, 403);
+    if (path === "/api/logout") return logout(request, env);
+    const user = await currentUser(request, env);
+    if (!user) return json({ error: "Sign in first" }, 401);
+    if (path === "/api/upload") return upload(request, env, user);
+    if (path === "/api/report") return report(request, env, user);
+    if ((m = path.match(/^\/api\/admin\/(takedown|restore|block|unblock|handled|delete-user)$/))) {
+      if (!user.admin) return json({ error: "The owner's only" }, 403);
+      return admin(request, env, m[1], user);
+    }
+  }
+  if (path.startsWith("/api/") || path.startsWith("/levels/")) return json({ error: "Not found" }, 404);
+  return env.ASSETS.fetch(request);
+}

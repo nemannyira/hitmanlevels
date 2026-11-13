@@ -15,9 +15,12 @@
     { "binding": "FILES", "bucket_name": "hitmanlevels" }
   ],
   "vars": {
-    "SITE_ORIGIN": "https://hitmanlevels.com"
+    "SITE_ORIGIN": "https://hitmanlevels.com",
+    // the OAuth apps "Hitman Levels" (not secret; docs/site_api.md)
+    "DISCORD_CLIENT_ID": "1570820906547290173",
+    "GITHUB_CLIENT_ID": "Ov23liUlIvU893HmojPP",
+    "GOOGLE_CLIENT_ID": "829125191265-uutq5bq60gojb0vdajn0kk7c75oskhb7.apps.googleusercontent.com"
   }
   // secrets (wrangler secret put; .dev.vars for wrangler dev): SITE_SEED (the list's Ed25519 key, 64 hex),
-  // DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GOOGLE_CLIENT_ID,
-  // GOOGLE_CLIENT_SECRET
+  // DISCORD_CLIENT_SECRET, GITHUB_CLIENT_SECRET, GOOGLE_CLIENT_SECRET
 }

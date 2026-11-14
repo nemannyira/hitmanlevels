@@ -210,6 +210,22 @@ Save\<slot>.h2lua next to the game's files).
   is left; its Continue goes to the main menu (src/editor/profile_guard.h).
 * The counters come from the game's events: shots, kills (CharacterKilled /
   ActorDead), headshots (scripts call IncHeadshots), alerts (guard scripts).
+* Where they are (2026-11-14, for the play statistics: docs/play_stats.md,
+  #50): LevelControl_MissionCompleted 0x5058B0 builds a 0x38-byte block and
+  sends it with MSG_SHOWSTATS to the statistics window (SceneCom ref
+  "rSTATISTICS"): +0x00 the scene's name (8 bytes), +0x08 Hitman +0x11C7,
+  +0x0C LevelControl +0x220 + Hitman +0x11CB, +0x10 LC +0x208, +0x14 LC
+  +0x21C, +0x18 LC +0x210, +0x1C LC +0x20C, +0x20 LC +0x218, +0x24 LC +0x214,
+  +0x30 SysInterface +0x38 >> 10, +0x34 LC +0x249. So the counters are on
+  LevelControl and Hitman during the whole mission (a failed or left run has
+  them too). The window (handler 0x55C590) copies the block to 0x6B3418;
+  0x55C8A0 makes stealth = exp(k x ((+0x24 + 2 x +0x20 + +0x18) x 3 + +0x1C +
+  2 x +0x08 + +0x10 + +0x0C)) (this +0xBC, 0x6B3444) and aggression = 100
+  when +0x14 and +0x0C are 0, else from their sum (this +0xB8, 0x6B3440);
+  StatisticsLevel_FillLines 0x55BED0 bands both and reads the rating from the
+  8 x 8 table this +0xC6 (names at 0x691238). Which field is which line of the
+  screen (shots, alerts, kills...) is to be confirmed with a run of known
+  numbers.
   Characters the level places are made with the scene and count like the
   level's own: a guard behaviour as an enemy, a civilian (Neutral2 based) as
   an innocent.

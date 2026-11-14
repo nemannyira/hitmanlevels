@@ -17,6 +17,13 @@ game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lu
   result, the time, the statistics screen's counters and rating, the
   testing aids used, the objectives done or lost, where Hitman was spotted
   or died). Nothing is sent; that comes with levelpack (docs/play_stats.md).
+* Sharing those plays is up to the player: the launcher asks once when a
+  downloaded level is picked (*Share them* / *Don't share*); `levelpack
+  stats on | off | status | send` changes it and shows what was sent. When
+  on, the game starts levelpack after a play to send it (the game itself
+  still makes no connection). Plays with testing aids or dev settings, and
+  plays of a level changed since it was installed, are never sent.
+* levelpack.exe now goes into the game's folder too (README's install step).
 
 ## 2026-11-13: the level's picture is the game's view
 

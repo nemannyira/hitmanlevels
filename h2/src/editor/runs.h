@@ -1,7 +1,8 @@
 #pragma once
 // A play of a downloaded level (Mods\Online\<id>) written down at its end: the play statistics' run
-// (docs/play_stats.md section 1, #50). Nothing is sent from here: the file stays on the PC
-// (levelpack sends it, if the player turned that on).
+// (docs/play_stats.md section 1, #50). Nothing is sent from the game: when the player shares their plays
+// (levelfmt StatsSharing), the game's folder's levelpack.exe is started on its own after a run was written
+// ("stats send --quiet", #51).
 //
 // Mods\Online\<id>\runs\<started>.json (canonical JSON): the level's id and version, the DLL's version,
 // the result (completed / failed / left: the map left, the editor opened), the time and the counters of

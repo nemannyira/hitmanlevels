@@ -9,6 +9,7 @@
 //   levelpack author backup <file.h2key>                     (the key with a password, asked or piped)
 //   levelpack author restore <file.h2key> [--replace]
 //   levelpack hub list|install <id> [--source https://hitmanlevels.com | <folder>]   (the site's levels)
+//   levelpack stats on|off|status|send [--quiet]               (your plays of downloaded levels shared: opt-in)
 //   levelpack site keygen <key file> | site sign <index.json> <key file>             (the site's operator)
 //   levelpack register | unregister                          (a double click on a package opens it here)
 //   levelpack selftest
@@ -38,6 +39,7 @@
 #include "levelfmt/hub.h"
 #include "levelfmt/package.h"
 #include "levelfmt/share.h"
+#include "levelfmt/stats.h"
 
 using namespace h2::levelfmt;
 
@@ -383,6 +385,67 @@ int Hub(int argc, char** argv)
     return InstallOpened(p, game, yes, older, other, false);
 }
 
+// levelpack stats on|off|status|send ...: the plays of downloaded levels shared with the site (levelfmt/stats.h)
+int Stats(int argc, char** argv)
+{
+    std::string cmd = argv[2], source = kHubSite, game, error;
+    bool quiet = false;
+    for (int i = 3; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--source" && i + 1 < argc)
+            source = argv[++i];
+        else if (a == "--game" && i + 1 < argc)
+            game = argv[++i];
+        else if (a == "--quiet")
+            quiet = true;
+        else
+            return Usage();
+    }
+    if (cmd == "on" || cmd == "off") {
+        if (!SetStatsSharing(cmd == "on", &error)) {
+            std::fprintf(stderr, "%s\n", error.c_str());
+            return 1;
+        }
+        std::printf(cmd == "on" ? "Sharing your plays of downloaded levels: on (sent after each play; %s/privacy.html)\n"
+                                : "Sharing your plays of downloaded levels: off (%s/privacy.html)\n",
+                    kHubSite);
+        return 0;
+    }
+    bool send = cmd == "send";
+    if (!send && cmd != "status")
+        return Usage();
+    bool asked = false, on = StatsSharing(&asked);
+    if (send && !on) {
+        if (!quiet)
+            std::printf("Sharing is off (levelpack stats on turns it on): nothing sent.\n");
+        return 0;
+    }
+    RunsReport total;
+    for (const GameInfo& g : Games()) {
+        std::string dir = game.empty() ? FindGameDir(g) : game;
+        if (dir.empty() || !IsGameDir(dir, g))
+            continue;
+        RunsReport r = SendRuns(source, dir, g, send);
+        total.sent += r.sent;
+        total.refused += r.refused;
+        total.waiting += r.waiting;
+        total.kept += r.kept;
+        total.sentBefore += r.sentBefore;
+        total.notes.insert(total.notes.end(), r.notes.begin(), r.notes.end());
+    }
+    if (quiet)
+        return 0;
+    if (!send)
+        std::printf("Sharing your plays of downloaded levels: %s\n", on ? "on" : asked ? "off" : "off (not chosen yet)");
+    std::printf("Runs: %d sent before, %d to send, %d kept on this PC", total.sentBefore, total.waiting, total.kept);
+    if (send)
+        std::printf("; now %d sent, %d refused", total.sent, total.refused);
+    std::printf("\n");
+    for (const std::string& n : total.notes)
+        std::printf("  %s\n", n.c_str());
+    return 0;
+}
+
 // levelpack site keygen|sign ...: the site operator's offline signing (src/levelfmt/hub.h)
 int Site(int argc, char** argv)
 {
@@ -427,6 +490,7 @@ int Usage()
                  "       levelpack hub list [--source https://host | <folder>]\n"
                  "       levelpack hub install <id> [--source ...] [--game <dir>] [--yes] [--allow-older] "
                  "[--allow-other-author]\n"
+                 "       levelpack stats on | off | status | send [--quiet] [--source ...] [--game <dir>]\n"
                  "       levelpack site keygen <key file>\n"
                  "       levelpack site sign <index.json> <key file>\n"
                  "       levelpack register | unregister\n"
@@ -520,6 +584,8 @@ int main(int argc, char** argv)
         return Hub(argc, argv);
     if (cmd == "site" && argc >= 4)
         return Site(argc, argv);
+    if (cmd == "stats" && argc >= 3)
+        return Stats(argc, argv);
     if (cmd == "install" && argc >= 3) {
         std::string game;
         bool yes = false, older = false, other = false;

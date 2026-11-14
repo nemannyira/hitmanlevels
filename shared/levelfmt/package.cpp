@@ -549,6 +549,8 @@ bool OpenPackage(const std::string& bytes, OpenedPackage& out, std::string* erro
     out.manifest = std::move(m);
     out.manifestText = text;
     out.files.assign(entries.begin() + 2, entries.end());
+    crypto::Sha256Digest d = crypto::Sha256(bytes.data(), bytes.size());
+    out.sha256 = crypto::Hex(d.data(), d.size());
     return true;
 }
 

@@ -82,6 +82,7 @@ struct OpenedPackage {
     Manifest manifest;
     std::string manifestText;  // as signed
     std::vector<PackageFile> files;  // every file but manifest.json / manifest.sig
+    std::string sha256;  // the package file's SHA-256 (lowercase hex: as the site's list names it)
     const PackageFile* Find(const std::string& name) const;
 };
 

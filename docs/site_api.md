@@ -32,6 +32,31 @@ client never uses plain HTTP and does not follow a redirect from HTTPS to HTTP.
   level check) and checks that its id, version and author key are the list's. Then it installs it as
   a package passed on by hand (the same questions about new authors, other authors, older versions).
 
+## Runs (the play statistics, docs/play_stats.md)
+
+`levelpack stats send` (#51; the player turned sharing on) posts each play of a downloaded level, one
+request a run:
+
+```
+POST /api/v1/runs        Content-Type: application/json
+{"aids":[],"counters":{"alerts":0,...,"shots":2},"dev":[],"dll":"0.1.0","events":[...],"format":1,
+"game":"h2","level":"<id>","package_sha256":"<64 hex>","rating":"SilentAssassin","result":"completed",
+"run":"<32 hex>","started":"2026-11-14T10:05:59Z","stealth":100,"aggression":1,"time":13,"version":3}
+```
+
+The run as the editor wrote it (docs/play_stats.md section 1; canonical JSON) plus the `game` and the
+installed package's `package_sha256`, which with `level` and `version` must name a listed package. The
+client takes the answer:
+
+| Status | The client |
+|---|---|
+| 200, 201 | stored: the run goes to `runs\sent` |
+| 409 | that run id is stored already: to `runs\sent` too |
+| 400, 422 | refused (`{"error": "..."}` shown): to `runs\refused`, never sent again |
+| anything else, no answer | kept, sent the next time (the rest waits too) |
+
+Runs with `aids` or `dev` are never sent. No account, no IP kept (#52).
+
 ## Signing
 
 The site key signs the list, never the packages (their authors do). With uploads and no review before

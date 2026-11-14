@@ -67,7 +67,13 @@ struct TrustCheck {
 TrustCheck CheckTrust(const OpenedPackage& p, const std::string& gameDir);
 
 // Installs an opened (checked) package into <gameDir>\Mods\Online\<id> (a new folder made first, then
-// put in the old one's place; the files read-only) and remembers its author and version.
+// put in the old one's place; the files read-only) and remembers its author, version and the package's
+// SHA-256. The plays written down of the version before (its runs folder) go into the new one.
 bool InstallPackage(const OpenedPackage& p, const std::string& gameDir, std::string* error);
+
+// Whether the player shares their plays of downloaded levels (docs/play_stats.md: known.json "stats", off
+// unless turned on); `asked`: whether they chose once (known.json has "stats").
+bool StatsSharing(bool* asked = nullptr);
+bool SetStatsSharing(bool on, std::string* error);
 
 } // namespace h2::levelfmt

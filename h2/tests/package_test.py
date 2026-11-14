@@ -527,6 +527,77 @@ code, out = pack_env(ENVH, "hub", "list", "--source", "https://hitmanlevels.com"
 check("the real site over HTTPS: an answer, not a crash (no list there yet)", code in (0, 1) and out.strip(),
       out.strip()[:120])
 
+# ---- #51: the plays of downloaded levels shared (levelpack stats; shared/levelfmt/stats.h) ----
+HOMES, GAMES, SITES = (os.path.join(TMP, n) for n in ("home_stats", "game_stats", "site_stats"))
+for d in (HOMES, GAMES, os.path.join(SITES, "api", "v1")):
+    os.makedirs(d)
+open(os.path.join(GAMES, "hitman2.exe"), "wb").close()
+ENVS = dict(ENV, HITMANLEVELS_HOME=HOMES)
+POSTED = os.path.join(SITES, "api", "v1", "runs")
+LEVEL_DIR = os.path.join(GAMES, "Mods", "Online", "pytestlevel01")
+RUNS = os.path.join(LEVEL_DIR, "runs")
+
+
+def stats(*args):
+    return pack_env(ENVS, "stats", *args, "--source", SITES, "--game", GAMES)
+
+
+def put_run(name, **fields):
+    run = {"format": 1, "run": hashlib.sha256(name.encode()).hexdigest()[:32], "level": "pytestlevel01",
+           "version": 1, "result": "completed", "time": 61, "counters": {"shots": 2}, "aids": [], "dev": [],
+           "events": []}
+    run.update(fields)
+    with open(os.path.join(RUNS, name), "w", encoding="utf-8") as f:
+        json.dump(run, f)
+    return run
+
+
+stats_pkg = py_package(k)
+code, out = pack_env(ENVS, "install", write("stats.h2lvl", stats_pkg), "--game", GAMES, "--yes")
+known = json.load(open(os.path.join(HOMES, "known.json"), encoding="utf-8"))
+check("stats: the installer notes the package's SHA-256",
+      known["levels"]["pytestlevel01"].get("sha256") == hashlib.sha256(stats_pkg).hexdigest(), out.strip()[-80:])
+os.makedirs(RUNS)
+clean = put_run("20261114T100000Z.json")
+put_run("20261114T100100Z.json", aids=["god mode"])
+put_run("20261114T100200Z.json", version=2)
+code, out = stats("status")
+check("stats: off until chosen", code == 0 and "off (not chosen yet)" in out and "3 kept" not in out, out.strip()[:120])
+code, out = stats("send")
+check("stats: off, nothing sent", code == 0 and "nothing sent" in out and not os.path.exists(POSTED), out.strip()[:90])
+code, out = pack_env(ENVS, "stats", "on")
+check("stats on", code == 0 and json.load(open(os.path.join(HOMES, "known.json"), encoding="utf-8"))["stats"] is True)
+code, out = stats("send")
+lines = open(POSTED, encoding="utf-8").read().splitlines() if os.path.exists(POSTED) else []
+sent = json.loads(lines[0]) if lines else {}
+check("stats send: only the clean run posted", code == 0 and len(lines) == 1 and sent.get("run") == clean["run"],
+      out.strip()[:160])
+check("  with the game and the package's SHA-256",
+      sent.get("game") == "h2" and sent.get("package_sha256") == hashlib.sha256(stats_pkg).hexdigest())
+check("  in its canonical form", lines and lines[0].encode("utf-8") == canonical(sent))
+check("  moved to runs\\sent", os.path.exists(os.path.join(RUNS, "sent", "20261114T100000Z.json")) and
+      not os.path.exists(os.path.join(RUNS, "20261114T100000Z.json")))
+check("  kept: with aids, another version", "testing aids" in out and "another version" in out, out.strip()[-160:])
+code, out = stats("status")
+check("stats status: 1 sent before, 0 to send, 2 kept", "1 sent before, 0 to send, 2 kept" in out, out.strip()[:120])
+level_file = os.path.join(LEVEL_DIR, "level.json")
+os.chmod(level_file, 0o666)
+with open(level_file, "a", encoding="utf-8") as f:
+    f.write(" ")
+put_run("20261114T100300Z.json")
+code, out = stats("send")
+check("stats: a level changed since installed: not sent", "changed since it was installed" in out and len(
+    open(POSTED, encoding="utf-8").read().splitlines()) == 1, out.strip()[-120:])
+code, out = stats("send", "--quiet")
+check("stats send --quiet: no output", code == 0 and out.strip() == "", out.strip()[:80])
+v2 = py_package(k, level=level_doc(package={"id": "pytestlevel01", "version": 2}), version=2)
+code, out = pack_env(ENVS, "install", write("stats2.h2lvl", v2), "--game", GAMES, "--yes")
+check("stats: an update keeps the runs written", code == 0 and
+      os.path.exists(os.path.join(RUNS, "sent", "20261114T100000Z.json")) and
+      os.path.exists(os.path.join(RUNS, "20261114T100300Z.json")), out.strip()[-80:])
+code, out = pack_env(ENVS, "stats", "off")
+check("stats off", code == 0 and json.load(open(os.path.join(HOMES, "known.json"), encoding="utf-8"))["stats"] is False)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d passed, %d failed" % (results.count(True), results.count(False)))
 sys.exit(0 if all(results) else 1)

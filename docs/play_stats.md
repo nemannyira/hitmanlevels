@@ -32,17 +32,24 @@ run a map load: it starts when the level is on its map and the editor is closed.
 
 The package's hash is not in the file: levelpack adds it when it sends a run (what it installed, its
 `known.json`), and leaves out a run of a package changed since. A run with `aids` or `dev` is still written
-(the player's own record) but the site leaves it out. A game closed without leaving the map writes nothing.
+(the player's own record) but never sent. A game closed without leaving the map writes nothing.
 
 ## 2. Sending
 
-* `levelpack stats on | off | status | send`: the choice is kept in `%LOCALAPPDATA%\HitmanLevels\known.json`
-  (default off). `send` posts every run not sent yet to `https://hitmanlevels.com/api/v1/runs` over HTTPS and
-  marks it sent.
-* When it is on, the DLL starts `levelpack stats send --quiet` as a detached process after it writes a run
-  (only then: no process otherwise; the game process makes no connection).
-* The editor's launcher and the end of a downloaded level ask once whether to share runs (plain words, a
-  link to the privacy notice); the answer turns it on or off.
+Built 2026-11-14 (#51; shared/levelfmt/stats.h, `levelpack stats`):
+
+* `levelpack stats on | off | status | send [--quiet]`: the choice is kept in
+  `%LOCALAPPDATA%\HitmanLevels\known.json` (`"stats"`; off until chosen). `send` posts each run not sent yet to
+  `https://hitmanlevels.com/api/v1/runs` over HTTPS (docs/site_api.md "Runs") and moves it to `runs\sent`
+  (`runs\refused` when the site refuses it). `status` counts them.
+* Never sent: a run with `aids` or `dev`, one of another version than the installed one, one of a level whose
+  files changed since levelpack installed it (package.json's hashes) or that levelpack did not install. The
+  installer notes the package's SHA-256 in known.json (sent with the run); an update keeps the `runs` folder.
+* When it is on, the DLL starts the game folder's `levelpack.exe stats send --quiet` as a detached process
+  after it writes a run (only then; the game process makes no connection). levelpack.exe is installed next
+  to hitman2.exe (release/README.txt).
+* The editor's launcher asks once, when a downloaded level is picked in *Open a level* (plain words, a link to
+  the privacy notice): *Share them* / *Don't share*.
 
 ## 3. On the site (level 1)
 

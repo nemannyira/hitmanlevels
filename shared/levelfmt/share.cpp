@@ -639,8 +639,10 @@ bool InstallPackage(const OpenedPackage& p, const std::string& gameDir, std::str
         RemoveInstalled(tmp);
         return Fail(error, "cannot put the level in place: " + target);
     }
-    if (!old.empty())
+    if (!old.empty()) {  // (the plays written down of the version before stay: their files say which version)
+        MoveFileW(GamePath(old + "\\runs").c_str(), GamePath(target + "\\runs").c_str());
         RemoveInstalled(old);
+    }
     // what this PC knows now: the author accepted, the level's key and highest version
     std::wstring knownPath = DataDir(true) + L"known.json";
     json known = ReadJsonW(knownPath);
@@ -656,10 +658,34 @@ bool InstallPackage(const OpenedPackage& p, const std::string& gameDir, std::str
                           known["levels"][m.id].value("key", "") == m.authorKey
                       ? known["levels"][m.id].value("highest", 0)
                       : 0;
-    known["levels"][m.id] = {
-        {"key", m.authorKey}, {"installed", m.version}, {"highest", std::max(highest, m.version)}, {"title", m.title}};
+    known["levels"][m.id] = {{"key", m.authorKey},
+                             {"installed", m.version},
+                             {"highest", std::max(highest, m.version)},
+                             {"title", m.title},
+                             {"sha256", p.sha256}};
     if (!WriteFileAtomic(knownPath, known.dump(2)))
         return Fail(error, "installed, but known.json cannot be written in " + ShareDataDir());
+    return true;
+}
+
+bool StatsSharing(bool* asked)
+{
+    json known = ReadJsonW(DataDir() + L"known.json");
+    bool on = known.is_object() && known.value("stats", json()).is_boolean() && known["stats"].get<bool>();
+    if (asked)
+        *asked = known.is_object() && known.contains("stats");
+    return on;
+}
+
+bool SetStatsSharing(bool on, std::string* error)
+{
+    std::wstring knownPath = DataDir(true) + L"known.json";
+    json known = ReadJsonW(knownPath);
+    if (!known.is_object())
+        known = json::object();
+    known["stats"] = on;
+    if (!WriteFileAtomic(knownPath, known.dump(2)))
+        return Fail(error, "known.json cannot be written in " + ShareDataDir());
     return true;
 }
 

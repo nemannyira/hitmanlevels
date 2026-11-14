@@ -1,6 +1,7 @@
 #include "launcher.h"
 
 #include <windows.h>
+#include <shellapi.h>
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -18,6 +19,8 @@
 #include "../game.h"
 #include "../hook.h"
 #include "../input/dinput.h"
+#include "levelfmt/hub.h"  // (kHubSite: the site's address only; the editor makes no connection)
+#include "levelfmt/share.h"
 #include "../log.h"
 #include "../mainloop.h"
 #include "../overlay/overlay.h"
@@ -104,6 +107,7 @@ std::vector<Saved> g_saved;
 int g_pick = -1;
 int g_pickStage;  // an escalation's stage to play (0: the next open one)
 std::string g_message;
+bool g_statsAsked = true;  // the player chose whether to share their plays (read when the launcher opens)
 
 // after the map is loaded: open the editor
 std::string g_startScene;
@@ -377,6 +381,29 @@ void DrawSavedDetails(const Saved& s)
     ImGui::EndChild();
 }
 
+// the one question whether to share the plays of downloaded levels (docs/play_stats.md section 2): asked
+// when one is picked, until answered (levelpack stats on / off changes it later)
+void DrawStatsQuestion()
+{
+    ImGui::SeparatorText("Your plays of downloaded levels");
+    ImGui::TextWrapped("Send how your plays of downloaded levels go to hitmanlevels.com, for their authors and the "
+                       "levels' pages? Finished or not, the time, the rating, where Hitman was spotted or died. "
+                       "No name or account goes with them.");
+    bool share = ImGui::Button("Share them");
+    ImGui::SameLine();
+    bool keep = ImGui::Button("Don't share");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Privacy"))
+        ShellExecuteA(nullptr, "open", (std::string(levelfmt::kHubSite) + "/privacy.html").c_str(), nullptr, nullptr,
+                      SW_SHOWNORMAL);
+    ImGui::TextDisabled("(levelpack stats on / off changes it later)");
+    std::string error;
+    if ((share || keep) && levelfmt::SetStatsSharing(share, &error))
+        g_statsAsked = true;
+    else if (share || keep)
+        g_message = "not saved: " + error;
+}
+
 void StartOn(const std::string& scene)
 {
     g_launcherOpen = false;
@@ -518,6 +545,9 @@ void DrawLauncher()
                 }
                 if (g_pick >= 0 && g_pick < int(g_saved.size()))
                     DrawSavedDetails(g_saved[g_pick]);
+                if (!g_statsAsked && g_pick >= 0 && g_pick < int(g_saved.size()) &&
+                    IsOnlineLevel(g_saved[g_pick].folder))
+                    DrawStatsQuestion();
                 ImGui::BeginDisabled(g_pick < 0);
                 float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
                 bool play = ImGui::Button("Play", ImVec2(half, 0)) || go;
@@ -559,6 +589,7 @@ void DrawLauncher()
 void OpenLauncher()
 {
     LoadSavedList();
+    levelfmt::StatsSharing(&g_statsAsked);
     g_message.clear();
     g_launcherOpen = true;
     overlay::SetExclusive(DrawLauncher);

@@ -35,6 +35,10 @@ std::vector<std::string> SiteKeys();
 // checks, no plain HTTP, at most `max` bytes) or a local folder (tests, a mirror on disk: the signatures
 // make no source trusted).
 bool Fetch(const std::string& source, const std::string& path, size_t max, std::string& out, std::string* error);
+// JSON posted to the site (`source` as Fetch's; a local folder: the body appended as one line to the path's file,
+// answered 201: tests). True when the site answered: `status` its HTTP status, `answer` its body.
+bool Post(const std::string& source, const std::string& path, const std::string& body, int& status,
+          std::string& answer, std::string* error);
 
 // The list fetched and checked: index.sig by a site key over "H2LVL index v1\n" + index.json, the form
 // canonical, its serial not below the highest this PC has seen (remembered in known.json after).

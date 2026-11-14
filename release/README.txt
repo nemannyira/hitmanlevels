@@ -20,13 +20,14 @@ INSTALL
   1. Find the game's folder. With Steam:
        C:\Program Files (x86)\Steam\steamapps\common\Hitman 2 Silent Assassin
      (Steam: right-click the game > Manage > Browse local files.)
-  2. Copy dinput8.dll and H2Fix.ini next to hitman2.exe.
+  2. Copy dinput8.dll, H2Fix.ini, levelpack.exe and "Open .h2lvl files with levelpack.cmd" next to
+     hitman2.exe.
   3. Optional: copy the folders in examples\ into the game's Mods folder (make it if it is missing).
 
   Back up the game's Save folder first: a game saved while playing a level takes one of the game's
   own save slots.
 
-  To remove it: delete dinput8.dll and H2Fix.ini.
+  To remove it: delete those files (run "levelpack unregister" first if you ran the .cmd).
 
 
 FIRST STEPS
@@ -43,8 +44,9 @@ SHARING LEVELS
   * Save & share (Simple mode) or Level > Share > Export package writes your level as one file:
     Mods\Packages\<level>_v<n>.h2lvl. It is signed with an author key made on your PC the first time.
   * Then "Upload it on hitmanlevels.com" (next to Export) opens the site's upload page.
-  * To install levels with a double click: run "Open .h2lvl files with levelpack.cmd" once (it runs
-    "levelpack register"; "levelpack unregister" takes it back). Then a double click on a .h2lvl
+  * To install levels with a double click: run "Open .h2lvl files with levelpack.cmd" once in the
+    game's folder (it runs "levelpack register"; "levelpack unregister" takes it back). Then a
+    double click on a .h2lvl
     installs it (or run "levelpack install <file>"). It shows the level, its author and license, and
     refuses a package that was changed after its author signed it. Installed levels go to
     Mods\Online and run their scripts in a stricter sandbox.
@@ -61,7 +63,10 @@ UNSIGNED FILES
 PRIVACY
 
   The editor (dinput8.dll) never connects to the internet. levelpack.exe connects only when you ask it
-  to list or install levels from the site (levelpack hub ...).
+  to list or install levels from the site (levelpack hub ...), and to send your plays of downloaded
+  levels if you chose to share them (the editor asks once; "levelpack stats on" / "off" changes it,
+  "levelpack stats status" shows what was sent). Each play is written to the level's folder
+  (Mods\Online\<id>\runs) first: what is sent is what you can read there.
 
 
 KNOWN ISSUES

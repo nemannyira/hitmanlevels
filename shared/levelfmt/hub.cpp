@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 
 #include "crypto.h"
 #include "files.h"
@@ -27,9 +28,13 @@ constexpr char kIndexPrefix[] = "H2LVL index v1\n";
 // its secret half is the Worker's SITE_SEED only (docs/site_api.md "Signing")
 constexpr const char* kSiteKeys[] = {"239ef6a67cdacbfb7c7e5c031f5ebc5c97744e9d0d7047a76f1b3e47167b28e2", nullptr};
 
-bool HttpsGet(const std::wstring& host, const std::wstring& path, size_t max, std::string& out, std::string* error)
+// a GET (`body` empty) or a POST of JSON over HTTPS; `status`: the site's answer (0: none came), its body in `out`
+bool HttpsRequest(const std::wstring& host, const std::wstring& path, const std::string& body, size_t max,
+                  std::string& out, DWORD& status, std::string* error)
 {
     out.clear();
+    status = 0;
+    bool post = !body.empty();
     HINTERNET session = WinHttpOpen(L"levelpack/1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
                                     WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session)
@@ -45,16 +50,20 @@ bool HttpsGet(const std::wstring& host, const std::wstring& path, size_t max, st
     bool ok = false;
     std::string why = "no answer from the site";
     HINTERNET connect = WinHttpConnect(session, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
-    HINTERNET request = connect ? WinHttpOpenRequest(connect, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
-                                                     WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)
+    HINTERNET request = connect ? WinHttpOpenRequest(connect, post ? L"POST" : L"GET", path.c_str(), nullptr,
+                                                     WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                                     WINHTTP_FLAG_SECURE)
                                 : nullptr;
+    const wchar_t* headers = post ? L"Content-Type: application/json\r\n" : WINHTTP_NO_ADDITIONAL_HEADERS;
     // (no WINHTTP_OPTION_SECURITY_FLAGS: the certificate checks stay as the system makes them)
-    if (request && WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+    if (request &&
+        WinHttpSendRequest(request, headers, post ? DWORD(-1L) : 0, post ? const_cast<char*>(body.data()) : nullptr,
+                           DWORD(body.size()), DWORD(body.size()), 0) &&
         WinHttpReceiveResponse(request, nullptr)) {
-        DWORD status = 0, size = sizeof status;
+        DWORD size = sizeof status;
         WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
                             &status, &size, WINHTTP_NO_HEADER_INDEX);
-        if (status != 200) {
+        if (status != 200 && !post) {
             why = "the site answered " + std::to_string(status);
         } else {
             ok = true;
@@ -131,7 +140,9 @@ std::vector<std::string> SiteKeys()
     return keys;
 }
 
-bool Fetch(const std::string& source, const std::string& path, size_t max, std::string& out, std::string* error)
+// the source and path checked: `host` the site's ("" a local folder), `file` the path's file in the folder
+bool SiteTarget(const std::string& source, const std::string& path, std::string& host, std::string& file,
+                std::string* error)
 {
     // the path is ours ("/api/v1/index.json", "/levels/<id>/<version>.h2lvl"): letters, digits, / . _ -
     if (path.empty() || path[0] != '/' || path.find("..") != std::string::npos || path.size() > 200 ||
@@ -139,20 +150,57 @@ bool Fetch(const std::string& source, const std::string& path, size_t max, std::
             return std::isalnum(static_cast<unsigned char>(c)) || c == '/' || c == '.' || c == '_' || c == '-';
         }))
         return Fail(error, "not a path of the site: " + path.substr(0, 80));
+    host.clear();
+    file.clear();
     if (source.compare(0, 8, "https://") == 0) {
-        std::string host = source.substr(8);
+        host = source.substr(8);
         if (host.empty() || host.find_first_of("/:@?#\\") != std::string::npos)
             return Fail(error, "the site is given as https://host only");
-        return HttpsGet(std::wstring(host.begin(), host.end()), std::wstring(path.begin(), path.end()), max, out, error);
+        return true;
     }
     if (source.compare(0, 5, "http:") == 0)
         return Fail(error, "plain HTTP is not used: https:// only");
-    std::string file = source;
+    file = source;
     for (char c : path)
         file += c == '/' ? '\\' : c;
+    return true;
+}
+
+bool Fetch(const std::string& source, const std::string& path, size_t max, std::string& out, std::string* error)
+{
+    std::string host, file;
+    if (!SiteTarget(source, path, host, file, error))
+        return false;
+    if (!host.empty()) {
+        DWORD status = 0;
+        return HttpsRequest(std::wstring(host.begin(), host.end()), std::wstring(path.begin(), path.end()), "", max,
+                            out, status, error);
+    }
     if (!ReadFileA(file, out, max))
         return Fail(error, file + ": missing or larger than " + std::to_string(max) + " bytes");
     return true;
+}
+
+bool Post(const std::string& source, const std::string& path, const std::string& body, int& status,
+          std::string& answer, std::string* error)
+{
+    std::string host, file;
+    status = 0;
+    answer.clear();
+    if (body.empty() || !SiteTarget(source, path, host, file, error))
+        return false;
+    if (host.empty()) {  // (a folder: the body as one more line of the file)
+        std::ofstream f(GamePath(file), std::ios::binary | std::ios::app);
+        if (!(f << body << '\n'))
+            return Fail(error, file + ": cannot write it");
+        status = 201;
+        return true;
+    }
+    DWORD got = 0;
+    bool ok = HttpsRequest(std::wstring(host.begin(), host.end()), std::wstring(path.begin(), path.end()), body,
+                           64u << 10, answer, got, error);
+    status = int(got);
+    return ok;
 }
 
 bool LoadHubIndex(const std::string& source, HubIndex& index, std::string* error)

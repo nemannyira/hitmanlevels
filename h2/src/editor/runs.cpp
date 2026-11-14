@@ -12,6 +12,7 @@
 #include "hitmanlevels_version.h"
 #include "json.hpp"
 #include "levelfmt/crypto.h"
+#include "levelfmt/share.h"
 #include "../config.h"
 #include "../engine/game_events.h"
 #include "../engine/messages.h"
@@ -214,6 +215,26 @@ void Start()
     Log("runs: a run of %s (version %d) started", g_run.level.c_str(), g_run.version);
 }
 
+// sharing on: levelpack (the game's folder) sends the runs not sent yet, on its own (the game makes no connection)
+void StartSender()
+{
+    std::string exe = GameDir() + "levelpack.exe", cmd = "\"" + exe + "\" stats send --quiet";
+    if (GetFileAttributesA(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        Log("runs: sharing is on, but %s is not there: not sent", exe.c_str());
+        return;
+    }
+    STARTUPINFOA si = {sizeof si};
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessA(exe.c_str(), cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                        nullptr, GameDir().c_str(), &si, &pi)) {
+        Log("runs: levelpack not started (%lu)", GetLastError());
+        return;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    Log("runs: levelpack stats send started");
+}
+
 void End(const char* result, const Counters& c, const Rating* rating)
 {
     if (!g_run.active)
@@ -277,6 +298,8 @@ void End(const char* result, const Counters& c, const Rating* rating)
         return;
     }
     Log("runs: %s %s, %d s (%s)", g_run.level.c_str(), result, c.time, g_run.file.c_str());
+    if (levelfmt::StatsSharing())
+        StartSender();
 }
 
 using StatsMessage_t = uint32_t(__fastcall*)(void* self, void* edx, uint32_t msg, char* param);

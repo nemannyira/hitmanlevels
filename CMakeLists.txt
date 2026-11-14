@@ -49,8 +49,8 @@ add_library(levelfmt STATIC shared/levelfmt/names.cpp shared/levelfmt/games.cpp 
             third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
 target_include_directories(levelfmt PUBLIC shared third_party/json PRIVATE third_party/monocypher)
 target_link_libraries(levelfmt PUBLIC bcrypt crypt32 shell32 ole32)
-# the Hub's download side (not in the games' DLLs: no WinHTTP there)
-add_library(levelhub STATIC shared/levelfmt/hub.cpp)
+# the Hub's network side: downloads, the runs sent (not in the games' DLLs: no WinHTTP there)
+add_library(levelhub STATIC shared/levelfmt/hub.cpp shared/levelfmt/stats.cpp)
 target_link_libraries(levelhub PUBLIC levelfmt winhttp)
 
 # the release's version: a header for the code (hitmanlevels_version.h) and each file's Windows version

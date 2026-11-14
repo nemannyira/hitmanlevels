@@ -38,6 +38,8 @@ New-Item -ItemType Directory -Force "$stage\examples" | Out-Null
 Copy-Item "$bin\dinput8.dll", "$bin\levelpack.exe" $stage
 Copy-Item "h2\H2Fix.ini" $stage
 Copy-Item "LICENSE" "$stage\LICENSE.txt"
+# a double click makes .h2lvl files open with levelpack (levelpack register: the user's own file types)
+"@echo off`r`n""%~dp0levelpack.exe"" register`r`npause`r`n" | Set-Content "$stage\Open .h2lvl files with levelpack.cmd" -NoNewline
 (Get-Content "release\README.txt" -Raw).Replace("{VERSION}", $version) | Set-Content "$stage\README.txt" -NoNewline
 # the example missions played through (h2/docs/playtest_log.md): folders to copy into Mods
 foreach ($e in "TheAccountant", "DeadDrop", "EstateRun", "TheInformant", "Arena") {

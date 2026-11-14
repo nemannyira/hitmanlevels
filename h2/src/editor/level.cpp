@@ -23,6 +23,7 @@
 #include "../engine/script_files.h"
 #include "../engine/spawn.h"
 #include "../levelfmt/level_check.h"
+#include "levelfmt/hub.h"  // (kHubSite: the site's address only; the editor makes no connection)
 #include "levelfmt/share.h"
 #include "../log.h"
 #include "../mainloop.h"
@@ -1934,6 +1935,15 @@ void DrawShare()
                               SW_SHOWNORMAL);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("In Explorer (the game may go to the background)");
+        }
+        // the site's upload page in the browser (the editor itself never goes online: docs/online_levels.md)
+        if (L.packageVersion > 0 || !g_lastPackage.empty()) {
+            if (ImGui::SmallButton("Upload it on hitmanlevels.com"))
+                ShellExecuteA(nullptr, "open", (std::string(levelfmt::kHubSite) + "/upload.html").c_str(), nullptr,
+                              nullptr, SW_SHOWNORMAL);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Opens the site's upload page in your browser (the game may go to the background):\n"
+                                  "sign in, then drop the .h2lvl from Mods\\Packages there.");
         }
     }
     if (!g_shareStatus.empty())

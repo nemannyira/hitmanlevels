@@ -3,6 +3,16 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-14: version 0.1.0, sharing on the site
+
+* A version: 0.1.0 (H2Fix.log's first line, the files' properties,
+  `levelpack --version`).
+* *Upload it on hitmanlevels.com* next to the export opens the site's
+  upload page in the browser.
+* `levelpack register` (the release's *Open .h2lvl files with
+  levelpack.cmd*): a double click on a `.h2lvl` installs it;
+  `levelpack unregister` takes it back.
+
 ## 2026-11-13: the level's picture is the game's view
 
 * *Take a picture of this view* (Save & share) takes the game's own frame.

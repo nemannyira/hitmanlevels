@@ -42,10 +42,12 @@ SHARING LEVELS
 
   * Save & share (Simple mode) or Level > Share > Export package writes your level as one file:
     Mods\Packages\<level>_v<n>.h2lvl. It is signed with an author key made on your PC the first time.
-  * To install a level someone passed on: open the .h2lvl with levelpack.exe (or run
-    "levelpack install <file>"). It shows the level, its author and license, and refuses a package
-    that was changed after its author signed it. Installed levels go to Mods\Online and run their
-    scripts in a stricter sandbox.
+  * Then "Upload it on hitmanlevels.com" (next to Export) opens the site's upload page.
+  * To install levels with a double click: run "Open .h2lvl files with levelpack.cmd" once (it runs
+    "levelpack register"; "levelpack unregister" takes it back). Then a double click on a .h2lvl
+    installs it (or run "levelpack install <file>"). It shows the level, its author and license, and
+    refuses a package that was changed after its author signed it. Installed levels go to
+    Mods\Online and run their scripts in a stricter sandbox.
   * levelpack --help lists the rest (inspect, author key backup and restore).
 
 

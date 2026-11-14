@@ -10,6 +10,7 @@
 //   levelpack author restore <file.h2key> [--replace]
 //   levelpack hub list|install <id> [--source https://hitmanlevels.com | <folder>]   (the site's levels)
 //   levelpack site keygen <key file> | site sign <index.json> <key file>             (the site's operator)
+//   levelpack register | unregister                          (a double click on a package opens it here)
 //   levelpack selftest
 //   levelpack --version
 //   levelpack <package>                                      (a double click: install, asking)
@@ -21,6 +22,7 @@
 #include <windows.h>
 
 #include <shellapi.h>
+#include <shlobj.h>
 
 #include <cstdio>
 #include <io.h>
@@ -427,12 +429,58 @@ int Usage()
                  "[--allow-other-author]\n"
                  "       levelpack site keygen <key file>\n"
                  "       levelpack site sign <index.json> <key file>\n"
+                 "       levelpack register | unregister\n"
                  "       levelpack selftest\n"
                  "       levelpack --version\n");
     return 2;
 }
 
 } // namespace
+
+// levelpack register|unregister: a double click on a package (.h2lvl, every game's extension) opens it with this
+// levelpack.exe, as the user's own file type (HKCU\Software\Classes: no administrator). Unregister takes away only
+// what register made (an extension another program has is left alone).
+int Register(bool on)
+{
+    wchar_t exe[MAX_PATH];
+    if (!GetModuleFileNameW(nullptr, exe, MAX_PATH))
+        return 1;
+    auto set = [](const std::wstring& key, const std::wstring& value) {
+        return RegSetKeyValueW(HKEY_CURRENT_USER, key.c_str(), nullptr, REG_SZ, value.c_str(),
+                               DWORD((value.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS;
+    };
+    auto get = [](const std::wstring& key) {
+        wchar_t buf[256] = {};
+        DWORD size = sizeof(buf);
+        return RegGetValueW(HKEY_CURRENT_USER, key.c_str(), nullptr, RRF_RT_REG_SZ, nullptr, buf, &size) ==
+                       ERROR_SUCCESS
+                   ? std::wstring(buf)
+                   : std::wstring();
+    };
+    bool ok = true;
+    for (const GameInfo& g : Games()) {
+        std::wstring ext(g.extension.begin(), g.extension.end());  // ".h2lvl" (ASCII)
+        std::wstring progId = L"HitmanLevels" + ext, name(g.name.begin(), g.name.end());
+        std::wstring classes = L"Software\\Classes\\";
+        std::wstring owner = get(classes + ext);
+        if (on) {
+            if (!owner.empty() && owner != progId) {
+                std::printf("%s: left to the program that has it (%ls)\n", g.extension.c_str(), owner.c_str());
+                continue;
+            }
+            ok = set(classes + ext, progId) && set(classes + progId, name + L" level") &&
+                 set(classes + progId + L"\\DefaultIcon", L"\"" + std::wstring(exe) + L"\",0") &&
+                 set(classes + progId + L"\\shell\\open\\command", L"\"" + std::wstring(exe) + L"\" \"%1\"") && ok;
+            std::printf("%s: a double click opens it with %ls\n", g.extension.c_str(), exe);
+        } else if (owner == progId) {
+            RegDeleteTreeW(HKEY_CURRENT_USER, (classes + progId).c_str());
+            RegDeleteTreeW(HKEY_CURRENT_USER, (classes + ext).c_str());
+            std::printf("%s: no longer opened by levelpack\n", g.extension.c_str());
+        }
+    }
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);  // (Explorer's icons and Open)
+    return ok ? 0 : 1;
+}
 
 int main(int argc, char** argv)
 {
@@ -452,6 +500,8 @@ int main(int argc, char** argv)
     }
     if (cmd == "author")
         return Author(argc, argv);
+    if ((cmd == "register" || cmd == "unregister") && argc == 2)
+        return Register(cmd == "register");
     if (cmd == "inspect" && argc == 3) {
         OpenedPackage p;
         if (!Open(argv[2], p))

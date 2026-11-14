@@ -84,5 +84,14 @@ $sums = foreach ($f in $zip, $symbols) {
     "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), (Split-Path $f -Leaf)
 }
 $sums | Set-Content (Join-Path $out "SHA256SUMS.txt")
+# the site's Editor & tools page reads this (website/public/tools.html): the zip as published
+[ordered]@{
+    version = $version
+    date = (Get-Date -Format "yyyy-MM-dd")
+    file = "$name.zip"
+    size = (Get-Item $zip).Length
+    sha256 = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+    github = "https://github.com/nemannyira/hitmanlevels/releases/tag/h2-$version"
+} | ConvertTo-Json | Set-Content (Join-Path $root "website\public\release.json")
 $sums
 Get-ChildItem $zip, $symbols | Select-Object Name, Length

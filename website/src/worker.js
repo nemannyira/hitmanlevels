@@ -235,6 +235,8 @@ async function route(request, env, ctx) {
     }
     if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\/preview\.png$/)))
       return file(env, `levels/${m[1]}/${m[2]}/preview.png`, "image/png");
+    if ((m = path.match(/^\/downloads\/(hitmanlevels-[a-z0-9.-]+\.zip)$/)))  // the releases (tools.html)
+      return file(env, `downloads/${m[1]}`, "application/zip");
     if (path === "/api/levels") return levels(env);
     if (path === "/api/admin/overview") {
       const user = await currentUser(request, env);
@@ -268,6 +270,6 @@ async function route(request, env, ctx) {
       return admin(request, env, m[1], user);
     }
   }
-  if (path.startsWith("/api/") || path.startsWith("/levels/")) return json({ error: "Not found" }, 404);
+  if (path.startsWith("/api/") || path.startsWith("/levels/") || path.startsWith("/downloads/")) return json({ error: "Not found" }, 404);
   return env.ASSETS.fetch(request);
 }

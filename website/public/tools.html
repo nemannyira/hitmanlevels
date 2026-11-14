@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor &amp; tools - Hitman Levels</title>
+<meta name="description" content="Download the level editor for Hitman 2: Silent Assassin and the level package installer.">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="rain" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Hitman Levels<span>.</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">Levels</a>
+      <a href="get-started.html">Get started</a>
+      <a class="on" href="tools.html">Editor &amp; tools</a>
+      <a href="upload.html">Upload</a>
+    </nav>
+    <a class="btn small signin" href="signin.html">Sign in</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="head">
+    <h1>Editor &amp; tools</h1>
+    <p>The level editor runs inside Hitman 2: Silent Assassin. One zip holds it, the installer of shared levels and five example missions.</p>
+  </div>
+
+  <div class="page-cols">
+    <div>
+      <section>
+        <div class="section-title"><h2>What is in it</h2><span class="muted" id="what-version"></span></div>
+        <ul class="checks">
+          <li class="ok"><span class="mark">&#9632;</span><div>dinput8.dll and H2Fix.ini<small>The editor, and fixes for today's PCs (frame limit, borderless window, widescreen field of view, larger menus). Next to hitman2.exe.</small></div></li>
+          <li class="ok"><span class="mark">&#9632;</span><div>levelpack.exe<small>Installs the .h2lvl levels you download; checks each author's signature first.</small></div></li>
+          <li class="ok"><span class="mark">&#9632;</span><div>Five example missions<small>The Accountant, Dead Drop, Estate Run, The Informant, Arena: folders to copy into the game's Mods.</small></div></li>
+          <li class="ok"><span class="mark">&#9632;</span><div>README, licenses<small>Installing step by step; MIT, and the libraries' own licenses.</small></div></li>
+        </ul>
+        <p style="margin-top:16px">How to install it and play a level: <a href="get-started.html">Get started</a>.</p>
+      </section>
+
+      <section>
+        <div class="section-title"><h2>Not code-signed yet</h2></div>
+        <p>Windows SmartScreen or an antivirus may warn about the files until they are signed. Check that your download is the published one: its SHA-256 must match the one here.</p>
+        <code class="path" id="hash-cmd">Get-FileHash hitmanlevels-h2-...zip</code>
+        <p class="muted">The editor itself never connects to the internet; levelpack only when you ask it to list or install levels from this site.</p>
+      </section>
+    </div>
+
+    <aside class="menubox">
+      <h2 id="title">Hitman Levels</h2>
+      <dl>
+        <div class="row"><dt>Game</dt><dd>Hitman 2: Silent Assassin</dd></div>
+        <div class="row"><dt>Needs</dt><dd>Steam version 1.02, Windows</dd></div>
+        <div class="row"><dt>Released</dt><dd id="r-date"></dd></div>
+        <div class="row"><dt>Size</dt><dd id="r-size"></dd></div>
+        <div class="row"><dt>SHA-256</dt><dd class="mono" id="r-sha" style="font-size:11px"></dd></div>
+      </dl>
+      <a class="choice on" id="r-download" href="#">Download</a>
+      <a class="choice" id="r-github" href="https://github.com/nemannyira/hitmanlevels/releases">On GitHub</a>
+      <a class="choice dim" href="https://github.com/nemannyira/hitmanlevels/blob/master/CHANGELOG.md">What changed</a>
+      <div class="note">Codename 47, Contracts and Blood Money: to come.</div>
+    </aside>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A fan site. Not affiliated with or endorsed by IO Interactive. Hitman and its games' names are trademarks of IO Interactive A/S.</span>
+    <span><a href="terms.html">Terms</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+<script>
+  (async function () {
+    var r = null;
+    try { var res = await fetch("release.json", { cache: "no-cache" }); if (res.ok) r = await res.json(); } catch (e) { r = null; }
+    if (!r) { document.getElementById("r-download").textContent = "Not released yet"; return; }
+    document.getElementById("title").textContent = "Hitman Levels " + r.version;
+    document.getElementById("what-version").textContent = r.version;
+    document.getElementById("r-date").textContent = day(Date.parse(r.date) / 1000);
+    document.getElementById("r-size").textContent = size(r.size);
+    document.getElementById("r-sha").textContent = r.sha256;
+    document.getElementById("r-download").href = "/downloads/" + r.file;
+    document.getElementById("r-github").href = r.github;
+    document.getElementById("hash-cmd").textContent = "Get-FileHash " + r.file + "   # SHA256 must be " + r.sha256.toUpperCase();
+  })();
+</script>
+</body>
+</html>

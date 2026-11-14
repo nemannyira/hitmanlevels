@@ -26,7 +26,26 @@
     "DISCORD_CLIENT_ID": "1570820906547290173",
     "GITHUB_CLIENT_ID": "Ov23liUlIvU893HmojPP",
     "GOOGLE_CLIENT_ID": "829125191265-uutq5bq60gojb0vdajn0kk7c75oskhb7.apps.googleusercontent.com"
-  }
+  },
   // secrets (wrangler secret put; .dev.vars for wrangler dev): SITE_SEED (the list's Ed25519 key, 64 hex),
   // DISCORD_CLIENT_SECRET, GITHUB_CLIENT_SECRET, GOOGLE_CLIENT_SECRET
+
+  // a copy of the site to test on before the real one (docs/site_api.md "Staging"): its own database, files and
+  // site key (SITE_SEED, made with tools/make_site_key.mjs --env staging); no sign-in apps (the cron is the same)
+  //   npx wrangler deploy --env staging
+  "env": {
+    "staging": {
+      "name": "hitmanlevels-staging",
+      "d1_databases": [
+        { "binding": "DB", "database_name": "hitmanlevels-staging", "database_id": "18525c32-c6d4-4d1d-b1b3-94100774b86d", "migrations_dir": "migrations" }
+      ],
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "hitmanlevels-staging" }
+      ],
+      "ratelimits": [
+        { "name": "RUNS_LIMIT", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
+      ],
+      "vars": { "SITE_ORIGIN": "https://hitmanlevels-staging.hitmanlevels-site.workers.dev" }
+    }
+  }
 }

@@ -91,6 +91,21 @@ rotated). The site's key was made 2026-11-13 (`website/tools/make_site_key.mjs`:
 Worker's `SITE_SEED`, never shown): `239ef6a67cdacbfb7c7e5c031f5ebc5c97744e9d0d7047a76f1b3e47167b28e2`. For a staging copy of the site, `HITMANLEVELS_SITE_KEYS` (comma
 separated hex) names other keys, and `--source <folder>` reads a site from disk (tests).
 
+## Staging
+
+A copy of the site to test on before the real one (made 2026-11-14 with the owner's OK):
+https://hitmanlevels-staging.hitmanlevels-site.workers.dev, `wrangler.jsonc` env `staging` (Worker
+`hitmanlevels-staging`, D1 `hitmanlevels-staging`, R2 `hitmanlevels-staging`, its own rate limit namespace
+and site key, public key `a42bc9e4acd412fb9ac7885249a41ed26d43c6c27a758f3f3fb00ab8d1e5e123`). Not behind Access (levelpack reaches it over HTTPS), noindex as the site, no sign-in apps:
+tests make their sessions in its database. levelpack trusts its list with `HITMANLEVELS_SITE_KEYS=<its
+public key>` and `--source https://hitmanlevels-staging.hitmanlevels-site.workers.dev`.
+
+```
+npx wrangler d1 migrations apply hitmanlevels-staging --remote --env staging
+npx wrangler deploy --env staging
+node tools/make_site_key.mjs --env staging     (its SITE_SEED; prints the public key)
+```
+
 ## Decided (the owner, 2026-11-13)
 
 * **Hosting**: Cloudflare, behind hitmanlevels.com: Pages for the site's own pages, a Worker for the

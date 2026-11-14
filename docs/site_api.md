@@ -57,6 +57,11 @@ client takes the answer:
 
 Runs with `aids` or `dev` are never sent. No account, no IP kept (#52).
 
+`GET /api/author/levels/<id>/plays` (signed in; the level's author only, 404 for others; `?download=1` as the
+file `plays.json`): the level's newest 2000 runs, `{"format":1,"level","title","base_scene","runs":[{"version",
+"result","time","rating"?,"counters","stage"?,"alarm_highest"?,"events"}]}`: the author's page and the file the
+editor shows on the game's map (#53).
+
 ## Signing
 
 The site key signs the list, never the packages (their authors do). With uploads and no review before

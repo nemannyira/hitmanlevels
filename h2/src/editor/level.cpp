@@ -632,6 +632,10 @@ std::vector<engine::SceneCopy> CopiesFor(const std::string& scene)
         }
         out.push_back(c);
     }
+    if (!IsOnlineLevel(g_level.folder) && !g_level.packageId.empty()) {  // (the author's own level: its plays)
+        std::vector<engine::SceneCopy> marks = PlayMarkCopies(ModsDir() + g_level.folder + "\\plays.json", g_level.packageId);
+        out.insert(out.end(), marks.begin(), marks.end());
+    }
     return out;
 }
 

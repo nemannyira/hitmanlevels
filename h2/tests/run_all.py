@@ -55,6 +55,7 @@ TESTS = [
     ("imports_save", ["imports_save_test.py"], 900, False),
     ("gameway3", ["gameway3_test.py"], 600, False),
     ("map_icon", ["map_icon_test.py"], 600, False),
+    ("plays_map", ["plays_map_test.py"], 600, False),  # (#53: the players' plays on the in-game map)
     ("map_models", ["map_models_test.py"], 900, False),
     ("map_maps", ["map_maps_test.py"], 2400, False),
     ("map_own", ["map_own_test.py"], 900, False),

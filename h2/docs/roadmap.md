@@ -428,6 +428,10 @@ cheats.
   window and legend: before, it took them out with the buildings, so the map
   showed nothing) and takes out only its floors' plans and fixed icons.
   `h2.dev_mapicons()` reads what the map draws.
+* The players' plays (2026-11-14, #53, editor/ingame_map.h PlayMarkCopies): the site's plays.json in
+  the author's level folder; each place where Hitman died or was spotted is a point copy with a map icon
+  (as a level's point with `map_icon`), put onto its floor with the level's icons. Seen on C1-1: the
+  map shows world +x to the right and +z up (the site's author page plots them so).
 * An icon goes off the map with the routine's own message ShowMapIcon 0
   (its handler 0x541520: out of the window's set; 1 back; the flag +0x76 is
   saved with the game): the map leaves out only inactive objects (node flag

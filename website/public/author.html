@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your levels' plays - Hitman Levels</title>
+<meta name="description" content="How players play your levels: where runs end, alerts, where Hitman died or was spotted.">
+<link rel="stylesheet" href="site.css">
+<style>
+  .plays-level { margin: 26px 0 40px; }
+  .plays-level .cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+  .plot { width: 100%; height: auto; background: var(--surface); border: 1px solid var(--line); }
+  .plot .grid { stroke: var(--line); stroke-width: 1; }
+  .plot .died { fill: var(--red-hi); fill-opacity: 0.45; }
+  .plot .spotted { fill: #d9a33a; fill-opacity: 0.45; }
+  .plot text { fill: var(--muted); font: 11px var(--sans); }
+  .key { display: flex; gap: 18px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+  .key i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  @media (max-width: 760px) { .plays-level .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="rain" aria-hidden="true"></div>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Hitman Levels<span>.</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">Levels</a>
+      <a href="get-started.html">Get started</a>
+      <a href="tools.html">Editor &amp; tools</a>
+      <a class="on" href="upload.html">Upload</a>
+    </nav>
+    <a class="btn small signin" href="signin.html">Sign in</a>
+  </div>
+</header>
+<main class="wrap">
+  <div class="head">
+    <h1>How your levels are played</h1>
+    <p>The plays players chose to share: how their runs end, how often they are spotted, and where Hitman died or was spotted, seen from above. The downloaded file shows the same places on the game's own map in the editor.</p>
+  </div>
+  <p class="muted" id="signin" hidden>Sign in to see your levels' plays: <a href="signin.html">Sign in</a></p>
+  <p class="muted" id="none" hidden>No levels of yours yet: <a href="upload.html">upload one</a>.</p>
+  <div id="levels"></div>
+</main>
+<footer>
+  <div class="wrap">
+    <span>A fan site. Not affiliated with or endorsed by IO Interactive. Hitman and its games' names are trademarks of IO Interactive A/S.</span>
+    <span><a href="terms.html">Terms</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
+  </div>
+</footer>
+<script src="site.js"></script>
+<script>
+  var SVG = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs) {
+    var e = document.createElementNS(SVG, tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    return e;
+  }
+
+  // how a run that was not finished ends: left, Hitman died, an objective lost (the last of them)
+  function ending(r) {
+    if (r.result === "left") return "Left (the map, the game or the editor)";
+    for (var i = r.events.length - 1; i >= 0; i--) {
+      var e = r.events[i];
+      if (e.kind === "died") return "Hitman died";
+      if (e.kind === "objective_lost") return "Objective " + e.slot + " lost";
+    }
+    return "Failed otherwise";
+  }
+
+  // the places of deaths and spotting from above (x across, z up; game units are centimetres), a 10 m grid
+  function plot(runs) {
+    var pts = [];
+    runs.forEach(function (r) {
+      r.events.forEach(function (e) { if ((e.kind === "died" || e.kind === "spotted") && e.at) pts.push(e); });
+    });
+    if (!pts.length) return el("p", "muted", "No places yet: no shared run where Hitman was spotted or died.");
+    var xs = pts.map(function (p) { return p.at[0]; }), zs = pts.map(function (p) { return p.at[2]; });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
+    var side = Math.max(x1 - x0, z1 - z0, 2000) * 1.15, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    var W = 600, k = W / side, px = function (x) { return (x - cx) * k + W / 2; }, pz = function (z) { return W / 2 - (z - cz) * k; };
+    var s = svg("svg", { viewBox: "0 0 " + W + " " + W, class: "plot", role: "img", "aria-label": "Where Hitman died or was spotted" });
+    var step = side > 30000 ? 5000 : 1000;
+    for (var g = Math.ceil((cx - side / 2) / step) * step; g < cx + side / 2; g += step)
+      s.appendChild(svg("line", { x1: px(g), x2: px(g), y1: 0, y2: W, class: "grid" }));
+    for (g = Math.ceil((cz - side / 2) / step) * step; g < cz + side / 2; g += step)
+      s.appendChild(svg("line", { x1: 0, x2: W, y1: pz(g), y2: pz(g), class: "grid" }));
+    var label = svg("text", { x: 8, y: W - 8 });
+    label.textContent = "grid: " + step / 100 + " m · x →  z ↑";
+    s.appendChild(label);
+    pts.forEach(function (p) {
+      var c = svg("circle", { cx: px(p.at[0]), cy: pz(p.at[2]), r: 6, class: p.kind });
+      var t = svg("title");
+      t.textContent = (p.kind === "died" ? "Hitman died" : "Hitman spotted") + " · " + clock(p.t) + " · height " +
+        Math.round(p.at[1] / 100) + " m";
+      c.appendChild(t);
+      s.appendChild(c);
+    });
+    return s;
+  }
+
+  function show(data) {
+    var runs = data.runs, box = el("section", "plays-level");
+    var head = el("div", "section-title");
+    head.appendChild(el("h2", null, data.title));
+    var dl = el("a", null, "Download for the editor (plays.json)");
+    dl.href = "/api/author/levels/" + encodeURIComponent(data.level) + "/plays?download=1";
+    head.appendChild(dl);
+    box.appendChild(head);
+    if (!runs.length) {
+      box.appendChild(el("p", "muted", "No shared plays yet."));
+      return box;
+    }
+    var cols = el("div", "cols"), left = el("div"), right = el("aside", "menubox");
+    var plotWrap = el("div");
+    plotWrap.appendChild(plot(runs));
+    var key = el("div", "key");
+    [["died", "Hitman died", "var(--red-hi)"], ["spotted", "Hitman spotted", "#d9a33a"]].forEach(function (k) {
+      var s = el("span"), i = el("i");
+      i.style.background = k[2];
+      s.appendChild(i);
+      s.appendChild(document.createTextNode(k[1]));
+      key.appendChild(s);
+    });
+    plotWrap.appendChild(key);
+    left.appendChild(plotWrap);
+    left.appendChild(el("p", "muted", "In the editor: save plays.json in your level's folder (Mods\\<your level>), open the level: " +
+      "the places are on the game's map (M)."));
+    var count = function (f) { return runs.filter(f).length; };
+    var finished = count(function (r) { return r.result === "completed"; });
+    var alerts = runs.reduce(function (n, r) { return n + (r.counters.alerts || 0); }, 0);
+    right.appendChild(el("h2", null, "Plays"));
+    var d = el("dl");
+    [["Plays", runs.length], ["Finished", finished + " (" + percent(finished, runs.length) + ")"],
+     ["Silent Assassin", count(function (r) { return r.rating === "SilentAssassin"; })],
+     ["Failed", count(function (r) { return r.result === "failed"; })], ["Left", count(function (r) { return r.result === "left"; })],
+     ["Alerts a play", (alerts / runs.length).toFixed(1)]].forEach(function (row) {
+      var r = el("div", "row");
+      r.appendChild(el("dt", null, row[0]));
+      r.appendChild(el("dd", null, String(row[1])));
+      d.appendChild(r);
+    });
+    right.appendChild(d);
+    var ends = {};
+    runs.forEach(function (r) { if (r.result !== "completed") ends[ending(r)] = (ends[ending(r)] || 0) + 1; });
+    var names = Object.keys(ends).sort(function (a, b) { return ends[b] - ends[a]; });
+    if (names.length) {
+      right.appendChild(el("h3", null, "Not finished: how they end"));
+      var e = el("dl");
+      names.forEach(function (n) {
+        var r = el("div", "row");
+        r.appendChild(el("dt", null, n));
+        r.appendChild(el("dd", null, String(ends[n])));
+        e.appendChild(r);
+      });
+      right.appendChild(e);
+    }
+    cols.appendChild(left);
+    cols.appendChild(right);
+    box.appendChild(cols);
+    return box;
+  }
+
+  (async function () {
+    var r = await fetch("/api/me", { credentials: "same-origin" });
+    if (r.status !== 200) { document.getElementById("signin").hidden = false; return; }
+    var me = await r.json();
+    if (!me.levels.length) { document.getElementById("none").hidden = false; return; }
+    for (var i = 0; i < me.levels.length; i++) {
+      var p = await fetch("/api/author/levels/" + encodeURIComponent(me.levels[i].id) + "/plays", { credentials: "same-origin" });
+      if (p.ok) document.getElementById("levels").appendChild(show(await p.json()));
+    }
+  })();
+</script>
+</body>
+</html>

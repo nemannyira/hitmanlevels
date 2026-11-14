@@ -190,6 +190,28 @@ async function playStats(env, id) {
   return { ...totals.results[0], ratings: ratings.results, median_time: median.results.length ? median.results[0].time : null };
 }
 
+// GET /api/author/levels/<id>/plays[?download=1]: an author's own level's runs (the newest 2000), for the author's
+// page and as the file the editor draws on the game's map (docs/play_stats.md section 3)
+async function authorPlays(env, user, id, download) {
+  const level = await env.DB.prepare(
+    `SELECT l.id, (SELECT title FROM versions v WHERE v.level_id = l.id ORDER BY version DESC LIMIT 1) AS title,
+            (SELECT base_scene FROM versions v WHERE v.level_id = l.id ORDER BY version DESC LIMIT 1) AS base_scene
+       FROM levels l JOIN authors a ON a.key = l.author_key WHERE l.id = ? AND a.user_id = ?`).bind(id, user.id).first();
+  if (!level) return json({ error: "Not a level of yours" }, 404);
+  const { results } = await env.DB.prepare(
+    `SELECT version, result, time, rating, counters, stage, alarm_highest, events FROM runs WHERE level_id = ?
+      ORDER BY received DESC LIMIT 2000`).bind(id).all();
+  const body = JSON.stringify({
+    format: 1, level: level.id, title: level.title, base_scene: level.base_scene,
+    runs: results.map((r) => ({ version: r.version, result: r.result, time: r.time, ...(r.rating && { rating: r.rating }),
+      counters: JSON.parse(r.counters), ...(r.stage !== null && { stage: r.stage }),
+      ...(r.alarm_highest !== null && { alarm_highest: r.alarm_highest }), events: JSON.parse(r.events) })),
+  });
+  const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "private, no-store" };
+  if (download) headers["Content-Disposition"] = `attachment; filename="plays.json"`;
+  return new Response(body, { headers });
+}
+
 // POST /api/report { level, version?, reason }
 async function report(request, env, user) {
   const body = await request.json().catch(() => null);
@@ -325,6 +347,10 @@ async function route(request, env, ctx) {
       return user && user.admin ? adminOverview(env) : json({ error: "The owner's only" }, 403);
     }
     if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})$/))) return level(env, m[1]);
+    if ((m = path.match(/^\/api\/author\/levels\/([a-z0-9]{8,32})\/plays$/))) {
+      const user = await currentUser(request, env);
+      return user ? authorPlays(env, user, m[1], url.searchParams.get("download") === "1") : json({ error: "Sign in first" }, 401);
+    }
     if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/start$/))) return start(request, env, m[1]);
     if ((m = path.match(/^\/api\/auth\/(discord|github|google)\/callback$/))) return callback(request, env, m[1]);
     if (path === "/api/me") {

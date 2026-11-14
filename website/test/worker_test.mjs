@@ -153,6 +153,16 @@ try {
     plays.ratings.length === 1 && plays.ratings[0].rating === "SilentAssassin", JSON.stringify(plays));
   const inList = (await (await get("/api/levels")).json()).levels.find((l) => l.id === id);
   check("... the list: its plays and finished", inList.plays === 3 && inList.finished === 1);
+  // the author's page (#53): the level's runs for its author only, the file the editor reads
+  r = await get(`/api/author/levels/${id}/plays`, me);
+  const mine = r.status === 200 ? await r.json() : {};
+  check("the author's plays: the 3 runs with their places", mine.level === id && mine.runs.length === 3 &&
+    mine.runs.some((x) => x.events.some((e) => e.kind === "spotted" && e.at && e.at[2] === 2000)), JSON.stringify(mine).slice(0, 100));
+  check("... another account's: not found", (await get(`/api/author/levels/${id}/plays`, other)).status === 404);
+  check("... signed out: sign in first", (await get(`/api/author/levels/${id}/plays`)).status === 401);
+  r = await get(`/api/author/levels/${id}/plays?download=1`, me);
+  check("... as a file to download (plays.json), not cached", /attachment; filename="plays.json"/.test(r.headers.get("Content-Disposition")) &&
+    /no-store/.test(r.headers.get("Cache-Control")));
   await post("/api/admin/takedown", JSON.stringify({ level: id }), me);
   check("refused: a run of a level taken down", (await runPost(another(() => {}))).status === 422);
 } finally {

@@ -24,6 +24,12 @@ game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lu
   still makes no connection). Plays with testing aids or dev settings, and
   plays of a level changed since it was installed, are never sent.
 * levelpack.exe now goes into the game's folder too (README's install step).
+* Your levels' plays on hitmanlevels.com (Upload > *How your levels are
+  played*): how many finish, how the others end (Hitman died, which
+  objective was lost), alerts, and where Hitman died or was spotted.
+  *Download for the editor* gives `plays.json`: put it in your level's
+  folder and open the level, and the in-game map (M) shows those places
+  (a red target where Hitman died, "!" where he was spotted).
 
 ## 2026-11-13: the level's picture is the game's view
 

@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cstring>
+#include <fstream>
 #include <map>
+
+#include "json.hpp"
 
 #include "../engine/imports.h"
 #include "../engine/ingame_map.h"
@@ -25,6 +28,16 @@ constexpr int kMaxDepth = 64;  // (a walk up the scene's tree)
 constexpr uint32_t kRoomClass = 0x100021;  // ZROOM
 
 constexpr uint32_t kPlanFlags = 0x20000;  // a floor plan model's node flags (the game's maps' own)
+
+// The places of the players' plays on the map (PlayMarkCopies): their copies' names and places
+struct PlayMark {
+    std::string name;
+    float at[3] = {};
+};
+std::vector<PlayMark> g_playMarks;
+constexpr size_t kMaxPlayMarks = 100;  // of each kind (the map draws at most 256 icons on a floor)
+const char* const kDiedIcon = "Icon_Target";
+const char* const kSpottedIcon = "Icon_PointOfInterest";
 
 // A model the map draws for one of the level's objects (on the floor of that object's place)
 struct PlanModel {
@@ -290,6 +303,8 @@ void PlaceMapModels()
     for (const SpawnedObject& s : CurrentLevel().spawned)  // (SceneCopy::mapIcon: its own, else the mission's)
         if (s.point && InStage(s.span) && !(s.mapIcon.empty() && MissionMapIcon(s.id).empty()))
             put(s.id + "_MapIcon", s.transform.pos, true);
+    for (const PlayMark& m : g_playMarks)
+        put(m.name + "_MapIcon", m.at, true);
     if (made)
         Log("level: %d/%d of its models and icons on the in-game map's floors", placed, made);
 }
@@ -311,6 +326,50 @@ void HideMapModels()
             engine::DestroyGeom(g);
     g_madeWhilePlaying.clear();
 }
+
+std::vector<engine::SceneCopy> PlayMarkCopies(const std::string& file, const std::string& level)
+{
+    g_playMarks.clear();
+    std::vector<engine::SceneCopy> out;
+    std::ifstream f(file, std::ios::binary | std::ios::ate);
+    if (!f || f.tellg() > std::streamoff(16 << 20))
+        return out;
+    f.seekg(0);
+    nlohmann::json j = nlohmann::json::parse(f, nullptr, false);
+    if (!j.is_object() || j.value("level", "") != level || !j.value("runs", nlohmann::json()).is_array()) {
+        Log("level: %s is not this level's plays: not on the map", file.c_str());
+        return out;
+    }
+    size_t died = 0, spotted = 0;
+    for (const auto& r : j["runs"]) {
+        if (!r.is_object() || !r.value("events", nlohmann::json()).is_array())
+            continue;
+        for (const auto& e : r["events"]) {
+            if (!e.is_object() || !e.value("at", nlohmann::json()).is_array() || e["at"].size() != 3 ||
+                !e["at"][0].is_number() || !e["at"][1].is_number() || !e["at"][2].is_number())
+                continue;
+            std::string kind = e.value("kind", "");
+            size_t& n = kind == "died" ? died : spotted;
+            if ((kind != "died" && kind != "spotted") || n >= kMaxPlayMarks)
+                continue;
+            PlayMark m;
+            m.name = "Plays_" + kind + std::to_string(n++);
+            for (int k = 0; k < 3; ++k)
+                m.at[k] = e["at"][k].get<float>();
+            engine::SceneCopy c;
+            c.name = m.name;
+            c.point = true;
+            c.mapIcon = kind == "died" ? kDiedIcon : kSpottedIcon;
+            memcpy(c.pos, m.at, sizeof(c.pos));
+            out.push_back(c);
+            g_playMarks.push_back(m);
+        }
+    }
+    Log("level: the players' plays on the in-game map: %zu deaths, %zu times spotted (%s)", died, spotted, file.c_str());
+    return out;
+}
+
+size_t PlayMarkCount() { return g_playMarks.size(); }
 
 void ForgetMapModels()
 {

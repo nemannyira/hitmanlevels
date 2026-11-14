@@ -36,6 +36,13 @@ void PlaceMapModels();
 void HideMapModels();
 void ForgetMapModels();
 
+// The players' plays of the author's own level on the map (docs/play_stats.md section 3): plays.json from the
+// site's author page in the level's folder (`file`; its "level" this level's package id `level`). Each place
+// where Hitman died or was spotted becomes a point with a map icon made with the map (at most 100 of each),
+// put onto its floor with the level's icons (PlaceMapModels). PlayMarkCount: those of the map loaded last.
+std::vector<engine::SceneCopy> PlayMarkCopies(const std::string& file, const std::string& level);
+size_t PlayMarkCount();
+
 // The map's own objects of the loaded scene: its group (the window, the legend's
 // icons, the floors) and, in it, the floors' contents (plans, texts, fixed icons).
 class IngameMapParts {

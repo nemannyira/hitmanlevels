@@ -65,9 +65,16 @@ Built 2026-11-14 (#52; website/src/worker.js `postRun`, migration 0004_runs.sql)
 * **The level's page**: plays, finished %, Silent Assassin %, the ratings' spread, the median time of the
   finished runs (every version together); the list shows each level's plays and finished % and sorts by
   most played and hardest (least finished, of the levels played at least 5 times).
-* **The author's page** (signed in, their levels): where runs end (objective lost, Hitman died), how many
-  alerts, and **heat maps** of deaths and of where Hitman was spotted, drawn on the map's own floor plans
-  (the in-game map's projection: h2/docs/roadmap.md "The in-game map").
+* **The author's page** (built 2026-11-14, #53: website/public/author.html, `GET /api/author/levels/<id>/plays`;
+  signed in, their levels): plays, finished, failed, left, alerts a play, how the runs not finished end (Hitman
+  died, objective n lost, left), and the places where Hitman died or was spotted from above (x across, z up, a
+  metre grid: no game art on the site, decided with the owner 2026-11-14: the floor plans are IO Interactive's).
+* **The same places on the game's own map** (#53, h2/src/editor/ingame_map.h PlayMarkCopies): the author page's
+  *Download for the editor* gives `plays.json`; saved in the level's folder (`Mods\<level>\plays.json`, the
+  author's own level: its `package` id must be the file's `level`), the map loaded with the level gets a map
+  icon at each place, on the floor of its place (Hitman died: Icon_Target, red; spotted: Icon_PointOfInterest,
+  "!"; at most 100 of each, the map draws 256 icons a floor). The in-game map's x and z run as the site's plot.
+  The file is not packaged (ExportLevelFolder takes the level's own files only).
 * **privacy.html** (done with #52): the runs (anonymous numbers and places in a level), kept as long as the
   level is on the site.
 

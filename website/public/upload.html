@@ -81,6 +81,7 @@
         <div class="row"><dt>Levels</dt><dd id="me-count">0</dd></div>
       </dl>
       <div id="me-levels"></div>
+      <a class="choice" href="author.html">How your levels are played</a>
       <a class="choice dim" href="#" id="signout">Sign out</a>
       <div class="note">The author key is the one your packages are signed with. Packages signed with it can come only from this account.</div>
     </aside>
@@ -117,7 +118,7 @@
     me.levels.forEach(function (l) {
       var a = document.createElement("a");
       a.className = "choice";
-      a.href = "#";
+      a.href = "level.html?id=" + encodeURIComponent(l.id);
       a.textContent = l.title + " (v" + l.version + ")";
       list.appendChild(a);
     });

@@ -46,6 +46,11 @@
         <p id="readme" style="white-space:pre-wrap"></p>
       </section>
 
+      <section id="plays-box" style="margin-top:28px" hidden>
+        <div class="section-title"><h2>Plays</h2><span class="muted">shared by the players who chose to</span></div>
+        <p id="plays"></p>
+        <ul id="ratings"></ul>
+      </section>
       <div class="versions">
         <div class="section-title"><h2>Versions</h2><span class="muted" id="versions-count"></span></div>
         <ul id="versions"></ul>
@@ -63,6 +68,7 @@
         <div class="row"><dt>License</dt><dd id="d-license"></dd></div>
         <div class="row"><dt>Size</dt><dd id="d-size"></dd></div>
         <div class="row"><dt>Downloads</dt><dd id="d-downloads"></dd></div>
+        <div class="row"><dt>Plays</dt><dd id="d-plays"></dd></div>
       </dl>
       <a class="choice on" id="download" href="#">Download</a>
       <a class="choice" href="get-started.html">How to play it</a>
@@ -119,6 +125,20 @@
     $("d-license").textContent = l.license;
     $("d-size").textContent = size(l.size);
     $("d-downloads").textContent = String(l.downloads);
+    var p = l.plays;
+    $("d-plays").textContent = p.plays ? p.plays + " (" + percent(p.finished, p.plays) + " finished)" : "none shared yet";
+    if (p.plays) {
+      $("plays-box").hidden = false;
+      $("plays").textContent = p.plays + (p.plays === 1 ? " play" : " plays") + " · " + p.finished + " finished (" +
+        percent(p.finished, p.plays) + ") · Silent Assassin " + p.silent_assassin + " (" + percent(p.silent_assassin, p.plays) +
+        ")" + (p.median_time !== null ? " · median time of the finished ones " + clock(p.median_time) : "");
+      p.ratings.forEach(function (r) {
+        var li = el("li");
+        li.appendChild(el("b", null, ratingName(r.rating)));
+        li.appendChild(el("span", "muted", " · " + r.n));
+        $("ratings").appendChild(li);
+      });
+    }
     $("download").href = l.path;
     $("download").setAttribute("download", l.title.replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/ +/g, "_") + "_v" + l.version + ".h2lvl");
     $("level").hidden = false;

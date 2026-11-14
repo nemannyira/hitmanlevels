@@ -53,16 +53,23 @@ Built 2026-11-14 (#51; shared/levelfmt/stats.h, `levelpack stats`):
 
 ## 3. On the site (level 1)
 
-* **Worker**: `POST /api/v1/runs` (no account): the run's level, version and package hash must be a listed
-  one; the fields in range (time at least a level's plausible minimum, counters bounded); one run id once;
-  a rate limit per client (Workers' rate limiting, nothing stored of the client). Stored: the run's numbers
-  and events (D1), no IP, no account.
-* **The level's page**: plays, finished %, Silent Assassin %, the rating's spread, the median time of the
-  finished runs; the list sorts by most played and hardest (least finished).
+Built 2026-11-14 (#52; website/src/worker.js `postRun`, migration 0004_runs.sql):
+
+* **Worker**: `POST /api/v1/runs` (no account, no Origin: levelpack posts it): the run's game, level, version
+  and package hash must be a listed package (not taken down, its author not blocked); every field in range
+  (time up to a day, counters up to 100000, at most 500 events, no aids or dev settings); one run id once
+  (409); at most 30 runs a minute from one address (Workers' rate limiting: the address is not stored).
+  Stored: the run's numbers and events, when it arrived; no IP, no account, not when it was played. Deleted
+  with the level (an account deleted takes its levels' runs). A plausible minimum time per level is not
+  checked yet (nothing to base it on before runs come in).
+* **The level's page**: plays, finished %, Silent Assassin %, the ratings' spread, the median time of the
+  finished runs (every version together); the list shows each level's plays and finished % and sorts by
+  most played and hardest (least finished, of the levels played at least 5 times).
 * **The author's page** (signed in, their levels): where runs end (objective lost, Hitman died), how many
   alerts, and **heat maps** of deaths and of where Hitman was spotted, drawn on the map's own floor plans
   (the in-game map's projection: h2/docs/roadmap.md "The in-game map").
-* **privacy.html**: the runs (anonymous numbers and places in a level), kept as long as the level is listed.
+* **privacy.html** (done with #52): the runs (anonymous numbers and places in a level), kept as long as the
+  level is on the site.
 
 ## 4. Level 2: profiles and leaderboards
 

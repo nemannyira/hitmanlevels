@@ -16,6 +16,10 @@
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "hitmanlevels" }
   ],
+  // the runs players send (POST /api/v1/runs): at most 30 a minute from one address, in each location
+  "ratelimits": [
+    { "name": "RUNS_LIMIT", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+  ],
   "vars": {
     "SITE_ORIGIN": "https://hitmanlevels.com",
     // the OAuth apps "Hitman Levels" (not secret; docs/site_api.md)

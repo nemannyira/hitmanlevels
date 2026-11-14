@@ -24,6 +24,17 @@ function size(bytes) {
   return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
 }
 
+function percent(n, of) { return of ? Math.round(100 * n / of) + "%" : "-"; }
+
+// game seconds as the statistics screen shows them (h:mm:ss, m:ss)
+function clock(s) {
+  var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = String(s % 60).padStart(2, "0");
+  return h ? h + ":" + String(m).padStart(2, "0") + ":" + sec : m + ":" + sec;
+}
+
+// the game's name of a rating as words ("SilentAssassin": "Silent Assassin")
+function ratingName(key) { return String(key).replace(/([a-z])([A-Z])/g, "$1 $2"); }
+
 // an element with text, its class, its children
 function el(tag, cls, text) {
   var e = document.createElement(tag);

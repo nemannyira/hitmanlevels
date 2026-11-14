@@ -40,7 +40,7 @@
     <div class="filters">
       <input id="q" aria-label="Search" placeholder="Search by title or author">
       <select id="map" aria-label="Map"><option value="">Every map</option></select>
-      <select id="sort" aria-label="Sort"><option value="new">Newest first</option><option value="played">Most downloaded</option><option value="title">Title</option></select>
+      <select id="sort" aria-label="Sort"><option value="new">Newest first</option><option value="played">Most played</option><option value="hardest">Hardest (least finished)</option><option value="downloads">Most downloaded</option><option value="title">Title</option></select>
     </div>
     <div class="grid" id="grid"></div>
     <p class="muted" id="empty" hidden></p>
@@ -71,7 +71,8 @@
     if (l.blurb) body.appendChild(el("div", "blurb", l.blurb));
     var foot = el("div", "foot");
     foot.appendChild(el("span", null, day(l.updated)));
-    foot.appendChild(el("span", null, l.downloads + (l.downloads === 1 ? " download" : " downloads")));
+    foot.appendChild(el("span", null, l.plays ? l.plays + (l.plays === 1 ? " play, " : " plays, ") + percent(l.finished, l.plays) +
+      " finished" : l.downloads + (l.downloads === 1 ? " download" : " downloads")));
     body.appendChild(foot);
     a.appendChild(body);
     return a;
@@ -84,8 +85,12 @@
       return (!map || l.base_scene.split("\\")[0] === map) &&
              (!q || l.title.toLowerCase().indexOf(q) >= 0 || l.author.toLowerCase().indexOf(q) >= 0);
     });
+    // hardest: the least finished of the levels played at least 5 times (the others after them)
+    var finishedShare = function (l) { return l.plays >= 5 ? l.finished / l.plays : 2; };
     list.sort(function (a, b) {
-      return sort === "title" ? a.title.localeCompare(b.title) : sort === "played" ? b.downloads - a.downloads : b.updated - a.updated;
+      return sort === "title" ? a.title.localeCompare(b.title) : sort === "played" ? b.plays - a.plays || b.downloads - a.downloads
+        : sort === "hardest" ? finishedShare(a) - finishedShare(b) : sort === "downloads" ? b.downloads - a.downloads
+        : b.updated - a.updated;
     });
     var grid = document.getElementById("grid");
     grid.textContent = "";

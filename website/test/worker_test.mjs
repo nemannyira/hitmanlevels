@@ -1,7 +1,8 @@
 // The Worker on wrangler dev (local D1 and R2; .dev.vars with a test SITE_SEED and test client ids):
 // the pages, sign-in's start and a forged callback, sessions, the POST rules, real uploads (packages the
 // editor's levelpack made: checked by the WebAssembly check, listed; tampered, repeated, another account's
-// refused), the owner's take-down publishing a list the client (levelpack) accepts.
+// refused), the plays players share (a run levelpack sent: stored, refused, counted on the level's page), the
+// owner's take-down publishing a list the client (levelpack) accepts.
 //   npx wrangler d1 migrations apply hitmanlevels --local
 //   npx wrangler dev --local --port 8787 --ip 127.0.0.1 --test-scheduled   (the daily clean-up run by hand)
 //   node test/worker_test.mjs ../build/Release/levelpack.exe
@@ -114,7 +115,46 @@ try {
     page.versions.length === 2 && /^[0-9a-f]{64}$/.test(page.author.key) && page.path === `/levels/${id}/2.h2lvl`);
   check("... a downloaded package counted", page.downloads >= 1, String(page.downloads));
   check("no page for a level not listed", (await get("/api/levels/nosuchlevel1")).status === 404);
+
+  // the plays players share (POST /api/v1/runs, #52): a run as levelpack sends it (version 2 installed by it, a run
+  // written as the editor writes it, levelpack stats send into a folder), then posted here
+  const game = join(work, "game"), site = join(work, "site"), runsDir = join(game, "Mods", "Online", id, "runs");
+  mkdirSync(join(site, "api", "v1"), { recursive: true });
+  mkdirSync(game);
+  writeFileSync(join(game, "hitman2.exe"), "");
+  pack("install", join(work, "v2.h2lvl"), "--game", game, "--yes");
+  mkdirSync(runsDir);
+  writeFileSync(join(runsDir, "20261114T100000Z.json"), JSON.stringify({
+    format: 1, run: randomBytes(16).toString("hex"), level: id, version: 2, dll: "0.1.0", started: "2026-11-14T10:00:00Z",
+    result: "completed", time: 250, rating: "SilentAssassin", stealth: 100, aggression: 1, aids: [], dev: [],
+    counters: { alerts: 0, close_encounters: 0, enemies_harmed: 0, enemies_killed: 0, headshots: 0, innocents_harmed: 0,
+      innocents_killed: 0, saves: 0, shots: 2 },
+    events: [{ kind: "spotted", t: 100, at: [100, -5, 2000] }, { kind: "objective_done", slot: 1, t: 200 }] }));
+  pack("stats", "on");
+  pack("stats", "send", "--source", site, "--game", game);
+  const sent = readFileSync(join(site, "api", "v1", "runs"), "utf8").trim();
+  const runPost = (body) => post("/api/v1/runs", body, { "Content-Type": "application/json" });
+  const another = (change) => { const x = JSON.parse(sent); change(x); x.run = randomBytes(16).toString("hex"); return JSON.stringify(x); };
+  r = await runPost(sent);
+  check("a run as levelpack sends it: stored (no account, no Origin)", r.status === 201, `${r.status} ${sent.slice(0, 60)}`);
+  check("... the same run again: 409", (await runPost(sent)).status === 409);
+  r = await runPost(another((x) => { x.package_sha256 = "0".repeat(64); }));
+  check("refused: another package than the listed one", r.status === 422, (await r.json()).error);
+  check("refused: played with testing aids", (await runPost(another((x) => { x.aids = ["god mode"]; }))).status === 400);
+  check("refused: counters out of range", (await runPost(another((x) => { x.counters.shots = -1; }))).status === 400);
+  check("refused: a rating on a failed run", (await runPost(another((x) => { x.result = "failed"; }))).status === 400);
+  check("refused: not JSON", (await runPost("{")).status === 400);
+  const unrated = (result, time) => another((x) => { x.result = result; x.time = time; delete x.rating; delete x.stealth; delete x.aggression; });
+  check("a failed and a left run", (await runPost(unrated("failed", 90))).status === 201 &&
+    (await runPost(unrated("left", 30))).status === 201);
+  const plays = (await (await get(`/api/levels/${id}`)).json()).plays;
+  check("the level's page: 3 plays, 1 finished, 1 Silent Assassin, its median time", plays.plays === 3 &&
+    plays.finished === 1 && plays.silent_assassin === 1 && plays.median_time === 250 &&
+    plays.ratings.length === 1 && plays.ratings[0].rating === "SilentAssassin", JSON.stringify(plays));
+  const inList = (await (await get("/api/levels")).json()).levels.find((l) => l.id === id);
+  check("... the list: its plays and finished", inList.plays === 3 && inList.finished === 1);
   await post("/api/admin/takedown", JSON.stringify({ level: id }), me);
+  check("refused: a run of a level taken down", (await runPost(another(() => {}))).status === 422);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

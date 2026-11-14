@@ -1,5 +1,5 @@
 // hitmanlevels.com's Worker (docs/site_api.md): the pages from public/, the Level Hub's files from R2, sign-in,
-// uploads, reports and the owner's take-downs. The list of levels is signed here after every change.
+// uploads, reports, the owner's take-downs and the plays players share (runs). The list of levels is signed here after every change.
 
 import { callback, currentUser, logout, start } from "./auth.js";
 import { publishList, hex } from "./sitelist.js";
@@ -88,10 +88,14 @@ function blurb(v) {
 async function levels(env) {
   const { results } = await env.DB.prepare(
     `SELECT v.level_id, l.game, v.title, v.base_scene, v.author_name, v.version, v.created, v.license, v.size,
-            v.briefing, v.readme, v.preview, l.downloads ${LISTED} ORDER BY v.created DESC`).all();
+            v.briefing, v.readme, v.preview, l.downloads,
+            (SELECT COUNT(*) FROM runs r WHERE r.level_id = v.level_id) AS plays,
+            (SELECT COUNT(*) FROM runs r WHERE r.level_id = v.level_id AND r.result = 'completed') AS finished
+       ${LISTED} ORDER BY v.created DESC`).all();
   return json({ levels: results.map((v) => ({
     id: v.level_id, game: v.game, title: v.title, base_scene: v.base_scene, author: v.author_name, version: v.version,
-    updated: v.created, license: v.license, size: v.size, blurb: blurb(v), downloads: v.downloads,
+    updated: v.created, license: v.license, size: v.size, blurb: blurb(v), downloads: v.downloads, plays: v.plays,
+    finished: v.finished,
     preview: v.preview ? `/levels/${v.level_id}/${v.version}/preview.png` : null,
   })) });
 }
@@ -107,7 +111,83 @@ async function level(env, id) {
     version: v.version, updated: v.created, license: v.license, size: v.size, downloads: v.downloads,
     readme: v.readme, briefing: v.briefing, objectives: JSON.parse(v.objectives || "[]"), path: v.path,
     preview: v.preview ? `/levels/${id}/${v.version}/preview.png` : null, versions: results,
+    plays: await playStats(env, id),
   });
+}
+
+// POST /api/v1/runs (levelpack stats send, docs/site_api.md "Runs"): a play of a listed level's package. No
+// account; the client's address only keys the rate limit (not stored).
+const RESULTS = ["completed", "failed", "left"];
+const COUNTERS = ["alerts", "close_encounters", "enemies_harmed", "enemies_killed", "headshots", "innocents_harmed",
+  "innocents_killed", "saves", "shots"];
+const EVENTS = ["objective_done", "objective_lost", "spotted", "died"];
+const MAX_RUN = 64 * 1024;
+const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+const place = (at) => at === undefined || at === null || (Array.isArray(at) && at.length === 3 && at.every((x) => int(x, -1e7, 1e7)));
+
+function runProblem(r) {
+  if (!r || typeof r !== "object" || Array.isArray(r)) return "Not a run.";
+  if (r.format !== 1) return "A run format this site does not know.";
+  if (typeof r.game !== "string" || !/^[a-z0-9]{1,8}$/.test(r.game)) return "No game.";
+  if (typeof r.level !== "string" || !/^[a-z0-9]{8,32}$/.test(r.level) || !int(r.version, 1, 2147483647)) return "No level.";
+  if (typeof r.package_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(r.package_sha256)) return "No package hash.";
+  if (typeof r.run !== "string" || !/^[0-9a-f]{32}$/.test(r.run)) return "No run id.";
+  if (!RESULTS.includes(r.result)) return "No result.";
+  if (!int(r.time, 0, 86400)) return "A time out of range.";
+  if (!r.counters || typeof r.counters !== "object" || !COUNTERS.every((k) => int(r.counters[k], 0, 100000)))
+    return "Counters out of range.";
+  if (!Array.isArray(r.aids) || r.aids.length || !Array.isArray(r.dev) || r.dev.length)
+    return "Played with testing aids or dev settings.";
+  if (r.rating !== undefined && (r.result !== "completed" || typeof r.rating !== "string" || !/^[A-Za-z]{1,32}$/.test(r.rating) ||
+      !int(r.stealth, 0, 100) || !int(r.aggression, 0, 100)))
+    return "A rating out of range.";
+  if (r.stage !== undefined && !int(r.stage, 1, 64)) return "A stage out of range.";
+  if (r.alarm_highest !== undefined && !int(r.alarm_highest, -1, 1000)) return "An alarm level out of range.";
+  if (!Array.isArray(r.events) || r.events.length > 500 || !r.events.every((e) => e && EVENTS.includes(e.kind) &&
+      int(e.t, 0, 86400) && (e.slot === undefined || int(e.slot, 1, 64)) && place(e.at)))
+    return "Events out of range.";
+  if (typeof r.dll !== "string" || !/^[0-9a-z.+-]{1,20}$/.test(r.dll)) return "No editor version.";
+  return null;
+}
+
+async function postRun(request, env) {
+  if (env.RUNS_LIMIT && !(await env.RUNS_LIMIT.limit({ key: request.headers.get("CF-Connecting-IP") || "local" })).success)
+    return json({ error: "Too many runs at once: later." }, 429);
+  if (Number(request.headers.get("Content-Length") || 0) > MAX_RUN) return json({ error: "A run is at most 64 KB." }, 413);
+  const text = await request.text();
+  if (text.length > MAX_RUN) return json({ error: "A run is at most 64 KB." }, 413);
+  let r;
+  try { r = JSON.parse(text); } catch { return json({ error: "Not JSON." }, 400); }
+  const problem = runProblem(r);
+  if (problem) return json({ error: problem }, 400);
+  const listed = await env.DB.prepare(
+    `SELECT 1 FROM versions v JOIN levels l ON l.id = v.level_id JOIN authors a ON a.key = l.author_key
+      WHERE v.level_id = ? AND v.version = ? AND v.sha256 = ? AND l.game = ? AND v.taken_down = 0 AND l.taken_down = 0
+        AND a.blocked = 0`).bind(r.level, r.version, r.package_sha256, r.game).first();
+  if (!listed) return json({ error: "Not a listed level's package (its level, version and SHA-256)." }, 422);
+  const counters = Object.fromEntries(COUNTERS.map((k) => [k, r.counters[k]]));
+  const events = r.events.map((e) => ({ kind: e.kind, t: e.t, ...(e.slot !== undefined && { slot: e.slot }),
+    ...(Array.isArray(e.at) && { at: e.at }) }));
+  const done = await env.DB.prepare(
+    `INSERT OR IGNORE INTO runs (id, level_id, version, received, result, time, rating, stealth, aggression, counters, stage,
+                                 alarm_highest, events, dll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(r.run, r.level, r.version, Math.floor(Date.now() / 1000), r.result, r.time, r.rating ?? null, r.stealth ?? null,
+    r.aggression ?? null, JSON.stringify(counters), r.stage ?? null, r.alarm_highest ?? null, JSON.stringify(events), r.dll).run();
+  if (!done.meta.changes) return json({ error: "This run is here already." }, 409);
+  return json({ ok: true }, 201);
+}
+
+// a level's numbers from its runs (every version): plays, finished, Silent Assassin, the ratings, the median time
+async function playStats(env, id) {
+  const [totals, ratings, median] = await env.DB.batch([
+    env.DB.prepare(`SELECT COUNT(*) AS plays, COALESCE(SUM(result = 'completed'), 0) AS finished,
+                           COALESCE(SUM(rating = 'SilentAssassin'), 0) AS silent_assassin FROM runs WHERE level_id = ?`).bind(id),
+    env.DB.prepare(`SELECT rating, COUNT(*) AS n FROM runs WHERE level_id = ? AND rating IS NOT NULL
+                     GROUP BY rating ORDER BY n DESC, rating`).bind(id),
+    env.DB.prepare(`SELECT time FROM runs WHERE level_id = ? AND result = 'completed' ORDER BY time
+                     LIMIT 1 OFFSET (SELECT (COUNT(*) - 1) / 2 FROM runs WHERE level_id = ? AND result = 'completed')`).bind(id, id),
+  ]);
+  return { ...totals.results[0], ratings: ratings.results, median_time: median.results.length ? median.results[0].time : null };
 }
 
 // POST /api/report { level, version?, reason }
@@ -156,6 +236,8 @@ async function deleteUser(env, id) {
     if (files.objects.length) await env.FILES.delete(files.objects.map((o) => o.key));
   }
   await env.DB.batch([
+    env.DB.prepare(`DELETE FROM runs WHERE level_id IN
+      (SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?)`).bind(id),
     env.DB.prepare(`DELETE FROM versions WHERE level_id IN
       (SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?)`).bind(id),
     env.DB.prepare(`DELETE FROM levels WHERE author_key IN (SELECT key FROM authors WHERE user_id = ?)`).bind(id),
@@ -258,6 +340,7 @@ async function route(request, env, ctx) {
         keys: keys.results.map((k) => k.key), levels: levels.results });
     }
   }
+  if (request.method === "POST" && path === "/api/v1/runs") return postRun(request, env);  // (levelpack: no Origin)
   if (request.method === "POST" && path.startsWith("/api/")) {
     if (!sameOrigin(request, env)) return json({ error: "From the site's own pages only" }, 403);
     if (path === "/api/logout") return logout(request, env);

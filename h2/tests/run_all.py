@@ -73,6 +73,7 @@ TESTS = [
     ("package_game", ["package_game_test.py"], 600, False),  # (export in the game, install, load)
     ("kill_early", ["kill_early_test.py"], 900, False),  # (#2: scripted characters killed at once, C5-3)
     ("online", ["online_level_test.py"], 900, False),  # (starts the game itself, twice)
+    ("runs", ["runs_test.py"], 900, False),  # (#50: a downloaded level's plays written down; starts the game)
     ("profile", ["profile_test.py"], 600, False, True),  # (reads the game's globals: h2.mem)
 ]
 

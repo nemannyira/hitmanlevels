@@ -24,6 +24,7 @@
 #include "editor/mission.h"
 #include "editor/music.h"
 #include "editor/profile_guard.h"
+#include "editor/runs.h"
 #include "editor/stages.h"
 #include "editor/vehicles.h"
 #include "editor/launcher.h"
@@ -141,6 +142,7 @@ void Init()
     h2::editor::InstallPlayDebug();  // (its panel after Testing)
     h2::editor::InstallMusic();
     h2::editor::InstallProfileGuard();
+    h2::editor::InstallRuns();  // a downloaded level's plays written down (docs/play_stats.md)
     h2::editor::InstallStages();
     h2::editor::InstallLauncher();
     h2::engine::InstallImports();

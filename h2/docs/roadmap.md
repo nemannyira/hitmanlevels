@@ -213,19 +213,37 @@ Save\<slot>.h2lua next to the game's files).
 * Where they are (2026-11-14, for the play statistics: docs/play_stats.md,
   #50): LevelControl_MissionCompleted 0x5058B0 builds a 0x38-byte block and
   sends it with MSG_SHOWSTATS to the statistics window (SceneCom ref
-  "rSTATISTICS"): +0x00 the scene's name (8 bytes), +0x08 Hitman +0x11C7,
-  +0x0C LevelControl +0x220 + Hitman +0x11CB, +0x10 LC +0x208, +0x14 LC
-  +0x21C, +0x18 LC +0x210, +0x1C LC +0x20C, +0x20 LC +0x218, +0x24 LC +0x214,
-  +0x30 SysInterface +0x38 >> 10, +0x34 LC +0x249. So the counters are on
-  LevelControl and Hitman during the whole mission (a failed or left run has
-  them too). The window (handler 0x55C590) copies the block to 0x6B3418;
-  0x55C8A0 makes stealth = exp(k x ((+0x24 + 2 x +0x20 + +0x18) x 3 + +0x1C +
-  2 x +0x08 + +0x10 + +0x0C)) (this +0xBC, 0x6B3444) and aggression = 100
-  when +0x14 and +0x0C are 0, else from their sum (this +0xB8, 0x6B3440);
-  StatisticsLevel_FillLines 0x55BED0 bands both and reads the rating from the
-  8 x 8 table this +0xC6 (names at 0x691238). Which field is which line of the
-  screen (shots, alerts, kills...) is to be confirmed with a run of known
-  numbers.
+  "rSTATISTICS"). Each field, confirmed in the game (known values written
+  into the counters, then the screen read):
+
+  | Block | From | The screen's line |
+  |---|---|---|
+  | +0x00 | the scene's name (8 bytes) | |
+  | +0x08 | Hitman +0x11C7 (ZHITMAN2; 0x51C3F0 adds a shot) | Shots fired |
+  | +0x0C | LevelControl +0x220 + Hitman +0x11CB | Close encounters |
+  | +0x10 | LC +0x208 | Head shots |
+  | +0x14 | LC +0x21C | Alerts |
+  | +0x18 | LC +0x210 | Enemies killed |
+  | +0x1C | LC +0x20C | Enemies harmed |
+  | +0x20 | LC +0x218 | Innocents killed |
+  | +0x24 | LC +0x214 | Innocents harmed |
+  | +0x30 | SysInterface +0x38 >> 10 (the game clock) | Time (seconds) |
+  | +0x34 | LC +0x249 (a dword) | Saves |
+
+  So the counters are on LevelControl and Hitman during the whole mission (a
+  failed or left run has them too). Difficulty is GlobalCom's (blank on a map
+  loaded by the dev commands). The window (ZWINDOW_StatisticsLevel, vtable
+  0x65AF98; its handler 0x55C590, slot 0x34) copies the block to 0x6B3418;
+  StatisticsLevel_ComputeScores 0x55C8A0 makes stealth (this +0xB8, 0x6B3440;
+  the upper bar, 0..100: 100 when alerts and close encounters are both 0, else
+  from their sum) and aggression (this +0xBC, 0x6B3444; the lower bar: exp(k x
+  ((+0x24 + 2 x +0x20 + +0x18) x 3 + +0x1C + 2 x +0x08 + +0x10 + +0x0C)));
+  StatisticsLevel_FillLines 0x55BED0 bands both (stealth < 2, aggression < 3,
+  then < 0x19, 0x26, 0x32, 0x40, 0x4C, 0x55, else: 0..7) and reads the rating
+  from the 8 x 8 table this +0xC6 [stealth band + aggression band x 8] into
+  the 39 names at 0x691238 (Amateur ... MassMurderer 18 ... SilentAssassin 29
+  ... Wimp 38). Seen: stealth 100 / aggression 1 -> SilentAssassin, 3 / 78 ->
+  MassMurderer. The editor's run record (src/editor/runs.h) reads them.
   Characters the level places are made with the scene and count like the
   level's own: a guard behaviour as an enemy, a civilian (Neutral2 based) as
   an innocent.

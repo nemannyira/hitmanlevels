@@ -13,21 +13,26 @@ Sending is **off until the player turns it on** (opt-in). The game process stays
 ## 1. A run
 
 What one play of a downloaded level (`Mods\Online\<id>`) records; the player's own levels are left out (a
-maker's test runs would skew them). Written by the DLL at the run's end to
-`Mods\Online\<id>\runs\<started>.json` (UTF-8, canonical):
+maker's test runs would skew them). Written by the DLL (h2/src/editor/runs.h, built 2026-11-14) at the run's
+end to `Mods\Online\<id>\runs\<started>.json` (UTF-8, canonical; `<started>` like `20261114T100559Z`). One
+run a map load: it starts when the level is on its map and the editor is closed.
 
 | Field | From |
 |---|---|
-| `run`: a random id, `level`, `version`, `package_sha256`, `dll`: HL_VERSION | the installed package, the build |
-| `result`: completed / failed / left (map left, game quit, F8) | the level routine's end (MissionCompleted 0x5058B0, the editor's goals, `h2.mission`), the scene leaving |
-| `time`: game seconds from the map's start | the statistics screen's time |
-| `rating` and the counters: shots, close encounters, headshots, alerts, enemies killed / harmed, innocents killed / harmed, saves | the statistics screen (ZWINDOW_StatisticsLevel, MSG_SHOWSTATS): where it reads them is to be found (Ghidra) |
-| `aids`: god mode, invisible, speed, freeze used | testtools AidsUsed (such a run counts for nothing) |
-| `stage`: the escalation's stage | stages.h |
-| `events`: objective done / lost (slot, time), Hitman spotted (place, time), Hitman died (place, time), alarm level's highest | the editor's events (game_events, playdebug's sources) |
+| `format` 1, `run`: a random id (32 hex), `level`, `version`, `dll`: HL_VERSION, `started` (UTC) | the installed level (its `package` id and version), the build |
+| `result`: completed / failed / left | the statistics window (completed), the level routine's MissionFailed (`h2.mission`, the editor's goals, the level's own), leaving the map (another map, the main menu, a saved game loaded) or opening the editor (F8) |
+| `time`: game seconds from the map's start | the statistics screen's time (the game clock, SysInterface +0x38 >> 10) |
+| `counters`: shots, close encounters, headshots, alerts, enemies killed / harmed, innocents killed / harmed, saves | the statistics screen's lines; the same counters on the level routine and Hitman when it ends otherwise (h2/docs/roadmap.md section 8) |
+| `rating` (the game's name: `SilentAssassin`...), `stealth`, `aggression` (0..100) | the statistics window, as it picks the rating (completed runs only) |
+| `aids`: god mode, invisible Hitman, game speed, frozen | testtools AidsUsed (such a run counts for nothing) |
+| `dev`: `DevCommands`, `LuaMemory` when on | H2Fix.ini |
+| `stage`: the escalation's stage | stages.h (escalations only) |
+| `alarm_highest` | the level routine's alarm level (the HUD's meter) at its highest |
+| `events`: `objective_done` / `objective_lost` (slot), `spotted` (Hitman's place), `died` (place); each with `t`, game seconds | the editor's goals, the game's "spotted" (one a character in 10 s), Hitman's death; 500 at most |
 
-A run with `aids`, the dev commands or LuaMemory on, or a changed package is still written (the player's own
-record) but marked, and the site leaves it out.
+The package's hash is not in the file: levelpack adds it when it sends a run (what it installed, its
+`known.json`), and leaves out a run of a package changed since. A run with `aids` or `dev` is still written
+(the player's own record) but the site leaves it out. A game closed without leaving the map writes nothing.
 
 ## 2. Sending
 

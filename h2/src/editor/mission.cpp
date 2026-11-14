@@ -2274,6 +2274,8 @@ bool SetObjectiveDone(int slot, bool done)
     return CallSetCompleted(slot, done);
 }
 
+void* LevelRoutine() { return g_level; }
+
 bool CompleteMission()
 {
     Log("mission: completed by the editor");

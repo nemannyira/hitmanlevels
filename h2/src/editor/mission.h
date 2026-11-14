@@ -75,6 +75,8 @@ bool ShowInfo(InfoKind kind, const std::string& text);
 bool SetBriefingText(const std::string& text);
 bool CompleteMission();
 bool FailMission();
+// The loaded scene's level routine (LevelControl: the mission's statistics counters, runs.h); null before one.
+void* LevelRoutine();
 // The level routine's own end, as the base level's scripts call it (testing
 // the "base_ends" setting: not let through when it is off).
 bool BaseLevelEnd(bool completed);

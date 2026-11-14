@@ -12,6 +12,11 @@ game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lu
 * `levelpack register` (the release's *Open .h2lvl files with
   levelpack.cmd*): a double click on a `.h2lvl` installs it;
   `levelpack unregister` takes it back.
+* A downloaded level's plays are written down on the PC: each play of a
+  level in `Mods\Online` leaves `runs\<started>.json` in its folder (the
+  result, the time, the statistics screen's counters and rating, the
+  testing aids used, the objectives done or lost, where Hitman was spotted
+  or died). Nothing is sent; that comes with levelpack (docs/play_stats.md).
 
 ## 2026-11-13: the level's picture is the game's view
 

@@ -423,7 +423,7 @@ void DrawLauncher()
                             ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 34, ImGui::GetFontSize() * 26), ImGuiCond_Always);
     bool open = true;
-    if (ImGui::Begin("Level editor##launcher", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+    if (ImGui::Begin("Custom levels##launcher", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                                           ImGuiWindowFlags_NoMove)) {
         if (ImGui::BeginTabBar("launcher")) {
             if (ImGui::BeginTabItem("New level")) {

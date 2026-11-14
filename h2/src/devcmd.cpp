@@ -1424,7 +1424,7 @@ void InstallDevCommands()
     script::Register("dev_ready", Ready);
     script::Register("dev_roomlists", RoomListsCmd);
     script::Register("dev_stage", StageCmd);
-    script::Register("dev_launcher", [](lua_State*) {  // the main menu's Level editor window
+    script::Register("dev_launcher", [](lua_State*) {  // the main menu's Custom levels window
         editor::OpenLevelLauncher();
         return 0;
     });

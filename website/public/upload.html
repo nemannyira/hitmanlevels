@@ -82,6 +82,8 @@
       </dl>
       <div id="me-levels"></div>
       <a class="choice" href="author.html">How your levels are played</a>
+      <a class="choice" href="#" id="me-page">Your player page</a>
+      <a class="choice" href="#" id="rename">Change the name shown</a>
       <a class="choice dim" href="#" id="signout">Sign out</a>
       <div class="note">The author key is the one your packages are signed with. Packages signed with it can come only from this account.</div>
     </aside>
@@ -113,6 +115,7 @@
     text($("me-provider"), PROVIDERS[me.provider] || me.provider);
     text($("me-key"), me.keys.length ? (await fingerprint(me.keys[0])) + (me.keys.length > 1 ? " +" + (me.keys.length - 1) : "") : "none yet");
     text($("me-count"), String(me.levels.length));
+    $("me-page").href = "player.html?id=" + me.id;
     var list = $("me-levels");
     list.textContent = "";
     me.levels.forEach(function (l) {
@@ -176,6 +179,15 @@
     ev.preventDefault();
     await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
     location.reload();
+  });
+
+  $("rename").addEventListener("click", async function (ev) {
+    ev.preventDefault();
+    var name = prompt("The name the site shows (your uploads, the boards, your player page):", $("me-name").textContent);
+    if (!name || !name.trim()) return;
+    await fetch("/api/me/name", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name }) });
+    loadMe();
   });
 
   loadMe();

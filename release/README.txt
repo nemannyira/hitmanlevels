@@ -65,8 +65,9 @@ PRIVACY
   The editor (dinput8.dll) never connects to the internet. levelpack.exe connects only when you ask it
   to list or install levels from the site (levelpack hub ...), and to send your plays of downloaded
   levels if you chose to share them (the editor asks once; "levelpack stats on" / "off" changes it,
-  "levelpack stats status" shows what was sent). Each play is written to the level's folder
-  (Mods\Online\<id>\runs) first: what is sent is what you can read there.
+  "levelpack stats status" shows what was sent). "levelpack signin" makes them carry your site account's
+  name (the levels' boards, your player page; "levelpack signout" ends it). Each play is written to the
+  level's folder (Mods\Online\<id>\runs) first: what is sent is what you can read there.
 
 
 KNOWN ISSUES

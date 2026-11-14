@@ -6,9 +6,9 @@
 //   npx wrangler d1 migrations apply hitmanlevels --local
 //   npx wrangler dev --local --port 8787 --ip 127.0.0.1 --test-scheduled   (the daily clean-up run by hand)
 //   node test/worker_test.mjs ../build/Release/levelpack.exe
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -163,6 +163,64 @@ try {
   r = await get(`/api/author/levels/${id}/plays?download=1`, me);
   check("... as a file to download (plays.json), not cached", /attachment; filename="plays.json"/.test(r.headers.get("Content-Disposition")) &&
     /no-store/.test(r.headers.get("Cache-Control")));
+  // level 2 (#54): levelpack signed in (a device code approved on the site), a run's ticket, the boards, a video the
+  // owner verifies, the player's page, the name shown, signing out
+  check("a device code nobody approved: pending, then an unknown one refused",
+    (await post("/api/v1/device/token", JSON.stringify({ device_code: "x".repeat(43) }))).status === 400);
+  const signin = spawn(levelpack, ["signin", "--source", BASE], { env: { ...process.env, HITMANLEVELS_HOME: join(work, "home") } });
+  let signinOut = "";
+  signin.stdout.on("data", (d) => { signinOut += d; });
+  const signedIn = new Promise((res) => signin.on("exit", res));
+  for (let i = 0; i < 50 && !/[A-Z]{4}-[A-Z]{4}/.test(signinOut); i++) await new Promise((res) => setTimeout(res, 100));
+  const userCode = (signinOut.match(/[A-Z]{4}-[A-Z]{4}/) || [""])[0];
+  check("levelpack signin shows a code and the device page", userCode && signinOut.includes(BASE + "/device.html"), signinOut.slice(0, 80));
+  check("... a wrong code is refused on the site", (await post("/api/device/approve", JSON.stringify({ code: "BBBB-BBBB" }), me)).status === 404);
+  check("... the code approved by the signed-in account", (await post("/api/device/approve", JSON.stringify({ code: userCode }), me)).status === 200);
+  const signinCode = await signedIn;
+  check("... levelpack signed in (its token in the Credential Manager)", signinCode === 0 && signinOut.includes(`Signed in as Tester ${pid}`), signinOut.slice(-80));
+  const packAt = (...args) => pack(...args, "--source", BASE, "--game", game);
+  check("stats status names the account", packAt("stats", "status").includes(`Signed in: Tester ${pid}`));
+  const ranked = (fileName, change) => {
+    const x = JSON.parse(sent);
+    for (const k of ["game", "package_sha256", "ticket"]) delete x[k];
+    x.run = randomBytes(16).toString("hex");
+    change(x);
+    packAt("stats", "ticket", id, "2", fileName);
+    writeFileSync(join(runsDir, fileName), JSON.stringify(x));
+    return x.run;
+  };
+  const quick = ranked("20261114T110000Z.json", () => {});
+  check("a ticket taken for a run", readFileSync(join(runsDir, "20261114T110000Z.ticket"), "utf8").includes('"ticket"'));
+  packAt("stats", "send");
+  check("... sent with it and its ticket (to runs\\sent)", existsSync(join(runsDir, "sent", "20261114T110000Z.ticket")));
+  const board1 = (await (await get(`/api/levels/${id}`)).json()).boards;
+  check("a run longer than the time since its ticket: not on the boards", !board1.unverified.length, JSON.stringify(board1));
+  const fair = ranked("20261114T110100Z.json", (x) => { x.time = 240; });
+  sql(`UPDATE tickets SET issued = issued - 1000 WHERE id = '${JSON.parse(readFileSync(join(runsDir, "20261114T110100Z.ticket"), "utf8")).ticket}';`);
+  packAt("stats", "send");
+  let lp = await (await get(`/api/levels/${id}`)).json();
+  check("... one the site saw take its time: on the unverified board", lp.boards.unverified.length === 1 &&
+    lp.boards.unverified[0].name === `Tester ${pid}` && lp.boards.unverified[0].time === 240 && !lp.boards.verified.length, JSON.stringify(lp.boards));
+  const meId = (await (await get("/api/me", me)).json()).id;
+  const pl = await (await get(`/api/players/${meId}`)).json();
+  check("the player's page: the level, its plays, the best time", pl.levels.some((l) => l.id === id && l.best === 240 && l.plays >= 2), JSON.stringify(pl.levels));
+  const myRuns = (await (await get("/api/me/runs", me)).json()).runs;
+  check("the player's runs on the boards (for a video)", myRuns.length === 1 && myRuns[0].id === fair && quick !== fair);
+  check("a video that is not https:// refused", (await post("/api/me/video", JSON.stringify({ run: fair, url: "javascript:alert(1)" }), me)).status === 400);
+  check("another account cannot link a video to it", (await post("/api/me/video", JSON.stringify({ run: fair, url: "https://example.com/v" }), other)).status === 404);
+  check("a video linked", (await post("/api/me/video", JSON.stringify({ run: fair, url: "https://example.com/v" }), me)).status === 200);
+  const vids = (await (await get("/api/admin/overview", me)).json()).videos;
+  check("... in the owner's overview to watch", vids.some((v) => v.id === fair && !v.verified));
+  await post("/api/admin/verify", JSON.stringify({ run: fair }), me);
+  lp = await (await get(`/api/levels/${id}`)).json();
+  check("... verified: on the verified board", lp.boards.verified.length === 1 && lp.boards.verified[0].time === 240);
+  r = await post("/api/me/name", JSON.stringify({ name: "Agent ‮47" }), me);
+  check("the name shown changed (direction marks taken out)", (await r.json()).name === "Agent 47" &&
+    (await (await get(`/api/levels/${id}`)).json()).boards.verified[0].name === "Agent 47");
+  await post("/api/me/name", JSON.stringify({ name: `Tester ${pid}` }), me);
+  pack("signout", "--source", BASE);
+  check("levelpack signout: not signed in any more", packAt("stats", "status").includes("Signed in: no"));
+
   await post("/api/admin/takedown", JSON.stringify({ level: id }), me);
   check("refused: a run of a level taken down", (await runPost(another(() => {}))).status === 422);
 } finally {

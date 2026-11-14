@@ -27,7 +27,14 @@ struct RunsReport {
 };
 
 // The runs of `game`'s downloaded levels in `gameDir`: `send` posts the ones to send to `source` ("https://host"
-// or a folder: hub.h Post); otherwise they are only counted.
-RunsReport SendRuns(const std::string& source, const std::string& gameDir, const GameInfo& game, bool send);
+// or a folder: hub.h Post); otherwise they are only counted. `token`: levelpack signed in (the runs carry the
+// account; a run's ticket, runs\<run>.ticket, goes with it and with its file to runs\sent).
+RunsReport SendRuns(const std::string& source, const std::string& gameDir, const GameInfo& game, bool send,
+                    const std::string& token = "");
+
+// A ticket for a run starting now (signed in: the site notes its time, docs/play_stats.md section 4), written to
+// <game>\Mods\Online\<level>\runs\<run file's name>.ticket for the run's sending.
+bool TakeTicket(const std::string& source, const std::string& token, const std::string& gameDir, const GameInfo& game,
+                const std::string& level, int version, const std::string& runFile, std::string* error);
 
 } // namespace h2::levelfmt

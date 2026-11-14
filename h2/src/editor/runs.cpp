@@ -191,6 +191,8 @@ void AddEvent(json e)
     g_run.events.push_back(std::move(e));
 }
 
+void StartLevelpack(const std::string& args);
+
 void Start()
 {
     const LevelDocument& L = CurrentLevel();
@@ -213,14 +215,17 @@ void Start()
     g_run.started = when;
     g_run.file = file;
     Log("runs: a run of %s (version %d) started", g_run.level.c_str(), g_run.version);
+    if (levelfmt::StatsSharing())  // (signed in: levelpack takes the run's ticket, the site's time now; else nothing)
+        StartLevelpack("stats ticket " + g_run.level + " " + std::to_string(g_run.version) + " " + g_run.file);
 }
 
-// sharing on: levelpack (the game's folder) sends the runs not sent yet, on its own (the game makes no connection)
-void StartSender()
+// sharing on: levelpack (the game's folder) on its own: a run's ticket as it starts, the runs not sent yet sent
+// after one (the game makes no connection)
+void StartLevelpack(const std::string& args)
 {
-    std::string exe = GameDir() + "levelpack.exe", cmd = "\"" + exe + "\" stats send --quiet";
+    std::string exe = GameDir() + "levelpack.exe", cmd = "\"" + exe + "\" " + args + " --quiet";
     if (GetFileAttributesA(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        Log("runs: sharing is on, but %s is not there: not sent", exe.c_str());
+        Log("runs: sharing is on, but %s is not there", exe.c_str());
         return;
     }
     STARTUPINFOA si = {sizeof si};
@@ -232,7 +237,7 @@ void StartSender()
     }
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-    Log("runs: levelpack stats send started");
+    Log("runs: levelpack %s started", args.c_str());
 }
 
 void End(const char* result, const Counters& c, const Rating* rating)
@@ -299,7 +304,7 @@ void End(const char* result, const Counters& c, const Rating* rating)
     }
     Log("runs: %s %s, %d s (%s)", g_run.level.c_str(), result, c.time, g_run.file.c_str());
     if (levelfmt::StatsSharing())
-        StartSender();
+        StartLevelpack("stats send");
 }
 
 using StatsMessage_t = uint32_t(__fastcall*)(void* self, void* edx, uint32_t msg, char* param);

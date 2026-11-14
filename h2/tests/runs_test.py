@@ -110,10 +110,10 @@ try:
     time.sleep(1)
     known = json.load(open(KNOWN, encoding="utf-8")) if os.path.exists(KNOWN) else {}
     check("  the answer kept (known.json stats)", known.get("stats") is True, str(known))
+    mark = log_size()
     press("Play")
     check("the downloaded level's map loaded (Play)", dev.wait_ready("C1-1__MAIN", 180))
     time.sleep(3)
-    mark = log_size()
 
     # ---- 1: completed after two shots
     before = runs()
@@ -145,6 +145,9 @@ try:
         out = f.read()
     check("sharing on: levelpack started after the run", "levelpack stats send started" in out,
           [l.strip()[-70:] for l in out.splitlines() if "runs:" in l][-2:])
+    check("  and as it started, for its ticket (#54; not signed in here: levelpack does nothing)",
+          "levelpack stats ticket %s 3 %s started" % (ID, os.path.basename(runs()[0])) in out,
+          [l.strip()[-80:] for l in out.splitlines() if "ticket" in l][:1])
     time.sleep(3)
     check("  (a run with the dev commands on stays on the PC)", len(runs()) == 1, str(runs()))
 

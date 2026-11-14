@@ -4,6 +4,7 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <wincred.h>
 #include <winhttp.h>
 
 #include <algorithm>
@@ -28,9 +29,19 @@ constexpr char kIndexPrefix[] = "H2LVL index v1\n";
 // its secret half is the Worker's SITE_SEED only (docs/site_api.md "Signing")
 constexpr const char* kSiteKeys[] = {"239ef6a67cdacbfb7c7e5c031f5ebc5c97744e9d0d7047a76f1b3e47167b28e2", nullptr};
 
-// a GET (`body` empty) or a POST of JSON over HTTPS; `status`: the site's answer (0: none came), its body in `out`
-bool HttpsRequest(const std::wstring& host, const std::wstring& path, const std::string& body, size_t max,
-                  std::string& out, DWORD& status, std::string* error)
+// where a source's requests go: the site (HTTPS; plain HTTP only to this PC's own loopback, a local copy of the
+// site for tests), or a folder's file
+struct Target {
+    std::wstring host;
+    INTERNET_PORT port = INTERNET_DEFAULT_HTTPS_PORT;
+    bool secure = true;
+    std::string file;  // a folder's (no host)
+};
+
+// a GET (`body` empty) or a POST of JSON; `token`: levelpack's sign-in (Authorization: Bearer); `status`: the site's
+// answer (0: none came), its body in `out`
+bool HttpsRequest(const Target& t, const std::wstring& path, const std::string& body, const std::string& token,
+                  size_t max, std::string& out, DWORD& status, std::string* error)
 {
     out.clear();
     status = 0;
@@ -49,15 +60,20 @@ bool HttpsRequest(const std::wstring& host, const std::wstring& path, const std:
     WinHttpSetTimeouts(session, 10000, 10000, 20000, 30000);
     bool ok = false;
     std::string why = "no answer from the site";
-    HINTERNET connect = WinHttpConnect(session, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
+    HINTERNET connect = WinHttpConnect(session, t.host.c_str(), t.port, 0);
     HINTERNET request = connect ? WinHttpOpenRequest(connect, post ? L"POST" : L"GET", path.c_str(), nullptr,
                                                      WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                                     WINHTTP_FLAG_SECURE)
+                                                     t.secure ? WINHTTP_FLAG_SECURE : 0)
                                 : nullptr;
-    const wchar_t* headers = post ? L"Content-Type: application/json\r\n" : WINHTTP_NO_ADDITIONAL_HEADERS;
+    std::wstring headers;
+    if (post)
+        headers += L"Content-Type: application/json\r\n";
+    if (!token.empty())
+        headers += L"Authorization: Bearer " + std::wstring(token.begin(), token.end()) + L"\r\n";
     // (no WINHTTP_OPTION_SECURITY_FLAGS: the certificate checks stay as the system makes them)
     if (request &&
-        WinHttpSendRequest(request, headers, post ? DWORD(-1L) : 0, post ? const_cast<char*>(body.data()) : nullptr,
+        WinHttpSendRequest(request, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+                           headers.empty() ? 0 : DWORD(-1L), post ? const_cast<char*>(body.data()) : nullptr,
                            DWORD(body.size()), DWORD(body.size()), 0) &&
         WinHttpReceiveResponse(request, nullptr)) {
         DWORD size = sizeof status;
@@ -140,9 +156,8 @@ std::vector<std::string> SiteKeys()
     return keys;
 }
 
-// the source and path checked: `host` the site's ("" a local folder), `file` the path's file in the folder
-bool SiteTarget(const std::string& source, const std::string& path, std::string& host, std::string& file,
-                std::string* error)
+// the source and path checked: the site's host (port, HTTPS), or the path's file in a folder
+bool SiteTarget(const std::string& source, const std::string& path, Target& t, std::string* error)
 {
     // the path is ours ("/api/v1/index.json", "/levels/<id>/<version>.h2lvl"): letters, digits, / . _ -
     if (path.empty() || path[0] != '/' || path.find("..") != std::string::npos || path.size() > 200 ||
@@ -150,58 +165,115 @@ bool SiteTarget(const std::string& source, const std::string& path, std::string&
             return std::isalnum(static_cast<unsigned char>(c)) || c == '/' || c == '.' || c == '_' || c == '-';
         }))
         return Fail(error, "not a path of the site: " + path.substr(0, 80));
-    host.clear();
-    file.clear();
+    t = Target();
     if (source.compare(0, 8, "https://") == 0) {
-        host = source.substr(8);
+        std::string host = source.substr(8);
         if (host.empty() || host.find_first_of("/:@?#\\") != std::string::npos)
             return Fail(error, "the site is given as https://host only");
+        t.host.assign(host.begin(), host.end());
         return true;
+    }
+    for (const char* loop : {"http://127.0.0.1:", "http://localhost:"}) {  // (a copy of the site on this PC: tests)
+        std::string prefix = loop, port = source.compare(0, prefix.size(), prefix) == 0 ? source.substr(prefix.size()) : "";
+        if (!port.empty() && port.size() <= 5 && std::all_of(port.begin(), port.end(), ::isdigit) && std::stoi(port) < 65536) {
+            std::string host = prefix.substr(7, prefix.size() - 8);
+            t.host.assign(host.begin(), host.end());
+            t.port = INTERNET_PORT(std::stoi(port));
+            t.secure = false;
+            return true;
+        }
     }
     if (source.compare(0, 5, "http:") == 0)
         return Fail(error, "plain HTTP is not used: https:// only");
-    file = source;
+    t.file = source;
     for (char c : path)
-        file += c == '/' ? '\\' : c;
+        t.file += c == '/' ? '\\' : c;
     return true;
 }
 
 bool Fetch(const std::string& source, const std::string& path, size_t max, std::string& out, std::string* error)
 {
-    std::string host, file;
-    if (!SiteTarget(source, path, host, file, error))
+    Target t;
+    if (!SiteTarget(source, path, t, error))
         return false;
-    if (!host.empty()) {
+    if (!t.host.empty()) {
         DWORD status = 0;
-        return HttpsRequest(std::wstring(host.begin(), host.end()), std::wstring(path.begin(), path.end()), "", max,
-                            out, status, error);
+        return HttpsRequest(t, std::wstring(path.begin(), path.end()), "", "", max, out, status, error);
     }
+    const std::string& file = t.file;
     if (!ReadFileA(file, out, max))
         return Fail(error, file + ": missing or larger than " + std::to_string(max) + " bytes");
     return true;
 }
 
 bool Post(const std::string& source, const std::string& path, const std::string& body, int& status,
-          std::string& answer, std::string* error)
+          std::string& answer, std::string* error, const std::string& token)
 {
-    std::string host, file;
+    Target t;
     status = 0;
     answer.clear();
-    if (body.empty() || !SiteTarget(source, path, host, file, error))
+    if (body.empty() || !SiteTarget(source, path, t, error))
         return false;
-    if (host.empty()) {  // (a folder: the body as one more line of the file)
-        std::ofstream f(GamePath(file), std::ios::binary | std::ios::app);
+    if (t.host.empty()) {  // (a folder: the body as one more line of the file)
+        std::ofstream f(GamePath(t.file), std::ios::binary | std::ios::app);
         if (!(f << body << '\n'))
-            return Fail(error, file + ": cannot write it");
+            return Fail(error, t.file + ": cannot write it");
         status = 201;
         return true;
     }
     DWORD got = 0;
-    bool ok = HttpsRequest(std::wstring(host.begin(), host.end()), std::wstring(path.begin(), path.end()), body,
-                           64u << 10, answer, got, error);
+    bool ok = HttpsRequest(t, std::wstring(path.begin(), path.end()), body, token, 64u << 10, answer, got, error);
     status = int(got);
     return ok;
 }
+
+bool Get(const std::string& source, const std::string& path, const std::string& token, int& status,
+         std::string& answer, std::string* error)
+{
+    Target t;
+    status = 0;
+    answer.clear();
+    if (!SiteTarget(source, path, t, error))
+        return false;
+    if (t.host.empty())
+        return Fail(error, "the account is asked of the site, not a folder");
+    DWORD got = 0;
+    bool ok = HttpsRequest(t, std::wstring(path.begin(), path.end()), "", token, 64u << 10, answer, got, error);
+    status = int(got);
+    return ok;
+}
+
+namespace {
+
+std::wstring TokenTarget(const std::string& source) { return L"HitmanLevels/" + std::wstring(source.begin(), source.end()); }
+
+} // namespace
+
+bool LoadSiteToken(const std::string& source, std::string& token)
+{
+    token.clear();
+    PCREDENTIALW c = nullptr;
+    if (!CredReadW(TokenTarget(source).c_str(), CRED_TYPE_GENERIC, 0, &c))
+        return false;
+    token.assign(reinterpret_cast<const char*>(c->CredentialBlob), c->CredentialBlobSize);
+    CredFree(c);
+    return !token.empty();
+}
+
+bool SaveSiteToken(const std::string& source, const std::string& token)
+{
+    std::wstring target = TokenTarget(source);
+    CREDENTIALW c = {};
+    c.Type = CRED_TYPE_GENERIC;
+    c.TargetName = const_cast<wchar_t*>(target.c_str());
+    c.CredentialBlobSize = DWORD(token.size());
+    c.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<char*>(token.data()));
+    c.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    c.UserName = const_cast<wchar_t*>(L"levelpack");
+    return CredWriteW(&c, 0) != 0;
+}
+
+void DeleteSiteToken(const std::string& source) { CredDeleteW(TokenTarget(source).c_str(), CRED_TYPE_GENERIC, 0); }
 
 bool LoadHubIndex(const std::string& source, HubIndex& index, std::string* error)
 {

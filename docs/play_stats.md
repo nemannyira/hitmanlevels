@@ -80,15 +80,34 @@ Built 2026-11-14 (#52; website/src/worker.js `postRun`, migration 0004_runs.sql)
 
 ## 4. Level 2: profiles and leaderboards
 
-* A player signs in in levelpack (OAuth device flow through the site; the token in Windows' Credential
-  Manager), then picks a shown name; runs sent while signed in carry the account.
-* **A run ticket**: before a ranked run levelpack asks the site for a ticket (random, bound to the account,
-  the level's version and the DLL's version); the site notes the time; a reported time cannot be shorter
-  than what the site saw between the ticket and the report (with a margin).
-* **The run's log** as a hash chain of its events (each holding the hash of the one before), checked by the
-  site for consistency (an objective done before its target died, a time shorter than walking there).
-* **Boards**: per level the fastest Silent Assassin runs, "unverified" (passes the checks) and "verified"
-  (the owner looked at a video the player linked). A player's page: levels played, ratings, best times.
+Built 2026-11-14 (#54; website/src/players.js, migration 0005_players.sql, `levelpack signin`, `stats ticket`).
+Decided with the owner then: no hash chain of the events (the editor is open source: a forger computes the
+same chain; the site checks what it can itself), the ticket taken as a run starts, the site account's name.
+
+* **Signing in levelpack**: `levelpack signin` asks the site for a device code (`POST /api/v1/device`), shows
+  the 8-letter code and the site's device page (opened in the browser when run at a console); the player,
+  signed in on the site, types it there (`device.html`, `POST /api/device/approve`); levelpack asks for its
+  token every 5 s (`POST /api/v1/device/token`: 428 until approved, then the token once) and keeps it in
+  Windows' Credential Manager (`HitmanLevels/<site>`). The site keeps its SHA-256 only. `levelpack signout`
+  ends it on both sides; `stats status` names the account. The name shown is the site account's (Discord /
+  GitHub / Google's at first), changed in the site's account box (`POST /api/me/name`).
+* **A run ticket**: as a downloaded level's run starts, the DLL starts `levelpack stats ticket <level>
+  <version> <run file>` (sharing on; levelpack does nothing when not signed in): the site notes the time
+  (`POST /api/v1/tickets`, a listed level's version) and levelpack writes `runs\<run>.ticket`; `stats send`
+  sends it with the run (the run's `ticket`) and moves it along. The site takes a ticket once, for that
+  account, level and version.
+* **Ranked**: a run sent signed in with its ticket, when the site saw at least its time (less 30 s) pass
+  between the ticket and the report and its events are in order within its time. Others still count for the
+  level's numbers and the player's page.
+* **Boards** (the level's page): each player's fastest ranked Silent Assassin run, "unverified" (ranked) and
+  "verified" (the player linked a video on their player page, `POST /api/me/video`, https only; the owner
+  watched it: admin *Videos of runs*, verify / unverify).
+* **A player's page** (`player.html?id=`, `GET /api/players/<id>`): the listed levels played, plays,
+  finished, the best Silent Assassin time (verified or not); the player's own view lists their ranked
+  runs to link videos (`GET /api/me/runs`).
+* An account deleted: its runs stay as anonymous ones (no account, not ranked, no video); its levelpack
+  tokens, tickets and device codes go. The daily clean-up deletes device codes that ran out and tickets two
+  days old.
 * What the client cannot guarantee (docs/online_levels.md section 9): a forged result is always possible on
   the player's own PC; the checks make it costly and visible, the owner decides.
 

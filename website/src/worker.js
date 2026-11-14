@@ -1,9 +1,11 @@
 // hitmanlevels.com's Worker (docs/site_api.md): the pages from public/, the Level Hub's files from R2, sign-in,
-// uploads, reports, the owner's take-downs and the plays players share (runs). The list of levels is signed here after every change.
+// uploads, reports, the owner's take-downs, the plays players share (runs), levelpack's sign-in, the boards. The list of levels is signed here after every change.
 
 import { callback, currentUser, logout, start } from "./auth.js";
 import { publishList, hex } from "./sitelist.js";
 import { checkPackage } from "./check.js";
+import { boards, clientSignout, clientUser, deviceApprove, deviceStart, deviceToken, myRuns, player, rankRun, setName,
+  setVideo, ticket } from "./players.js";
 
 const MAX_PACKAGE = 2 * 1024 * 1024;  // as the client's reader (docs/online_levels.md section 3)
 
@@ -111,7 +113,7 @@ async function level(env, id) {
     version: v.version, updated: v.created, license: v.license, size: v.size, downloads: v.downloads,
     readme: v.readme, briefing: v.briefing, objectives: JSON.parse(v.objectives || "[]"), path: v.path,
     preview: v.preview ? `/levels/${id}/${v.version}/preview.png` : null, versions: results,
-    plays: await playStats(env, id),
+    plays: await playStats(env, id), boards: await boards(env, id),
   });
 }
 
@@ -165,16 +167,19 @@ async function postRun(request, env) {
       WHERE v.level_id = ? AND v.version = ? AND v.sha256 = ? AND l.game = ? AND v.taken_down = 0 AND l.taken_down = 0
         AND a.blocked = 0`).bind(r.level, r.version, r.package_sha256, r.game).first();
   if (!listed) return json({ error: "Not a listed level's package (its level, version and SHA-256)." }, 422);
+  const user = await clientUser(request, env);  // (levelpack signed in: the player's run; its ticket: the boards)
+  const notRanked = user ? await rankRun(env, user, r) : "not signed in";
   const counters = Object.fromEntries(COUNTERS.map((k) => [k, r.counters[k]]));
   const events = r.events.map((e) => ({ kind: e.kind, t: e.t, ...(e.slot !== undefined && { slot: e.slot }),
     ...(Array.isArray(e.at) && { at: e.at }) }));
   const done = await env.DB.prepare(
     `INSERT OR IGNORE INTO runs (id, level_id, version, received, result, time, rating, stealth, aggression, counters, stage,
-                                 alarm_highest, events, dll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                 alarm_highest, events, dll, user_id, ranked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(r.run, r.level, r.version, Math.floor(Date.now() / 1000), r.result, r.time, r.rating ?? null, r.stealth ?? null,
-    r.aggression ?? null, JSON.stringify(counters), r.stage ?? null, r.alarm_highest ?? null, JSON.stringify(events), r.dll).run();
+    r.aggression ?? null, JSON.stringify(counters), r.stage ?? null, r.alarm_highest ?? null, JSON.stringify(events), r.dll,
+    user ? user.id : null, notRanked ? 0 : 1).run();
   if (!done.meta.changes) return json({ error: "This run is here already." }, 409);
-  return json({ ok: true }, 201);
+  return json({ ok: true, ranked: !notRanked, ...(notRanked && { why: notRanked }) }, 201);
 }
 
 // a level's numbers from its runs (every version): plays, finished, Silent Assassin, the ratings, the median time
@@ -224,9 +229,9 @@ async function report(request, env, user) {
 
 // the owner's (users.admin = 1): GET /api/admin/overview (the reports, levels, accounts) and the actions
 // POST /api/admin/<action> { ... }: takedown / restore { level, version? }, block / unblock { user | key },
-// handled { report }, delete-user { user } (an account and everything of it: privacy.html "your rights")
+// handled { report }, verify / unverify { run } (its video watched), delete-user { user } (an account and everything of it: privacy.html "your rights")
 async function adminOverview(env) {
-  const [reports, levels, users] = await env.DB.batch([
+  const [reports, levels, users, videos] = await env.DB.batch([
     env.DB.prepare(
       `SELECT r.id, r.level_id, r.version, r.reason, r.created, r.handled, r.handled_at, u.name AS reporter,
               (SELECT title FROM versions v WHERE v.level_id = r.level_id ORDER BY version DESC LIMIT 1) AS title
@@ -242,11 +247,16 @@ async function adminOverview(env) {
       `SELECT u.id, u.name, u.provider, u.created, u.blocked, u.admin,
               (SELECT COUNT(*) FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = u.id) AS levels
          FROM users u ORDER BY u.created DESC LIMIT 1000`),
+    env.DB.prepare(
+      `SELECT r.id, r.level_id, r.time, r.video, r.verified, r.received, u.name AS player,
+              (SELECT title FROM versions v WHERE v.level_id = r.level_id ORDER BY version DESC LIMIT 1) AS title
+         FROM runs r JOIN users u ON u.id = r.user_id WHERE r.video IS NOT NULL ORDER BY r.verified, r.received DESC LIMIT 500`),
   ]);
   return json({
     reports: reports.results,
     levels: levels.results.map((l) => ({ ...l, versions: JSON.parse(l.versions) })),
     users: users.results,
+    videos: videos.results,
   });
 }
 
@@ -258,6 +268,10 @@ async function deleteUser(env, id) {
     if (files.objects.length) await env.FILES.delete(files.objects.map((o) => o.key));
   }
   await env.DB.batch([
+    env.DB.prepare("UPDATE runs SET user_id = NULL, ranked = 0, video = NULL, verified = 0 WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM client_tokens WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM tickets WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM device_codes WHERE user_id = ?").bind(id),
     env.DB.prepare(`DELETE FROM runs WHERE level_id IN
       (SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?)`).bind(id),
     env.DB.prepare(`DELETE FROM versions WHERE level_id IN
@@ -286,6 +300,10 @@ async function admin(request, env, action, me) {
     ]);
   } else if ((action === "block" || action === "unblock") && typeof b.key === "string") {
     await env.DB.prepare("UPDATE authors SET blocked = ? WHERE key = ?").bind(flag, b.key).run();
+  } else if ((action === "verify" || action === "unverify") && typeof b.run === "string") {
+    await env.DB.prepare("UPDATE runs SET verified = ? WHERE id = ? AND video IS NOT NULL")
+      .bind(action === "verify" ? 1 : 0, b.run).run();
+    return json({ ok: true });
   } else if (action === "handled" && Number.isInteger(b.report)) {
     await env.DB.prepare("UPDATE reports SET handled = 1, handled_at = ? WHERE id = ?")
       .bind(Math.floor(Date.now() / 1000), b.report).run();
@@ -299,12 +317,15 @@ async function admin(request, env, action, me) {
   return json({ list: (await publishList(env)).serial });
 }
 
-// every day: reports dealt with more than a year ago and sessions that ended are deleted (privacy.html)
+// every day: reports dealt with more than a year ago, sessions that ended, levelpack's sign-ins not finished and
+// tickets two days old are deleted (privacy.html)
 async function cleanUp(env) {
   const now = Math.floor(Date.now() / 1000);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM reports WHERE handled = 1 AND handled_at < ?").bind(now - 365 * 86400),
     env.DB.prepare("DELETE FROM sessions WHERE expires < ?").bind(now),
+    env.DB.prepare("DELETE FROM device_codes WHERE expires < ?").bind(now),
+    env.DB.prepare("DELETE FROM tickets WHERE issued < ?").bind(now - 2 * 86400),
   ]);
 }
 
@@ -347,6 +368,15 @@ async function route(request, env, ctx) {
       return user && user.admin ? adminOverview(env) : json({ error: "The owner's only" }, 403);
     }
     if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})$/))) return level(env, m[1]);
+    if ((m = path.match(/^\/api\/players\/([1-9][0-9]{0,9})$/))) return player(env, Number(m[1]));
+    if (path === "/api/v1/me") {  // (levelpack's account)
+      const user = await clientUser(request, env);
+      return user ? json({ id: user.id, name: user.name }) : json({ error: "Not signed in" }, 401);
+    }
+    if (path === "/api/me/runs") {
+      const user = await currentUser(request, env);
+      return user ? myRuns(env, user) : json({ error: "Sign in first" }, 401);
+    }
     if ((m = path.match(/^\/api\/author\/levels\/([a-z0-9]{8,32})\/plays$/))) {
       const user = await currentUser(request, env);
       return user ? authorPlays(env, user, m[1], url.searchParams.get("download") === "1") : json({ error: "Sign in first" }, 401);
@@ -362,11 +392,24 @@ async function route(request, env, ctx) {
         `SELECT l.id, v.title, MAX(v.version) AS version FROM levels l JOIN authors a ON a.key = l.author_key
            JOIN versions v ON v.level_id = l.id WHERE a.user_id = ? AND l.taken_down = 0 GROUP BY l.id ORDER BY v.title`,
       ).bind(user.id).all();
-      return json({ name: user.name, provider: user.provider, admin: !!user.admin,
+      return json({ id: user.id, name: user.name, provider: user.provider, admin: !!user.admin,
         keys: keys.results.map((k) => k.key), levels: levels.results });
     }
   }
-  if (request.method === "POST" && path === "/api/v1/runs") return postRun(request, env);  // (levelpack: no Origin)
+  if (request.method === "POST" && path.startsWith("/api/v1/")) {  // (levelpack: no Origin; its token where needed)
+    if (path === "/api/v1/runs") return postRun(request, env);
+    if (path === "/api/v1/device") {
+      if (env.RUNS_LIMIT && !(await env.RUNS_LIMIT.limit({ key: "device:" + (request.headers.get("CF-Connecting-IP") || "local") })).success)
+        return json({ error: "Too many sign-ins at once: later." }, 429);
+      return deviceStart(request, env);
+    }
+    if (path === "/api/v1/device/token") return deviceToken(request, env);
+    if (path === "/api/v1/signout") return clientSignout(request, env);
+    if (path === "/api/v1/tickets") {
+      const user = await clientUser(request, env);
+      return user ? ticket(request, env, user) : json({ error: "Not signed in" }, 401);
+    }
+  }
   if (request.method === "POST" && path.startsWith("/api/")) {
     if (!sameOrigin(request, env)) return json({ error: "From the site's own pages only" }, 403);
     if (path === "/api/logout") return logout(request, env);
@@ -374,7 +417,10 @@ async function route(request, env, ctx) {
     if (!user) return json({ error: "Sign in first" }, 401);
     if (path === "/api/upload") return upload(request, env, user);
     if (path === "/api/report") return report(request, env, user);
-    if ((m = path.match(/^\/api\/admin\/(takedown|restore|block|unblock|handled|delete-user)$/))) {
+    if (path === "/api/device/approve") return deviceApprove(request, env, user);
+    if (path === "/api/me/video") return setVideo(request, env, user);
+    if (path === "/api/me/name") return setName(request, env, user);
+    if ((m = path.match(/^\/api\/admin\/(takedown|restore|block|unblock|handled|verify|unverify|delete-user)$/))) {
       if (!user.admin) return json({ error: "The owner's only" }, 403);
       return admin(request, env, m[1], user);
     }

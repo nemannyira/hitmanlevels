@@ -10,6 +10,8 @@
 //   levelpack author restore <file.h2key> [--replace]
 //   levelpack hub list|install <id> [--source https://hitmanlevels.com | <folder>]   (the site's levels)
 //   levelpack stats on|off|status|send [--quiet]               (your plays of downloaded levels shared: opt-in)
+//   levelpack stats ticket <level> <version> <run file>        (the DLL, a run starting: signed in, a ticket)
+//   levelpack signin | signout [--source ...]                  (your plays carry your site account: the boards)
 //   levelpack site keygen <key file> | site sign <index.json> <key file>             (the site's operator)
 //   levelpack register | unregister                          (a double click on a package opens it here)
 //   levelpack selftest
@@ -25,12 +27,14 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <io.h>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "levelfmt/crypto.h"
 #include "levelfmt/games.h"
@@ -389,6 +393,7 @@ int Hub(int argc, char** argv)
 int Stats(int argc, char** argv)
 {
     std::string cmd = argv[2], source = kHubSite, game, error;
+    std::vector<std::string> args;
     bool quiet = false;
     for (int i = 3; i < argc; ++i) {
         std::string a = argv[i];
@@ -398,9 +403,27 @@ int Stats(int argc, char** argv)
             game = argv[++i];
         else if (a == "--quiet")
             quiet = true;
+        else if (a[0] != '-')
+            args.push_back(a);
         else
             return Usage();
     }
+    std::string token;
+    LoadSiteToken(source, token);
+    if (cmd == "ticket") {  // (started by the editor as a run starts: nothing to say, nothing when not signed in)
+        if (args.size() != 3 || token.empty() || !StatsSharing())
+            return token.empty() || !StatsSharing() ? 0 : Usage();
+        const GameInfo& g = *FindGame("h2");
+        std::string dir = game.empty() ? FindGameDir(g) : game;
+        if (dir.empty() || !IsGameDir(dir, g) || !TakeTicket(source, token, dir, g, args[0], std::atoi(args[1].c_str()), args[2], &error)) {
+            if (!quiet)
+                std::fprintf(stderr, "No ticket: %s\n", error.empty() ? "the game's folder is not found" : error.c_str());
+            return 1;
+        }
+        return 0;
+    }
+    if (!args.empty())
+        return Usage();
     if (cmd == "on" || cmd == "off") {
         if (!SetStatsSharing(cmd == "on", &error)) {
             std::fprintf(stderr, "%s\n", error.c_str());
@@ -425,7 +448,7 @@ int Stats(int argc, char** argv)
         std::string dir = game.empty() ? FindGameDir(g) : game;
         if (dir.empty() || !IsGameDir(dir, g))
             continue;
-        RunsReport r = SendRuns(source, dir, g, send);
+        RunsReport r = SendRuns(source, dir, g, send, token);
         total.sent += r.sent;
         total.refused += r.refused;
         total.waiting += r.waiting;
@@ -435,8 +458,17 @@ int Stats(int argc, char** argv)
     }
     if (quiet)
         return 0;
-    if (!send)
+    if (!send) {
         std::printf("Sharing your plays of downloaded levels: %s\n", on ? "on" : asked ? "off" : "off (not chosen yet)");
+        int status = 0;
+        std::string answer;
+        nlohmann::json me = !token.empty() && Get(source, "/api/v1/me", token, status, answer, nullptr) && status == 200
+                                ? nlohmann::json::parse(answer, nullptr, false)
+                                : nlohmann::json();
+        std::printf("Signed in: %s\n", me.is_object() && me.value("name", nlohmann::json()).is_string()
+                                             ? me["name"].get<std::string>().c_str()
+                                             : token.empty() ? "no (levelpack signin)" : "not now (the site did not answer)");
+    }
     std::printf("Runs: %d sent before, %d to send, %d kept on this PC", total.sentBefore, total.waiting, total.kept);
     if (send)
         std::printf("; now %d sent, %d refused", total.sent, total.refused);
@@ -444,6 +476,64 @@ int Stats(int argc, char** argv)
     for (const std::string& n : total.notes)
         std::printf("  %s\n", n.c_str());
     return 0;
+}
+
+// levelpack signin|signout: the plays sent carry the player's site account (docs/play_stats.md section 4): a code
+// the player types on the site's device page; the token kept in Windows' Credential Manager
+int Signin(int argc, char** argv)
+{
+    std::string source = kHubSite;
+    for (int i = 2; i < argc; ++i) {
+        if (argv[i] == std::string("--source") && i + 1 < argc)
+            source = argv[++i];
+        else
+            return Usage();
+    }
+    std::string answer, error, token;
+    int status = 0;
+    if (argv[1] == std::string("signout")) {
+        if (LoadSiteToken(source, token))
+            Post(source, "/api/v1/signout", "{}", status, answer, nullptr, token);
+        DeleteSiteToken(source);
+        std::printf("Signed out.\n");
+        return 0;
+    }
+    if (!Post(source, "/api/v1/device", "{}", status, answer, &error) || status != 200) {
+        std::fprintf(stderr, "Not signed in: %s\n", error.empty() ? ("the site answered " + std::to_string(status)).c_str() : error.c_str());
+        return 1;
+    }
+    nlohmann::json d = nlohmann::json::parse(answer, nullptr, false);
+    if (!d.is_object() || !d.value("device_code", nlohmann::json()).is_string() || !d.value("user_code", nlohmann::json()).is_string()) {
+        std::fprintf(stderr, "Not signed in: the site's answer is not a sign-in\n");
+        return 1;
+    }
+    std::string code = d["user_code"].get<std::string>(), uri = d.value("verification_uri", std::string(kHubSite) + "/device.html");
+    std::printf("Open %s and type the code  %s\n(signed in on the site with the account your plays should carry)\n",
+                uri.c_str(), code.c_str());
+    std::fflush(stdout);
+    if (uri.rfind(source, 0) == 0 && _isatty(_fileno(stdout)))  // (the site's own page; a person at a console)
+        ShellExecuteA(nullptr, "open", (uri + "?code=" + code).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    int interval = std::max(2, d.value("interval", 5)), left = std::min(900, d.value("expires_in", 600));
+    std::string body = nlohmann::json({{"device_code", d["device_code"]}}).dump();
+    for (; left > 0; left -= interval) {
+        Sleep(DWORD(interval) * 1000);
+        if (!Post(source, "/api/v1/device/token", body, status, answer, nullptr) || status == 428)
+            continue;  // (not yet; no answer this time)
+        nlohmann::json t = nlohmann::json::parse(answer, nullptr, false);
+        if (status != 200 || !t.is_object() || !t.value("token", nlohmann::json()).is_string()) {
+            std::fprintf(stderr, "Not signed in: %s\n", t.is_object() ? t.value("error", std::string("refused")).c_str() : "refused");
+            return 1;
+        }
+        if (!SaveSiteToken(source, t["token"].get<std::string>())) {
+            std::fprintf(stderr, "Signed in, but Windows' Credential Manager did not keep it\n");
+            return 1;
+        }
+        std::printf("Signed in as %s: your plays of downloaded levels carry your name (levelpack signout ends it).\n",
+                    t.value("name", std::string("?")).c_str());
+        return 0;
+    }
+    std::fprintf(stderr, "Not signed in: the code ran out (levelpack signin again)\n");
+    return 1;
 }
 
 // levelpack site keygen|sign ...: the site operator's offline signing (src/levelfmt/hub.h)
@@ -491,6 +581,8 @@ int Usage()
                  "       levelpack hub install <id> [--source ...] [--game <dir>] [--yes] [--allow-older] "
                  "[--allow-other-author]\n"
                  "       levelpack stats on | off | status | send [--quiet] [--source ...] [--game <dir>]\n"
+                 "       levelpack stats ticket <level> <version> <run file>\n"
+                 "       levelpack signin | signout [--source ...]\n"
                  "       levelpack site keygen <key file>\n"
                  "       levelpack site sign <index.json> <key file>\n"
                  "       levelpack register | unregister\n"
@@ -586,6 +678,8 @@ int main(int argc, char** argv)
         return Site(argc, argv);
     if (cmd == "stats" && argc >= 3)
         return Stats(argc, argv);
+    if (cmd == "signin" || cmd == "signout")
+        return Signin(argc, argv);
     if (cmd == "install" && argc >= 3) {
         std::string game;
         bool yes = false, older = false, other = false;

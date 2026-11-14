@@ -30,10 +30,10 @@ const SESSION_DAYS = 30;
 function b64url(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function random(n) {
+export function random(n) {
   return b64url(crypto.getRandomValues(new Uint8Array(n)));
 }
-async function sha256(text) {
+export async function sha256(text) {
   return b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
 }
 

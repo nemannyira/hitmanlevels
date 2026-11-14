@@ -30,6 +30,12 @@ game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lu
   *Download for the editor* gives `plays.json`: put it in your level's
   folder and open the level, and the in-game map (M) shows those places
   (a red target where Hitman died, "!" where he was spotted).
+* Boards and player pages: `levelpack signin` (a code you type on the
+  site) makes the plays you share carry your site account's name. As a
+  play starts, levelpack takes a ticket (the site's time), so the site can
+  check the play took as long as it says; such Silent Assassin runs go on
+  the level's board, and on the verified board once the owner watched a
+  video you linked on your player page. `levelpack signout` ends it.
 
 ## 2026-11-13: the level's picture is the game's view
 

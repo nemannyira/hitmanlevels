@@ -72,17 +72,23 @@ bool Installed(const std::string& folder, const std::string& id, int& version, s
     return true;
 }
 
+// a run's ticket file: its name with .ticket for .json
+std::string TicketOf(const std::string& file) { return file.substr(0, file.size() - 5) + ".ticket"; }
+
 bool MoveTo(const std::string& runs, const std::string& file, const char* where)
 {
     std::string dir = runs + "\\" + where;
     CreateDirectoryW(GamePath(dir).c_str(), nullptr);
+    MoveFileExW(GamePath(runs + "\\" + TicketOf(file)).c_str(), GamePath(dir + "\\" + TicketOf(file)).c_str(),
+                MOVEFILE_REPLACE_EXISTING);  // (none: a run sent without one)
     return MoveFileExW(GamePath(runs + "\\" + file).c_str(), GamePath(dir + "\\" + file).c_str(),
                        MOVEFILE_REPLACE_EXISTING) != 0;
 }
 
 } // namespace
 
-RunsReport SendRuns(const std::string& source, const std::string& gameDir, const GameInfo& game, bool send)
+RunsReport SendRuns(const std::string& source, const std::string& gameDir, const GameInfo& game, bool send,
+                    const std::string& token)
 {
     RunsReport r;
     std::string online = gameDir + "\\" + game.onlineDir;
@@ -124,9 +130,15 @@ RunsReport SendRuns(const std::string& source, const std::string& gameDir, const
             }
             run["game"] = game.id;
             run["package_sha256"] = sha256;
+            std::string ticketText;
+            if (!token.empty() && ReadFileA(runs + "\\" + TicketOf(file), ticketText, 4096)) {
+                json t = json::parse(ticketText, nullptr, false);
+                if (t.is_object() && t.value("ticket", json()).is_string())
+                    run["ticket"] = t["ticket"];
+            }
             int status = 0;
             std::string answer, error;
-            if (!Post(source, kRunsPath, run.dump(), status, answer, &error))
+            if (!Post(source, kRunsPath, run.dump(), status, answer, &error, token))
                 status = 0;
             if (status == 200 || status == 201 || status == 409) {  // (409: that run id is there already)
                 MoveTo(runs, file, "sent");
@@ -147,6 +159,27 @@ RunsReport SendRuns(const std::string& source, const std::string& gameDir, const
         }
     }
     return r;
+}
+
+bool TakeTicket(const std::string& source, const std::string& token, const std::string& gameDir, const GameInfo& game,
+                const std::string& level, int version, const std::string& runFile, std::string* error)
+{
+    if (!ValidOnlineId(level) || runFile.size() < 6 || runFile.size() > 64 ||
+        runFile.compare(runFile.size() - 5, 5, ".json") != 0 || runFile.find_first_of("\\/:") != std::string::npos)
+        return Fail(error, "not a run of a downloaded level");
+    int status = 0;
+    std::string answer;
+    if (!Post(source, "/api/v1/tickets", json({{"level", level}, {"version", version}}).dump(), status, answer, error,
+              token) || status != 200)
+        return Fail(error, error && !error->empty() ? *error : "the site answered " + std::to_string(status));
+    json t = json::parse(answer, nullptr, false);
+    if (!t.is_object() || !t.value("ticket", json()).is_string())
+        return Fail(error, "no ticket in the site's answer");
+    std::string runs = gameDir + "\\" + game.onlineDir + "\\" + level + "\\runs";
+    CreateDirectoryW(GamePath(runs).c_str(), nullptr);
+    if (!WriteFileAtomic(GamePath(runs + "\\" + TicketOf(runFile)), t.dump()))
+        return Fail(error, "the ticket cannot be written in " + runs);
+    return true;
 }
 
 } // namespace h2::levelfmt

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in levelpack - Hitman Levels</title>
+<meta name="description" content="Sign in levelpack to your Hitman Levels account with the code it shows.">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="rain" aria-hidden="true"></div>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Hitman Levels<span>.</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">Levels</a>
+      <a href="get-started.html">Get started</a>
+      <a href="tools.html">Editor &amp; tools</a>
+      <a href="upload.html">Upload</a>
+    </nav>
+    <a class="btn small signin" href="signin.html">Sign in</a>
+  </div>
+</header>
+<main class="wrap">
+  <div class="head">
+    <h1>Sign in levelpack</h1>
+    <p>levelpack signin showed a code of eight letters. Type it here: your plays of downloaded levels it sends then carry your name, on the levels' boards and your player page.</p>
+  </div>
+  <p class="muted" id="signin" hidden>Sign in on the site first: <a href="signin.html">Sign in</a>, then come back to this page.</p>
+  <form id="form" hidden style="max-width:420px">
+    <p><label for="code">The code</label><br>
+      <input id="code" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH" style="font-size:20px;letter-spacing:2px;width:100%"></p>
+    <p><button class="btn" id="go" type="submit">Sign in levelpack</button></p>
+    <p class="muted" id="who"></p>
+  </form>
+  <p id="done" hidden></p>
+</main>
+<footer>
+  <div class="wrap">
+    <span>A fan site. Not affiliated with or endorsed by IO Interactive. Hitman and its games' names are trademarks of IO Interactive A/S.</span>
+    <span><a href="terms.html">Terms</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
+  </div>
+</footer>
+<script src="site.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  (async function () {
+    var r = await fetch("/api/me", { credentials: "same-origin" });
+    if (r.status !== 200) { $("signin").hidden = false; return; }
+    var me = await r.json();
+    $("form").hidden = false;
+    $("who").textContent = "levelpack will be signed in as " + me.name + ".";
+    $("code").value = new URLSearchParams(location.search).get("code") || "";
+    $("form").addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var a = await fetch("/api/device/approve", { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("code").value }) });
+      var j = await a.json().catch(function () { return {}; });
+      $("done").hidden = false;
+      $("done").textContent = a.ok ? "Done: levelpack is signed in as " + me.name + " (go back to it)." : j.error || "Not signed in.";
+      if (a.ok) $("form").hidden = true;
+    });
+  })();
+</script>
+</body>
+</html>

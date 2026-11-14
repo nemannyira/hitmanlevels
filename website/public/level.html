@@ -51,6 +51,13 @@
         <p id="plays"></p>
         <ul id="ratings"></ul>
       </section>
+      <section id="boards-box" style="margin-top:28px" hidden>
+        <div class="section-title"><h2>Fastest Silent Assassins</h2><span class="muted">players signed in in levelpack</span></div>
+        <div class="boards">
+          <div><h3>Verified</h3><p class="muted small">the owner watched the video</p><ol id="board-verified"></ol></div>
+          <div><h3>Unverified</h3><p class="muted small">passed the site's checks</p><ol id="board-unverified"></ol></div>
+        </div>
+      </section>
       <div class="versions">
         <div class="section-title"><h2>Versions</h2><span class="muted" id="versions-count"></span></div>
         <ul id="versions"></ul>
@@ -125,6 +132,18 @@
     $("d-license").textContent = l.license;
     $("d-size").textContent = size(l.size);
     $("d-downloads").textContent = String(l.downloads);
+    ["verified", "unverified"].forEach(function (k) {
+      var list = $("board-" + k);
+      l.boards[k].forEach(function (b) {
+        var li = el("li"), a = el("a", null, b.name);
+        a.href = "player.html?id=" + b.id;
+        li.appendChild(a);
+        li.appendChild(el("span", "muted", " · " + clock(b.time)));
+        list.appendChild(li);
+      });
+      if (!l.boards[k].length) list.appendChild(el("li", "muted", "nobody yet"));
+    });
+    $("boards-box").hidden = !l.boards.unverified.length;
     var p = l.plays;
     $("d-plays").textContent = p.plays ? p.plays + " (" + percent(p.finished, p.plays) + " finished)" : "none shared yet";
     if (p.plays) {

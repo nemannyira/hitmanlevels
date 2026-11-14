@@ -39,6 +39,10 @@
       <table id="levels"><tr><th>Level</th><th>Author / account</th><th>Versions</th><th>Downloads</th><th></th></tr></table>
     </section>
     <section>
+      <div class="section-title"><h2>Videos of runs</h2><span class="muted" id="videos-count"></span></div>
+      <table id="videos"><tr><th>Sent</th><th>Level</th><th>Player</th><th>Time</th><th>Video</th><th></th></tr></table>
+    </section>
+    <section>
       <div class="section-title"><h2>Accounts</h2><span class="muted" id="users-count"></span></div>
       <table id="users"><tr><th>Name</th><th>Signed in with</th><th>Since</th><th>Levels</th><th></th></tr></table>
     </section>
@@ -123,6 +127,20 @@
       });
       var name = el("span", l.taken_down ? "muted" : null, l.title + (l.taken_down ? " (taken down)" : ""));
       row($("levels"), [name, l.author + " / " + l.account, versions, String(l.downloads), actions]);
+    });
+
+    $("videos-count").textContent = d.videos.filter(function (v) { return !v.verified; }).length + " to watch";
+    clear($("videos"));
+    d.videos.forEach(function (v) {
+      var a = el("a", null, v.video);
+      a.href = v.video;
+      a.rel = "noopener noreferrer";
+      a.target = "_blank";
+      var actions = el("span");
+      actions.appendChild(v.verified
+        ? button("Not verified", function () { act("unverify", { run: v.id }); })
+        : button("Verified: Silent Assassin in this time", function () { act("verify", { run: v.id }); }));
+      row($("videos"), [day(v.received), v.title || v.level_id, v.player, clock(v.time), a, actions]);
     });
 
     $("users-count").textContent = d.users.length + " accounts";

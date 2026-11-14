@@ -36,9 +36,20 @@ std::vector<std::string> SiteKeys();
 // make no source trusted).
 bool Fetch(const std::string& source, const std::string& path, size_t max, std::string& out, std::string* error);
 // JSON posted to the site (`source` as Fetch's; a local folder: the body appended as one line to the path's file,
-// answered 201: tests). True when the site answered: `status` its HTTP status, `answer` its body.
+// answered 201: tests). True when the site answered: `status` its HTTP status, `answer` its body. `token`:
+// levelpack's sign-in (Authorization: Bearer). Get: the same for a GET of the site (not a folder). Besides
+// https://host, a source may be http://127.0.0.1:<port> or http://localhost:<port> (a copy of the site on this
+// PC: tests); no other plain HTTP.
 bool Post(const std::string& source, const std::string& path, const std::string& body, int& status,
-          std::string& answer, std::string* error);
+          std::string& answer, std::string* error, const std::string& token = "");
+bool Get(const std::string& source, const std::string& path, const std::string& token, int& status,
+         std::string& answer, std::string* error);
+
+// levelpack's sign-in to the site's account (docs/play_stats.md section 4): its token in Windows' Credential
+// Manager, one per source ("HitmanLevels/https://hitmanlevels.com").
+bool LoadSiteToken(const std::string& source, std::string& token);
+bool SaveSiteToken(const std::string& source, const std::string& token);
+void DeleteSiteToken(const std::string& source);
 
 // The list fetched and checked: index.sig by a site key over "H2LVL index v1\n" + index.json, the form
 // canonical, its serial not below the highest this PC has seen (remembered in known.json after).

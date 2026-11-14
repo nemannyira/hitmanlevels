@@ -107,6 +107,12 @@ section { margin-bottom: 44px; }
 .level { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; align-items: start; padding-top: 14px; }
 .level .by { color: var(--muted); margin: 8px 0 20px; }
 .level .shot { border: 1px solid var(--line); }
+/* the level's boards: verified and unverified side by side */
+.boards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.boards h3 { margin: 0; font-size: 15px; }
+.boards .small { font-size: 13px; margin: 2px 0 8px; }
+.boards ol { margin: 0; padding-left: 22px; }
+@media (max-width: 760px) { .boards { grid-template-columns: 1fr; } }
 
 /* the laptop's briefing box */
 .laptop { margin-top: 24px; background: rgba(170, 184, 192, 0.12); border: 1px solid #7f8a8f; padding: 18px 22px; }

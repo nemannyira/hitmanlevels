@@ -57,6 +57,14 @@ client takes the answer:
 
 Runs with `aids` or `dev` are never sent. No account, no IP kept (#52).
 
+Signed in (level 2, #54; docs/play_stats.md section 4), levelpack sends `Authorization: Bearer <token>` with
+the run and a `"ticket"` it took when the run started; the answer then says `"ranked"` (and `"why"` not).
+levelpack's other calls: `POST /api/v1/device` (a sign-in: `device_code`, `user_code`, `verification_uri`,
+`expires_in`, `interval`), `POST /api/v1/device/token {device_code}` (428 pending, 400 ran out, 200 `{token,
+name}`), `GET /api/v1/me` (`{id, name}`), `POST /api/v1/tickets {level, version}` (`{ticket, issued}`),
+`POST /api/v1/signout`. For tests a source may be `http://127.0.0.1:<port>` (wrangler dev), no other plain
+HTTP.
+
 `GET /api/author/levels/<id>/plays` (signed in; the level's author only, 404 for others; `?download=1` as the
 file `plays.json`): the level's newest 2000 runs, `{"format":1,"level","title","base_scene","runs":[{"version",
 "result","time","rating"?,"counters","stage"?,"alarm_highest"?,"events"}]}`: the author's page and the file the

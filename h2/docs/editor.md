@@ -113,7 +113,7 @@ does not show (scripts, cars, the sky, stages, ...) stays in the level; step
 The top of the Level tab shows them, green when done, amber when something
 is missing; a click goes where the step is done.
 
-**Map**: in the main menu, *Level Editor > New level*: a map, a name, and whether
+**Map**: in the main menu, *Custom levels > New level*: a map, a name, and whether
 the map is emptied (*Empty map*: its characters, items and objectives go;
 *No buildings either*: only the sky stays, with a floor to stand on). Or, on
 a map already loaded: *File > New level on this scene*. *Open a
@@ -265,7 +265,7 @@ before stays (objects keep their paths), the laptop, texts and scripts work
 as on the original. *Back to the original map* returns (optionally deleting
 the copy's files, from another map).
 
-**Play**: main menu > *Level Editor* > *Open a level* > *Play* (the editor
+**Play**: main menu > *Custom levels* > *Open a level* > *Play* (the editor
 stays closed; *Edit* opens it on the map). Five example levels, played
 through: `examples/missions` (copy a folder into `Mods`).
 

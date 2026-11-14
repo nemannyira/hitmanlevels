@@ -410,7 +410,7 @@ void DrawGuide()
     if (L.folder.empty() && L.baseScene.empty()) {  // no level open
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextUnformatted("No level is open.");
-        ImGui::TextDisabled("Main menu > Level Editor: a new level on one of the game's maps, or one saved before.");
+        ImGui::TextDisabled("Main menu > Custom levels: a new level on one of the game's maps, or one saved before.");
         ImGui::PopTextWrapPos();
         if (gameMap) {
             ImGui::Spacing();
@@ -429,7 +429,7 @@ void DrawGuide()
         return;
     }
     if (CurrentScene().empty()) {
-        ImGui::TextWrapped("Load a map first: main menu > Level Editor > New level.");
+        ImGui::TextWrapped("Load a map first: main menu > Custom levels > New level.");
         return;
     }
     DrawStepBar();

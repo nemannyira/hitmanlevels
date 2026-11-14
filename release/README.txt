@@ -32,7 +32,7 @@ INSTALL
 
 FIRST STEPS
 
-  * Main menu > Level Editor: New level (pick a map and Simple: a guide takes you step by step) or
+  * Main menu > Custom levels: New level (pick a map and Simple: a guide takes you step by step) or
     Open a level (Play, or Edit).
   * F8 opens and closes the editor while you play; F1 lists the keys.
   * H2Fix.ini holds the settings (display, the editor's key, Simple or Advanced mode). It also brings

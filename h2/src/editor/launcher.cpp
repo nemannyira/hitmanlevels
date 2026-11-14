@@ -53,7 +53,7 @@ const Map kMaps[] = {
 };
 constexpr float kRow = 24.0f;            // the main menu's line height (GUI units)
 constexpr float kTextSize = 20.5f;       // its letters' size (GUI units)
-const char* const kEntry = "Level Editor";
+const char* const kEntry = "Custom levels";
 
 // The entry is a button of the game's own (CHM2Button with its text, a
 // ZCHAROBJ "Normal"), made from the Options button's records with an id the

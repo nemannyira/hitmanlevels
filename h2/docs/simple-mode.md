@@ -62,7 +62,7 @@ grey when optional and untouched. A click on a step goes there.
 
 ### 0. Start (the launcher)
 
-*Level Editor > New level*: the mission (map) as today, a name, and
+*Custom levels > New level*: the mission (map) as today, a name, and
 **Simple / Advanced** (Simple first; the choice is remembered). Simple mode
 starts from the map's own mission: its characters and objectives stay unless
 the player changes them. (*Empty map* and *No buildings* are Advanced mode

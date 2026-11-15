@@ -118,6 +118,17 @@ void Show(const OpenedPackage& p)
     std::printf("Author:   [%s]  %s\n", Fingerprint(m.authorKey).c_str(), m.authorName.c_str());
     std::printf("License:  %s\n", m.license.c_str());
     std::printf("Map:      %s\n", m.baseScene.c_str());
+    // an escalation (docs/escalation.md): its stages, played one after another
+    if (const PackageFile* f = p.Find("level.json")) {
+        nlohmann::json level = nlohmann::json::parse(f->data, nullptr, false);
+        if (level.is_object() && level.value("stages", nlohmann::json()).is_array() && !level["stages"].empty()) {
+            std::string names;
+            for (const nlohmann::json& s : level["stages"])
+                if (s.is_object() && s.value("name", nlohmann::json()).is_string())
+                    names += (names.empty() ? "" : ", ") + s["name"].get<std::string>();
+            std::printf("Stages:   an escalation of %zu, one after another (%s)\n", level["stages"].size(), names.c_str());
+        }
+    }
     std::printf("Id:       %s\n", m.id.c_str());
     std::printf("Files:   ");
     for (const PackageFile& f : p.files)
@@ -371,8 +382,9 @@ int Hub(int argc, char** argv)
     if (argv[2] == std::string("list")) {
         std::printf("%zu levels (list %lld):\n", index.levels.size(), index.serial);
         for (const HubLevel& l : index.levels)
-            std::printf("  %-32s v%-3d [%s] %s  %s\n", l.id.c_str(), l.version, Fingerprint(l.authorKey).c_str(),
-                        l.authorName.c_str(), l.title.c_str());
+            std::printf("  %-32s v%-3d [%s] %s  %s%s\n", l.id.c_str(), l.version, Fingerprint(l.authorKey).c_str(),
+                        l.authorName.c_str(), l.title.c_str(),
+                        l.stages ? (" (escalation, " + std::to_string(l.stages) + " stages)").c_str() : "");
         return 0;
     }
     const HubLevel* level = index.Find(id);

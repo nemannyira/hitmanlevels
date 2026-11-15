@@ -115,3 +115,20 @@ The ones marked yes are the first version; the others follow.
 5. Rules that need reverse engineering: kill method, drawn weapon (done,
    #28); bodies found (done, #30).
 6. An example escalation in `examples/missions` and the docs.
+
+## Shared on the site (2026-11-15)
+
+* **The upload** (website/check: the client's reader in WebAssembly) reads the stages' names and texts from
+  the package's level.json; the site keeps them with the version (`versions.stages`, migration 0006).
+* **The list and the level's page**: "escalation, N stages" on its card and in its dossier, the stages by name
+  and text on its page. The signed list (index.json) names the count (`"stages": N`, only for an
+  escalation): `levelpack hub list` shows it; `levelpack inspect` / install name the stages from the package.
+* **Per stage**: a run carries its stage (docs/play_stats.md section 1), so the level's numbers (plays,
+  finished, Silent Assassin, ratings, median time) and its boards are per stage, a stage picker on the level's
+  page (all stages together for the numbers; boards only within a stage: a stage's times are compared with
+  that stage's only). The author's page has the same picker; the player's page lists an escalation's levels
+  per stage.
+* **The game's map**: plays.json's places are drawn for the stage the map is loaded for only (each stage has
+  its own things).
+* The player's progress is kept by the level's folder (`Save\escalations.json`: `Online\<id>`), so a new
+  version of a downloaded escalation keeps it.

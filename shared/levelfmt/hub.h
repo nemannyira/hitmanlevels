@@ -19,6 +19,7 @@ struct HubLevel {
     std::string game, id, title, authorName, authorKey, baseScene, license, path, sha256;
     int version = 0;
     size_t size = 0;
+    int stages = 0;  // an escalation's stages (the list's optional "stages"; 0: a level without them)
 };
 
 struct HubIndex {

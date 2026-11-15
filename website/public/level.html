@@ -46,8 +46,13 @@
         <p id="readme" style="white-space:pre-wrap"></p>
       </section>
 
+      <section id="stages-box" style="margin-top:28px" hidden>
+        <div class="section-title"><h2>Stages</h2><span class="muted">an escalation: played one after another</span></div>
+        <ol id="stages"></ol>
+      </section>
       <section id="plays-box" style="margin-top:28px" hidden>
         <div class="section-title"><h2>Plays</h2><span class="muted">shared by the players who chose to</span></div>
+        <p><select id="stage-pick" aria-label="Stage" hidden></select></p>
         <p id="plays"></p>
         <ul id="ratings"></ul>
       </section>
@@ -57,6 +62,7 @@
           <div><h3>Verified</h3><p class="muted small">the owner watched the video</p><ol id="board-verified"></ol></div>
           <div><h3>Unverified</h3><p class="muted small">passed the site's checks</p><ol id="board-unverified"></ol></div>
         </div>
+        <p class="muted" id="boards-stage" hidden>Choose a stage above: an escalation's times are compared within a stage.</p>
       </section>
       <div class="versions">
         <div class="section-title"><h2>Versions</h2><span class="muted" id="versions-count"></span></div>
@@ -132,30 +138,65 @@
     $("d-license").textContent = l.license;
     $("d-size").textContent = size(l.size);
     $("d-downloads").textContent = String(l.downloads);
-    ["verified", "unverified"].forEach(function (k) {
-      var list = $("board-" + k);
-      l.boards[k].forEach(function (b) {
-        var li = el("li"), a = el("a", null, b.name);
-        a.href = "player.html?id=" + b.id;
-        li.appendChild(a);
-        li.appendChild(el("span", "muted", " · " + clock(b.time)));
-        list.appendChild(li);
+    // the boards (an escalation's: of the stage chosen; "all stages" shows none)
+    function showBoards(b) {
+      $("boards-stage").hidden = !!b;
+      ["verified", "unverified"].forEach(function (k) {
+        var list = $("board-" + k);
+        list.textContent = "";
+        list.parentNode.parentNode.hidden = !b;
+        if (!b) return;
+        b[k].forEach(function (r) {
+          var li = el("li"), a = el("a", null, r.name);
+          a.href = "player.html?id=" + r.id;
+          li.appendChild(a);
+          li.appendChild(el("span", "muted", " · " + clock(r.time)));
+          list.appendChild(li);
+        });
+        if (!b[k].length) list.appendChild(el("li", "muted", "nobody yet"));
       });
-      if (!l.boards[k].length) list.appendChild(el("li", "muted", "nobody yet"));
-    });
-    $("boards-box").hidden = !l.boards.unverified.length;
-    var p = l.plays;
-    $("d-plays").textContent = p.plays ? p.plays + " (" + percent(p.finished, p.plays) + " finished)" : "none shared yet";
-    if (p.plays) {
-      $("plays-box").hidden = false;
-      $("plays").textContent = p.plays + (p.plays === 1 ? " play" : " plays") + " · " + p.finished + " finished (" +
-        percent(p.finished, p.plays) + ") · Silent Assassin " + p.silent_assassin + " (" + percent(p.silent_assassin, p.plays) +
-        ")" + (p.median_time !== null ? " · median time of the finished ones " + clock(p.median_time) : "");
+    }
+    function showPlays(p) {
+      $("ratings").textContent = "";
+      $("plays").textContent = !p.plays ? "None shared yet." : p.plays + (p.plays === 1 ? " play" : " plays") + " · " +
+        p.finished + " finished (" + percent(p.finished, p.plays) + ") · Silent Assassin " + p.silent_assassin + " (" +
+        percent(p.silent_assassin, p.plays) + ")" + (p.median_time !== null ? " · median time of the finished ones " +
+        clock(p.median_time) : "");
       p.ratings.forEach(function (r) {
         var li = el("li");
         li.appendChild(el("b", null, ratingName(r.rating)));
         li.appendChild(el("span", "muted", " · " + r.n));
         $("ratings").appendChild(li);
+      });
+    }
+    var p = l.plays;
+    $("d-plays").textContent = p.plays ? p.plays + " (" + percent(p.finished, p.plays) + " finished)" : "none shared yet";
+    $("plays-box").hidden = !p.plays;
+    $("boards-box").hidden = !p.plays;
+    showPlays(p);
+    showBoards(l.stages.length ? null : l.boards);
+    if (l.stages.length) {  // an escalation: its stages, the numbers and boards of each
+      $("stages-box").hidden = false;
+      l.stages.forEach(function (st) {
+        var li = el("li");
+        li.appendChild(el("b", null, st.name || "Stage"));
+        if (st.text) li.appendChild(el("span", "muted", " · " + st.text));
+        $("stages").appendChild(li);
+      });
+      $("d-version").textContent = String(l.version) + " · escalation, " + l.stages.length + " stages";
+      var pick = $("stage-pick");
+      pick.hidden = false;
+      pick.appendChild(el("option", null, "All stages"));
+      l.by_stage.forEach(function (b) {
+        var o = el("option", null, "Stage " + b.stage + (l.stages[b.stage - 1].name ? ": " + l.stages[b.stage - 1].name : "") +
+          " (" + b.plays.plays + (b.plays.plays === 1 ? " play)" : " plays)"));
+        o.value = String(b.stage);
+        pick.appendChild(o);
+      });
+      pick.addEventListener("input", function () {
+        var b = l.by_stage[Number(pick.value) - 1];
+        showPlays(b ? b.plays : l.plays);
+        showBoards(b ? b.boards : null);
       });
     }
     $("download").href = l.path;

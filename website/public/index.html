@@ -67,7 +67,8 @@
     a.appendChild(shot);
     var body = el("div", "body");
     body.appendChild(el("h3", null, l.title));
-    body.appendChild(el("div", "meta", mapName(l.base_scene) + " · by " + l.author + (l.version > 1 ? " · v" + l.version : "")));
+    body.appendChild(el("div", "meta", mapName(l.base_scene) + " · by " + l.author + (l.version > 1 ? " · v" + l.version : "") +
+      (l.stages ? " · escalation, " + l.stages + " stages" : "")));
     if (l.blurb) body.appendChild(el("div", "blurb", l.blurb));
     var foot = el("div", "foot");
     foot.appendChild(el("span", null, day(l.updated)));

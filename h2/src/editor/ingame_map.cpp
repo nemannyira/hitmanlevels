@@ -344,6 +344,8 @@ std::vector<engine::SceneCopy> PlayMarkCopies(const std::string& file, const std
     for (const auto& r : j["runs"]) {
         if (!r.is_object() || !r.value("events", nlohmann::json()).is_array())
             continue;
+        if (IsEscalation() && r.value("stage", 0) != CurrentStage())
+            continue;  // (an escalation: the places of the stage the map is loaded for, its things are there)
         for (const auto& e : r["events"]) {
             if (!e.is_object() || !e.value("at", nlohmann::json()).is_array() || e["at"].size() != 3 ||
                 !e["at"][0].is_number() || !e["at"][1].is_number() || !e["at"][2].is_number())

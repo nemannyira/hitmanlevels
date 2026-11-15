@@ -65,10 +65,10 @@ async function upload(request, env, user) {
     env.DB.prepare("INSERT OR IGNORE INTO levels (id, game, author_key) VALUES (?, ?, ?)").bind(m.id, m.game, m.author.key),
     env.DB.prepare(
       `INSERT INTO versions (level_id, version, title, base_scene, license, author_name, path, size, sha256, uploaded_by, created,
-                             readme, briefing, objectives, preview)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                             readme, briefing, objectives, preview, stages)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(m.id, m.version, m.title, m.base_scene, m.license, m.author.name, path, bytes.length, sha256, user.id, now,
-      page.readme, page.briefing, JSON.stringify(page.objectives), page.preview ? 1 : 0),
+      page.readme, page.briefing, JSON.stringify(page.objectives), page.preview ? 1 : 0, JSON.stringify(page.stages)),
   ]);
   await publishList(env);
   return json({ id: m.id, version: m.version, path, checks: checked.checks });
@@ -90,14 +90,14 @@ function blurb(v) {
 async function levels(env) {
   const { results } = await env.DB.prepare(
     `SELECT v.level_id, l.game, v.title, v.base_scene, v.author_name, v.version, v.created, v.license, v.size,
-            v.briefing, v.readme, v.preview, l.downloads,
+            v.briefing, v.readme, v.preview, l.downloads, v.stages,
             (SELECT COUNT(*) FROM runs r WHERE r.level_id = v.level_id) AS plays,
             (SELECT COUNT(*) FROM runs r WHERE r.level_id = v.level_id AND r.result = 'completed') AS finished
        ${LISTED} ORDER BY v.created DESC`).all();
   return json({ levels: results.map((v) => ({
     id: v.level_id, game: v.game, title: v.title, base_scene: v.base_scene, author: v.author_name, version: v.version,
     updated: v.created, license: v.license, size: v.size, blurb: blurb(v), downloads: v.downloads, plays: v.plays,
-    finished: v.finished,
+    finished: v.finished, stages: JSON.parse(v.stages || "[]").length,
     preview: v.preview ? `/levels/${v.level_id}/${v.version}/preview.png` : null,
   })) });
 }
@@ -113,7 +113,9 @@ async function level(env, id) {
     version: v.version, updated: v.created, license: v.license, size: v.size, downloads: v.downloads,
     readme: v.readme, briefing: v.briefing, objectives: JSON.parse(v.objectives || "[]"), path: v.path,
     preview: v.preview ? `/levels/${id}/${v.version}/preview.png` : null, versions: results,
-    plays: await playStats(env, id), boards: await boards(env, id),
+    plays: await playStats(env, id), boards: await boards(env, id), stages: JSON.parse(v.stages || "[]"),
+    by_stage: await Promise.all(JSON.parse(v.stages || "[]").map(async (s, i) => ({
+      stage: i + 1, plays: await playStats(env, id, i + 1), boards: await boards(env, id, i + 1) }))),
   });
 }
 
@@ -182,15 +184,17 @@ async function postRun(request, env) {
   return json({ ok: true, ranked: !notRanked, ...(notRanked && { why: notRanked }) }, 201);
 }
 
-// a level's numbers from its runs (every version): plays, finished, Silent Assassin, the ratings, the median time
-async function playStats(env, id) {
+// a level's numbers from its runs (every version): plays, finished, Silent Assassin, the ratings, the median time;
+// `stage`: an escalation's stage only (else every stage together)
+async function playStats(env, id, stage) {
+  const s = stage ? ` AND stage = ${Number(stage)}` : "";
   const [totals, ratings, median] = await env.DB.batch([
     env.DB.prepare(`SELECT COUNT(*) AS plays, COALESCE(SUM(result = 'completed'), 0) AS finished,
-                           COALESCE(SUM(rating = 'SilentAssassin'), 0) AS silent_assassin FROM runs WHERE level_id = ?`).bind(id),
-    env.DB.prepare(`SELECT rating, COUNT(*) AS n FROM runs WHERE level_id = ? AND rating IS NOT NULL
+                           COALESCE(SUM(rating = 'SilentAssassin'), 0) AS silent_assassin FROM runs WHERE level_id = ?${s}`).bind(id),
+    env.DB.prepare(`SELECT rating, COUNT(*) AS n FROM runs WHERE level_id = ?${s} AND rating IS NOT NULL
                      GROUP BY rating ORDER BY n DESC, rating`).bind(id),
-    env.DB.prepare(`SELECT time FROM runs WHERE level_id = ? AND result = 'completed' ORDER BY time
-                     LIMIT 1 OFFSET (SELECT (COUNT(*) - 1) / 2 FROM runs WHERE level_id = ? AND result = 'completed')`).bind(id, id),
+    env.DB.prepare(`SELECT time FROM runs WHERE level_id = ?${s} AND result = 'completed' ORDER BY time
+                     LIMIT 1 OFFSET (SELECT (COUNT(*) - 1) / 2 FROM runs WHERE level_id = ?${s} AND result = 'completed')`).bind(id, id),
   ]);
   return { ...totals.results[0], ratings: ratings.results, median_time: median.results.length ? median.results[0].time : null };
 }

@@ -223,6 +223,38 @@ try {
 
   await post("/api/admin/takedown", JSON.stringify({ level: id }), me);
   check("refused: a run of a level taken down", (await runPost(another(() => {}))).status === 422);
+
+  // an escalation (its stages read on upload; the numbers and boards per stage): the example escalation exported
+  cpSync(join("..", "h2", "examples", "missions", "TheAccountantEscalation"), join(work, "Esc"), { recursive: true });
+  pack("export", join(work, "Esc"), join(work, "esc.h2lvl"));
+  const esc = readFileSync(join(work, "esc.h2lvl"));
+  const escId = JSON.parse(readFileSync(join(work, "Esc", "level.json"), "utf8")).package.id;
+  r = await post("/api/upload?agree=1", esc, me);
+  check("an escalation uploaded", r.status === 200, JSON.stringify(await r.json()).slice(0, 80));
+  const escSha = createHash("sha256").update(esc).digest("hex");
+  const stageRun = (stage, result, time) => runPost(JSON.stringify({
+    format: 1, game: "h2", level: escId, version: 1, package_sha256: escSha, run: randomBytes(16).toString("hex"),
+    dll: "0.1.0", result, time, stage, aids: [], dev: [], events: [],
+    counters: { alerts: 0, close_encounters: 0, enemies_harmed: 0, enemies_killed: 0, headshots: 0, innocents_harmed: 0,
+      innocents_killed: 0, saves: 0, shots: 0 } }));
+  await stageRun(1, "completed", 100);
+  await stageRun(1, "failed", 50);
+  await stageRun(2, "left", 30);
+  const escRun = randomBytes(16).toString("hex");  // (a ranked Silent Assassin run of stage 2, as level 2 stores one)
+  sql(`INSERT INTO runs (id, level_id, version, received, result, time, rating, stealth, aggression, counters, stage, events, dll,
+       user_id, ranked) SELECT '${escRun}', '${escId}', 1, 0, 'completed', 222, 'SilentAssassin', 100, 1, '{}', 2, '[]', '0.1.0', id, 1
+       FROM users WHERE provider_id = '${pid}';`);
+  const escPage = await (await get(`/api/levels/${escId}`)).json();
+  check("its page: the stages, by name", escPage.stages.length === 3 && escPage.stages[0].name === "The Books" &&
+    escPage.stages[2].text.length > 0, JSON.stringify(escPage.stages).slice(0, 80));
+  const s1 = escPage.by_stage[0], s2 = escPage.by_stage[1];
+  check("... the numbers per stage (2 plays of stage 1, 1 finished; 2 of stage 2)", s1.plays.plays === 2 && s1.plays.finished === 1 &&
+    s2.plays.plays === 2 && escPage.plays.plays === 4, JSON.stringify(escPage.by_stage.map((b) => b.plays.plays)));
+  check("... the boards per stage (the stage 2 run on stage 2's only)", !s1.boards.unverified.length &&
+    s2.boards.unverified.length === 1 && s2.boards.unverified[0].time === 222);
+  check("... the list says it has 3 stages", (await (await get("/api/levels")).json()).levels.find((l) => l.id === escId).stages === 3);
+  check("... and so does the signed list", (await (await get("/api/v1/index.json")).text()).includes(`"stages":3`));
+  await post("/api/admin/takedown", JSON.stringify({ level: escId }), me);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

@@ -3,6 +3,17 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-15: escalations on the site
+
+* An escalation shared on hitmanlevels.com shows its stages (names and
+  texts) and "escalation, N stages" in the list; its plays, finished share,
+  ratings and boards are per stage (a stage picker on its page and on the
+  author's page): a stage's times are compared within that stage only.
+* `levelpack inspect` and install name an escalation's stages; `levelpack
+  hub list` says how many it has.
+* plays.json on the game's map: an escalation's places only for the stage
+  the map is loaded for.
+
 ## 2026-11-15: characters the player can kill
 
 * A character without a behaviour cannot be shot, knocked out or strangled

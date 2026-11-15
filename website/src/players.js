@@ -98,11 +98,13 @@ export async function rankRun(env, user, r) {
   return "";
 }
 
-// a level's boards: each player's fastest Silent Assassin run (unverified: every ranked one; verified: watched)
-export async function boards(env, id) {
+// a level's boards: each player's fastest Silent Assassin run (unverified: every ranked one; verified: watched);
+// `stage`: an escalation's stage (its times are compared within it only)
+export async function boards(env, id, stage) {
+  const s = stage ? `AND r.stage = ${Number(stage)}` : "";
   const q = (verified) => env.DB.prepare(
     `SELECT u.id, u.name, MIN(r.time) AS time FROM runs r JOIN users u ON u.id = r.user_id
-      WHERE r.level_id = ? AND ${BOARD} AND u.blocked = 0 ${verified ? "AND r.verified = 1" : ""}
+      WHERE r.level_id = ? AND ${BOARD} AND u.blocked = 0 ${verified ? "AND r.verified = 1" : ""} ${s}
       GROUP BY u.id ORDER BY time, u.id LIMIT 10`).bind(id);
   const [unverified, verified] = await env.DB.batch([q(false), q(true)]);
   return { unverified: unverified.results, verified: verified.results };
@@ -114,10 +116,10 @@ export async function player(env, id) {
   if (!u) return json({ error: "No such player" }, 404);
   const { results } = await env.DB.prepare(
     `SELECT r.level_id AS id, (SELECT title FROM versions v WHERE v.level_id = r.level_id ORDER BY version DESC LIMIT 1) AS title,
-            COUNT(*) AS plays, SUM(r.result = 'completed') AS finished,
+            r.stage, COUNT(*) AS plays, SUM(r.result = 'completed') AS finished,
             MIN(CASE WHEN ${BOARD} THEN r.time END) AS best, MAX(CASE WHEN ${BOARD} THEN r.verified ELSE 0 END) AS verified
        FROM runs r JOIN levels l ON l.id = r.level_id WHERE r.user_id = ? AND l.taken_down = 0
-      GROUP BY r.level_id ORDER BY title`).bind(id).all();
+      GROUP BY r.level_id, r.stage ORDER BY title, r.stage`).bind(id).all();
   return json({ id: u.id, name: u.name, joined: u.created, levels: results });
 }
 
@@ -125,7 +127,7 @@ export async function player(env, id) {
 export async function myRuns(env, user) {
   const { results } = await env.DB.prepare(
     `SELECT r.id, r.level_id, (SELECT title FROM versions v WHERE v.level_id = r.level_id ORDER BY version DESC LIMIT 1) AS title,
-            r.time, r.received, r.video, r.verified FROM runs r WHERE r.user_id = ? AND ${BOARD}
+            r.stage, r.time, r.received, r.video, r.verified FROM runs r WHERE r.user_id = ? AND ${BOARD}
       ORDER BY r.received DESC LIMIT 200`).bind(user.id).all();
   return json({ runs: results });
 }

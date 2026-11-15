@@ -86,7 +86,7 @@
       cell.appendChild(state);
       var video = el("span", "video");
       video.appendChild(input);
-      row($("runs"), [x.title || x.level_id, clock(x.time), day(x.received), video, cell]);
+      row($("runs"), [(x.title || x.level_id) + (x.stage ? " · stage " + x.stage : ""), clock(x.time), day(x.received), video, cell]);
     });
     if (!runs.length) row($("runs"), ["None yet: a Silent Assassin run sent signed in, with its ticket.", "", "", "", ""]);
   }
@@ -102,7 +102,7 @@
     $("name").textContent = p.name;
     $("since").textContent = "on the site since " + day(p.joined);
     p.levels.forEach(function (l) {
-      var a = el("a", null, l.title || l.id);
+      var a = el("a", null, (l.title || l.id) + (l.stage ? " · stage " + l.stage : ""));
       a.href = "level.html?id=" + encodeURIComponent(l.id);
       row($("levels"), [a, String(l.plays), String(l.finished),
         l.best !== null ? clock(l.best) + (l.verified ? " (verified)" : "") : "-"]);

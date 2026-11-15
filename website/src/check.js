@@ -30,7 +30,8 @@ const CHECKS = [
   "The level's file passes the game's own check",
 ];
 
-// { ok, error?, manifest?, page? { readme, briefing, objectives, preview (PNG bytes) }, checks: [names passed] }
+// { ok, error?, manifest?, page? { readme, briefing, objectives, stages [{ name, text }], preview (PNG bytes) },
+//   checks: [names passed] }
 export async function checkPackage(bytes) {
   let instance;
   const imports = { wasi_snapshot_preview1: wasi(() => instance.exports.memory) };
@@ -44,7 +45,7 @@ export async function checkPackage(bytes) {
     const text = new TextDecoder().decode(new Uint8Array(x.memory.buffer, out, x.check_result_size()));
     const r = JSON.parse(text);
     if (!r.ok) return { ok: false, error: r.error, checks: [] };
-    const page = { readme: r.readme || "", briefing: r.briefing || "", objectives: r.objectives || [],
+    const page = { readme: r.readme || "", briefing: r.briefing || "", objectives: r.objectives || [], stages: r.stages || [],
       preview: r.preview ? Uint8Array.from(atob(r.preview), (c) => c.charCodeAt(0)) : null };
     return { ok: true, manifest: r.manifest, files: r.files, page, checks: CHECKS };
   } catch (e) {

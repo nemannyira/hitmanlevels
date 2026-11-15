@@ -99,14 +99,47 @@
     return s;
   }
 
+  // an escalation's runs carry their stage: a picker shows one stage's (or all of them)
   function show(data) {
-    var runs = data.runs, box = el("section", "plays-level");
+    var box = el("section", "plays-level");
+    var stages = data.runs.reduce(function (n, r) { return Math.max(n, r.stage || 0); }, 0);
+    var body = el("div");
+    function draw(stage) {
+      body.textContent = "";
+      body.appendChild(showRuns(data, stage ? data.runs.filter(function (r) { return r.stage === stage; }) : data.runs));
+    }
+    var head = showHead(data);
+    box.appendChild(head);
+    if (stages) {
+      var pick = el("select");
+      pick.setAttribute("aria-label", "Stage");
+      pick.appendChild(el("option", null, "All stages"));
+      for (var i = 1; i <= stages; i++) {
+        var o = el("option", null, "Stage " + i);
+        o.value = String(i);
+        pick.appendChild(o);
+      }
+      pick.addEventListener("input", function () { draw(Number(pick.value) || 0); });
+      var p = el("p");
+      p.appendChild(pick);
+      box.appendChild(p);
+    }
+    box.appendChild(body);
+    draw(0);
+    return box;
+  }
+
+  function showHead(data) {
     var head = el("div", "section-title");
     head.appendChild(el("h2", null, data.title));
     var dl = el("a", null, "Download for the editor (plays.json)");
     dl.href = "/api/author/levels/" + encodeURIComponent(data.level) + "/plays?download=1";
     head.appendChild(dl);
-    box.appendChild(head);
+    return head;
+  }
+
+  function showRuns(data, runs) {
+    var box = el("div");
     if (!runs.length) {
       box.appendChild(el("p", "muted", "No shared plays yet."));
       return box;
@@ -125,7 +158,7 @@
     plotWrap.appendChild(key);
     left.appendChild(plotWrap);
     left.appendChild(el("p", "muted", "In the editor: save plays.json in your level's folder (Mods\\<your level>), open the level: " +
-      "the places are on the game's map (M)."));
+      "the places are on the game's map (M); an escalation's, of the stage the map is loaded for."));
     var count = function (f) { return runs.filter(f).length; };
     var finished = count(function (r) { return r.result === "completed"; });
     var alerts = runs.reduce(function (n, r) { return n + (r.counters.alerts || 0); }, 0);

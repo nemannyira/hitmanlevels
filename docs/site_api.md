@@ -27,6 +27,7 @@ client never uses plain HTTP and does not follow a redirect from HTTPS to HTTP.
 * `serial`: grows with every list the site signs. A client refuses a list with a lower serial than one
   it has seen (no rollback to a list that still names a version the site took down).
 * each entry: the package's `game` (`h2`: Hitman 2, `.h2lvl`; later `h3`, `h4`), `id`, `version`, `title`, `author` (name and key as in its manifest),
+  `stages` (an escalation's stage count: only for an escalation; a client that does not know it ignores it),
   `base_scene`, `license`, its `path`, `size` and `sha256`. The client downloads the package, checks
   size and SHA-256 against the list, opens it as every package (the author's signature, the strict
   level check) and checks that its id, version and author key are the list's. Then it installs it as

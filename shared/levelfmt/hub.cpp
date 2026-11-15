@@ -322,6 +322,7 @@ bool LoadHubIndex(const std::string& source, HubIndex& index, std::string* error
         h.license = l.value("license", json()).is_string() ? l["license"].get<std::string>() : "";
         h.authorName = l["author"].value("name", json()).is_string() ? l["author"]["name"].get<std::string>() : "";
         h.authorKey = l["author"].value("key", json()).is_string() ? l["author"]["key"].get<std::string>() : "";
+        h.stages = l.value("stages", json()).is_number_integer() ? int(std::clamp<long long>(l["stages"].get<long long>(), 0, 64)) : 0;
         uint8_t d[32];
         if (!FindGame(h.game) || !ValidOnlineId(h.id) || h.version < 1 || h.size > kMaxPackageBytes || !crypto::FromHex(h.sha256, d, 32) ||
             !HexKey(h.authorKey, d) || !ValidManifestText(h.title, 64) || !ValidManifestText(h.authorName, 40))

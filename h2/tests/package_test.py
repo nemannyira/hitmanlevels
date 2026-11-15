@@ -335,6 +335,10 @@ check("accepted: accented letters in a name", code == 0, out.strip()[-80:])
 # and the antivirus took the tool for one; the editor's name field goes through the same ValidManifestText)
 code, out = pack("inspect", PKG2)
 check("the installer shows the fingerprint before the name", re.search(r"Author:\s+\[[0-9A-F-]{19}\]\s+Tester", out), out)
+code, out = pack("inspect", write("esc.h2lvl", py_package(k, level=level_doc(stages=[{"name": "One", "text": "a"},
+                                                                                     {"name": "Two", "text": "b"}]))))
+check("inspect: an escalation's stages named", code == 0 and "an escalation of 2" in out and "(One, Two)" in out,
+      out.strip()[-120:])
 
 
 # ---- issue #8: preview.png as the picture only; the Windows user name ----

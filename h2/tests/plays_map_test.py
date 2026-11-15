@@ -96,6 +96,20 @@ try:
     load(LEVEL)
     check("another level's plays.json: not used", "not this level's plays" in since(mark) and
           lua('return tostring(h2.find("Plays_died0_MapIcon") == nil)') == "true")
+
+    # an escalation: the places of the stage the map is loaded for only (its things differ by stage)
+    doc["stages"] = [{"name": "One", "text": ""}, {"name": "Two", "text": ""}]
+    json.dump(doc, open(os.path.join(FOLDER, "level.json"), "w", encoding="utf-8"), indent=1)
+    with open(os.path.join(FOLDER, "plays.json"), "w", encoding="utf-8") as f:
+        json.dump({"format": 1, "level": PACKAGE, "runs": [
+            {"version": 1, "stage": 1, "result": "failed", "time": 80, "counters": {}, "events": [
+                {"kind": "died", "t": 80, "at": died}]},
+            {"version": 1, "stage": 2, "result": "failed", "time": 40, "counters": {}, "events": [
+                {"kind": "spotted", "t": 40, "at": spotted}]}]}, f)
+    mark = size()
+    load(LEVEL)
+    check("an escalation's stage 1: only stage 1's places (1 death, not stage 2's spotting)",
+          "1 deaths, 0 times spotted" in since(mark), [l.strip()[-60:] for l in since(mark).splitlines() if "plays" in l][:1])
 finally:
     try:
         lua('return h2.dev_level("revert")')

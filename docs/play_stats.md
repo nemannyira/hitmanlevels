@@ -65,6 +65,8 @@ Built 2026-11-14 (#52; website/src/worker.js `postRun`, migration 0004_runs.sql)
 * **The level's page**: plays, finished %, Silent Assassin %, the ratings' spread, the median time of the
   finished runs (every version together); the list shows each level's plays and finished % and sorts by
   most played and hardest (least finished, of the levels played at least 5 times).
+* **Escalations** (2026-11-15, h2/docs/escalation.md "Shared on the site"): the level's numbers and boards per
+  stage (a stage picker), its stages shown, the author's page per stage, the game's map for the stage loaded.
 * **The author's page** (built 2026-11-14, #53: website/public/author.html, `GET /api/author/levels/<id>/plays`;
   signed in, their levels): plays, finished, failed, left, alerts a play, how the runs not finished end (Hitman
   died, objective n lost, left), and the places where Hitman died or was spotted from above (x across, z up, a

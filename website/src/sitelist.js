@@ -48,7 +48,7 @@ export async function signList(list, seedHex) {
 export async function publishList(env) {
   const { results } = await env.DB.prepare(
     `SELECT v.level_id, v.version, v.title, v.base_scene, v.license, v.author_name, v.path, v.size, v.sha256,
-            l.game, l.author_key
+            v.stages, l.game, l.author_key
        FROM versions v JOIN levels l ON l.id = v.level_id JOIN authors a ON a.key = l.author_key
       WHERE v.taken_down = 0 AND l.taken_down = 0 AND a.blocked = 0
         AND v.version = (SELECT MAX(v2.version) FROM versions v2 WHERE v2.level_id = v.level_id AND v2.taken_down = 0)
@@ -67,6 +67,7 @@ export async function publishList(env) {
       path: r.path,
       sha256: r.sha256,
       size: r.size,
+      ...(JSON.parse(r.stages || "[]").length && { stages: JSON.parse(r.stages).length }),  // (an escalation)
       title: r.title,
       version: r.version,
     })),

@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-15: removing a downloaded level
+
+* *Custom levels* > *Open a level* > *Remove this downloaded level* (asked
+  once more), or `levelpack uninstall <id>`: the level's folder goes with
+  its plays not sent yet; it can be downloaded again (#55).
+
 ## 2026-11-15: a fault while scripts watched the game's messages
 
 * A game message whose value only looked like an object reference made

@@ -3,6 +3,7 @@
 // A package's game (its manifest's "game": h2 = Hitman 2, .h2lvl) tells which game's folder it goes to.
 //
 //   levelpack install <package> [--game <dir>] [--yes] [--allow-older] [--allow-other-author]
+//   levelpack uninstall <id> [--game <dir>] [--yes]            (a downloaded level removed, #55)
 //   levelpack inspect <package>
 //   levelpack export <level folder> <package> [--for h2]     (stamps the level's next package version)
 //   levelpack author [<name> [<license>]]                    (shows / makes this PC's author key)
@@ -584,6 +585,7 @@ int Usage()
 {
     std::fprintf(stderr,
                  "usage: levelpack install <package> [--game <dir>] [--yes] [--allow-older] [--allow-other-author]\n"
+                 "       levelpack uninstall <id> [--game <dir>] [--yes]\n"
                  "       levelpack inspect <package>\n"
                  "       levelpack export <level folder> <package> [--for h2]\n"
                  "       levelpack author [<name> [<license>]]\n"
@@ -692,6 +694,44 @@ int main(int argc, char** argv)
         return Stats(argc, argv);
     if (cmd == "signin" || cmd == "signout")
         return Signin(argc, argv);
+    if (cmd == "uninstall" && argc >= 3) {  // a downloaded level removed: its files, its runs, known.json's entry
+        std::string game, id = argv[2], error;
+        bool yes = false;
+        for (int i = 3; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "--game" && i + 1 < argc)
+                game = argv[++i];
+            else if (a == "--yes")
+                yes = true;
+            else
+                return Usage();
+        }
+        const GameInfo& g = *FindGame("h2");
+        if (game.empty())
+            game = FindGameDir(g);
+        if (game.empty() || !IsGameDir(game, g)) {
+            std::fprintf(stderr, "%s's folder is not found: give it with --game <dir>\n", g.name.c_str());
+            return 2;
+        }
+        std::string text, title = id;
+        if (ReadAll(game + "\\" + g.onlineDir + "\\" + id + "\\package.json", text, kMaxManifestBytes)) {
+            nlohmann::json m = nlohmann::json::parse(text, nullptr, false);
+            if (m.is_object() && m.value("title", nlohmann::json()).is_string())
+                title = m["title"].get<std::string>() + " (" + id + ")";
+        }
+        std::printf("Remove %s from %s\\%s?\n", title.c_str(), game.c_str(), g.onlineDir.c_str());
+        if (!yes && !Ask("Remove it?", _isatty(_fileno(stdin)) != 0)) {
+            std::printf("Not removed.\n");
+            return 3;
+        }
+        int unsent = 0;
+        if (!UninstallLevel("h2", game, id, &unsent, &error)) {
+            std::fprintf(stderr, "Not removed: %s\n", error.c_str());
+            return 1;
+        }
+        std::printf("Removed.%s\n", unsent ? (" " + std::to_string(unsent) + " plays not sent yet went with it.").c_str() : "");
+        return 0;
+    }
     if (cmd == "install" && argc >= 3) {
         std::string game;
         bool yes = false, older = false, other = false;

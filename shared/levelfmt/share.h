@@ -71,6 +71,11 @@ TrustCheck CheckTrust(const OpenedPackage& p, const std::string& gameDir);
 // SHA-256. The plays written down of the version before (its runs folder) go into the new one.
 bool InstallPackage(const OpenedPackage& p, const std::string& gameDir, std::string* error);
 
+// Removes an installed level (<gameDir>\Mods\Online\<id>: its files, its runs) and forgets it in known.json (its
+// author stays accepted). `unsent`: the plays written down and not sent yet that went with it (#55).
+bool UninstallLevel(const std::string& gameId, const std::string& gameDir, const std::string& id, int* unsent,
+                    std::string* error);
+
 // Whether the player shares their plays of downloaded levels (docs/play_stats.md: known.json "stats", off
 // unless turned on); `asked`: whether they chose once (known.json has "stats").
 bool StatsSharing(bool* asked = nullptr);

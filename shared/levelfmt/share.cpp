@@ -668,6 +668,43 @@ bool InstallPackage(const OpenedPackage& p, const std::string& gameDir, std::str
     return true;
 }
 
+bool UninstallLevel(const std::string& gameId, const std::string& gameDir, const std::string& id, int* unsent,
+                    std::string* error)
+{
+    const GameInfo* game = FindGame(gameId);
+    if (!game || !ValidOnlineId(id))
+        return Fail(error, "not a downloaded level's id: " + id.substr(0, 40));
+    std::string online = gameDir + "\\" + game->onlineDir, folder = online + "\\" + id, runs = folder + "\\runs";
+    if (GetFileAttributesW(GamePath(folder).c_str()) == INVALID_FILE_ATTRIBUTES)
+        return Fail(error, "no such level installed: " + folder);
+    if (IsReparse(online) || IsReparse(folder))
+        return Fail(error, folder + " is a link: not removed");
+    int left = 0;  // (the runs not sent: runs\*.json)
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(GamePath(runs + "\\*.json").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            left += (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 0 : 1;
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    for (const char* sub : {"\\runs\\sent", "\\runs\\refused", "\\runs"})
+        RemoveInstalled(folder + sub);
+    RemoveInstalled(folder);
+    if (GetFileAttributesW(GamePath(folder).c_str()) != INVALID_FILE_ATTRIBUTES)
+        return Fail(error, "not all of " + folder + " could be removed (is the level open in the game?)");
+    if (unsent)
+        *unsent = left;
+    std::wstring knownPath = DataDir() + L"known.json";
+    json known = ReadJsonW(knownPath);
+    if (known.is_object() && known.value("levels", json()).is_object() && known["levels"].contains(id)) {
+        known["levels"].erase(id);
+        if (!WriteFileAtomic(knownPath, known.dump(2)))
+            return Fail(error, "removed, but known.json cannot be written in " + ShareDataDir());
+    }
+    return true;
+}
+
 bool StatsSharing(bool* asked)
 {
     json known = ReadJsonW(DataDir() + L"known.json");

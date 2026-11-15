@@ -3197,6 +3197,13 @@ void DrawSaveRow()
         ImGui::SetTooltip("Everything changed on this map belongs to the level and is saved with it");
 }
 
+void CloseLevel()
+{
+    RevertLevel();
+    g_level = {};
+    ClearHistory();
+}
+
 void NewLevel(const std::string& name, const std::string& baseScene)
 {
     RevertLevel();

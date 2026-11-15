@@ -271,6 +271,10 @@ before stays (objects keep their paths), the laptop, texts and scripts work
 as on the original. *Back to the original map* returns (optionally deleting
 the copy's files, from another map).
 
+**Remove a downloaded level**: *Custom levels* > *Open a level*, the level picked > *Remove this
+downloaded level* (asked once more): its folder in `Mods\Online` with its plays not sent yet, and what this PC
+knows of it (its author stays accepted); `levelpack uninstall <id>` does the same (#55).
+
 **Play**: main menu > *Custom levels* > *Open a level* > *Play* (the editor
 stays closed; *Edit* opens it on the map). Five example levels, played
 through: `examples/missions` (copy a folder into `Mods`).

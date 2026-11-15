@@ -280,6 +280,8 @@ std::string ImportLevelOf(const std::string& path);
 // Changes when models of other levels were made in the loaded map.
 int ImportLibraryVersion();
 void NewLevel(const std::string& name, const std::string& baseScene);
+// No level open any more (taken back from the map; as the editor starts): a downloaded level removed (#55).
+void CloseLevel();
 // Creates a copy of the object next to it (or at `at`, world space) and adds
 // it to the level (undoable).
 engine::ZGEOM* DuplicateObject(engine::ZGEOM* source, std::string* error = nullptr, const Transform* at = nullptr,

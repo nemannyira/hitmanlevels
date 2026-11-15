@@ -381,6 +381,37 @@ void DrawSavedDetails(const Saved& s)
     ImGui::EndChild();
 }
 
+// a downloaded level removed (#55): its files, its runs, what this PC knows of it (its author stays accepted);
+// asked once more before it goes
+std::string g_removeAsked;  // the folder whose removal was asked
+
+void DrawRemoveDownloaded(const Saved& s)
+{
+    if (g_removeAsked != s.folder) {
+        if (ImGui::SmallButton("Remove this downloaded level"))
+            g_removeAsked = s.folder;
+        return;
+    }
+    ImGui::TextWrapped("Remove %s from Mods\\Online? Its plays not sent yet go with it; it can be downloaded again.",
+                       s.name.c_str());
+    bool yes = ImGui::Button("Remove it");
+    ImGui::SameLine();
+    if (ImGui::Button("Keep it"))
+        g_removeAsked.clear();
+    if (!yes)
+        return;
+    g_removeAsked.clear();
+    if (CurrentLevel().folder == s.folder)
+        CloseLevel();  // (the level open: not put on the map again)
+    int unsent = 0;
+    std::string err;
+    if (levelfmt::UninstallLevel("h2", GameDir().substr(0, GameDir().size() - 1), s.folder.substr(7), &unsent, &err))
+        g_message = s.name + " removed" + (unsent ? " (" + std::to_string(unsent) + " plays not sent went with it)" : "");
+    else
+        g_message = "not removed: " + err;
+    LoadSavedList();
+}
+
 // the one question whether to share the plays of downloaded levels (docs/play_stats.md section 2): asked
 // when one is picked, until answered (levelpack stats on / off changes it later)
 void DrawStatsQuestion()
@@ -571,6 +602,8 @@ void DrawLauncher()
                     }
                 }
                 ImGui::EndDisabled();
+                if (g_pick >= 0 && g_pick < int(g_saved.size()) && IsOnlineLevel(g_saved[g_pick].folder))
+                    DrawRemoveDownloaded(g_saved[g_pick]);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();

@@ -171,6 +171,15 @@ try:
     dev.wait_ready("MainMenu", 60)
     time.sleep(2)
     check("one run a play (3 files)", len(runs()) == 3, str([os.path.basename(f) for f in runs()]))
+
+    # ---- #55: the downloaded level removed from Custom levels (asked once more; its runs go with it)
+    lua("h2.dev_launcher() return 1")
+    time.sleep(1)
+    press("Open a level")
+    check("Remove this downloaded level", press("Remove this downloaded level").startswith("pressed"))
+    check("  asked once more: Remove it", press("Remove it").startswith("pressed"))
+    time.sleep(1)
+    check("  the level's folder gone, its runs with it", not os.path.exists(FOLDER))
 finally:
     run_all.kill()
     with open(INI, "w", encoding="latin1", newline="") as f:

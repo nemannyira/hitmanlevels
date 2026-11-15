@@ -602,6 +602,20 @@ check("stats: an update keeps the runs written", code == 0 and
 code, out = pack_env(ENVS, "stats", "off")
 check("stats off", code == 0 and json.load(open(os.path.join(HOMES, "known.json"), encoding="utf-8"))["stats"] is False)
 
+# ---- #55: a downloaded level removed (its read-only files, its runs, known.json's entry; the author stays)
+code, out = pack_env(ENVS, "uninstall", "pytestlevel01", "--game", GAMES)
+check("uninstall asks (not a console: not removed)", code == 3 and os.path.isdir(LEVEL_DIR), out.strip()[-60:])
+code, out = pack_env(ENVS, "uninstall", "pytestlevel01", "--game", GAMES, "--yes")
+known = json.load(open(os.path.join(HOMES, "known.json"), encoding="utf-8"))
+check("uninstall --yes: the folder gone with its runs", code == 0 and not os.path.exists(LEVEL_DIR), out.strip()[-90:])
+check("  the plays not sent counted", "plays not sent yet went with it" in out, out.strip()[-90:])
+check("  known.json forgets the level, keeps its author", "pytestlevel01" not in known.get("levels", {}) and
+      raw_key(k).hex() in known.get("authors", {}))
+code, out = pack_env(ENVS, "uninstall", "pytestlevel01", "--game", GAMES, "--yes")
+check("uninstall of a level not installed: refused", code == 1 and "no such level" in out, out.strip()[-80:])
+code, out = pack_env(ENVS, "uninstall", "..\\x", "--game", GAMES, "--yes")
+check("uninstall of a path: refused", code == 1 and "not a downloaded level's id" in out, out.strip()[-80:])
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d passed, %d failed" % (results.count(True), results.count(False)))
 sys.exit(0 if all(results) else 1)

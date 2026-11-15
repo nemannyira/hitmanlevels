@@ -50,6 +50,8 @@ SHARING LEVELS
     installs it (or run "levelpack install <file>"). It shows the level, its author and license, and
     refuses a package that was changed after its author signed it. Installed levels go to
     Mods\Online and run their scripts in a stricter sandbox.
+  * To remove a downloaded level: Custom levels > Open a level > Remove this downloaded level (or
+    "levelpack uninstall <id>").
   * levelpack --help lists the rest (inspect, author key backup and restore).
 
 

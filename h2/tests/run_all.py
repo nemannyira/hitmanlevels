@@ -48,6 +48,7 @@ TESTS = [
     ("knockout", ["knockout_test.py"], 600, False),
     ("behaviours", ["behaviours_test.py"], 600, False),
     ("no_behaviour", ["no_behaviour_test.py"], 300, False),  # (#57: a character Hitman cannot kill: Problems)
+    ("object_name", ["object_name_test.py"], 300, False),  # (#40: an item's name in its take line)
     ("escalation", ["escalation_test.py"], 900, False),  # (#23: a level in stages)
     ("escalation_example", ["escalation_example_test.py"], 900, False),  # (#29: played through)
     ("take_action", ["take_action_test.py"], 600, False),

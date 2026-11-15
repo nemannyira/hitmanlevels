@@ -183,8 +183,13 @@ Read in the game (Ghidra, 2026-11-01):
 * `BriefingMenu_SetLocaleFolder` 0x52D340 looks for the briefing window's
   child `BriefingPhotos` and its children `Photo1`..`Photo5` (GUI geoms).
   One found: its entry's text is the LOC `"<folder>/Laptop/Files/Photo<n>"`
-  (this +0x15C + n*0x80), it is made visible (vfunc 0xC0(1)) and its
-  reference kept at this +0x5EC + (n-1)*4.
+  (its key at this +0x15C + (n-1)*0x80), it is made visible (vfunc 0xC0(1))
+  and its reference kept at this +0x5EC + (n-1)*4.
+* `BriefingMenu_UpdateFileButtons` 0x52CCA0 (at its end): the six `Files\n`
+  buttons; a key gives the button its text and enables it, an empty key
+  disables it, still drawn as an empty box (C3-1: *Hayamoto JR* and five
+  empty boxes, seen 2026-11-15). On a level the editor hides the unkeyed
+  boxes (`ShowLines`, #47 W44).
 * `BriefingMenu_FileAction` 0x52CED0 (action 0xC9..0xCE = file 1..6): the
   file's kind is the string at this +0xDC + i*0x80: `photo` shows that geom
   (this +0x158 = it, vfunc 0xC0), `map` the in-game map, `video` a

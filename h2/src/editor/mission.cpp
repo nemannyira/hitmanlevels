@@ -52,6 +52,7 @@ constexpr uintptr_t kSetObjective = 0x52E2E0;     // BriefingMenu::(int slot, co
 constexpr uintptr_t kSetCompleted = 0x52E350;     // BriefingMenu::(int* {slot, done})
 constexpr uintptr_t kBriefingAction = 0x52CED0;   // BriefingMenu::(int action) -> handled; 0xC9.. its files
 constexpr size_t kBriefingDoneBits = 0x610;       // BriefingMenu: bit n = line n checked
+constexpr size_t kBriefingFileKeys = 0x15C;       // BriefingMenu: char[6][0x80], file n's text key ("": unused)
 constexpr uintptr_t kLevelInit = 0x504410;        // level routine (of LevelControl): registers its messages
 constexpr int kLevel_MissionFailed = 0xC0 / 4;    // what its MissionFailed / MissionCompleted messages call
 constexpr int kLevel_MissionCompleted = 0xC4 / 4;
@@ -621,6 +622,14 @@ void ShowLines(const std::vector<int>& removed = {})
         for (int i = 1; i <= 6; ++i)
             SetVisible(Element(("Files\\" + std::to_string(i)).c_str()), false);
         SetVisible(Element("FilesTitle"), false);
+    } else if (ForThisScene()) {
+        // the boxes no photo of the map keys (SetLocaleFolder 0x52D340 keys Photo1..5 of its BriefingPhotos;
+        // 0x52CCA0 leaves the others empty, drawn disabled: C3-1's one file and five empty boxes, #47 W44)
+        for (int i = 1; i <= 6; ++i) {
+            const char* key = static_cast<char*>(g_briefing) + kBriefingFileKeys + (i - 1) * 0x80;
+            if (engine::IsReadable(key, 1) && !*key)
+                SetVisible(Element(("Files\\" + std::to_string(i)).c_str()), false);
+        }
     }
     Relayout();
 }
@@ -1068,11 +1077,10 @@ std::string Label(const std::string& path)
     engine::ZGEOM* g = ResolveTarget(path);
     if (!g || !IsLive(g))
         return "(missing) " + path.substr(path.rfind('/') + 1);
-    if (auto it = Doc().names.find(path); it != Doc().names.end() && !it->second.empty())
-        return it->second;
+    // its name of the level maker's, by the path names are kept under (an item's goal knows it as "level:...", #40)
+    if (std::string own = ObjectName(g); !own.empty())
+        return own;
     if (engine::ZGEOM* a = ActorOf(g)) {
-        if (const LevelNpc* n = FindLevelNpc(a); n && !n->label.empty())
-            return n->label;
         int rec = NpcRecordOf(a);
         if (rec >= 0)
             return NpcModel(rec) + (IsPlacedNpc(a) ? " (placed)" : "");
@@ -1127,6 +1135,19 @@ std::string LineText(int slot)
     if (o && !o->text.empty())
         return o->text;
     return OwnText(slot);
+}
+
+// a line's number as the laptop shows it: lines taken out and empty ones leave no gap there (W36: the maker's
+// first line after three original lines removed is the 1st)
+int ShownNumber(int slot)
+{
+    int n = 0;
+    for (int s = 1; s <= slot; ++s) {
+        const MissionObjective* o = ObjectiveAt(s);
+        if (!(o && o->hidden) && !g_hiddenLines[s] && !LineText(s).empty())
+            ++n;
+    }
+    return n ? n : slot;
 }
 
 std::string Summary(const MissionObjective* o)
@@ -1884,7 +1905,9 @@ void DrawSimpleMissionStep()
         bool own = o && o->goal != MissionObjective::Level;
         if (o && o->hidden) {  // an original line removed: shown greyed, it can come back
             ImGui::Bullet();
+            ImGui::PushTextWrapPos(0.0f);  // (a long line wraps at the panel's edge)
             ImGui::TextDisabled("%s (removed)", original.empty() ? "a line" : original.c_str());
+            ImGui::PopTextWrapPos();
             ImGui::Indent();
             if (ImGui::SmallButton("Put back")) {
                 Doc().objectives.erase(Doc().objectives.begin() + (o - Doc().objectives.data()));
@@ -1958,12 +1981,24 @@ void DrawSimpleMissionStep()
                 ImGui::TextDisabled("It goes from the laptop and no longer counts. The original mission would still "
                                     "want it done, so the mission then ends when the objectives you added are done.");
                 ImGui::PopTextWrapPos();
-                if (ImGui::Button("Remove it")) {
-                    MissionObjective& e = Editable(slot);
-                    e.goal = MissionObjective::Level;
-                    e.hidden = true;
-                    Doc().endWhenDone = true;
-                    Changed();
+                if (ImGui::Button("Remove it")) {  // (undoable: the lines and the ending as they were)
+                    auto remove = [slot] {
+                        MissionObjective& e = Editable(slot);
+                        e.goal = MissionObjective::Level;
+                        e.hidden = true;
+                        Doc().endWhenDone = true;
+                        Changed();
+                        return true;
+                    };
+                    auto restore = [slot, before = Doc().objectives, endBefore = Doc().endWhenDone] {
+                        Doc().objectives = before;
+                        Doc().endWhenDone = endBefore;
+                        Changed();
+                        ShowLines({slot});
+                        return true;
+                    };
+                    remove();
+                    PushAction("remove an objective", restore, remove);
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::SameLine();
@@ -2315,10 +2350,23 @@ namespace {
 engine::ZGEOM* CharacterOf(engine::ZGEOM* geom);
 
 // the objectives made for `path` (its target or its place) whose text the editor made: the new name
+std::string NamePath(engine::ZGEOM* geom);
+
+// a goal's target or place is the object named under `path` (its own path, or another the goal resolves to it by)
+bool NamedBy(const std::string& goalPath, const std::string& path)
+{
+    if (goalPath.empty())
+        return false;
+    if (goalPath == path)
+        return true;
+    engine::ZGEOM* g = ResolveTarget(goalPath);
+    return g && IsLive(g) && NamePath(g) == path;
+}
+
 void RefreshTexts(const std::string& path)
 {
     for (MissionObjective& o : Doc().objectives)
-        if ((o.target == path || o.place == path) && AutoText(o.text)) {
+        if ((NamedBy(o.target, path) || NamedBy(o.place, path)) && AutoText(o.text)) {
             o.text.clear();
             SetTarget(o, o.target);
         }
@@ -2651,7 +2699,7 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
     if (engine::ZGEOM* c = CharacterOf(geom)) {
         std::string path = PathOf(c);
         if (int slot = LineWith(MissionObjective::Kill, path)) {
-            ImGui::TextDisabled("the target of objective %d", slot);
+            ImGui::TextDisabled("the target of objective %d", ShownNumber(slot));
             ImGui::SameLine();
             if (ImGui::SmallButton("edit")) {
                 g_selSlot = slot;
@@ -2660,7 +2708,7 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
             return;
         }
         if (int slot = LineWith(MissionObjective::KnockOut, path)) {
-            ImGui::TextDisabled("to be knocked out: objective %d", slot);
+            ImGui::TextDisabled("to be knocked out: objective %d", ShownNumber(slot));
             ImGui::SameLine();
             if (ImGui::SmallButton("edit##ko")) {
                 g_selSlot = slot;
@@ -2694,7 +2742,7 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
     if (engine::ZGEOM* take = TakeableAt(geom)) {
         std::string what = TargetFor(take);
         if (int slot = LineWith(MissionObjective::Take, what)) {
-            ImGui::TextDisabled("Hitman takes it: objective %d", slot);
+            ImGui::TextDisabled("Hitman takes it: objective %d", ShownNumber(slot));
             ImGui::SameLine();
             if (ImGui::SmallButton("edit##take")) {
                 g_selSlot = slot;
@@ -2724,7 +2772,7 @@ void DrawMissionForSelection(engine::ZGEOM* geom)
     int line = LineWith(MissionObjective::Reach, path);
     bool exit = Doc().endWhenDone && SameTarget(Doc().exitPath, path);
     if (line) {
-        ImGui::TextDisabled("the place of objective %d", line);
+        ImGui::TextDisabled("the place of objective %d", ShownNumber(line));
         ImGui::SameLine();
         if (ImGui::SmallButton("edit")) {
             g_selSlot = line;

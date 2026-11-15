@@ -74,7 +74,8 @@ bool g_hovered;
 // launcher
 bool g_launcherOpen;
 int g_map = 1;
-char g_name[64] = "My level";
+char g_name[64] = "";  // ("" : the hint's name, kDefaultName)
+const char* const kDefaultName = "My level";
 bool g_empty = true;
 bool g_blank = false;
 // floors for a map without buildings: large flat models of other levels
@@ -478,7 +479,7 @@ void DrawLauncher()
                     ImGui::EndCombo();
                 }
                 ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
-                ImGui::InputText("name", g_name, sizeof(g_name));
+                ImGui::InputTextWithHint("name", kDefaultName, g_name, sizeof(g_name));
                 // the editor's face (docs/simple-mode.md): remembered (H2Fix.ini [Editor] Mode)
                 bool simple = overlay::SimpleMode();
                 if (ImGui::RadioButton("Simple: step by step", simple))
@@ -523,7 +524,7 @@ void DrawLauncher()
                 }
                 ImGui::Spacing();
                 if (ImGui::Button("Create and start editing", ImVec2(-1, 0))) {
-                    NewLevel(g_name, kMaps[g_map].scene);
+                    NewLevel(*g_name ? g_name : kDefaultName, kMaps[g_map].scene);
                     if (g_empty)
                         SetEmptyMap(true);
                     if (g_empty && g_blank) {
@@ -536,7 +537,7 @@ void DrawLauncher()
                         g_message = "not saved: " + err;
                     StartOn(kMaps[g_map].scene);
                 }
-                ImGui::TextDisabled("saved to Mods\\%s\\level.json", LevelFolderFor(g_name).c_str());
+                ImGui::TextDisabled("saved to Mods\\%s\\level.json", LevelFolderFor(*g_name ? g_name : kDefaultName).c_str());
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Open a level")) {

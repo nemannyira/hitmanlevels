@@ -3,6 +3,18 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-15: small things in Simple mode
+
+* The launcher's name field is empty with "My level" as its hint (used
+  when nothing is typed); *Remove it* on an original objective can be
+  undone; a long removed line wraps; the cards number the objectives as
+  the laptop shows them.
+* The laptop shows no empty file boxes under a level's files (the map's
+  own laptop draws them where it has no photo).
+* photo1.png and preview.png are written compressed (a third of the size).
+* A take objective says the item's name ("Take the device") and follows
+  it when renamed (#40).
+
 ## 2026-11-15: removing a downloaded level
 
 * *Custom levels* > *Open a level* > *Remove this downloaded level* (asked

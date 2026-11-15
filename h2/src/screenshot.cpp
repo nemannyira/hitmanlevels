@@ -1,6 +1,7 @@
 #include "screenshot.h"
 
 #include <windows.h>
+#include <wincodec.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -47,74 +48,6 @@ bool WriteBmp(const std::string& path, int w, int h, const unsigned char* bits, 
         fwrite(bits + y * pitch, 4, w, f);
     fclose(f);
     return true;
-}
-
-uint32_t Crc32(const unsigned char* p, size_t n, uint32_t crc = 0)
-{
-    static uint32_t table[256];
-    if (!table[1])
-        for (uint32_t i = 0; i < 256; ++i) {
-            uint32_t c = i;
-            for (int k = 0; k < 8; ++k)
-                c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-            table[i] = c;
-        }
-    crc = ~crc;
-    for (size_t i = 0; i < n; ++i)
-        crc = table[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
-    return ~crc;
-}
-
-void Be32(std::string& out, uint32_t v)
-{
-    for (int s = 24; s >= 0; s -= 8)
-        out += char((v >> s) & 0xFF);
-}
-
-void Chunk(std::string& out, const char* type, const std::string& data)
-{
-    Be32(out, uint32_t(data.size()));
-    std::string body = std::string(type, 4) + data;
-    out += body;
-    Be32(out, Crc32(reinterpret_cast<const unsigned char*>(body.data()), body.size()));
-}
-
-// rows of RGB (each led by filter 0) -> a PNG file's bytes
-std::string EncodePng(int w, int h, const std::vector<unsigned char>& rgb)
-{
-    std::string raw;
-    raw.reserve(size_t(h) * (w * 3 + 1));
-    for (int y = 0; y < h; ++y) {
-        raw += '\0';
-        raw.append(reinterpret_cast<const char*>(&rgb[size_t(y) * w * 3]), size_t(w) * 3);
-    }
-    std::string z = "\x78\x01";  // zlib, no compression: stored blocks of at most 65535 bytes
-    for (size_t at = 0; at < raw.size() || at == 0;) {
-        size_t n = std::min<size_t>(65535, raw.size() - at);
-        z += char(at + n == raw.size() ? 1 : 0);
-        z += char(n & 0xFF);
-        z += char(n >> 8);
-        z += char(~n & 0xFF);
-        z += char((~n >> 8) & 0xFF);
-        z.append(raw, at, n);
-        at += n;
-        if (n == 0)
-            break;
-    }
-    uint32_t a = 1, b = 0;  // Adler-32
-    for (unsigned char c : raw) {
-        a = (a + c) % 65521;
-        b = (b + a) % 65521;
-    }
-    Be32(z, (b << 16) | a);
-    std::string png = "\x89PNG\r\n\x1a\n", ihdr;
-    Be32(ihdr, uint32_t(w));
-    Be32(ihdr, uint32_t(h));
-    ihdr += std::string("\x08\x02\x00\x00\x00", 5);  // 8 bits, RGB, deflate, no filter method, no interlace
-    Chunk(png, "IHDR", ihdr);
-    Chunk(png, "IDAT", z);
-    Chunk(png, "IEND", "");
-    return png;
 }
 
 // The back buffer (the game's own frame, whatever covers its window; before Present: without the overlay
@@ -218,12 +151,32 @@ bool WritePng(const std::string& path, int w, int h, const std::vector<unsigned 
 {
     if (w <= 0 || h <= 0 || rgb.size() < size_t(w) * h * 3)
         return false;
-    std::string png = EncodePng(w, h, rgb);
-    FILE* f = fopen(path.c_str(), "wb");
-    if (!f)
-        return false;
-    bool ok = fwrite(png.data(), 1, png.size(), f) == png.size();
-    fclose(f);
+    std::vector<unsigned char> bgr(rgb.begin(), rgb.begin() + size_t(w) * h * 3);  // (WIC's PNG takes BGR)
+    for (size_t i = 0; i < bgr.size(); i += 3)
+        std::swap(bgr[i], bgr[i + 2]);
+    HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IWICImagingFactory* factory = nullptr;
+    IWICStream* stream = nullptr;
+    IWICBitmapEncoder* encoder = nullptr;
+    IWICBitmapFrameEncode* frame = nullptr;
+    WICPixelFormatGUID format = GUID_WICPixelFormat24bppBGR;
+    std::wstring wpath(path.begin(), path.end());
+    bool ok = SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+              SUCCEEDED(factory->CreateStream(&stream)) &&
+              SUCCEEDED(stream->InitializeFromFilename(wpath.c_str(), GENERIC_WRITE)) &&
+              SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) &&
+              SUCCEEDED(encoder->Initialize(stream, WICBitmapEncoderNoCache)) &&
+              SUCCEEDED(encoder->CreateNewFrame(&frame, nullptr)) && SUCCEEDED(frame->Initialize(nullptr)) &&
+              SUCCEEDED(frame->SetSize(UINT(w), UINT(h))) && SUCCEEDED(frame->SetPixelFormat(&format)) &&
+              format == GUID_WICPixelFormat24bppBGR &&
+              SUCCEEDED(frame->WritePixels(UINT(h), UINT(w) * 3, UINT(bgr.size()), bgr.data())) &&
+              SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit());
+    for (IUnknown* u : {static_cast<IUnknown*>(frame), static_cast<IUnknown*>(encoder), static_cast<IUnknown*>(stream),
+                        static_cast<IUnknown*>(factory)})
+        if (u)
+            u->Release();
+    if (SUCCEEDED(init))
+        CoUninitialize();
     return ok;
 }
 

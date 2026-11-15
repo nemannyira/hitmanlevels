@@ -75,6 +75,8 @@ def photo_shot(name):
     dev.wait_ready("C1-1__MAIN", 150)
     time.sleep(3)
     key(DIK_B)
+    lua('h2.dev_shot("laptop_list_%s") return 1' % name)
+    time.sleep(1)
     for _ in range(3):
         key(DIK_UP)  # (from Continue to the first file)
     key(DIK_ENTER)
@@ -91,6 +93,17 @@ def photo_shot(name):
             break
     dev.wait_ready("C1-1__MAIN", 60)
     return os.path.join(dev.GAME, "Screens", "laptop_%s.bmp" % name)
+
+
+def empty_boxes(name):
+    """the share of the file boxes' grey-blue (116 126 142) under the first file: the laptop's files column,
+    boxes 2..6 (C1-1 has one photo place: its other boxes are not drawn, #47 W44)"""
+    from PIL import Image  # noqa: PLC0415
+    im = Image.open(os.path.join(dev.GAME, "Screens", "laptop_list_%s.bmp" % name)).convert("RGB")
+    w, h = im.size
+    box = im.crop((int(w * 0.58), int(h * 0.23), int(w * 0.745), int(h * 0.44))).resize((60, 40))
+    px = list(box.getdata())
+    return sum(1 for r, g, b in px if r > 80 and b - r > 15) / len(px)
 
 
 def frame(path, inside):
@@ -123,6 +136,8 @@ try:
     # 1. the map's own photo: what is not the black around it (the editor's hint line at the top left out)
     own = frame(photo_shot("own"), lambda p: max(p) > 40)
     check("the map's photo shown", own is not None, str(own))
+    share = empty_boxes("own")
+    check("no empty file boxes under it", share < 0.1, "%.2f of the column is a box" % share)
 
     # 2. a magenta picture of the photo's shape as the level's photo
     with open(os.path.join(FOLDER, "photo1.png"), "wb") as f:
@@ -135,6 +150,8 @@ try:
     lua('return h2.dev_level("load", "%s")' % LEVEL)
     mine = frame(photo_shot("mine"), lambda p: p[0] > 200 and p[1] < 70 and p[2] > 200)
     check("the level's photo shown", mine is not None, str(mine))
+    share = empty_boxes("mine")
+    check("no empty file boxes under the level's file", share < 0.1, "%.2f of the column is a box" % share)
 
     if own and mine:
         off = max(abs(a - b) for a, b in zip(own, mine))

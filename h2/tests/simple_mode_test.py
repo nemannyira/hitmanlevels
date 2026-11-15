@@ -245,14 +245,19 @@ try:
         with open(os.path.join(FOLDER, "preview.png"), "rb") as f:
             png = f.read()
         w_, h_ = struct.unpack(">II", png[16:24])
-        at, idat = 8, b""
+        at, idat, kinds = 8, b"", set()
         while at < len(png):
             n, kind = struct.unpack(">I4s", png[at:at + 8])
+            kinds.add(kind.decode("latin-1"))
             if kind == b"IDAT":
                 idat += png[at + 8:at + 8 + n]
             at += 12 + n
         png_ok = png[:8] == b"\x89PNG\r\n\x1a\n" and w_ == 640 and len(zlib.decompress(idat)) == h_ * (w_ * 3 + 1)
-        png_detail = "%d x %d, %d bytes" % (w_, h_, len(png))
+        png_detail = "%d x %d, %d bytes, %s" % (w_, h_, len(png), sorted(kinds))
+        # compressed (#47 W45: deflate's stored blocks before), only the chunks a package keeps (ValidPng)
+        check("preview.png compressed", len(png) < h_ * w_ * 3 // 2, png_detail)
+        check("preview.png: only the picture's chunks", kinds <= {"IHDR", "IDAT", "IEND", "sRGB", "gAMA", "cHRM",
+                                                                 "pHYs", "sBIT", "bKGD", "tRNS", "PLTE"}, png_detail)
     except (OSError, ValueError, struct.error, zlib.error) as e:
         png_detail = str(e)
     check("preview.png: 640 wide, its pixels", png_ok, png_detail)

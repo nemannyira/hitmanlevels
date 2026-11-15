@@ -2,7 +2,7 @@
 -- road. Find him and take him to the postman's corner, where a car picks him
 -- up. He follows you; keep close and keep him alive.
 --
--- Made in the editor: the informant (NPCs tab: DeliveryBoy, no behaviour),
+-- Made in the editor: the informant (NPCs tab: DeliveryBoy, the plain civilian),
 -- a point at the meeting place. This script makes him follow Hitman.
 
 local MEET = "Point+1"             -- where the car waits

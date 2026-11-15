@@ -2,7 +2,7 @@
 -- going over the books. He knows too much. Take him out with your pistols,
 -- then get back to the hill where you start.
 --
--- Made in the editor: the accountant (NPCs tab, no behaviour), a point on the
+-- Made in the editor: the accountant (NPCs tab, the plain civilian), a point on the
 -- hill, the target and the exit (Inspector > Mission: Make it a target, Make
 -- it the exit). This script only walks him and tells the story.
 

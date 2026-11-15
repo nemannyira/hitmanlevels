@@ -77,6 +77,9 @@ bool CompleteMission();
 bool FailMission();
 // The loaded scene's level routine (LevelControl: the mission's statistics counters, runs.h); null before one.
 void* LevelRoutine();
+// Whether a character is a kill / knock-out target of the level's mission (the stage played): its death or
+// knock-out is not counted in the statistics, as the game's own targets' (engine::SetUncountedVictims).
+bool IsMissionTarget(engine::ZGEOM* character);
 // The level routine's own end, as the base level's scripts call it (testing
 // the "base_ends" setting: not let through when it is off).
 bool BaseLevelEnd(bool completed);

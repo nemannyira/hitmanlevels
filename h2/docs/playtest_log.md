@@ -283,3 +283,22 @@ of* (drawn at the map's photo's size), Save, *Try it* with the debug view and
 completed by the editor's goals and exit, the laptop's briefing, objectives
 and photo, README and preview. Not tried: *Share* (the user's author key),
 *A file...* (a Windows file dialog), the map step.
+
+## 2026-11-15: characters without a behaviour (#56)
+
+The owner played the Courier example from the staging site: the courier could
+not be shot, knocked out or strangled. The play-throughs above had stood in
+for Hitman's shots at walking targets with `npc:kill`, which kills a character
+without a behaviour; a player cannot (h2/docs/npc.md: the behaviour decides a
+character's death). The Accountant (in the release) could not be finished the
+same way; The Informant's escort could not be killed by the enemies.
+
+Fixed: the examples' walked characters (Courier, The Accountant and its
+escalation, Anathema Reworked's accountant, The Informant's escort) have the
+plain civilian's behaviour; the Courier's courier is the mission's kill target
+of line 1; the mission's targets are not counted in the statistics (kind 0, as
+C1-1's own target). Checked in the game: the accountant shot by the owner
+(killed, kind 1 -> 0); the civilian courier walked by the script and killed
+by a shot; The Informant's escort follows Hitman (7.6 m -> 0.6 m in 6 s). Shots
+at walking targets are checked by hand from now on: an aim through the camera
+(the crosshair) is not the gun's line in the third person view.

@@ -76,7 +76,8 @@ try:
         t = time.time()
         while time.time() - t < 20 and lua("return tostring(ESC_RESULT)") == "nil":
             time.sleep(1)
-        check("stage %d: completed" % stage, lua("return tostring(ESC_RESULT)") == "completed")
+        result = lua("return tostring(ESC_RESULT)")
+        check("stage %d: completed" % stage, result == "completed", result)
         time.sleep(2)
         p = progress()
         check("stage %d: done, cleanly" % stage, p.get("done") == stage and stage in p.get("clean", []), str(p))

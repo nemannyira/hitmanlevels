@@ -140,6 +140,12 @@ level* / *File > Open level* loads a saved one.
   applies to all) becomes the selected one's own with *A route of its own*:
   a copy of the list, made with the map when it loads again (*Test now*),
   whose points then change for that character only.
+* A character needs a behaviour to be shot, knocked out or strangled by
+  Hitman (the game leaves a character's death to its behaviour: h2/docs/npc.md):
+  *none* stands still and only a script's `npc:kill` kills it. The NPCs tab
+  says so, and *Problems* lists such a character (a target of the mission
+  without one: the mission cannot be finished). A character a script walks
+  (`npc:walkto`) can have the plain civilian's behaviour.
 * A new character takes a behaviour of the map's own characters (a soldier
   of C2-2 is an EntranceGuard, Guard22, PatrolGuard22 as theirs are), the
   plain civilian, or one of another level that works anywhere. *Parts of

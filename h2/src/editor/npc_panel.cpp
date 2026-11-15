@@ -1141,6 +1141,17 @@ bool ApplyTarget()
 
 std::string BehaviourLabel(const std::string& shortName) { return shortName.empty() ? "none" : shortName; }
 
+// a character without a behaviour: the game leaves a character's death to its behaviour (h2/docs/npc.md, #57)
+void DrawNoBehaviourWarning()
+{
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f),
+                       "No behaviour: Hitman cannot shoot, knock out or strangle it (only a script's npc:kill). "
+                       "A target, or anyone who can die, needs one: the plain civilian also walks where a "
+                       "script sends it.");
+    ImGui::PopTextWrapPos();
+}
+
 void DrawTarget()
 {
     engine::ZGEOM* actor = g_target;
@@ -1206,6 +1217,8 @@ void DrawTarget()
     }
     std::string current = g_targetHasBehaviour ? engine::ScriptShortName(g_targetEdit.name) : "";
     ImGui::Text("Behaviour: %s", BehaviourLabel(current).c_str());
+    if (!g_targetHasBehaviour)
+        DrawNoBehaviourWarning();
     if (placed && g_targetHasBehaviour && IsStoryBehaviour(g_targetEdit)) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f),
@@ -1419,6 +1432,8 @@ void DrawPlace()
             ChooseNewBehaviour(chosen);
         ImGui::EndCombo();
     }
+    if (g_newBehaviour.empty())
+        DrawNoBehaviourWarning();
     if (!g_newBehaviour.empty()) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", DescribeBehaviour(g_newBehaviour).c_str());

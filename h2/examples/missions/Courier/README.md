@@ -8,8 +8,9 @@ the story (`h2.state`), the time left too.
 Play: copy this folder into the game's `Mods` folder and start "Courier" from
 the editor's launcher.
 
-Made with: a character placed in the level (`level.json`, no behaviour: the
-script walks him), `npc:walkto` / `moveset` / `lookat`, `npc:carry` (the
+Made with: a character placed in the level (`level.json`, the plain civilian's
+behaviour, the mission's kill target of line 1: the script walks him; a character
+needs a behaviour to be shot or knocked out by Hitman), `npc:walkto` / `moveset` / `lookat`, `npc:carry` (the
 papers), the `death` and `pickup` events, a zone (the way out), timers, the
 laptop's lines (`h2.objective`, the level's own fourth hidden), subtitles,
 a hint (`h2.info`),

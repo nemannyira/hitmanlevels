@@ -77,6 +77,9 @@ void AllowLevelEnd();  // the next end is the editor's (h2.mission, its goals)
 // -> Kill vfunc 0xB4 / Harm vfunc 0xB8 with the victim). The actor (ZActor) is the victim.
 bool WasKilled(ZGEOM* character);
 bool WasHarmed(ZGEOM* character);
+// Victims the statistics do not count (kind 0, as C1-1's own target reports his death when Hitman kills him,
+// seen 2026-11-14; a guard says 2, a civilian 1): the level's mission targets (editor/mission.h).
+void SetUncountedVictims(bool (*uncounted)(ZGEOM* character));
 std::vector<ZGEOM*> TakeKilled();  // killed since the last call
 
 // How alarmed the level is: the scripts report a suspicion to the level routine (LevelControl_if

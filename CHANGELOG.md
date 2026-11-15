@@ -3,6 +3,22 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-15: characters the player can kill
+
+* A character without a behaviour cannot be shot, knocked out or strangled
+  by Hitman: the game leaves a character's death to its behaviour (only a
+  script's `npc:kill` killed it). The examples' walked characters now have
+  the plain civilian's behaviour: The Accountant can be finished, The
+  Informant's escort can be killed, the Courier's courier stopped.
+* The mission's targets (kill or knock out) do not count in the statistics,
+  as the game's own targets do not: killing a civilian target no longer
+  costs the rating.
+* An escalation's next stage could start with its target already counted
+  dead (the stage before's death kept while the map loaded again): the
+  dead are forgotten when a map is left.
+* The NPCs tab and *Problems* say when a character has no behaviour (a
+  target without one: the mission cannot be finished).
+
 ## 2026-11-14: version 0.1.0, sharing on the site
 
 * A version: 0.1.0 (H2Fix.log's first line, the files' properties,

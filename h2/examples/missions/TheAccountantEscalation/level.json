@@ -38,7 +38,30 @@
         10.0,
         -5309.0
       ],
-      "record": 2998
+      "record": 2998,
+      "behaviour": "scripts\\C1\\C1_1\\..\\..\\AllLevels\\Std2\\Neutral2.sdl",
+      "params": [
+        {
+          "name": "m_iHitpoints",
+          "type": "LONG",
+          "value": "20"
+        },
+        {
+          "name": "Mute",
+          "type": "LONG",
+          "value": "0"
+        },
+        {
+          "name": "HelpPoints",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/HelpPoints_DeliveryGuy"
+        },
+        {
+          "name": "SafePoints",
+          "type": "ZGEOMREF",
+          "value": "ROOT/C1-1/C1-1_CHARACTERS.zip/SafepointList"
+        }
+      ]
     }
   ],
   "objects": [],

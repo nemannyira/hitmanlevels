@@ -1337,6 +1337,24 @@ std::vector<Problem> FindProblems()
                                          "network): it will not move from there",
                                          at.empty() ? "" : snap.geoms[at[0]].path, n.transform.pos));
             }
+        // a character without a behaviour: the game leaves a character's death to its behaviour (h2/docs/npc.md,
+        // #57); Hitman cannot kill or knock it out, only a script can
+        for (const LevelNpc& n : L.npcs) {
+            if (n.hasBehaviour)
+                continue;
+            bool target = false;
+            for (const MissionObjective& o : L.mission.objectives)
+                target |= (o.goal == MissionObjective::Kill || o.goal == MissionObjective::KnockOut) &&
+                          o.target.size() > n.id.size() &&
+                          o.target.compare(o.target.size() - n.id.size() - 1, std::string::npos, "/" + n.id) == 0;
+            std::vector<int> at = snap.FindName(n.id);
+            out.push_back({"character " + n.id + " has no behaviour: Hitman cannot kill or knock it out (only a "
+                               "script can)" + (target ? std::string(", and it is a target: the mission cannot be "
+                                                                     "finished. Give it one (NPCs tab)")
+                                                      : std::string("")),
+                           at.empty() ? "" : snap.geoms[at[0]].path});
+            out.back().step = 1;
+        }
         // a behaviour without a setting it needs does not start (tested: BaseGuard (C1-1) without its panic
         // arbiter, a patrol without its route stand still, unarmed)
         for (const LevelNpc& n : L.npcs) {

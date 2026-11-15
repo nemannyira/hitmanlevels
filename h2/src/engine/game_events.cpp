@@ -345,8 +345,22 @@ void QueueVictim(GameEvent::Kind kind, void* level, uint32_t victim, int type)
     Queue(std::move(e));
 }
 
+bool (*g_uncounted)(ZGEOM*);  // SetUncountedVictims
+
+// the kind the statistics get: 0 for a victim they do not count (the level's mission targets)
+int CountedKind(uint32_t victim, int type)
+{
+    ZGEOM* g = type && g_uncounted ? VictimGeom(victim) : nullptr;
+    if (!g || !g_uncounted(g))
+        return type;
+    Log("game events: %s is a target of the mission: not in the statistics (kind %d -> 0)", SafeString(g->name).c_str(),
+        type);
+    return 0;
+}
+
 void __fastcall hkKill(void* level, void* edx, uint32_t victim, int type)
 {
+    type = CountedKind(victim, type);
     QueueVictim(GameEvent::Kill, level, victim, type);
     if (const LevelEntries* o = EntriesOf(level))
         reinterpret_cast<Victim_t>(o->kill)(level, edx, victim, type);
@@ -354,6 +368,7 @@ void __fastcall hkKill(void* level, void* edx, uint32_t victim, int type)
 
 void __fastcall hkHarm(void* level, void* edx, uint32_t victim, int type)
 {
+    type = CountedKind(victim, type);
     QueueVictim(GameEvent::Harm, level, victim, type);
     if (const LevelEntries* o = EntriesOf(level))
         reinterpret_cast<Victim_t>(o->harm)(level, edx, victim, type);
@@ -484,6 +499,11 @@ void InstallGameEvents()
     Hook("ZTRACKLNKHM2::DragEnd", kDragEnd, hkDragEnd, &oDragEnd);
     OnSceneLeaving([](const std::string&) {
         g_used.clear();
+        // the scene's dead go with it: the next scene's objects can be made at the same addresses (an escalation's
+        // stage loaded again: its target dead from the stage before, #56)
+        g_killed.clear();
+        g_harmed.clear();
+        g_newlyKilled.clear();
         g_endsAllowed = true;
         g_allowNext = false;
         g_queue.clear();
@@ -527,6 +547,8 @@ void WatchLevel(void* level)
               PatchEntry(vt, kLevel_Stress, reinterpret_cast<void*>(hkStress));
     Log("game events: level routine vtable %p %s", static_cast<void*>(vt), ok ? "watched" : "not writable");
 }
+
+void SetUncountedVictims(bool (*uncounted)(ZGEOM*)) { g_uncounted = uncounted; }
 
 void WatchUse(uint16_t msg)
 {

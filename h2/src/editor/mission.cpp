@@ -2276,6 +2276,20 @@ bool SetObjectiveDone(int slot, bool done)
 
 void* LevelRoutine() { return g_level; }
 
+bool IsMissionTarget(engine::ZGEOM* character)
+{
+    if (!character || !ForThisScene())
+        return false;
+    for (const MissionObjective& o : StageObjectives()) {
+        if (o.hidden || (o.goal != MissionObjective::Kill && o.goal != MissionObjective::KnockOut))
+            continue;
+        engine::ZGEOM* t = Target(o);
+        if (t && (t == character || ActorOf(t) == character))
+            return true;
+    }
+    return false;
+}
+
 bool CompleteMission()
 {
     Log("mission: completed by the editor");
@@ -2884,6 +2898,7 @@ void InstallMission()
 {
     script::SetEditorEvents({"spotted", "hostile"}, OnEditorEvent);
     script::SetSaveExtra(SaveGoals, LoadGoals);
+    engine::SetUncountedVictims(IsMissionTarget);  // (the targets count as the game's own: not in the statistics)
     OnScenePushed([](const std::string&) { g_pick = PickKind::None; });
     Hook("LOC find", kLocFind, hkLocFind, &oLocFind);
     Hook("BriefingMenu::SetLocaleFolder", kSetLocaleFolder, hkSetFolder, &oSetFolder);

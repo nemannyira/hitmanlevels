@@ -27,9 +27,9 @@ h2.briefing("A courier of the Don's family carries papers that must never reach 
             "He walks his round at the front gate. Stop him, take the papers and get out " ..
             "the way you came. Be quick: in three minutes he leaves.")
 
+-- (line 1, "Stop the courier at the front gate", is the mission's kill target: level.json, checked by the editor)
 local function lines()
   local s = h2.state.stage
-  h2.objective(1, "Stop the courier at the front gate", s >= 2)
   h2.objective(2, "Take the papers he carries", s >= 3)
   h2.objective(3, "Get back to the hill where you started", s >= 4 and not h2.state.failed)
 end

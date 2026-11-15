@@ -8,7 +8,7 @@ he runs off) and keep him alive.
 Play: copy this folder into the game's `Mods` folder, then main menu > Level
 Editor > Open a level > *Play*.
 
-Made with: the informant (NPCs tab: DeliveryBoy, no behaviour), a point at
+Made with: the informant (NPCs tab: DeliveryBoy, the plain civilian), a point at
 the meeting place. `main.lua`: a zone around him (`h2.zone{ object = ... }`),
 following with `npc:walkto(h2.walkable(...))` and `moveset`, the `death`
 event, laptop lines 5 and 6 (C1-1's own hidden).

@@ -323,6 +323,23 @@ uses it for a character without a behaviour (Msg_InstantDeath only reaches
 a behaviour). IsAlive is vfunc 0x544 (+0x574). Hitman (ZHITMAN2) is not a
 ZActor: his hit points are the float at +0xD72.
 
+**A character takes no damage itself** (2026-11-14, #56): a projectile hit
+(ZTRACKLNKHM2 HandleMessage 0x508950 -> ZTRACKLNKHM2_OnProjectileHit 0x509980,
+vtable 0x6558B8 slot 0x638) only works out the hit and calls
+ZTRACKLNKHM2_ProjectileHitToScript 0x50A4C0 (slot 0x63C), which sends
+`HM2_ProjectileHit` to the character's own script and pushes the body when it
+is dead already. Its behaviour (Being2, `m_iHitpoints`) decides the death, the
+knock-out and the strangling. **A character without a behaviour cannot be
+killed or knocked out by Hitman**, only by a script (`npc:kill`: Actor_If Die).
+The death is reported to the level routine by the behaviour with its kind: a
+guard 2 (enemy), a civilian (Neutral2) 1 (innocent), C1-1's target (the Don)
+0 even when Hitman shoots him (not in the statistics); any death not by Hitman
+0. The editor reports its mission's kill / knock-out targets as 0 too
+(engine::SetUncountedVictims, editor IsMissionTarget). The examples' walked
+characters have the plain civilian's behaviour: `npc:walkto` still walks them
+(it calls MoveToPosition on the actor, and Neutral2 gives no orders of its own
+while nothing alarms it).
+
 Moving Hitman: his "Ground" node (ZHITMAN2) sits at the origin of its group
 (HeroSetup.zip/Hitman2), and the group is where he is. Moving the node itself
 (SetWorldTransform) gave it an offset from the group and flung him out of

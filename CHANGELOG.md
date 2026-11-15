@@ -3,6 +3,13 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-15: a fault while scripts watched the game's messages
+
+* A game message whose value only looked like an object reference made
+  the editor read past the game's object table (an access violation it
+  caught, seen in H2Fix.log at 0x426BA9, #39): such a value is checked
+  against the table first.
+
 ## 2026-11-15: escalations on the site
 
 * An escalation shared on hitmanlevels.com shows its stages (names and

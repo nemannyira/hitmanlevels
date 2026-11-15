@@ -309,8 +309,28 @@ uint32_t SafePtrToRef(void* engine, ZGEOM* geom)
     }
 }
 
+// A static ref (bit 0x40000000) is a byte offset into the scene's node array, which the game's resolver
+// (ZGeomDatabase_RefToPtr 0x426B80) reads with no bounds check: engine +4 -> its geom database, +0x14 the node
+// array (+0xC: its data's size in bytes, 0x70 a node). False for an offset past it (#39: a value that is not a ref).
+constexpr uint32_t kStaticRef = 0x40000000;
+constexpr size_t kEngine_GeomDb = 0x4, kGeomDb_Nodes = 0x14, kNodes_Size = 0xC, kNodeSize = 0x70;
+
+bool StaticRefInside(void* engine, uint32_t ref)
+{
+    __try {
+        auto db = *reinterpret_cast<char**>(static_cast<char*>(engine) + kEngine_GeomDb);
+        auto nodes = *reinterpret_cast<char**>(db + kGeomDb_Nodes);
+        uint32_t size = *reinterpret_cast<uint32_t*>(nodes + kNodes_Size);
+        return (ref & 0x3FFFFFFF) + kNodeSize <= size;  // (the offset as the resolver takes it)
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 ZGEOM* SafeRefToPtr(void* engine, uint32_t ref)
 {
+    if ((ref & kStaticRef) && !StaticRefInside(engine, ref))
+        return nullptr;
     __try {
         return reinterpret_cast<ZGEOM*(__thiscall*)(void*, uint32_t)>(kGeomRefToPtr)(engine, ref);
     } __except (EXCEPTION_EXECUTE_HANDLER) {

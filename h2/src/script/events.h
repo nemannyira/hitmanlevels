@@ -54,7 +54,7 @@ void FireArrived(int id, const std::string& path);
 void FireGameEvents();
 // The editor's own listeners (its mission goals, the play debug): called with
 // the events named (as h2.on names them: "spotted", "unconscious", ..., and
-// "kill", "harm", "mission") whether or not a script listens, before the
+// "kill", "harm", "mission"; "msg:<name>": one of the game's messages) whether or not a script listens, before the
 // scripts get them. One listener a function: called again, its events change.
 using EditorEventFn = void (*)(const char* event, const engine::GameEvent& e);
 void SetEditorEvents(const std::set<std::string>& events, EditorEventFn fn);

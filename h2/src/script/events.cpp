@@ -144,6 +144,9 @@ void UpdateWatch()
     for (const Alias& a : kAliases)
         if (g_editorEvents.count(a.event))
             names.insert(a.message);
+    for (const std::string& e : g_editorEvents)  // (the editor's "msg:<name>": one message by its name)
+        if (e.rfind("msg:", 0) == 0)
+            names.insert(e.substr(4));
     engine::WatchMessages(names, all);
 }
 
@@ -379,6 +382,8 @@ void FireGameMessage(const engine::GameEvent& e)
     };
     Fire("message", push);
     Fire("msg:" + name, push);
+    if (g_editorEvents.count("msg:" + name))
+        FireEditor(("msg:" + name).c_str(), e);
     for (const Alias& a : kAliases) {
         if (name == a.message && g_editorEvents.count(a.event))
             FireEditor(a.event, e);

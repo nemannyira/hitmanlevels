@@ -32,7 +32,7 @@ GAME_LEVELPACK = os.path.join(dev.GAME, "levelpack.exe")
 BUILT_LEVELPACK = os.path.join(HERE, "..", "..", "build", "Release", "levelpack.exe")
 C11 = r"C1-1\C1-1__MAIN"
 LEVEL = {"format": "h2level", "version": 1, "name": "Runs test", "base_scene": "C1-1\\C1-1__MAIN",
-         "objects": [], "spawned": [], "npcs": [], "lists": [], "scripts": [],
+         "objects": [], "spawned": [], "npcs": [], "lists": [], "scripts": [], "start_outfit": "BodyguardMafia_01",
          "package": {"id": ID, "version": 3}}
 results = []
 
@@ -125,7 +125,20 @@ try:
     for _ in range(2):
         lua("h2.dev_mouse(0, 0.1) return 1")
         time.sleep(1.5)
-    time.sleep(2)
+    # #59: clothes changed (the postman's; the level starts Hitman as a bodyguard: not the player's change); a
+    # patrolling guard made the target and killed when his partner stands with him (C1-1: they meet about 26 s
+    # in) with the pistol in hand: his body found
+    lua('for _, n in ipairs(h2.npcs()) do local o = n.object if o and n.model == "Postman" and not o:hidden() then '
+        'h2.disguise(o) return 1 end end return 0')
+    target = lua('for _, n in ipairs(h2.npcs()) do local o = n.object if o and o:path():find("Patrol_PoolArea") then '
+                 'return o:path() end end return ""')
+    print("target:", lua('return h2.dev_level("target", %s)' % json.dumps(target)))
+    for _ in range(60):
+        if float(lua("return h2.time()")) > 32:
+            break
+        time.sleep(1)
+    lua('h2.find(%s):kill() return 1' % json.dumps(target))
+    time.sleep(5)
     lua('return h2.mission("complete")')
     r = new_run(before)
     check("completed: a run written", r is not None, str(runs()))
@@ -139,6 +152,17 @@ try:
           "%s (stealth %s, aggression %s)" % (r.get("rating"), r.get("stealth"), r.get("aggression")))
     check("  marked: the dev commands on", r.get("dev") == ["DevCommands"] and r.get("aids") == [], str(r.get("dev")))
     check("  a run id, when it started", len(r.get("run", "")) == 32 and r.get("started", "").endswith("Z"))
+    ev = r.get("events", [])
+    check("  #59: what it tracks", r.get("tracked") == ["disguise", "kill", "body_found"], str(r.get("tracked")))
+    disguises = [e for e in ev if e.get("kind") == "disguise"]
+    check("  the clothes changed once: the postman's (the game's notification; the level's start outfit, a"
+          " bodyguard's, not the player's)", [e.get("outfit") for e in disguises] == ["Postman"], disguises)
+    check("  the target killed, with the pistol in hand",
+          any(e.get("kind") == "kill" and e.get("victim") == "target" and e.get("weapon") == "pistol" and e.get("at")
+              for e in ev), [e for e in ev if e.get("kind") == "kill"])
+    check("  his body found (his partner saw it)", sum(1 for e in ev if e.get("kind") == "body_found") == 1,
+          [e for e in ev if e.get("kind") == "body_found"])
+    print("NOTE the run's events:", [e.get("kind") for e in ev])
     time.sleep(2)
     with open(LOG, encoding="latin1") as f:
         f.seek(mark)

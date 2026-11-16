@@ -25,6 +25,14 @@ export async function awardRun(env, user, r) {
     if (c.saves === 0) earned.push("no_saves");
     if (c.innocents_killed === 0 && c.innocents_harmed === 0) earned.push("clean_hands");
     if (c.shots === 0) earned.push("no_shots");
+    // from the events an editor tracks (a run of an older one: none of these)
+    const tracked = Array.isArray(r.tracked) ? r.tracked : [], any = (kind) => r.events.some((e) => e.kind === kind);
+    if (tracked.includes("disguise") && !any("disguise")) earned.push("suit_only");
+    if (tracked.includes("body_found") && !any("body_found")) earned.push("no_bodies");
+    // only targets killed: the game does not count its targets' deaths (nor the editor's mission targets')
+    if (tracked.includes("kill") && c.enemies_killed === 0 && c.innocents_killed === 0 &&
+        r.events.some((e) => e.kind === "kill" && e.victim === "target"))
+      earned.push("precision");
     // the ones before it: the first; the par (their 25th percentile, from 10 of them)
     const before = `FROM runs WHERE level_id = ? ${ofStage} AND ranked = 1 AND result = 'completed' AND id != ?`;
     const n = await count(env, `SELECT COUNT(*) AS n ${before}`, level, ...at, r.run);

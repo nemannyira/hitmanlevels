@@ -127,7 +127,15 @@ async function level(env, id) {
 const RESULTS = ["completed", "failed", "left"];
 const COUNTERS = ["alerts", "close_encounters", "enemies_harmed", "enemies_killed", "headshots", "innocents_harmed",
   "innocents_killed", "saves", "shots"];
-const EVENTS = ["objective_done", "objective_lost", "spotted", "died"];
+const EVENTS = ["objective_done", "objective_lost", "spotted", "died", "disguise", "kill", "body_found"];
+// a kill's victim and what Hitman had in his hands (the weapon template's kind, h2/src/engine/npc.h WeaponKindName)
+const VICTIMS = ["enemy", "innocent", "target"];
+const WEAPONS = ["pistol", "revolver", "smg", "machinegun", "rifle", "pumpgun", "shotgun", "rocketlauncher", "knife",
+  "fiberwire", "other", "grenade", "item", "none"];
+const TRACKED = ["disguise", "kill", "body_found"];  // the events an editor writes (a run without them: none happened)
+const eventProblem = (e) =>
+  (e.kind === "disguise" && (typeof e.outfit !== "string" || !/^[A-Za-z0-9_ .-]{0,64}$/.test(e.outfit))) ||
+  (e.kind === "kill" && (!VICTIMS.includes(e.victim) || !WEAPONS.includes(e.weapon)));
 const MAX_RUN = 64 * 1024;
 const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const place = (at) => at === undefined || at === null || (Array.isArray(at) && at.length === 3 && at.every((x) => int(x, -1e7, 1e7)));
@@ -151,8 +159,11 @@ function runProblem(r) {
   if (r.stage !== undefined && !int(r.stage, 1, 64)) return "A stage out of range.";
   if (r.alarm_highest !== undefined && !int(r.alarm_highest, -1, 1000)) return "An alarm level out of range.";
   if (!Array.isArray(r.events) || r.events.length > 500 || !r.events.every((e) => e && EVENTS.includes(e.kind) &&
-      int(e.t, 0, 86400) && (e.slot === undefined || int(e.slot, 1, 64)) && place(e.at)))
+      int(e.t, 0, 86400) && (e.slot === undefined || int(e.slot, 1, 64)) && place(e.at) && !eventProblem(e)))
     return "Events out of range.";
+  if (r.tracked !== undefined && (!Array.isArray(r.tracked) || r.tracked.length > TRACKED.length ||
+      !r.tracked.every((k) => TRACKED.includes(k))))
+    return "Tracked events out of range.";
   if (typeof r.dll !== "string" || !/^[0-9a-z.+-]{1,20}$/.test(r.dll)) return "No editor version.";
   return null;
 }
@@ -176,7 +187,8 @@ async function postRun(request, env) {
   const notRanked = user ? await rankRun(env, user, r) : "not signed in";
   const counters = Object.fromEntries(COUNTERS.map((k) => [k, r.counters[k]]));
   const events = r.events.map((e) => ({ kind: e.kind, t: e.t, ...(e.slot !== undefined && { slot: e.slot }),
-    ...(Array.isArray(e.at) && { at: e.at }) }));
+    ...(Array.isArray(e.at) && { at: e.at }), ...(e.kind === "disguise" && { outfit: e.outfit }),
+    ...(e.kind === "kill" && { victim: e.victim, weapon: e.weapon }) }));
   const done = await env.DB.prepare(
     `INSERT OR IGNORE INTO runs (id, level_id, version, received, result, time, rating, stealth, aggression, counters, stage,
                                  alarm_highest, events, dll, user_id, ranked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -3,6 +3,15 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-16: badges, and what a run tells of clothes, kills and bodies
+
+* The site gives badges (docs/badges.md): a level's (Finished, Silent Assassin, Ghost, No Saves, Clean
+  Hands, No Shots Fired, Under Par, First to Finish, Board Top 3, Suit Only, Precision, No Bodies Found) with
+  its mastery, an escalation's, a profile's and an author's; public, from the runs sent signed in.
+* A downloaded level's run tells when Hitman changed clothes (into whose), how he killed (the weapon in his
+  hands; a target of the level's mission too) and when a body was found.
+* The player page has a play history (only the player sees it unless they show it to everyone).
+
 ## 2026-11-16: a target's readable name
 
 * A character made a target (or knocked out) is named as it reads on the

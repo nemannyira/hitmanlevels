@@ -144,6 +144,13 @@ try {
   check("refused: counters out of range", (await runPost(another((x) => { x.counters.shots = -1; }))).status === 400);
   check("refused: a rating on a failed run", (await runPost(another((x) => { x.result = "failed"; }))).status === 400);
   check("refused: not JSON", (await runPost("{")).status === 400);
+  // the client's new events (#59): their fields checked
+  const withEvent = (e) => another((x) => { x.events = [{ t: 10, ...e }]; x.tracked = ["disguise", "kill", "body_found"]; });
+  check("refused: a kill of an unknown victim, with an unknown weapon",
+    (await runPost(withEvent({ kind: "kill", victim: "dog", weapon: "knife" }))).status === 400 &&
+    (await runPost(withEvent({ kind: "kill", victim: "enemy", weapon: "laser" }))).status === 400);
+  check("refused: clothes with a name out of range", (await runPost(withEvent({ kind: "disguise", outfit: "<b>" }))).status === 400);
+  check("refused: an unknown tracked event", (await runPost(another((x) => { x.tracked = ["teleport"]; }))).status === 400);
   const unrated = (result, time) => another((x) => { x.result = result; x.time = time; delete x.rating; delete x.stealth; delete x.aggression; });
   check("a failed and a left run", (await runPost(unrated("failed", 90))).status === 201 &&
     (await runPost(unrated("left", 30))).status === 201);
@@ -163,6 +170,15 @@ try {
   r = await get(`/api/author/levels/${id}/plays?download=1`, me);
   check("... as a file to download (plays.json), not cached", /attachment; filename="plays.json"/.test(r.headers.get("Content-Disposition")) &&
     /no-store/.test(r.headers.get("Cache-Control")));
+  check("a run with the clothes, a kill and a body found: stored with their fields",
+    (await runPost(another((x) => {
+      x.tracked = ["disguise", "kill", "body_found"];
+      x.events = [{ kind: "disguise", t: 5, outfit: "Waiter" }, { kind: "kill", t: 9, victim: "target", weapon: "fiberwire", at: [1, 2, 3] },
+        { kind: "body_found", t: 12, at: [4, 5, 6] }];
+    }))).status === 201);
+  const stored = (await (await get(`/api/author/levels/${id}/plays`, me)).json()).runs.flatMap((x) => x.events);
+  check("... in the author's plays", stored.some((e) => e.kind === "disguise" && e.outfit === "Waiter") &&
+    stored.some((e) => e.kind === "kill" && e.victim === "target" && e.weapon === "fiberwire") && stored.some((e) => e.kind === "body_found"));
   // level 2 (#54): levelpack signed in (a device code approved on the site), a run's ticket, the boards, a video the
   // owner verifies, the player's page, the name shown, signing out
   check("a device code nobody approved: pending, then an unknown one refused",

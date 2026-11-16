@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <fstream>
 #include <map>
+#include <set>
 #include <string>
 
 #include "hitmanlevels_version.h"
@@ -16,6 +17,7 @@
 #include "../config.h"
 #include "../engine/game_events.h"
 #include "../engine/messages.h"
+#include "../engine/npc.h"
 #include "../engine/scene_data.h"
 #include "../game.h"
 #include "../hook.h"
@@ -27,6 +29,7 @@
 #include "level.h"
 #include "mission.h"
 #include "model.h"
+#include "npcs.h"
 #include "stages.h"
 #include "testtools.h"
 
@@ -169,6 +172,8 @@ struct Run {
     bool goalsSeen = false;
     bool dead = false;
     std::map<engine::ZGEOM*, double> spotted;  // who -> when last kept (ms)
+    std::set<engine::ZGEOM*> killed, found;    // targets whose death is kept; bodies found
+    std::string startOutfit;  // the level's start_outfit: its clothes change as the map loads is not the player's
 };
 Run g_run;
 bool g_doneThisMap;  // one run a map load
@@ -181,6 +186,36 @@ json HitmanPlace()
         return nullptr;
     Transform t = GetTransform(hitman);
     return json::array({std::lround(t.pos[0]), std::lround(t.pos[1]), std::lround(t.pos[2])});
+}
+
+// a character's place (a kill, a body)
+json PlaceOf(engine::ZGEOM* g)
+{
+    if (!g || !IsLive(g))
+        return nullptr;
+    Transform t = GetTransform(g);
+    return json::array({std::lround(t.pos[0]), std::lround(t.pos[1]), std::lround(t.pos[2])});
+}
+
+// what Hitman kills with: the kind of the weapon in his hands (the template's Type, as the escalations' "kill
+// with" rule reads it), "item" a thing that is not a weapon, "none" empty hands
+const char* HandKind()
+{
+    engine::ZGEOM* item = engine::HandItem();
+    if (!item)
+        return "none";
+    int kind = engine::WeaponKind(item);
+    return kind >= 0 ? engine::WeaponKindName(kind) : "item";
+}
+
+// a geom a message carries: its param a pointer or a reference (as the scripts' e.object)
+engine::ZGEOM* Carried(uint32_t v)
+{
+    if (v >= 0x10000 && IsLive(reinterpret_cast<engine::ZGEOM*>(uintptr_t(v))))
+        return reinterpret_cast<engine::ZGEOM*>(uintptr_t(v));
+    bool ref = v && !(v & 0x80000000) && (!(v & 0x40000000) || (v & 0x3FFFFFFF) % 0x70 == 0);
+    engine::ZGEOM* g = ref ? engine::GeomOfRef(v) : nullptr;
+    return g && IsLive(g) ? g : nullptr;
 }
 
 void AddEvent(json e)
@@ -205,6 +240,7 @@ void Start()
     g_run.folder = L.folder;
     g_run.level = L.folder.substr(7);  // (Online\<id>)
     g_run.version = L.packageVersion;
+    g_run.startOutfit = L.startOutfit;
     SYSTEMTIME st;
     GetSystemTime(&st);
     char when[32], file[32];
@@ -280,6 +316,8 @@ void End(const char* result, const Counters& c, const Rating* rating)
         {"aids", aids},
         {"dev", dev},
         {"events", g_run.events},
+        // (what this editor writes events of: a run without them did not have none, docs/badges.md)
+        {"tracked", json::array({"disguise", "kill", "body_found"})},
     };
     if (rating) {
         j["rating"] = rating->name;
@@ -336,6 +374,29 @@ void OnEvent(const char* event, const engine::GameEvent& e)
             return;
         g_run.spotted[e.to] = now;
         AddEvent({{"kind", "spotted"}, {"at", HitmanPlace()}});
+    } else if (ev == "disguise") {  // (levelcontrolnotifychangeclothes: its text the clothes, "<model>_HMas")
+        std::string outfit = e.text.substr(0, 64);
+        if (outfit.size() > 5 && outfit.compare(outfit.size() - 5, 5, "_HMas") == 0)
+            outfit.resize(outfit.size() - 5);
+        if (!g_run.startOutfit.empty() && _stricmp(outfit.c_str(), g_run.startOutfit.c_str()) == 0) {
+            g_run.startOutfit.clear();  // (h2.outfit at the map's load: the game says so a moment later)
+            return;
+        }
+        AddEvent({{"kind", "disguise"}, {"outfit", outfit}});
+    } else if (ev == "kill" && (e.type == 1 || e.type == 2)) {  // (the statistics' kills: 2 enemy, 1 innocent)
+        AddEvent({{"kind", "kill"}, {"victim", e.type == 2 ? "enemy" : "innocent"}, {"weapon", HandKind()},
+                  {"at", PlaceOf(Carried(e.value))}});
+    } else if (ev == "msg:objectvisible") {
+        // a body found: the game's sight tells a living character it sees a dead or knocked out one
+        // (TrackLinkObjects, ZLIST_CheckVisible; the escalations' "no bodies found", #30)
+        engine::ZGEOM *body = Carried(uint32_t(e.param)), *seer = e.to, *hitman = engine::Player();
+        if (!body || !seer || !IsLive(seer) || body == hitman || seer == hitman || !engine::IsA(body, "ZActor") ||
+            !engine::IsA(seer, "ZActor") || g_run.found.count(body))
+            return;
+        if ((!engine::IsAlive(body) || KnockedOut(body)) && engine::IsAlive(seer) && !KnockedOut(seer)) {
+            g_run.found.insert(body);
+            AddEvent({{"kind", "body_found"}, {"at", PlaceOf(body)}});
+        }
     } else if (ev == "mission" && e.type != 1) {  // (not the base level's own end the editor stopped)
         if (e.kind == engine::GameEvent::MissionFailed)
             End("failed", ReadCounters(), nullptr);
@@ -369,6 +430,10 @@ void Poll()
             continue;  // (done from the start: a "never spotted" one)
         if (g.state == 1 || g.state == -1)
             AddEvent({{"kind", g.state == 1 ? "objective_done" : "objective_lost"}, {"slot", g.slot}});
+        // a target dead (not one of the statistics' kills: the game's targets are not counted)
+        engine::ZGEOM* who = g.where ? ActorOf(g.where) : nullptr;
+        if (who && IsMissionTarget(who) && !engine::IsAlive(who) && !KnockedOut(who) && g_run.killed.insert(who).second)
+            AddEvent({{"kind", "kill"}, {"victim", "target"}, {"weapon", HandKind()}, {"at", PlaceOf(who)}});
     }
     g_run.goalsSeen = true;
     engine::ZGEOM* hitman = engine::Player();
@@ -384,7 +449,7 @@ void Poll()
 void InstallRuns()
 {
     Hook("StatisticsLevel::OnStatsMessage", kStatsWindowMessage, hkStatsMessage, &oStatsMessage);
-    script::SetEditorEvents({"spotted", "mission"}, OnEvent);
+    script::SetEditorEvents({"spotted", "mission", "disguise", "kill", "msg:objectvisible"}, OnEvent);
     OnFrameEnd(Poll);
     OnSceneLeaving([](const std::string&) {
         End("left", ReadCounters(), nullptr);  // (its objects are still there)

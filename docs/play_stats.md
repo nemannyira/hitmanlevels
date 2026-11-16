@@ -29,6 +29,8 @@ run a map load: it starts when the level is on its map and the editor is closed.
 | `stage`: the escalation's stage | stages.h (escalations only) |
 | `alarm_highest` | the level routine's alarm level (the HUD's meter) at its highest |
 | `events`: `objective_done` / `objective_lost` (slot), `spotted` (Hitman's place), `died` (place); each with `t`, game seconds | the editor's goals, the game's "spotted" (one a character in 10 s), Hitman's death; 500 at most |
+| `events` (2026-11-16, #59): `disguise` (`outfit`: the character's model), `kill` (`victim`: enemy / innocent / target, `weapon`: the kind in Hitman's hands, `item` a thing that is not a weapon, `none`; `at`), `body_found` (`at`: the body) | the game's clothes notification (levelcontrolnotifychangeclothes, its text `<model>_HMas`; the level's own start outfit as the map loads left out), the statistics' kills (2 enemy, 1 innocent) and the death of a target of the editor's mission (the objectives; the original mission's own targets are not known: not written), the game's sight telling a living character it sees a dead or knocked out one (ObjectVisible, once a body) |
+| `tracked`: `["disguise", "kill", "body_found"]` | the events this editor writes (an older one's run: none of them, not "none happened") |
 
 The package's hash is not in the file: levelpack adds it when it sends a run (what it installed, its
 `known.json`), and leaves out a run of a package changed since. A run with `aids` or `dev` is still written

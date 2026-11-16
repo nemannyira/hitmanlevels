@@ -32,9 +32,12 @@ With the client's new data (section 4), from the runs of an editor that sends it
 
 | Badge | The run |
 |---|---|
-| Suit Only | completed without changing clothes |
-| Precision | completed, every kill a target of the mission |
+| Suit Only | completed without changing clothes (the level's start outfit is not a change) |
+| Precision | completed, no kill the game counts (it does not count its targets, nor the editor's mission targets) and a target of the editor's mission killed |
 | No Bodies Found | completed, no body found by anyone |
+
+Only from a run that says it tracks these events (`tracked`): an older editor's run has none of them without
+none having happened.
 
 **Mastery** of a level: how many of its badges the player has, as a level 1..5 (1, 3, 5, 7, 9 badges). An
 escalation's stages are counted together (a badge of any stage counts once).
@@ -95,6 +98,16 @@ The DLL adds to a run's `events` (the site takes these kinds once it knows them:
 * `body_found`: a body found by a character (the game's own reaction to it).
 
 Each from the game's code (Ghidra, the engine's messages), not guessed.
+
+Built 2026-11-16 (h2/src/editor/runs.cpp; docs/play_stats.md section 1), from what the escalations' rules
+already read: the clothes notification's text is the clothes (`BodyguardMafia_01_HMas`: the model), seen 2026-11-16
+coming about 2 s after the change (the level's start outfit's too: left out by its model); the weapon kind
+(engine::WeaponKind, the template's Type) in Hitman's hands at the kill; ObjectVisible's param the body's
+geom reference (seen: both characters who saw a patrolling guard's body got it). The editor listens to a
+message by its name (`msg:<name>`, script/events.h). The site takes the events and `tracked`
+(website/src/worker.js), gives Suit Only, Precision and No Bodies Found (badges.js). Tested: runs_test (a
+run with the clothes, the target's kill with the pistol, the body found; the start outfit not counted),
+badges_test, worker_test.
 
 ## 5. Later (noted, not built)
 

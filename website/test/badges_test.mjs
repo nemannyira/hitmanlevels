@@ -36,13 +36,14 @@ const level = (id, scene, stages = 0) => {
 level("lvl00001", "C1-1\\C1-1__MAIN");
 ["C2-1", "C3-1", "C4-1", "C5-1", "C6-1"].forEach((m, i) => level("map0000" + i, `${m}\\${m}__MAIN`));
 level("esc00001", "C1-1\\C1-1__MAIN", 3);
+level("trk00001", "C1-1\\C1-1__MAIN");
 
 let n = 0;
 const zero = { alerts: 0, close_encounters: 0, enemies_harmed: 0, enemies_killed: 0, headshots: 0, innocents_harmed: 0,
   innocents_killed: 0, saves: 0, shots: 0 };
-async function play(user, lvl, { result = "completed", time = 600, rating = null, counters = {}, events = [], stage } = {}) {
+async function play(user, lvl, { result = "completed", time = 600, rating = null, counters = {}, events = [], stage, tracked } = {}) {
   const r = { run: (++n).toString(16).padStart(32, "0"), level: lvl, result, time, rating: result === "completed" ? rating : null,
-    counters: { ...zero, ...counters }, events, ...(stage && { stage }) };
+    counters: { ...zero, ...counters }, events, ...(stage && { stage }), ...(tracked && { tracked }) };
   db.prepare(`INSERT INTO runs (id, level_id, version, received, result, time, rating, counters, stage, events, dll, user_id, ranked)
               VALUES (?, ?, 1, ?, ?, ?, ?, '{}', ?, '[]', '0', ?, 1)`).run(r.run, lvl, n, result, time, r.rating, stage ?? null, user);
   await awardRun(env, user, r);
@@ -74,6 +75,22 @@ await play(13, "lvl00001", { time: 700, counters: { shots: 1 } });
 await play(14, "lvl00001", { time: 701, counters: { shots: 1 } });
 check("Under Par: at the par time", has(13, "lvl00001").includes("under_par"), has(13, "lvl00001"));
 check("... not a second over it", !has(14, "lvl00001").includes("under_par"), has(14, "lvl00001"));
+
+// the client's events (#59): only from a run whose editor tracks them
+const ALL = ["disguise", "kill", "body_found"], target = { kind: "kill", t: 50, victim: "target", weapon: "fiberwire" };
+await play(20, "trk00001", { events: [target] });
+check("an older editor's run (nothing tracked): none of Suit Only, Precision, No Bodies Found",
+  !/suit_only|precision|no_bodies/.test(has(20, "trk00001")), has(20, "trk00001"));
+await play(21, "trk00001", { events: [target], tracked: ALL });
+check("tracked: no clothes changed, only the target killed, no body found: all three",
+  /no_bodies/.test(has(21, "trk00001")) && /precision/.test(has(21, "trk00001")) && /suit_only/.test(has(21, "trk00001")), has(21, "trk00001"));
+await play(22, "trk00001", { tracked: ALL, counters: { enemies_killed: 1 },
+  events: [target, { kind: "disguise", t: 10, outfit: "Waiter" }, { kind: "body_found", t: 60 }] });
+check("clothes changed, a guard killed besides, a body found: none of them",
+  !/suit_only|precision|no_bodies/.test(has(22, "trk00001")), has(22, "trk00001"));
+await play(23, "trk00001", { tracked: ALL });
+check("no target killed at all: not Precision (Suit Only, No Bodies Found yes)",
+  !has(23, "trk00001").includes("precision") && /no_bodies/.test(has(23, "trk00001")), has(23, "trk00001"));
 
 // 2. an escalation: every stage finished, every stage Silent Assassin
 await play(2, "esc00001", { stage: 1, rating: "SilentAssassin" });

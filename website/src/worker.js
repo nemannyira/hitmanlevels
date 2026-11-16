@@ -4,8 +4,8 @@
 import { callback, currentUser, logout, start } from "./auth.js";
 import { publishList, hex } from "./sitelist.js";
 import { checkPackage } from "./check.js";
-import { boards, clientSignout, clientUser, deviceApprove, deviceStart, deviceToken, myRuns, player, rankRun, setName,
-  setVideo, ticket } from "./players.js";
+import { boards, clientSignout, clientUser, deviceApprove, deviceStart, deviceToken, history, myRuns, player, rankRun,
+  setHistory, setName, setVideo, ticket } from "./players.js";
 
 const MAX_PACKAGE = 2 * 1024 * 1024;  // as the client's reader (docs/online_levels.md section 3)
 
@@ -373,6 +373,8 @@ async function route(request, env, ctx) {
     }
     if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})$/))) return level(env, m[1]);
     if ((m = path.match(/^\/api\/players\/([1-9][0-9]{0,9})$/))) return player(env, Number(m[1]));
+    if ((m = path.match(/^\/api\/players\/([1-9][0-9]{0,9})\/history$/)))
+      return history(env, Number(m[1]), await currentUser(request, env));
     if (path === "/api/v1/me") {  // (levelpack's account)
       const user = await clientUser(request, env);
       return user ? json({ id: user.id, name: user.name }) : json({ error: "Not signed in" }, 401);
@@ -424,6 +426,7 @@ async function route(request, env, ctx) {
     if (path === "/api/device/approve") return deviceApprove(request, env, user);
     if (path === "/api/me/video") return setVideo(request, env, user);
     if (path === "/api/me/name") return setName(request, env, user);
+    if (path === "/api/me/history") return setHistory(request, env, user);
     if ((m = path.match(/^\/api\/admin\/(takedown|restore|block|unblock|handled|verify|unverify|delete-user)$/))) {
       if (!user.admin) return json({ error: "The owner's only" }, 403);
       return admin(request, env, m[1], user);

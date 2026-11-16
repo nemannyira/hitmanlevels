@@ -112,7 +112,7 @@ export async function boards(env, id, stage) {
 
 // GET /api/players/<id>: a player's page (the listed levels they played, their best Silent Assassin times)
 export async function player(env, id) {
-  const u = await env.DB.prepare("SELECT id, name, created FROM users WHERE id = ? AND blocked = 0").bind(id).first();
+  const u = await env.DB.prepare("SELECT id, name, created, history_public FROM users WHERE id = ? AND blocked = 0").bind(id).first();
   if (!u) return json({ error: "No such player" }, 404);
   const { results } = await env.DB.prepare(
     `SELECT r.level_id AS id, (SELECT title FROM versions v WHERE v.level_id = r.level_id ORDER BY version DESC LIMIT 1) AS title,
@@ -120,7 +120,35 @@ export async function player(env, id) {
             MIN(CASE WHEN ${BOARD} THEN r.time END) AS best, MAX(CASE WHEN ${BOARD} THEN r.verified ELSE 0 END) AS verified
        FROM runs r JOIN levels l ON l.id = r.level_id WHERE r.user_id = ? AND l.taken_down = 0
       GROUP BY r.level_id, r.stage ORDER BY title, r.stage`).bind(id).all();
-  return json({ id: u.id, name: u.name, joined: u.created, levels: results });
+  return json({ id: u.id, name: u.name, joined: u.created, history_public: !!u.history_public, levels: results });
+}
+
+// GET /api/players/<id>/history: the player's plays sent signed in (the listed levels'), newest first, and their
+// totals; to others only when the player made it public (POST /api/me/history), to the player always
+export async function history(env, id, viewer) {
+  const u = await env.DB.prepare("SELECT id, history_public FROM users WHERE id = ? AND blocked = 0").bind(id).first();
+  if (!u) return json({ error: "No such player" }, 404);
+  if (!u.history_public && !(viewer && viewer.id === u.id)) return json({ error: "This player's history is not public" }, 403);
+  const from = "FROM runs r JOIN levels l ON l.id = r.level_id WHERE r.user_id = ? AND l.taken_down = 0";
+  const [runs, totals] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT r.level_id, (SELECT title FROM versions v WHERE v.level_id = r.level_id ORDER BY version DESC LIMIT 1) AS title,
+              r.version, r.stage, r.result, r.time, r.rating, r.received, r.ranked, r.verified
+         ${from} ORDER BY r.received DESC, r.id LIMIT 200`).bind(id),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS plays, COALESCE(SUM(r.result = 'completed'), 0) AS finished,
+              COALESCE(SUM(r.result = 'completed' AND r.rating = 'SilentAssassin'), 0) AS silent_assassin,
+              COALESCE(SUM(r.time), 0) AS time, COUNT(DISTINCT r.level_id) AS levels ${from}`).bind(id),
+  ]);
+  return json({ public: !!u.history_public, totals: totals.results[0], runs: runs.results });
+}
+
+// POST /api/me/history { public } (signed in): whether others see the player's play history
+export async function setHistory(request, env, user) {
+  const b = await request.json().catch(() => ({}));
+  if (typeof b.public !== "boolean") return json({ error: "public: true or false" }, 400);
+  await env.DB.prepare("UPDATE users SET history_public = ? WHERE id = ?").bind(b.public ? 1 : 0, user.id).run();
+  return json({ public: b.public });
 }
 
 // GET /api/me/runs (signed in): the player's runs that can go on the verified board (a video can be linked)

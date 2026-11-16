@@ -107,6 +107,13 @@ same chain; the site checks what it can itself), the ticket taken as a run start
 * **A player's page** (`player.html?id=`, `GET /api/players/<id>`): the listed levels played, plays,
   finished, the best Silent Assassin time (verified or not); the player's own view lists their ranked
   runs to link videos (`GET /api/me/runs`).
+* **A player's play history** (2026-11-16, migration 0007_history.sql; decided with the owner then): the
+  plays the player sent signed in, one by one, newest first (the level, its stage, finished / failed / left,
+  the time, the rating, the day the site got it: when it was played is not kept), and the totals (plays,
+  levels, finished, Silent Assassin, time played); `GET /api/players/<id>/history`. The player always sees
+  it on their page; others only when the player turns it on there (*Show my play history to everyone*,
+  `POST /api/me/history`, `users.history_public`: off at first). The listed levels' plays only, as the
+  page's table.
 * An account deleted: its runs stay as anonymous ones (no account, not ranked, no video); its levelpack
   tokens, tickets and device codes go. The daily clean-up deletes device codes that ran out and tickets two
   days old.

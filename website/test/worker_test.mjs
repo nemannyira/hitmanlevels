@@ -204,6 +204,23 @@ try {
   const meId = (await (await get("/api/me", me)).json()).id;
   const pl = await (await get(`/api/players/${meId}`)).json();
   check("the player's page: the level, its plays, the best time", pl.levels.some((l) => l.id === id && l.best === 240 && l.plays >= 2), JSON.stringify(pl.levels));
+  // the play history: the player's own always, others' only when the player made it public (off at first)
+  check("the play history: not public at first", pl.history_public === false &&
+    (await get(`/api/players/${meId}/history`)).status === 403 && (await get(`/api/players/${meId}/history`, other)).status === 403);
+  let hist = await (await get(`/api/players/${meId}/history`, me)).json();
+  check("... the player's own: each play sent signed in, newest first, and the totals",
+    hist.public === false && hist.runs.length === hist.totals.plays && hist.totals.plays >= 2 && hist.totals.levels >= 1 &&
+    hist.runs.every((x) => x.level_id && ["completed", "failed", "left"].includes(x.result) && x.received) &&
+    hist.runs.every((x, i) => !i || hist.runs[i - 1].received >= x.received) && hist.totals.finished >= 2 &&
+    hist.totals.time >= hist.runs.reduce((s, x) => s + x.time, 0), JSON.stringify(hist.totals));
+  check("... the setting refused without a true / false", (await post("/api/me/history", JSON.stringify({ public: "yes" }), me)).status === 400);
+  check("... made public", (await (await post("/api/me/history", JSON.stringify({ public: true }), me)).json()).public === true);
+  hist = await (await get(`/api/players/${meId}/history`)).json();
+  check("... then anyone sees it", hist.public === true && hist.totals.plays >= 2 &&
+    (await (await get(`/api/players/${meId}`)).json()).history_public === true);
+  await post("/api/me/history", JSON.stringify({ public: false }), me);
+  check("... and hidden again", (await get(`/api/players/${meId}/history`)).status === 403);
+  check("... signed out: the setting needs an account", (await post("/api/me/history", JSON.stringify({ public: true }), { Origin: BASE })).status === 401);
   const myRuns = (await (await get("/api/me/runs", me)).json()).runs;
   check("the player's runs on the boards (for a video)", myRuns.length === 1 && myRuns[0].id === fair && quick !== fair);
   check("a video that is not https:// refused", (await post("/api/me/video", JSON.stringify({ run: fair, url: "javascript:alert(1)" }), me)).status === 400);

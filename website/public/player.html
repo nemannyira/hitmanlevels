@@ -38,6 +38,14 @@
       <div class="section-title"><h2>Levels played</h2><span class="muted">plays sent signed in in levelpack</span></div>
       <table class="runs" id="levels"><tr><th>Level</th><th>Plays</th><th>Finished</th><th>Best Silent Assassin</th></tr></table>
     </section>
+    <section id="history-box" hidden style="margin-top:28px">
+      <div class="section-title"><h2>Play history</h2><span class="muted" id="history-note"></span></div>
+      <p id="history-totals"></p>
+      <div class="form-row" id="history-switch" hidden>
+        <label class="check"><input type="checkbox" id="history-public"> <span>Show my play history to everyone (only you see it otherwise)</span></label>
+      </div>
+      <table class="runs" id="history"><tr><th>Level</th><th>Result</th><th>Time</th><th>Rating</th><th>Sent</th></tr></table>
+    </section>
     <section id="mine" hidden style="margin-top:28px">
       <div class="section-title"><h2>Your runs on the boards</h2><span class="muted">a video of one puts it on the verified board once the owner watched it</span></div>
       <table class="runs" id="runs"><tr><th>Level</th><th>Time</th><th>Sent</th><th>Video</th><th></th></tr></table>
@@ -91,6 +99,35 @@
     if (!runs.length) row($("runs"), ["None yet: a Silent Assassin run sent signed in, with its ticket.", "", "", "", ""]);
   }
 
+  // the player's plays sent signed in, one by one (public when the player chose it; the player's own always)
+  async function showHistory(own) {
+    var r = await fetch("/api/players/" + id + "/history", { credentials: "same-origin" });
+    if (!r.ok) return;
+    var h = await r.json(), t = h.totals;
+    $("history-box").hidden = false;
+    $("history-note").textContent = h.public ? "everyone can see it" : "only you can see it";
+    $("history-totals").textContent = t.plays + (t.plays === 1 ? " play" : " plays") + " of " + t.levels +
+      (t.levels === 1 ? " level" : " levels") + " · " + t.finished + " finished (" + percent(t.finished, t.plays) + ") · " +
+      "Silent Assassin " + t.silent_assassin + " · played " + clock(t.time);
+    if (own) {
+      $("history-switch").hidden = false;
+      $("history-public").checked = h.public;
+      $("history-public").onchange = async function () {
+        var s = await fetch("/api/me/history", { method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ public: $("history-public").checked }) });
+        if (s.ok) $("history-note").textContent = (await s.json()).public ? "everyone can see it" : "only you can see it";
+        else $("history-public").checked = !$("history-public").checked;
+      };
+    }
+    var results = { completed: "finished", failed: "failed", left: "left" };
+    h.runs.forEach(function (x) {
+      var a = el("a", null, (x.title || x.level_id) + (x.stage ? " · stage " + x.stage : ""));
+      a.href = "level.html?id=" + encodeURIComponent(x.level_id);
+      row($("history"), [a, results[x.result] || x.result, clock(x.time), x.rating ? ratingName(x.rating) : "-", day(x.received)]);
+    });
+    if (!h.runs.length) row($("history"), ["No plays sent signed in yet.", "", "", "", ""]);
+  }
+
   (async function () {
     var p = null;
     if (/^[1-9][0-9]{0,9}$/.test(id)) {
@@ -108,10 +145,13 @@
         l.best !== null ? clock(l.best) + (l.verified ? " (verified)" : "") : "-"]);
     });
     if (!p.levels.length) row($("levels"), ["No plays sent signed in yet.", "", "", ""]);
+    var own = false;
     try {
       var me = await fetch("/api/me", { credentials: "same-origin" });
-      if (me.ok && (await me.json()).id === p.id) await mine();
+      own = me.ok && (await me.json()).id === p.id;
     } catch (e) { /* (signed out: the public page only) */ }
+    if (own || p.history_public) await showHistory(own);
+    if (own) await mine();
   })();
 </script>
 </body>

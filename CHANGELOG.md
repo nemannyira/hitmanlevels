@@ -3,11 +3,14 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
-## 2026-11-16: a person's picture
+## 2026-11-16: a person's picture, the exit
 
 * *Looks like*: when there is no picture of the person (the free camera
   above the map or looking down, a cut scene), the tooltip says so and
   how to get one (the camera down in the map, or *To Hitman*) (#41).
+* The mission's exit is drawn in the world while the editor is open (the
+  square Hitman has to reach, "exit" over it); Simple mode calls it "the exit
+  you picked" and says *Another exit* moves it (#42).
 
 ## 2026-11-15: small things in Simple mode
 

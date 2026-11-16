@@ -264,7 +264,7 @@ Assassin. The level is kept in `dumps/walkthrough/Snow_Ambush`.
 | W35 | Engine names in Simple mode: placing "ChefJapanese (afghanPedestrian (C5-2))", the world label `NPC_ChefJapanese_1` after naming it, "ZItemTemplate" in an item's tooltip, *Photo of BombRemoteSmall*, the exit "Point" | open: #44 |
 | W36 | The first objective of the maker's own is "objective 4" on the cards (the original lines keep 1-3) | fixed: the cards number the lines the laptop shows (#47) |
 | W37 | *Take Hacking device* though the item was named "the device": the name is kept for `ROOT/HackingDevice`, the objective's target is `level:HackingDevice_item+1` | open: #40 |
-| W38 | The exit is an invisible point: nothing shows where it is; the status says to move it "from the Scene tab" (Advanced mode) | open: #42 |
+| W38 | The exit is an invisible point: nothing shows where it is; the status says to move it "from the Scene tab" (Advanced mode) | fixed: drawn while the editor is open (its square, "exit"), named "the exit you picked", the status says *Another exit* (#42) |
 | W39 | The Mission step says "This level also has routes of their own: they stay as they are; Advanced mode edits them" when its only route was made in Simple mode | open: #45 |
 | W40 | Simple mode starts from the map's own mission and cannot empty it: the map's guards (Hayamoto's bodyguards) alerted at the cook's death and shot Hitman | open, a decision: #43 |
 | W41 | The debug view reports the map's patrolling guards that stop to chat as "has not moved for 15 s (its route?)" | open: #46 |

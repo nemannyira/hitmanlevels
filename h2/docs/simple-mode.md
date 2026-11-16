@@ -82,7 +82,8 @@ choices.)
   level. The laptop line's text is written from the sentence and can be
   changed.
 * **The exit:** *Leave through* [a place] (optional; the map's own exit when
-  kept).
+  kept). The exit picked is drawn in the world while the editor
+  is open (the square of its zone, "exit" over it); *Another exit* moves it (#42).
 * **Briefing:** the laptop's text (one box; the original's when empty).
 * **Start outfit:** Hitman starts in [his suit / a disguise].
 

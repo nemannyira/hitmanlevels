@@ -41,6 +41,7 @@
 #include "stages.h"
 #include "viewport.h"
 #include "highlight.h"
+#include "guides.h"
 
 namespace h2::editor {
 
@@ -1264,7 +1265,11 @@ void OnPlacePick(engine::ZGEOM* hit, const float* point, const float*)
     }
     std::string path = PathOf(p);
     SetPlace(g_pickSlot, path);
-    g_status = "place set (an invisible point: move it later from the Scene tab)";
+    if (!overlay::SimpleMode())
+        g_status = "place set (an invisible point: move it later from the Scene tab)";
+    else  // (#42: Simple mode has no Scene tab)
+        g_status = g_pickSlot ? "place set: to move it, Another place" : "exit set (drawn in the world): to move it, "
+                                                                       "Another exit";
 }
 
 // the object to take: an item (also when its model was clicked) or any model; not characters
@@ -2108,6 +2113,9 @@ void DrawSimpleMissionStep()
     if (m.endWhenDone) {
         ImGui::Indent();
         std::string exit = Label(m.exitPath);
+        const std::string id = m.exitPath.substr(m.exitPath.rfind('/') + 1);  // (#42: a point picked: "Point")
+        if (std::ranges::any_of(CurrentLevel().spawned, [&](const SpawnedObject& s) { return s.point && s.id == id; }))
+            exit = "the exit you picked (drawn in the world)";
         ImGui::TextWrapped("and Hitman leaves through: %s", exit.empty() ? "anywhere (it ends at once)" : exit.c_str());
         PickButton(exit.empty() ? "Pick the exit" : "Another exit", PickKind::Place, 0);
         if (!exit.empty()) {
@@ -2942,6 +2950,32 @@ std::string GoalZoneName(int code)
     return code > 100 ? "H2_Deliver_" + std::to_string(code - 100) : "H2_Reach_" + std::to_string(code);
 }
 
+// The mission's exit in the world while the editor is open (#42: an invisible point before): the square of
+// its zone (the game's box of "how near" each way, LevelZones), a post and "exit" over it
+void DrawExitInWorld()
+{
+    const MissionDoc& m = Doc();
+    if (!overlay::IsOpen() || !ForThisScene() || !m.endWhenDone || m.exitPath.empty() || !engine::SceneDataValid())
+        return;
+    engine::ZGEOM* place = ResolveTarget(m.exitPath);
+    if (!place || !IsLive(place))
+        return;
+    Transform t = GetTransform(place);
+    const float r = m.exitRadius;
+    const ImU32 color = IM_COL32(120, 230, 140, 230);
+    float c[4][3];
+    for (int k = 0; k < 4; ++k) {
+        c[k][0] = t.pos[0] + (k == 1 || k == 2 ? r : -r);
+        c[k][1] = t.pos[1] + 5.0f;
+        c[k][2] = t.pos[2] + (k >= 2 ? r : -r);
+    }
+    for (int k = 0; k < 4; ++k)
+        DrawLine3D(c[k], c[(k + 1) % 4], color, 2.0f);
+    float top[3] = {t.pos[0], t.pos[1] + 200.0f, t.pos[2]};
+    DrawLine3D(t.pos, top, color, 2.0f);
+    DrawLabel3D(top, "exit", color);
+}
+
 void InstallMission()
 {
     script::SetEditorEvents({"spotted", "hostile"}, OnEditorEvent);
@@ -2956,6 +2990,7 @@ void InstallMission()
     Hook("BriefingMenu::Action", kBriefingAction, hkBriefingAction, &oBriefingAction);
     overlay::AddPanel({"Mission", &g_panelVisible, DrawPanel, overlay::Dock::Left});
     overlay::AddAlwaysDraw(DrawLaptopPhoto);
+    overlay::AddAlwaysDraw(DrawExitInWorld);
     OnSceneLeaving([](const std::string&) { g_photosFound = false; });
     OnScenePushed(OnScene);
     OnFrameEnd(Check);

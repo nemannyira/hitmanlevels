@@ -106,6 +106,28 @@ try:
     check("Put back", press("Put back").startswith("pressed"))
     lua('return h2.dev_level("save")')
     check("saved: the line back", not any(o.get("hidden") for o in doc().get("mission", {}).get("objectives", [])))
+
+    # the exit (#42): picked on the ground, drawn in the world (its square, "exit"), then taken out
+    sw, sh = (float(v) for v in lua('local w, h = h2.dev_screen() return w .. " " .. h').split())
+    check("Pick the exit", press("Pick the exit").startswith("pressed"))
+    for _ in range(3):
+        lua('h2.dev_hover(%f, %f) return 1' % (sw * 0.6, sh * 0.75))
+        time.sleep(0.3)
+    lua('h2.dev_click(%f, %f) return 1' % (sw * 0.6, sh * 0.75))
+    time.sleep(1.5)
+    lua('return h2.dev_level("save")')
+    exit_path = doc().get("mission", {}).get("exit", "")
+    check("saved: the exit", exit_path.startswith("ROOT"), exit_path)
+    check("... Another exit offered", press("Another exit", settle=0.2).startswith("pressed"))
+    lua('h2.dev_uikey(526) return 1')  # (its pick cancelled)
+    time.sleep(0.5)
+    shot("exit")
+    from PIL import Image  # noqa: PLC0415
+    im = Image.open(os.path.join(dev.GAME, "Screens", "simple_exit.bmp")).convert("RGB")
+    world = im.crop((int(im.size[0] * 0.2), 0, im.size[0], im.size[1]))  # (thin lines: not made smaller)
+    green = sum(1 for r, g, b in world.getdata() if g > 180 and g - r > 60 and 100 < b < 170)
+    check("the exit drawn in the world", green >= 300, "%d of its green pixels" % green)
+    check("No exit", press("No exit").startswith("pressed"))
     press("As the original mission ends")
 
     # 1. Mission: a target from the selection card, never be spotted

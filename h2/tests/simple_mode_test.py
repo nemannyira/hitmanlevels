@@ -119,6 +119,16 @@ try:
     # 2. People: a guard placed where the camera looks
     check("Next: People", press("Next: People >").startswith("pressed"))
     check("A civilian", press("A civilian").startswith("pressed"))
+    # a look's picture (#41: the person stood in front of the game's camera, drawn into the thumbnail)
+    look = press("##look")
+    if look.startswith("pressed"):
+        _, lx, ly = look.split()[:3]
+        for _ in range(12):
+            lua('h2.dev_hover(%s, %d) return 1' % (lx, int(ly) + 40))
+            time.sleep(0.2)
+    check("Looks like: the person's picture", lua("return tostring(h2.dev_thumbnail())") == "true", look)
+    lua('h2.dev_uikey(526) return 1')  # (the list closed)
+    time.sleep(0.5)
     walks = press("Walks a route")
     check("a civilian walks a route (a behaviour of another level's when the map has none)",
           walks.startswith("pressed") and "disabled" not in walks, walks)

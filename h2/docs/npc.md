@@ -374,3 +374,14 @@ back, paused and running. Drawn this frame: the node's +0x58 high word is set
 0x464B83), the rooms' +0x97 lists (their ZGATE portals, visibility test
 0x432320 -> node flag 0x1000), node flag 0x08000000 (a node whose ref is not
 from the static pool, GeomPtrToRef 0x426AF0; setting it crashes).
+
+A character's picture (the *Looks like* tooltips, *Photo of*): the
+character is put 3.5 m in front of the camera (the floor takes its feet)
+and its skinned draws go into the picture with the camera's own view. So
+the game has to draw it: in a room the camera sees, in its view. On C3-1
+(#41, 2026-11-16, the free camera moved by hand) it was drawn from the
+game's camera and from the free camera inside the map; not with the free
+camera high above the map (the place in the air is in no room: it stays
+there, not drawn), nor looking steeply down (it stands above the view),
+nor during the opening cut scene (the main camera is not the one
+drawing). Then the tooltip says why there is no picture.

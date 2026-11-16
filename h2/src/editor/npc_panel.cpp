@@ -1702,7 +1702,14 @@ void TypeTooltip(int t, const char* more)
         ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(w, h), uv0, uv1);
         ThumbnailShown(uv0.x, uv0.y, uv1.x, uv1.y, aspect, Readable(type.model));  // (a laptop photo: mission.cpp)
     }
-    else
+    else if (g_thumbType == t && ImGui::GetTime() - g_thumbPlaced > 0.5) {
+        // not drawn: the game draws a character only in a room the camera sees, in its view (#41: the free
+        // camera above the map, where it stands in no room, or looking down past it; a cut scene's camera)
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + std::max(w, wide));
+        ImGui::TextDisabled("No picture from this camera: it shows the person standing in front of it. Bring the "
+                            "free camera down into the map and look ahead, or press To Hitman.");
+        ImGui::PopTextWrapPos();
+    } else
         ImGui::Dummy(ImVec2(w, h));  // (the picture comes a moment later)
     ImGui::EndTooltip();
 }

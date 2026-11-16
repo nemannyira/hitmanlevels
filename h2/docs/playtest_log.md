@@ -259,7 +259,7 @@ Assassin. The level is kept in `dumps/walkthrough/Snow_Ambush`.
 | W30 | Launcher: the name field holds "My level" as text: it has to be deleted before typing | fixed: "My level" is the empty field's hint, used when nothing is typed (#47) |
 | W31 | Removing an original objective is not in Undo (Undo stays grey) | fixed: *Remove it* is undoable (#47) |
 | W32 | "Plant bug on Hayamoto JR's corpse (removed)" cut at the panel's edge | fixed: wrapped at the panel's edge (#47) |
-| W33 | C3-1: the characters' pictures stay black in *Looks like* (`dev_thumbnail` false; the preview character is made); C1-1 shows them, with or without the free camera. So no *Photo of* a character there | open: #41 |
+| W33 | C3-1: the characters' pictures stay black in *Looks like* (`dev_thumbnail` false; the preview character is made); C1-1 shows them, with or without the free camera. So no *Photo of* a character there | fixed: drawn only in front of a camera inside the map (the place above the map is in no room, a cut scene's camera is not the main one); the tooltip says so (#41) |
 | W34 | The route's hint says "point 2 of the route" for the first point clicked (drawn as 1): it counts the start point | open: #45 |
 | W35 | Engine names in Simple mode: placing "ChefJapanese (afghanPedestrian (C5-2))", the world label `NPC_ChefJapanese_1` after naming it, "ZItemTemplate" in an item's tooltip, *Photo of BombRemoteSmall*, the exit "Point" | open: #44 |
 | W36 | The first objective of the maker's own is "objective 4" on the cards (the original lines keep 1-3) | fixed: the cards number the lines the laptop shows (#47) |

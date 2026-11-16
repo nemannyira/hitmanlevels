@@ -328,6 +328,7 @@ void InstallPlayTest()
 }
 
 bool ScenePaused() { return EnginePaused(); }
+bool GamePaused() { return EnginePaused() && !g_wePaused; }
 void StepWorld(int frames) { g_stepFrames = std::max(g_stepFrames, std::min(frames, 30)); }
 
 } // namespace h2::editor

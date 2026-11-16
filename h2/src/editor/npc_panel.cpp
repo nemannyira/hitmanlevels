@@ -628,8 +628,8 @@ bool Walked(const Route& r) { return r.list && IsRouteRef(r.name) && !r.points.e
 
 void DrawPlayRoutes()
 {
-    if (!*PlayDebugShown() || !PlayDebugView().routes || overlay::IsOpen() || engine::SceneRecords().empty() ||
-        !engine::SceneDataValid() || CurrentScene().empty())
+    if (!*PlayDebugShown() || !PlayDebugView().routes || overlay::IsOpen() || GamePaused() ||
+        engine::SceneRecords().empty() || !engine::SceneDataValid() || CurrentScene().empty())
         return;
     game::ZCAMERA* cam = game::MainCamera();
     if (!cam)

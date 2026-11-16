@@ -26,6 +26,9 @@ bool WorldFrozen();
 bool WorldFrozenWhilePlaying();
 // The engine's pause is on (the editor's, the Freeze toggle's, the game's own).
 bool ScenePaused();
+// The game's own pause: its menus pause the scene (PauseScene 0x41B890 from the laptop, the map, the
+// Esc menu, the end screens), not the editor.
+bool GamePaused();
 // While the editor holds the world still: let it run `frames` frames (a
 // character moved meanwhile is only drawn in its new room once its own
 // update has run; the paused engine does not run it).

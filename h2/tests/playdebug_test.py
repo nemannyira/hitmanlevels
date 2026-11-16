@@ -103,6 +103,29 @@ try:
     time.sleep(6)  # (events, the objectives polled)
     playing = lua("return h2.dev_lasttest()")
     check("the test's log while playing", "The test starts" in playing, playing[:200])
+
+    # not drawn over the laptop (#46 W43: the game's menus pause the scene): the alarm line's green gone
+    def alarm_green(name):
+        from PIL import Image  # noqa: PLC0415
+        shot(name)
+        im = Image.open(os.path.join(dev.GAME, "Screens", "playdebug_%s.bmp" % name)).convert("RGB")
+        return sum(1 for r, g, b in im.getdata() if abs(r - 110) < 25 and abs(g - 230) < 25 and abs(b - 60) < 25)
+    shown = alarm_green("before_laptop")
+    lua("h2.dev_key(0x30) return 1")  # (B: the laptop)
+    time.sleep(1.5)
+    over = alarm_green("laptop")
+    lua("h2.dev_key(0x01) return 1")  # (Esc: closed)
+    time.sleep(1)
+    check("the view not drawn over the laptop", shown > 50 and over < shown // 10,
+          "%d pixels of the alarm line, %d with the laptop open" % (shown, over))
+    # the map's two patrolling guards meet and chat (C1-1, about 26 s in): not reported as stuck (#46 W41)
+    for _ in range(40):
+        if float(lua("return h2.time()")) > 50:
+            break
+        time.sleep(2)
+    playing = lua("return h2.dev_lasttest()")
+    check("the map's chatting guards not reported stuck", "has not moved" not in playing,
+          [l for l in playing.splitlines() if "has not moved" in l][:2])
     reports = re.findall(r"stress reported: who ([0-9A-F]+), value (-?\d+)", log_text())
     print("NOTE suspicion reports: %s" % (reports[:6] or "none yet (nobody suspicious)"))
 

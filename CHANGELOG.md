@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-16: the debug view
+
+* The debug view is not drawn over the laptop, the map, the Esc menu and the
+  end screens (the game pauses its scene for them); *Stuck people* reports
+  only the level's own people, not the map's guards who stop to chat (#46).
+
 ## 2026-11-16: Simple mode's routes
 
 * The route's hint numbers the next point as the route draws it (the first

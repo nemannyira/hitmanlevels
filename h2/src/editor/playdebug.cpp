@@ -30,6 +30,7 @@
 #include "model.h"
 #include "npc_panel.h"
 #include "npcs.h"
+#include "playtest.h"
 
 namespace h2::editor {
 
@@ -296,7 +297,10 @@ void Poll()
         Add("Hitman died", kRed, hitman);
     g_hitmanDead = dead;
     for (engine::ZGEOM* a : PlayingCharacters()) {
-        if (!WalksARoute(a) || !engine::IsAlive(a) || KnockedOut(a)) {
+        // the level's own people (placed, or their behaviour changed): the map's others stand as the game
+        // made them (two patrolling guards chatting, #46 W41)
+        bool own = IsPlacedNpc(a) || CurrentLevel().npcEdits.count(NpcRecordOf(a)) > 0;
+        if (!own || !WalksARoute(a) || !engine::IsAlive(a) || KnockedOut(a)) {
             g_still.erase(a);
             continue;
         }
@@ -625,7 +629,7 @@ void DrawCorner(ImDrawList* dl, double now)
 
 void Draw()
 {
-    if (!g_shown || overlay::IsOpen() || !OnMap())
+    if (!g_shown || overlay::IsOpen() || !OnMap() || GamePaused())  // (not over the laptop, the end screen, #46)
         return;
     game::ZCAMERA* cam = game::MainCamera();
     if (!cam)
@@ -724,8 +728,9 @@ void DrawPlayDebugSettings()
                           "each objective (done, not yet and how far, lost and why), the latest events.");
     ImGui::Checkbox("Stuck people", &g_layers.stuck);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("A person with a route that has not moved for 15 s (stopped on its way: a point it cannot\n"
-                          "reach, a door, someone in the way). Waiting at a point is fine for some behaviours.");
+        ImGui::SetTooltip("A person of the level's (placed, or its behaviour changed) with a route that has not\n"
+                          "moved for 15 s (stopped on its way: a point it cannot reach, a door, someone in the way).\n"
+                          "Waiting at a point is fine for some behaviours.");
     ImGui::Unindent();
 }
 

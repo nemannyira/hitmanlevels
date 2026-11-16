@@ -87,7 +87,14 @@ controls and *Back* / *Next*.
    * *Objectives and alarm level*: in the corner the alarm level (the game's
      stress meter; above 50 the music changes), each objective (done, not
      yet and how far, lost and why) and the latest events.
-   * *Stuck people*: a person with a route that has not moved for 15 s.
+   * *Stuck people*: a person of the level's (placed, or its behaviour
+     changed) with a route that has not moved for 15 s. The map's other
+     people stand as the game made them (guards stopping to chat).
+
+   The view is not drawn while the game's own pause is on: its menus (the
+   laptop, the map, the Esc menu, the end screens) pause the scene
+   (`ZEngineDataBase::PauseScene` 0x41B890, the engine's +0xB9C), unlike the
+   editor's Freeze.
 
    Back in the editor, *What happened in the last test* lists the test's
    events with their time (spotted, suspicious, alarm, killed, knocked out,

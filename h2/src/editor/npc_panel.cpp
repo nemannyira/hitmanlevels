@@ -591,6 +591,8 @@ std::vector<engine::ZGEOM*> AllCharacters()
     return out;
 }
 
+engine::ZGEOM* WalkRouteOf(engine::ZGEOM* actor);
+
 void DrawAllRoutes()
 {
     g_markers.clear();
@@ -606,6 +608,12 @@ void DrawAllRoutes()
     if (g_routes == kRoutesSelected) {
         engine::ZGEOM* a = ActorOf(Selected());
         drawActor(a ? a : g_target);
+        // Simple mode: the new people's routes on every step, also after the map loaded again (no one
+        // selected then, #45)
+        if (overlay::SimpleMode())
+            for (engine::ZGEOM* g : PlacedNpcs())
+                if (g != (a ? a : g_target) && WalkRouteOf(g))
+                    drawActor(g);
         return;
     }
     for (engine::ZGEOM* g : AllCharacters())
@@ -2343,10 +2351,10 @@ void UpdateNpcPlacement()
             return;
         }
         ImDrawList* dl = ImGui::GetForegroundDrawList();
+        std::vector<engine::ZGEOM*> pts = g_addList ? ListPointsLive(g_addList) : std::vector<engine::ZGEOM*>{};
         std::string text = !g_addList ? "click: new point for " + g_newPointParam + "   Esc: cancel"
-                           : overlay::SimpleMode()
-                               ? "click: point " + std::to_string(ListPointsLive(g_addList).size() + 1) +
-                                     " of the route   Esc: done"
+                           : overlay::SimpleMode()  // (numbered as drawn: the start point is "start", #45)
+                               ? "click: point " + RoutePointLabel(pts, pts.size()) + " of the route   Esc: done"
                                : "click: add a point to " + engine::SafeString(g_addList->name) +
                                      " (after the selected point)   Esc: done";
         ImVec2 p(io.MousePos.x + 18, io.MousePos.y + 18);

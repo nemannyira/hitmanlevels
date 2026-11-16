@@ -3,6 +3,13 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-16: Simple mode's routes
+
+* The route's hint numbers the next point as the route draws it (the first
+  one clicked is 1, after "start"); the new people's routes are drawn on every
+  step, also after a test; the Mission step no longer calls a route made in
+  Simple mode a route "of their own" (#45).
+
 ## 2026-11-16: readable names in Simple mode
 
 * Simple mode names things as they read, not the engine's names (#44): the

@@ -260,15 +260,15 @@ Assassin. The level is kept in `dumps/walkthrough/Snow_Ambush`.
 | W31 | Removing an original objective is not in Undo (Undo stays grey) | fixed: *Remove it* is undoable (#47) |
 | W32 | "Plant bug on Hayamoto JR's corpse (removed)" cut at the panel's edge | fixed: wrapped at the panel's edge (#47) |
 | W33 | C3-1: the characters' pictures stay black in *Looks like* (`dev_thumbnail` false; the preview character is made); C1-1 shows them, with or without the free camera. So no *Photo of* a character there | fixed: drawn only in front of a camera inside the map (the place above the map is in no room, a cut scene's camera is not the main one); the tooltip says so (#41) |
-| W34 | The route's hint says "point 2 of the route" for the first point clicked (drawn as 1): it counts the start point | open: #45 |
+| W34 | The route's hint says "point 2 of the route" for the first point clicked (drawn as 1): it counts the start point | fixed: numbered as drawn (#45) |
 | W35 | Engine names in Simple mode: placing "ChefJapanese (afghanPedestrian (C5-2))", the world label `NPC_ChefJapanese_1` after naming it, "ZItemTemplate" in an item's tooltip, *Photo of BombRemoteSmall*, the exit "Point" | fixed: the placing hint, the selection's label, the items' tooltip and the photo button use the readable names; a picked exit is "the exit" (#44) |
 | W36 | The first objective of the maker's own is "objective 4" on the cards (the original lines keep 1-3) | fixed: the cards number the lines the laptop shows (#47) |
 | W37 | *Take Hacking device* though the item was named "the device": the name is kept for `ROOT/HackingDevice`, the objective's target is `level:HackingDevice_item+1` | open: #40 |
 | W38 | The exit is an invisible point: nothing shows where it is; the status says to move it "from the Scene tab" (Advanced mode) | fixed: drawn while the editor is open (its square, "exit"), named "the exit you picked", the status says *Another exit* (#42) |
-| W39 | The Mission step says "This level also has routes of their own: they stay as they are; Advanced mode edits them" when its only route was made in Simple mode | open: #45 |
+| W39 | The Mission step says "This level also has routes of their own: they stay as they are; Advanced mode edits them" when its only route was made in Simple mode | fixed: a route a new person walks is not counted (#45) |
 | W40 | Simple mode starts from the map's own mission and cannot empty it: the map's guards (Hayamoto's bodyguards) alerted at the cook's death and shot Hitman | fixed: Simple mode's launcher has *Keep the map's people* (on by default; off: the empty map) (#43) |
 | W41 | The debug view reports the map's patrolling guards that stop to chat as "has not moved for 15 s (its route?)" | open: #46 |
-| W42 | After a test (the map loaded again) the cook's route is drawn only while its *Route* box is open; before the test it was drawn on every step | open: #45 |
+| W42 | After a test (the map loaded again) the cook's route is drawn only while its *Route* box is open; before the test it was drawn on every step | fixed: Simple mode draws the new people's routes on every step (#45) |
 | W43 | The debug view stays drawn over the laptop and the *Mission Accomplished* screen | open: #46 |
 | W44 | The laptop lists 5 empty file boxes under the level's one file | fixed: the game's own look (C3-1 shows them too: no photo keys those boxes); hidden on a level (#47) |
 | W45 | photo1.png and preview.png are written uncompressed (787 KB, 691 KB; a package takes 1 MB each) | fixed: compressed through WIC's PNG encoder (preview 691 KB -> 273 KB, #47) |

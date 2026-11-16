@@ -352,6 +352,25 @@ try:
     # taken out of the actors' collision lists left it undrawn)
     lua('h2.dev_editor(true) h2.dev_mode("simple") return 1')
     time.sleep(1)
+    # the civilian's route drawn with no one selected and its Route box closed (#45 W42): its lines in the
+    # routes' colours, which Advanced mode (the selected character's routes only) does not draw then
+    lua('h2.dev_select(nil) return 1')
+
+    def route_pixels(name):
+        from PIL import Image  # noqa: PLC0415
+        shot(name)
+        im = Image.open(os.path.join(dev.GAME, "Screens", "simple_%s.bmp" % name)).convert("RGB")
+        world = im.crop((int(im.size[0] * 0.25), int(im.size[1] * 0.1), int(im.size[0] * 0.75), im.size[1]))
+        colours = [(70, 220, 255), (255, 200, 60), (150, 255, 110), (255, 120, 200), (190, 150, 255), (255, 140, 80)]
+        return sum(1 for p in world.getdata() if any(sum(abs(a - b) for a, b in zip(p, c)) < 40 for c in colours))
+    drawn_simple = route_pixels("route_after")
+    lua('h2.dev_mode("advanced") return 1')
+    time.sleep(0.5)
+    drawn_advanced = route_pixels("route_advanced")
+    lua('h2.dev_mode("simple") return 1')
+    time.sleep(0.5)
+    check("after the test: the new person's route drawn", drawn_simple > drawn_advanced + 200,
+          "%d route pixels, %d in Advanced mode" % (drawn_simple, drawn_advanced))
     press("2 People")
     check("the guard removed", press("Remove").startswith("pressed"))
     ok, detail = drawn("removed")

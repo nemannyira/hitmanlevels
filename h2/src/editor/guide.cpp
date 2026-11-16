@@ -139,7 +139,14 @@ void DrawAdvancedNote()
     }
     if (!L.vehicles.empty())
         has.push_back("driving cars");
-    if (!L.newLists.empty())
+    // (a route a new person walks is the guide's: People, its Route, #45)
+    if (std::ranges::any_of(L.newLists, [&](const LevelDocument::NewList& l) {
+            return std::ranges::none_of(L.npcs, [&](const LevelNpc& n) {
+                return std::ranges::any_of(n.params, [&](const ParamValue& p) {
+                    return p.type == "ZGEOMREF" && p.value == "ROOT/" + l.name;
+                });
+            });
+        }))
         has.push_back("routes of their own");
     if (L.blankMap)
         has.push_back("no buildings");

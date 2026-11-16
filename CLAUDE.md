@@ -91,6 +91,15 @@ For multi-step tasks state a brief plan:
   Everything: `python h2/tests/run_all.py`; a part: `--only name,name`. Reports go to `dumps/test_runs/`.
 * A glitch the user reports comes from their own play: read their log and level first.
 
+## Code signing
+
+* **Sign ONLY when the user explicitly says so.** The Certum cloud certificate has a monthly limit of
+  signatures; every `signtool sign` uses some. `tools/release.ps1` signs only with `-Sign`: never pass it,
+  never call `signtool sign` yourself, unless the user asked for that run.
+* The key stays with the user: in the Certum cloud, reached only through their own SimplySign Desktop login.
+  Never put a certificate, key, PIN or SimplySign login in the repo, a script, CI or a secret store, and
+  never log in to SimplySign for them.
+
 ## Git
 
 * Commit as `Pintér Tamás <106834442+nemannyira@users.noreply.github.com>`, never the global identity.

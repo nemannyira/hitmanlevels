@@ -5,8 +5,10 @@
 #   build\dist\SHA256SUMS.txt
 # (not build\release: on Windows that is build\Release, the build's own folder)
 # The version is CMakeLists.txt's project(... VERSION).
-#   powershell -File tools/release.ps1
-param([switch]$NoBuild)
+#   powershell -File tools/release.ps1 -Sign
+# -Sign code-signs dinput8.dll and levelpack.exe. Only the author signs, and only for a real release: the
+# cloud certificate has a monthly limit of signatures. Without -Sign the package is an unsigned test one.
+param([switch]$NoBuild, [switch]$Sign)
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path "$PSScriptRoot\.."
 Set-Location $root
@@ -32,18 +34,22 @@ foreach ($f in "dinput8.dll", "levelpack.exe") {
 
 # code signing: the Certum certificate in the cloud, reached through SimplySign Desktop (log in to it first);
 # the timestamp keeps the signature valid after the certificate expires
-$cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
-    Where-Object { $_.Subject -like "CN=Open Source Developer Tam*s Pint*r,*" -and $_.NotAfter -gt (Get-Date) } |
-    Sort-Object NotAfter -Descending | Select-Object -First 1
-if (-not $cert) { throw "no code signing certificate: log in to SimplySign Desktop" }
-$signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
-    Sort-Object FullName -Descending | Select-Object -First 1
-if (-not $signtool) { throw "no signtool.exe (Windows SDK)" }
-& $signtool.FullName sign /sha1 $cert.Thumbprint /fd sha256 /tr http://time.certum.pl /td sha256 `
-    "$bin\dinput8.dll" "$bin\levelpack.exe"
-if ($LASTEXITCODE) { throw "signing failed" }
-& $signtool.FullName verify /pa "$bin\dinput8.dll" "$bin\levelpack.exe"
-if ($LASTEXITCODE) { throw "the signatures do not verify" }
+if ($Sign) {
+    $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
+        Where-Object { $_.Subject -like "CN=Open Source Developer Tam*s Pint*r,*" -and $_.NotAfter -gt (Get-Date) } |
+        Sort-Object NotAfter -Descending | Select-Object -First 1
+    if (-not $cert) { throw "no code signing certificate: log in to SimplySign Desktop" }
+    $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+        Sort-Object FullName -Descending | Select-Object -First 1
+    if (-not $signtool) { throw "no signtool.exe (Windows SDK)" }
+    & $signtool.FullName sign /sha1 $cert.Thumbprint /fd sha256 /tr http://time.certum.pl /td sha256 `
+        "$bin\dinput8.dll" "$bin\levelpack.exe"
+    if ($LASTEXITCODE) { throw "signing failed" }
+    & $signtool.FullName verify /pa "$bin\dinput8.dll" "$bin\levelpack.exe"
+    if ($LASTEXITCODE) { throw "the signatures do not verify" }
+} else {
+    Write-Warning "not signed: a test package (-Sign signs it)"
+}
 
 $out = Join-Path $root "build\dist"
 $stage = Join-Path $out $name

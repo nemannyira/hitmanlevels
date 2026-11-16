@@ -77,6 +77,7 @@ int g_map = 1;
 char g_name[64] = "";  // ("" : the hint's name, kDefaultName)
 const char* const kDefaultName = "My level";
 bool g_empty = true;
+bool g_simpleEmpty = false;  // Simple mode's: the map's people kept unless asked (#43)
 bool g_blank = false;
 // floors for a map without buildings: large flat models of other levels
 // (single records with collision, in rooms)
@@ -494,9 +495,14 @@ void DrawLauncher()
                     ImGui::SetTooltip("The whole editor: the scene's objects, characters' settings, scripts,\n"
                                       "vehicles, an empty map, the sky, stages...");
                 if (simple) {
-                    g_empty = g_blank = false;
+                    bool keep = !g_simpleEmpty;
+                    if (ImGui::Checkbox("Keep the map's people", &keep))
+                        g_simpleEmpty = !keep;
                     ImGui::PushTextWrapPos(0.0f);
-                    ImGui::TextDisabled("The level starts as the map's own mission; you change it step by step.");
+                    ImGui::TextDisabled(keep ? "The level starts as the map's own mission (its people play their part: "
+                                               "its guards can shoot Hitman); you change it step by step."
+                                             : "The map without its people, items and objectives: you add your own "
+                                               "step by step.");
                     ImGui::PopTextWrapPos();
                 } else {
                 ImGui::Checkbox("Empty map", &g_empty);
@@ -524,10 +530,11 @@ void DrawLauncher()
                 }
                 ImGui::Spacing();
                 if (ImGui::Button("Create and start editing", ImVec2(-1, 0))) {
+                    bool empty = simple ? g_simpleEmpty : g_empty, blank = !simple && g_empty && g_blank;
                     NewLevel(*g_name ? g_name : kDefaultName, kMaps[g_map].scene);
-                    if (g_empty)
+                    if (empty)
                         SetEmptyMap(true);
-                    if (g_empty && g_blank) {
+                    if (blank) {
                         SetBlankMap(true);
                         if (kFloors[g_floor].mesh)
                             SetFloor(kFloors[g_floor].level, kFloors[g_floor].mesh, kFloors[g_floor].name);

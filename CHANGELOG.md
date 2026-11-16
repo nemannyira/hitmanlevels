@@ -3,7 +3,7 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
-## 2026-11-16: a person's picture, the exit
+## 2026-11-16: a person's picture, the exit, the map's people
 
 * *Looks like*: when there is no picture of the person (the free camera
   above the map or looking down, a cut scene), the tooltip says so and
@@ -11,6 +11,9 @@ game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lu
 * The mission's exit is drawn in the world while the editor is open (the
   square Hitman has to reach, "exit" over it); Simple mode calls it "the exit
   you picked" and says *Another exit* moves it (#42).
+* Simple mode's *New level* has *Keep the map's people* (on as before): off,
+  the level starts on the empty map, without the map's people, items and
+  objectives, so its guards do not play their part (#43).
 
 ## 2026-11-15: small things in Simple mode
 

@@ -65,8 +65,9 @@ grey when optional and untouched. A click on a step goes there.
 *Custom levels > New level*: the mission (map) as today, a name, and
 **Simple / Advanced** (Simple first; the choice is remembered). Simple mode
 starts from the map's own mission: its characters and objectives stay unless
-the player changes them. (*Empty map* and *No buildings* are Advanced mode
-choices.)
+the player changes them. With *Keep the map's people* off (#43) it starts on
+the empty map instead (Advanced mode's *Empty map*: the map's people, items
+and objectives taken out). (*No buildings* is an Advanced mode choice.)
 
 ### 1. Mission: what the player has to do
 

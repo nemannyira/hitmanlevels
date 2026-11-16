@@ -266,7 +266,7 @@ Assassin. The level is kept in `dumps/walkthrough/Snow_Ambush`.
 | W37 | *Take Hacking device* though the item was named "the device": the name is kept for `ROOT/HackingDevice`, the objective's target is `level:HackingDevice_item+1` | open: #40 |
 | W38 | The exit is an invisible point: nothing shows where it is; the status says to move it "from the Scene tab" (Advanced mode) | fixed: drawn while the editor is open (its square, "exit"), named "the exit you picked", the status says *Another exit* (#42) |
 | W39 | The Mission step says "This level also has routes of their own: they stay as they are; Advanced mode edits them" when its only route was made in Simple mode | open: #45 |
-| W40 | Simple mode starts from the map's own mission and cannot empty it: the map's guards (Hayamoto's bodyguards) alerted at the cook's death and shot Hitman | open, a decision: #43 |
+| W40 | Simple mode starts from the map's own mission and cannot empty it: the map's guards (Hayamoto's bodyguards) alerted at the cook's death and shot Hitman | fixed: Simple mode's launcher has *Keep the map's people* (on by default; off: the empty map) (#43) |
 | W41 | The debug view reports the map's patrolling guards that stop to chat as "has not moved for 15 s (its route?)" | open: #46 |
 | W42 | After a test (the map loaded again) the cook's route is drawn only while its *Route* box is open; before the test it was drawn on every step | open: #45 |
 | W43 | The debug view stays drawn over the laptop and the *Mission Accomplished* screen | open: #46 |

@@ -276,10 +276,37 @@ void StartLevelpack(const std::string& args)
     Log("runs: levelpack %s started", args.c_str());
 }
 
+// the objectives' states, Hitman's death, the alarm level: every 250 ms while the run lasts, and once more as it
+// ends (a level that ends itself when its last objective is done ends in the same frame)
+void Observe()
+{
+    for (const GoalStatus& g : GoalStatuses()) {
+        auto it = g_run.goals.find(g.slot);
+        int before = it == g_run.goals.end() ? 0 : it->second;
+        g_run.goals[g.slot] = g.state;
+        if (g.state == before || (!g_run.goalsSeen && g.state == 1))
+            continue;  // (done from the start: a "never spotted" one)
+        if (g.state == 1 || g.state == -1)
+            AddEvent({{"kind", g.state == 1 ? "objective_done" : "objective_lost"}, {"slot", g.slot}});
+        // a target dead (not one of the statistics' kills: the game's targets are not counted)
+        engine::ZGEOM* who = g.where ? ActorOf(g.where) : nullptr;
+        if (who && IsMissionTarget(who) && !engine::IsAlive(who) && !KnockedOut(who) && g_run.killed.insert(who).second)
+            AddEvent({{"kind", "kill"}, {"victim", "target"}, {"weapon", HandKind()}, {"at", PlaceOf(who)}});
+    }
+    g_run.goalsSeen = true;
+    engine::ZGEOM* hitman = engine::Player();
+    bool dead = hitman && !engine::IsAlive(hitman);
+    if (dead && !g_run.dead)
+        AddEvent({{"kind", "died"}, {"at", HitmanPlace()}});
+    g_run.dead = dead;
+    g_run.alarmHighest = std::max(g_run.alarmHighest, engine::LevelStress());
+}
+
 void End(const char* result, const Counters& c, const Rating* rating)
 {
     if (!g_run.active)
         return;
+    Observe();
     g_run.active = false;
     g_doneThisMap = true;
     json aids = json::array();
@@ -422,26 +449,7 @@ void Poll()
     if (now - g_lastPoll < 250.0)
         return;
     g_lastPoll = now;
-    for (const GoalStatus& g : GoalStatuses()) {
-        auto it = g_run.goals.find(g.slot);
-        int before = it == g_run.goals.end() ? 0 : it->second;
-        g_run.goals[g.slot] = g.state;
-        if (g.state == before || (!g_run.goalsSeen && g.state == 1))
-            continue;  // (done from the start: a "never spotted" one)
-        if (g.state == 1 || g.state == -1)
-            AddEvent({{"kind", g.state == 1 ? "objective_done" : "objective_lost"}, {"slot", g.slot}});
-        // a target dead (not one of the statistics' kills: the game's targets are not counted)
-        engine::ZGEOM* who = g.where ? ActorOf(g.where) : nullptr;
-        if (who && IsMissionTarget(who) && !engine::IsAlive(who) && !KnockedOut(who) && g_run.killed.insert(who).second)
-            AddEvent({{"kind", "kill"}, {"victim", "target"}, {"weapon", HandKind()}, {"at", PlaceOf(who)}});
-    }
-    g_run.goalsSeen = true;
-    engine::ZGEOM* hitman = engine::Player();
-    bool dead = hitman && !engine::IsAlive(hitman);
-    if (dead && !g_run.dead)
-        AddEvent({{"kind", "died"}, {"at", HitmanPlace()}});
-    g_run.dead = dead;
-    g_run.alarmHighest = std::max(g_run.alarmHighest, engine::LevelStress());
+    Observe();
 }
 
 } // namespace

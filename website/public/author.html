@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your levels' plays - Hitman Levels</title>
-<meta name="description" content="How players play your levels: where runs end, alerts, where Hitman died or was spotted.">
+<meta name="description" content="How players play your levels: where runs end, alerts, where Hitman died or was spotted, how they kill, bodies found.">
 <link rel="stylesheet" href="site.css">
 <style>
   .plays-level { margin: 26px 0 40px; }
@@ -13,6 +13,7 @@
   .plot .grid { stroke: var(--line); stroke-width: 1; }
   .plot .died { fill: var(--red-hi); fill-opacity: 0.45; }
   .plot .spotted { fill: #d9a33a; fill-opacity: 0.45; }
+  .plot .body_found { fill: #5fa8d3; fill-opacity: 0.55; }
   .plot text { fill: var(--muted); font: 11px var(--sans); }
   .key { display: flex; gap: 18px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
   .key i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
@@ -72,9 +73,9 @@
   function plot(runs) {
     var pts = [];
     runs.forEach(function (r) {
-      r.events.forEach(function (e) { if ((e.kind === "died" || e.kind === "spotted") && e.at) pts.push(e); });
+      r.events.forEach(function (e) { if ((e.kind === "died" || e.kind === "spotted" || e.kind === "body_found") && e.at) pts.push(e); });
     });
-    if (!pts.length) return el("p", "muted", "No places yet: no shared run where Hitman was spotted or died.");
+    if (!pts.length) return el("p", "muted", "No places yet: no shared run where Hitman was spotted or died, or a body was found.");
     var xs = pts.map(function (p) { return p.at[0]; }), zs = pts.map(function (p) { return p.at[2]; });
     var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
     var side = Math.max(x1 - x0, z1 - z0, 2000) * 1.15, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
@@ -91,7 +92,7 @@
     pts.forEach(function (p) {
       var c = svg("circle", { cx: px(p.at[0]), cy: pz(p.at[2]), r: 6, class: p.kind });
       var t = svg("title");
-      t.textContent = (p.kind === "died" ? "Hitman died" : "Hitman spotted") + " · " + clock(p.t) + " · height " +
+      t.textContent = (p.kind === "died" ? "Hitman died" : p.kind === "body_found" ? "A body found" : "Hitman spotted") + " · " + clock(p.t) + " · height " +
         Math.round(p.at[1] / 100) + " m";
       c.appendChild(t);
       s.appendChild(c);
@@ -148,7 +149,7 @@
     var plotWrap = el("div");
     plotWrap.appendChild(plot(runs));
     var key = el("div", "key");
-    [["died", "Hitman died", "var(--red-hi)"], ["spotted", "Hitman spotted", "#d9a33a"]].forEach(function (k) {
+    [["died", "Hitman died", "var(--red-hi)"], ["spotted", "Hitman spotted", "#d9a33a"], ["body_found", "A body found", "#5fa8d3"]].forEach(function (k) {
       var s = el("span"), i = el("i");
       i.style.background = k[2];
       s.appendChild(i);
@@ -187,6 +188,31 @@
         e.appendChild(r);
       });
       right.appendChild(e);
+    }
+    // what the runs of an editor that tracks them tell (docs/badges.md section 4): the kills by weapon, the
+    // clothes, the bodies found
+    var kills = {}, WEAPON = { fiberwire: "fiber wire", rocketlauncher: "rocket launcher", none: "bare hands", item: "an item", other: "other (chloroform...)" };
+    runs.forEach(function (r) {
+      r.events.forEach(function (e) {
+        if (e.kind !== "kill") return;
+        var k = (e.victim === "target" ? "Targets" : e.victim === "innocent" ? "Innocents" : "Others") + ": " + (WEAPON[e.weapon] || e.weapon);
+        kills[k] = (kills[k] || 0) + 1;
+      });
+    });
+    var killNames = Object.keys(kills).sort(function (a, b) { return kills[b] - kills[a]; });
+    var disguised = count(function (r) { return r.events.some(function (e) { return e.kind === "disguise"; }); });
+    var found = count(function (r) { return r.events.some(function (e) { return e.kind === "body_found"; }); });
+    if (killNames.length || disguised || found) {
+      right.appendChild(el("h3", null, "Kills, clothes, bodies"));
+      var k = el("dl");
+      killNames.map(function (n) { return [n, kills[n]]; }).concat([["Plays with a change of clothes", disguised],
+        ["Plays where a body was found", found]]).forEach(function (row) {
+        var r = el("div", "row");
+        r.appendChild(el("dt", null, row[0]));
+        r.appendChild(el("dd", null, String(row[1])));
+        k.appendChild(r);
+      });
+      right.appendChild(k);
     }
     cols.appendChild(left);
     cols.appendChild(right);

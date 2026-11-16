@@ -34,6 +34,11 @@
       <h1 id="name"></h1>
       <p class="muted" id="since"></p>
     </div>
+    <section id="badges-box" hidden>
+      <div class="section-title"><h2>Badges</h2><span class="muted">earned with plays sent signed in</span></div>
+      <div class="badges" id="profile-badges"></div>
+      <table class="runs" id="level-badges" hidden><tr><th>Level</th><th>Mastery</th><th>Its badges</th></tr></table>
+    </section>
     <section>
       <div class="section-title"><h2>Levels played</h2><span class="muted">plays sent signed in in levelpack</span></div>
       <table class="runs" id="levels"><tr><th>Level</th><th>Plays</th><th>Finished</th><th>Best Silent Assassin</th></tr></table>
@@ -99,6 +104,29 @@
     if (!runs.length) row($("runs"), ["None yet: a Silent Assassin run sent signed in, with its ticket.", "", "", "", ""]);
   }
 
+  // the badges (docs/badges.md): the profile's, and each level's with its mastery (five marks)
+  function showBadges(b) {
+    if (!b.profile.length && !b.levels.length) return;
+    $("badges-box").hidden = false;
+    b.profile.forEach(function (x) {
+      var chip = badgeChip(x.badge);
+      if (x.title) chip.textContent += " · " + x.title;  // (an author's: the level)
+      $("profile-badges").appendChild(chip);
+    });
+    $("profile-badges").hidden = !b.profile.length;
+    $("level-badges").hidden = !b.levels.length;
+    b.levels.forEach(function (l) {
+      var a = el("a", null, l.title || l.id);
+      a.href = "level.html?id=" + encodeURIComponent(l.id);
+      var marks = el("span", "mastery");
+      marks.title = "Mastery " + l.mastery + " of 5";
+      for (var i = 1; i <= 5; i++) marks.appendChild(el("i", i <= l.mastery ? "on" : ""));
+      var chips = el("div", "badges");
+      l.badges.forEach(function (x) { chips.appendChild(badgeChip(x.badge, x.stage)); });
+      row($("level-badges"), [a, marks, chips]);
+    });
+  }
+
   // the player's plays sent signed in, one by one (public when the player chose it; the player's own always)
   async function showHistory(own) {
     var r = await fetch("/api/players/" + id + "/history", { credentials: "same-origin" });
@@ -145,6 +173,7 @@
         l.best !== null ? clock(l.best) + (l.verified ? " (verified)" : "") : "-"]);
     });
     if (!p.levels.length) row($("levels"), ["No plays sent signed in yet.", "", "", ""]);
+    showBadges(p.badges || { profile: [], levels: [] });
     var own = false;
     try {
       var me = await fetch("/api/me", { credentials: "same-origin" });

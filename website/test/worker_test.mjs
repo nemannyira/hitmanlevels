@@ -204,6 +204,17 @@ try {
   const meId = (await (await get("/api/me", me)).json()).id;
   const pl = await (await get(`/api/players/${meId}`)).json();
   check("the player's page: the level, its plays, the best time", pl.levels.some((l) => l.id === id && l.best === 240 && l.plays >= 2), JSON.stringify(pl.levels));
+  // badges (docs/badges.md): the ranked run's (Silent Assassin in 240 s, spotted, no saves, two shots), the profile's
+  const lb = pl.badges.levels.find((l) => l.id === id);
+  const got = lb ? lb.badges.map((b) => b.badge).sort().join(",") : "";
+  check("badges: the ranked run's (not the unranked one's)",
+    got === "board_top3,clean_hands,finished,first_to_finish,no_saves,silent_assassin" && lb.mastery === 3, got + " mastery " + (lb && lb.mastery));
+  const prof = pl.badges.profile.map((b) => b.badge).sort().join(",");
+  check("... the profile's: the upload, a level finished, first on its board", prof === "board_holder,finished_1,first_level", prof);
+  const lvb = (await (await get(`/api/levels/${id}`)).json()).badges;
+  check("... the level's page: its players and theirs", lvb.all.played === 1 && lvb.all.finished === 1 && !lvb.all.ghost, JSON.stringify(lvb));
+  check("... none it did not earn (two shots: not No Shots Fired; spotted: not Ghost)",
+    !pl.badges.levels.some((l) => l.badges.some((b) => b.badge === "no_shots" || b.badge === "ghost")));
   // the play history: the player's own always, others' only when the player made it public (off at first)
   check("the play history: not public at first", pl.history_public === false &&
     (await get(`/api/players/${meId}/history`)).status === 403 && (await get(`/api/players/${meId}/history`, other)).status === 403);
@@ -231,6 +242,7 @@ try {
   await post("/api/admin/verify", JSON.stringify({ run: fair }), me);
   lp = await (await get(`/api/levels/${id}`)).json();
   check("... verified: on the verified board", lp.boards.verified.length === 1 && lp.boards.verified[0].time === 240);
+  check("... and the Verified Runner badge", (await (await get(`/api/players/${meId}`)).json()).badges.profile.some((b) => b.badge === "verified_runner"));
   r = await post("/api/me/name", JSON.stringify({ name: "Agent ‮47" }), me);
   check("the name shown changed (direction marks taken out)", (await r.json()).name === "Agent 47" &&
     (await (await get(`/api/levels/${id}`)).json()).boards.verified[0].name === "Agent 47");
@@ -318,7 +330,9 @@ check("... in the owner's overview, open", rep && !rep.handled);
 await post("/api/admin/handled", JSON.stringify({ report: rep.id }), me);
 sql(`INSERT INTO reports (level_id, user_id, reason, created, handled, handled_at)
      SELECT '${level}', id, 'an old one', 0, 1, 1000 FROM users WHERE provider_id = '${pid}';`);
-await get("/__scheduled?cron=17+3+*+*+*");
+if ((await get("/__scheduled?cron=17+3+*+*+*")).status === 404)  // (wrangler dev with its Local Explorer: its own route)
+  await fetch(BASE + "/cdn-cgi/local/explorer/api/local/scheduled?worker=hitmanlevels",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cron: "17 3 * * *" }) });
 ov = await (await get("/api/admin/overview", me)).json();
 check("... dealt with; the clean-up deletes reports dealt with over a year ago only",
   ov.reports.some((x) => x.id === rep.id && x.handled) && !ov.reports.some((x) => x.reason === "an old one"));

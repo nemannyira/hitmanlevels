@@ -4,6 +4,7 @@
 // a player's page.
 
 import { cleanName, origin, random, sha256 } from "./auth.js";
+import { playerBadges } from "./badges.js";
 
 const DEVICE_SECONDS = 600;
 const CODE_LETTERS = "BCDFGHJKLMNPQRSTVWXZ";  // (no vowels: no words; no look-alikes)
@@ -120,7 +121,8 @@ export async function player(env, id) {
             MIN(CASE WHEN ${BOARD} THEN r.time END) AS best, MAX(CASE WHEN ${BOARD} THEN r.verified ELSE 0 END) AS verified
        FROM runs r JOIN levels l ON l.id = r.level_id WHERE r.user_id = ? AND l.taken_down = 0
       GROUP BY r.level_id, r.stage ORDER BY title, r.stage`).bind(id).all();
-  return json({ id: u.id, name: u.name, joined: u.created, history_public: !!u.history_public, levels: results });
+  return json({ id: u.id, name: u.name, joined: u.created, history_public: !!u.history_public, levels: results,
+    badges: await playerBadges(env, u.id) });
 }
 
 // GET /api/players/<id>/history: the player's plays sent signed in (the listed levels'), newest first, and their

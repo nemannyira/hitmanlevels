@@ -4,6 +4,7 @@
 import { callback, currentUser, logout, start } from "./auth.js";
 import { publishList, hex } from "./sitelist.js";
 import { checkPackage } from "./check.js";
+import { awardProfile, awardRun, levelBadges } from "./badges.js";
 import { boards, clientSignout, clientUser, deviceApprove, deviceStart, deviceToken, history, myRuns, player, rankRun,
   setHistory, setName, setVideo, ticket } from "./players.js";
 
@@ -71,6 +72,7 @@ async function upload(request, env, user) {
       page.readme, page.briefing, JSON.stringify(page.objectives), page.preview ? 1 : 0, JSON.stringify(page.stages)),
   ]);
   await publishList(env);
+  await awardProfile(env, user.id, "first_level");
   return json({ id: m.id, version: m.version, path, checks: checked.checks });
 }
 
@@ -116,6 +118,7 @@ async function level(env, id) {
     plays: await playStats(env, id), boards: await boards(env, id), stages: JSON.parse(v.stages || "[]"),
     by_stage: await Promise.all(JSON.parse(v.stages || "[]").map(async (s, i) => ({
       stage: i + 1, plays: await playStats(env, id, i + 1), boards: await boards(env, id, i + 1) }))),
+    badges: await levelBadges(env, id),
   });
 }
 
@@ -181,6 +184,9 @@ async function postRun(request, env) {
     r.aggression ?? null, JSON.stringify(counters), r.stage ?? null, r.alarm_highest ?? null, JSON.stringify(events), r.dll,
     user ? user.id : null, notRanked ? 0 : 1).run();
   if (!done.meta.changes) return json({ error: "This run is here already." }, 409);
+  if (!notRanked) {  // (its badges: docs/badges.md; the run is kept if they fail)
+    try { await awardRun(env, user.id, r); } catch (e) { console.error("badges: " + e); }
+  }
   return json({ ok: true, ranked: !notRanked, ...(notRanked && { why: notRanked }) }, 201);
 }
 
@@ -276,6 +282,9 @@ async function deleteUser(env, id) {
     env.DB.prepare("DELETE FROM client_tokens WHERE user_id = ?").bind(id),
     env.DB.prepare("DELETE FROM tickets WHERE user_id = ?").bind(id),
     env.DB.prepare("DELETE FROM device_codes WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM badges WHERE user_id = ?").bind(id),
+    env.DB.prepare(`DELETE FROM badges WHERE level_id IN
+      (SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?)`).bind(id),
     env.DB.prepare(`DELETE FROM runs WHERE level_id IN
       (SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?)`).bind(id),
     env.DB.prepare(`DELETE FROM versions WHERE level_id IN
@@ -307,6 +316,10 @@ async function admin(request, env, action, me) {
   } else if ((action === "verify" || action === "unverify") && typeof b.run === "string") {
     await env.DB.prepare("UPDATE runs SET verified = ? WHERE id = ? AND video IS NOT NULL")
       .bind(action === "verify" ? 1 : 0, b.run).run();
+    if (action === "verify") {  // (a badge: on a verified board)
+      const run = await env.DB.prepare("SELECT user_id FROM runs WHERE id = ? AND verified = 1").bind(b.run).first();
+      if (run) await awardProfile(env, run.user_id, "verified_runner");
+    }
     return json({ ok: true });
   } else if (action === "handled" && Number.isInteger(b.report)) {
     await env.DB.prepare("UPDATE reports SET handled = 1, handled_at = ? WHERE id = ?")

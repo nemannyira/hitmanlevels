@@ -35,6 +35,43 @@ function clock(s) {
 // the game's name of a rating as words ("SilentAssassin": "Silent Assassin")
 function ratingName(key) { return String(key).replace(/([a-z])([A-Z])/g, "$1 $2"); }
 
+// the badges (docs/badges.md): their names and what earns them
+var BADGES = {
+  finished: ["Finished", "Finished the level"],
+  silent_assassin: ["Silent Assassin", "Rated Silent Assassin"],
+  ghost: ["Ghost", "Finished with no alert, never spotted"],
+  no_saves: ["No Saves", "Finished without saving"],
+  clean_hands: ["Clean Hands", "Finished with no innocent killed or harmed"],
+  no_shots: ["No Shots Fired", "Finished without firing a shot"],
+  under_par: ["Under Par", "Finished in the par time: as fast as the quickest quarter of the finished runs"],
+  first_to_finish: ["First to Finish", "The first to finish it"],
+  board_top3: ["Board Top 3", "In the first three of its Silent Assassin board"],
+  escalation_complete: ["Escalation Complete", "Finished every stage"],
+  clean_sweep: ["Clean Sweep", "Silent Assassin on every stage"],
+  finished_1: ["Finished 1", "Finished a level"],
+  finished_10: ["Finished 10", "Finished 10 levels"],
+  finished_50: ["Finished 50", "Finished 50 levels"],
+  silent_assassin_5: ["Silent Assassin 5", "Silent Assassin on 5 levels"],
+  silent_assassin_25: ["Silent Assassin 25", "Silent Assassin on 25 levels"],
+  map_tourist_5: ["Map Tourist", "Finished levels on 5 of the game's maps"],
+  map_tourist_10: ["Map Tourist 10", "Finished levels on 10 of the game's maps"],
+  escalation_master: ["Escalation Master", "3 escalations complete"],
+  verified_runner: ["Verified Runner", "A run on a verified board"],
+  board_holder: ["Board Holder", "First on a level's Silent Assassin board"],
+  first_level: ["First Level", "Uploaded a level"],
+  played_by_10: ["Played by 10", "10 players played their levels"],
+  played_by_100: ["Played by 100", "100 players played their levels"],
+  tough_nut: ["Tough Nut", "A level 20 players played and fewer than a fifth finished"]
+};
+
+// a badge as a chip: its name, what earned it on hover; `stage`: an escalation's
+function badgeChip(id, stage) {
+  var b = BADGES[id] || [id, ""];
+  var chip = el("span", "badge", b[0] + (stage ? " · stage " + stage : ""));
+  chip.title = b[1];
+  return chip;
+}
+
 // an element with text, its class, its children
 function el(tag, cls, text) {
   var e = document.createElement(tag);

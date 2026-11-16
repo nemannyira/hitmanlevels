@@ -114,6 +114,15 @@ section { margin-bottom: 44px; }
 .boards ol { margin: 0; padding-left: 22px; }
 @media (max-width: 760px) { .boards { grid-template-columns: 1fr; } }
 
+/* badges: chips, a level's mastery (five marks) */
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.badge { border: 1px solid #7f8a8f; background: var(--surface-hi); color: var(--title); font-family: var(--caps);
+  text-transform: uppercase; font-size: 12px; letter-spacing: 0.03em; padding: 4px 10px; cursor: default; }
+.badge .n { color: var(--muted); font-family: var(--sans); text-transform: none; margin-left: 6px; }
+.mastery { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 8px; }
+.mastery i { width: 10px; height: 10px; border: 1px solid #7f8a8f; display: inline-block; }
+.mastery i.on { background: var(--red-hi); border-color: var(--red-hi); }
+
 /* the laptop's briefing box */
 .laptop { margin-top: 24px; background: rgba(170, 184, 192, 0.12); border: 1px solid #7f8a8f; padding: 18px 22px; }
 .laptop h2 { font-size: 16px; margin-bottom: 8px; }

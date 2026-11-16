@@ -64,6 +64,10 @@
         </div>
         <p class="muted" id="boards-stage" hidden>Choose a stage above: an escalation's times are compared within a stage.</p>
       </section>
+      <section id="badges-box" style="margin-top:28px" hidden>
+        <div class="section-title"><h2>Badges</h2><span class="muted">the share of its players (signed in) who earned each</span></div>
+        <div class="badges" id="badges"></div>
+      </section>
       <div class="versions">
         <div class="section-title"><h2>Versions</h2><span class="muted" id="versions-count"></span></div>
         <ul id="versions"></ul>
@@ -170,6 +174,23 @@
         $("ratings").appendChild(li);
       });
     }
+    // the badges earned here (docs/badges.md): each with the share of the players who have it; an escalation's
+    // whole-level badges in "all stages" only
+    var LEVEL = ["finished", "silent_assassin", "ghost", "no_saves", "clean_hands", "no_shots", "under_par",
+      "first_to_finish", "board_top3"];
+    function showBadges(n, whole) {
+      $("badges").textContent = "";
+      var players = n.played || 0;
+      $("badges-box").hidden = !players;
+      LEVEL.concat(whole ? ["escalation_complete", "clean_sweep"] : []).forEach(function (id) {
+        var chip = badgeChip(id);
+        chip.appendChild(el("span", "n", percent(n[id] || 0, players)));
+        $("badges").appendChild(chip);
+      });
+    }
+    var badges = l.badges || { all: {}, by_stage: {} };
+    showBadges(badges.all, l.stages.length > 0);
+
     var p = l.plays;
     $("d-plays").textContent = p.plays ? p.plays + " (" + percent(p.finished, p.plays) + " finished)" : "none shared yet";
     $("plays-box").hidden = !p.plays;
@@ -198,6 +219,7 @@
         var b = l.by_stage[Number(pick.value) - 1];
         showPlays(b ? b.plays : l.plays);
         showBoards(b ? b.boards : null);
+        showBadges(b ? badges.by_stage[b.stage] || {} : badges.all, !b);
       });
     }
     $("download").href = l.path;

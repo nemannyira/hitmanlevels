@@ -55,10 +55,12 @@ SHARING LEVELS
   * levelpack --help lists the rest (inspect, author key backup and restore).
 
 
-UNSIGNED FILES
+SIGNED FILES
 
-  These files are not code-signed yet, so Windows SmartScreen or an antivirus may warn about them.
-  Check that the zip is the one published: its SHA-256 is next to the download
+  dinput8.dll and levelpack.exe are code-signed with the author's Certum open source certificate;
+  Windows shows the signer in the files' Properties > Digital Signatures. SmartScreen may still warn
+  while the signature is new to it. Check that the zip is the one published: its SHA-256 is next to
+  the download
   (PowerShell: Get-FileHash hitmanlevels-h2-{VERSION}.zip).
 
 

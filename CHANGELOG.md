@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-16: code-signed release
+
+* dinput8.dll and levelpack.exe are code-signed (a Certum open source
+  certificate, timestamped): `tools/release.ps1` signs and verifies them;
+  the README and the site's Editor & tools page say so.
+
 ## 2026-11-16: a person's picture, the exit, the map's people
 
 * *Looks like*: when there is no picture of the person (the free camera

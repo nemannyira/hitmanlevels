@@ -340,6 +340,10 @@ check("a level taken down leaves the list", !(await (await get("/api/v1/index.js
 // blocked, unblocked and deleted with everything of it
 check("the overview is the owner's only", (await get("/api/admin/overview", other)).status === 403);
 check("a report", (await post("/api/report", JSON.stringify({ level, version: 1, reason: "test report" }), other)).status === 200);
+check("... not of a level that is not there (#64)",
+  (await post("/api/report", JSON.stringify({ level: "nosuchlevel01", reason: "x" }), other)).status === 404);
+for (let i = 0; i < 9; i++) await post("/api/report", JSON.stringify({ level, reason: "more " + i }), other);
+check("... at most 10 a day from one account", (await post("/api/report", JSON.stringify({ level, reason: "11th" }), other)).status === 429);
 let ov = await (await get("/api/admin/overview", me)).json();
 const rep = ov.reports.find((x) => x.level_id === level && x.reason === "test report");
 check("... in the owner's overview, open", rep && !rep.handled);

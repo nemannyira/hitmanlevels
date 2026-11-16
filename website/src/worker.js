@@ -244,6 +244,12 @@ async function report(request, env, user) {
   const body = await request.json().catch(() => null);
   const reason = body && typeof body.reason === "string" ? body.reason.trim().slice(0, 2000) : "";
   if (!body || typeof body.level !== "string" || !reason) return json({ error: "Which level, and why?" }, 400);
+  // (a level of the site's only; at most 10 a day from one account: the owner's overview is not to be flooded, #64)
+  if (!(await env.DB.prepare("SELECT 1 FROM levels WHERE id = ?").bind(body.level).first()))
+    return json({ error: "No such level" }, 404);
+  const today = await env.DB.prepare("SELECT COUNT(*) AS n FROM reports WHERE user_id = ? AND created > ?")
+    .bind(user.id, Math.floor(Date.now() / 1000) - 86400).first();
+  if (today.n >= 10) return json({ error: "Ten reports a day at most: later." }, 429);
   await env.DB.prepare("INSERT INTO reports (level_id, version, user_id, reason, created) VALUES (?, ?, ?, ?, ?)")
     .bind(body.level, Number.isInteger(body.version) ? body.version : null, user.id, reason, Math.floor(Date.now() / 1000)).run();
   return json({ ok: true });

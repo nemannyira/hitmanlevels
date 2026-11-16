@@ -217,7 +217,7 @@ int InstallOpened(const OpenedPackage& p, std::string game, bool yes, bool allow
         std::fprintf(stderr, "Not installed: %s\n", error.c_str());
         return 1;
     }
-    std::printf("\nInstalled: Mods\\Online\\%s (in the editor: File > Open level).\n", m.id.c_str());
+    std::printf("\nInstalled: Mods\\Online\\%s (in the game: main menu > Custom levels > Open a level).\n", m.id.c_str());
     return 0;
 }
 

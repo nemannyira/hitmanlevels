@@ -1081,6 +1081,11 @@ std::string Label(const std::string& path)
     // its name of the level maker's, by the path names are kept under (an item's goal knows it as "level:...", #40)
     if (std::string own = ObjectName(g); !own.empty())
         return own;
+    // a point picked for the exit (#42): the editor's "Point" is no name to read (#44)
+    const std::string id = path.substr(path.rfind('/') + 1);
+    if (!Doc().exitPath.empty() && g == ResolveTarget(Doc().exitPath) &&
+        std::ranges::any_of(CurrentLevel().spawned, [&](const SpawnedObject& s) { return s.point && s.id == id; }))
+        return "the exit";
     if (engine::ZGEOM* a = ActorOf(g)) {
         int rec = NpcRecordOf(a);
         if (rec >= 0)

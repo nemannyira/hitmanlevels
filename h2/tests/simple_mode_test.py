@@ -235,6 +235,16 @@ try:
     for _ in range(3):
         lua('h2.dev_uikey(523) return 1')  # (the search emptied)
     shot("items")
+    # its name to read on the laptop's photo button too, not the template's "KeyDoor" (#44)
+    press("1 Mission")
+    lua('h2.dev_hover(%f, %f) return 1' % (w * 0.08, h * 0.55))
+    for _ in range(6):  # (the laptop's photos: at the step's end)
+        lua('h2.dev_uiwheel(-10) return 1')
+        time.sleep(0.2)
+    press("Add a photo")
+    photo = press("Photo of Key Door", settle=0.3)
+    check("the laptop's photo button: Photo of Key Door", photo.startswith("pressed"), photo)
+    press("3 Items")
 
     # 4. The map: an object of the map hidden from its card
     check("Next: The map", press("Next: The map >").startswith("pressed"))

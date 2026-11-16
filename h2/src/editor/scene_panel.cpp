@@ -24,6 +24,8 @@
 #include "level.h"
 #include "mission.h"
 #include "model.h"
+#include "npc_panel.h"
+#include "npcs.h"
 #include "placement.h"
 #include "vehicles.h"
 #include "viewport.h"
@@ -314,9 +316,12 @@ void DrawSelectionMarker()
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImU32 col = IM_COL32(255, 200, 40, 255);
     dl->AddCircle(ImVec2(sx, sy), 10.0f, col, 16, 2.0f);
-    const engine::GeomInfo* info = FindInfo(g_selected);
-    if (info)
-        dl->AddText(ImVec2(sx + 14, sy - 22), col, info->name.c_str());
+    // Simple mode: its name as the selection's card says it (a person's, the maker's, #44)
+    engine::ZGEOM* actor = overlay::SimpleMode() ? ActorOf(g_selected) : nullptr;
+    std::string own = overlay::SimpleMode() ? (actor ? PersonName(actor) : ObjectName(g_selected)) : "";
+    const engine::GeomInfo* info = own.empty() ? FindInfo(g_selected) : nullptr;
+    if (!own.empty() || info)
+        dl->AddText(ImVec2(sx + 14, sy - 22), col, own.empty() ? info->name.c_str() : own.c_str());
 }
 
 void OnScene(const std::string&) { g_selected = nullptr; }

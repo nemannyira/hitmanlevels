@@ -2424,8 +2424,10 @@ void UpdateNpcPlacement()
         }
     }
     char text[256];
-    snprintf(text, sizeof(text), "%s (%s)\nclick: place   Shift+click: place more   Esc: cancel%s",
-             g_types[g_type].model.c_str(), BehaviourLabel(g_newBehaviour).c_str(),
+    std::string what = overlay::SimpleMode()  // (Simple mode: "Chef Japanese", #44)
+                           ? Readable(g_types[g_type].model)
+                           : g_types[g_type].model + " (" + BehaviourLabel(g_newBehaviour) + ")";
+    snprintf(text, sizeof(text), "%s\nclick: place   Shift+click: place more   Esc: cancel%s", what.c_str(),
              !g_haveHit  ? "\nno surface under the mouse"
              : g_pointOff ? "\noff the path network: it will not walk from there"
                           : "");

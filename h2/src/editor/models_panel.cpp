@@ -266,12 +266,16 @@ void ThumbTick()
     }
 }
 
-void DrawTooltip(const ModelEntry& e)
+// `title`: Simple mode's name of it ("Bomb Remote Small", #44): then no engine class
+void DrawTooltip(const ModelEntry& e, const std::string& title = "")
 {
+    const std::string& name = title.empty() ? e.name : title;
     ImGui::BeginTooltip();
-    ImGui::TextUnformatted(e.name.c_str());
+    ImGui::TextUnformatted(name.c_str());
     char line[256];
-    if (!e.level.empty())
+    if (!title.empty())
+        snprintf(line, sizeof(line), "%.1f m", e.radius * 2.0f / 100.0f);
+    else if (!e.level.empty())
         snprintf(line, sizeof(line), "from %s, %.1f m", e.level.c_str(), e.radius * 2.0f / 100.0f);
     else
         snprintf(line, sizeof(line), "%s, %.1f m, used %d times", e.className.c_str(), e.radius * 2.0f / 100.0f,
@@ -279,13 +283,13 @@ void DrawTooltip(const ModelEntry& e)
     ImGui::TextDisabled("%s", line);
     float size = 220.0f * ImGui::GetIO().FontGlobalScale * (ImGui::GetFontSize() / 16.0f);
     // in the middle of the tooltip (its text may be wider than the picture)
-    float wide = std::max(ImGui::CalcTextSize(e.name.c_str()).x, ImGui::CalcTextSize(line).x);
+    float wide = std::max(ImGui::CalcTextSize(name.c_str()).x, ImGui::CalcTextSize(line).x);
     if (wide > size)
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (wide - size) * 0.5f);
     void* tex = g_thumbPath == e.Key() ? ThumbnailTexture() : nullptr;
     if (tex) {
         ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size, size));
-        ThumbnailShown(0, 0, 1, 1, 1, e.name);  // (a laptop photo: mission.cpp)
+        ThumbnailShown(0, 0, 1, 1, 1, name);  // (a laptop photo: mission.cpp)
     }
     else
         ImGui::Dummy(ImVec2(size, size));  // keeps the tooltip from jumping when the picture arrives
@@ -703,7 +707,7 @@ void DrawSimpleItemsStep()
             }
             if (ImGui::IsItemHovered() && !Placing()) {  // its picture, as the Models tab shows it
                 g_hoverPath = e.Key();
-                DrawTooltip(e);
+                DrawTooltip(e, readable);
             }
             ImGui::PopID();
         }

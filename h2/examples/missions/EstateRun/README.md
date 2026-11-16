@@ -4,8 +4,8 @@ A race around the Don's estate: four checkpoints in order, then back up the
 hill where you start, in two minutes and a half. A lamp marks the next
 checkpoint; the info line names it every 30 seconds.
 
-Play: copy this folder into the game's `Mods` folder, then main menu > Level
-Editor > Open a level > *Play*.
+Play: copy this folder into the game's `Mods` folder, then main menu > Custom
+levels > Open a level > *Play*.
 
 Made with: *Empty map* (Level tab), four points placed in order (their names
 "Point+1" .. "Point+4" show in the Inspector). `main.lua`: zones that count

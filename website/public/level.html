@@ -35,7 +35,7 @@
       <div class="shot" id="shot"></div>
 
       <div class="laptop" id="laptop" hidden>
-        <h2>Mission briefing</h2>
+        <h2 id="briefing-title">Mission briefing</h2>
         <p id="briefing" style="white-space:pre-line"></p>
         <h2 style="margin-top:16px" id="objectives-title">Mission objectives</h2>
         <ul id="objectives"></ul>
@@ -120,6 +120,7 @@
       $("laptop").hidden = false;
       $("briefing").textContent = l.briefing;
       l.objectives.forEach(function (o) { $("objectives").appendChild(el("li", null, o)); });
+      $("briefing-title").hidden = !l.briefing;  // (objectives only: no empty heading)
       $("objectives-title").hidden = !l.objectives.length;
     }
     if (l.readme) { $("readme-box").hidden = false; $("readme").textContent = l.readme; }

@@ -4,8 +4,8 @@ The Don's accountant paces the road by the garage. Eliminate him, then get
 back to the hill where you start. C1-1's own guards are all there: shooting
 in the open raises the alarm.
 
-Play: copy this folder into the game's `Mods` folder, then main menu > Level
-Editor > Open a level > *Play*.
+Play: copy this folder into the game's `Mods` folder, then main menu > Custom
+levels > Open a level > *Play*.
 
 Made with the editor only, but for the story script: the accountant (NPCs
 tab, the plain civilian: a character needs a behaviour to be killed by Hitman), a point on the hill (the exit), *Make it a target* and

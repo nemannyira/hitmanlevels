@@ -7,8 +7,8 @@ limit), eliminate the new consigliere and check the garage (editor goals).
 Then back up the hill. Hitman starts as the postman (Level tab > *Hitman
 starts in*).
 
-Play: copy this folder into the game's `Mods` folder, then main menu > Level
-Editor > Open a level > *Play*.
+Play: copy this folder into the game's `Mods` folder, then main menu > Custom
+levels > Open a level > *Play*.
 
 Played through 2026-10-13 (h2/docs/playtest_log.md): completed. The ledger
 lies on the road by the garage: walk onto it and press E (the game offers

@@ -7,8 +7,8 @@ twice, the drop is off.
 The guards (BaseGuard) shoot a trespasser on sight: come from the south,
 behind them, sneaking (Space).
 
-Play: copy this folder into the game's `Mods` folder, then main menu > Level
-Editor > Open a level > *Play*.
+Play: copy this folder into the game's `Mods` folder, then main menu > Custom
+levels > Open a level > *Play*.
 
 Made with: *Empty map* (Level tab), two guards (NPCs tab), the package
 (Models tab > items > KeyRoom, laid on flat ground). `main.lua`: the laptop

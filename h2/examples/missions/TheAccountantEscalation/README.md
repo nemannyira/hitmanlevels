@@ -10,8 +10,8 @@ one before and more.
 3. **On the Clock**: five minutes; no innocents killed (one killed is noted:
    the stage done does not count as clean).
 
-Play: copy this folder into the game's `Mods` folder, then main menu > Level
-Editor > Open a level: the launcher shows the stage to play (the next one;
+Play: copy this folder into the game's `Mods` folder, then main menu > Custom
+levels > Open a level: the launcher shows the stage to play (the next one;
 the stages done can be played again).
 
 Made with the editor: The Accountant's level, *Make it an escalation* and

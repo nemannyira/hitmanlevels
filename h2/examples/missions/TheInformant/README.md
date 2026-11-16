@@ -5,8 +5,8 @@ Find him and take him to the postman's corner by the south road, where a car
 waits. He follows you: keep him close (more than 40 m away for 20 seconds and
 he runs off) and keep him alive.
 
-Play: copy this folder into the game's `Mods` folder, then main menu > Level
-Editor > Open a level > *Play*.
+Play: copy this folder into the game's `Mods` folder, then main menu > Custom
+levels > Open a level > *Play*.
 
 Made with: the informant (NPCs tab: DeliveryBoy, the plain civilian), a point at
 the meeting place. `main.lua`: a zone around him (`h2.zone{ object = ... }`),

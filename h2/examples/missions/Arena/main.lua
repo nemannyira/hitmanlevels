@@ -3,7 +3,7 @@
 -- Eliminate them and reach the far corner.
 --
 -- Made in the editor only, but for this text: New level with "No buildings
--- either" and the C3-3 stone yard (main menu > Level Editor), three guards
+-- either" and the C3-3 stone yard (main menu > Custom levels), three guards
 -- (NPCs tab: BaseGuard), a point in
 -- the far corner; Make it a target (x3) and Make it the exit (Inspector >
 -- Mission); the objectives' texts (Mission tab).

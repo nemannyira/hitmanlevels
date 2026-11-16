@@ -121,9 +121,17 @@
       var marks = el("span", "mastery");
       marks.title = "Mastery " + l.mastery + " of 5";
       for (var i = 1; i <= 5; i++) marks.appendChild(el("i", i <= l.mastery ? "on" : ""));
-      var chips = el("div", "badges");
-      l.badges.forEach(function (x) { chips.appendChild(badgeChip(x.badge, x.stage)); });
-      row($("level-badges"), [a, marks, chips]);
+      // the level's own (an escalation's whole), then each stage on its line; the chips in BADGES' order (#63)
+      var order = Object.keys(BADGES), cell = el("div"), stages = {};
+      l.badges.slice().sort(function (p, q) { return order.indexOf(p.badge) - order.indexOf(q.badge); })
+        .forEach(function (x) { (stages[x.stage || 0] = stages[x.stage || 0] || []).push(x.badge); });
+      Object.keys(stages).map(Number).sort(function (p, q) { return p - q; }).forEach(function (s) {
+        var chips = el("div", "badges");
+        if (s) chips.appendChild(el("span", "muted", "Stage " + s + ":"));
+        stages[s].forEach(function (b) { chips.appendChild(badgeChip(b)); });
+        cell.appendChild(chips);
+      });
+      row($("level-badges"), [a, marks, cell]);
     });
   }
 

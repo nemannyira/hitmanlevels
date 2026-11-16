@@ -3,6 +3,12 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-16: a target's readable name
+
+* A character made a target (or knocked out) is named as it reads on the
+  laptop's line and in the editor: "Kill Bodyguard Mafia", not "Kill
+  BodyguardMafia_01" (a name given to it is still used first).
+
 ## 2026-11-16: the debug view
 
 * The debug view is not drawn over the laptop, the map, the Esc menu and the

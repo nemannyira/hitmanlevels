@@ -8,6 +8,7 @@ back keep everything; saved and tried (the guard made with the map). Uses Mods/_
 """
 import json
 import os
+import re
 import shutil
 import struct
 import sys
@@ -273,6 +274,9 @@ try:
     d = doc()
     goals = [o.get("goal") for o in d.get("mission", {}).get("objectives", [])]
     check("saved: the target and never spotted", "kill" in goals and "unseen" in goals, str(goals))
+    kill = [o.get("text", "") for o in d.get("mission", {}).get("objectives", []) if o.get("goal") == "kill"]
+    check("the laptop's line names the target readably (not its model's BodyguardMafia_01)",
+          kill and kill[0].startswith("Kill ") and not re.search(r"[_\d]", kill[0]), str(kill))
     check("saved: the guard and the civilian", len(d.get("npcs", [])) == 2)
     route = [lst for lst in d.get("lists", []) if lst.get("path", "").startswith("ROOT/Route_")]
     check("saved: the civilian's route and its points", route and len(route[0].get("points", [])) >= 1,

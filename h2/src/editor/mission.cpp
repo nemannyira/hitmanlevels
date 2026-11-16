@@ -36,6 +36,7 @@
 #include "level.h"
 #include "model.h"
 #include "music.h"
+#include "npc_panel.h"
 #include "npcs.h"
 #include "scene_panel.h"
 #include "stages.h"
@@ -1071,7 +1072,8 @@ std::string NiceName(engine::ZGEOM* g)
     return name;
 }
 
-std::string Label(const std::string& path)
+// `text`: for the laptop's line (no "(placed)")
+std::string Label(const std::string& path, bool text = false)
 {
     if (path.empty())
         return "";
@@ -1088,8 +1090,8 @@ std::string Label(const std::string& path)
         return "the exit";
     if (engine::ZGEOM* a = ActorOf(g)) {
         int rec = NpcRecordOf(a);
-        if (rec >= 0)
-            return NpcModel(rec) + (IsPlacedNpc(a) ? " (placed)" : "");
+        if (rec >= 0)  // (its readable name: "Bodyguard Mafia", not the model's BodyguardMafia_01)
+            return PersonName(a) + (IsPlacedNpc(a) && !text ? " (placed)" : "");
     }
     return NiceName(g);
 }
@@ -1201,9 +1203,9 @@ void SetTarget(MissionObjective& o, const std::string& path)
                             : o.goal == MissionObjective::KnockOut ? "Knock out "
                             : o.goal == MissionObjective::Deliver  ? "Bring "
                                                                    : "Reach ") +
-                           Label(path);
+                           Label(path, true);
         if (o.goal == MissionObjective::Deliver && !o.place.empty())
-            text += " to " + Label(o.place);
+            text += " to " + Label(o.place, true);
         // three bodyguards of one model are three lines of one text: numbered
         int same = 1;
         for (const MissionObjective& other : Doc().objectives)
@@ -1225,7 +1227,7 @@ void SetPlace(int code, const std::string& path)
         MissionObjective& o = Editable(code - 100);
         o.place = path;
         if (AutoText(o.text) && !o.target.empty())
-            o.text = "Bring " + Label(o.target) + (path.empty() ? "" : " to " + Label(path));
+            o.text = "Bring " + Label(o.target, true) + (path.empty() ? "" : " to " + Label(path, true));
         Changed();
     } else {
         SetTarget(Editable(code), path);

@@ -38,6 +38,7 @@ std::vector<PlayMark> g_playMarks;
 constexpr size_t kMaxPlayMarks = 100;  // of each kind (the map draws at most 256 icons on a floor)
 const char* const kDiedIcon = "Icon_Target";
 const char* const kSpottedIcon = "Icon_PointOfInterest";
+const char* const kFoundIcon = "Icon_Innocent";  // a body found (#66: the legend's person icon)
 
 // A model the map draws for one of the level's objects (on the floor of that object's place)
 struct PlanModel {
@@ -340,7 +341,7 @@ std::vector<engine::SceneCopy> PlayMarkCopies(const std::string& file, const std
         Log("level: %s is not this level's plays: not on the map", file.c_str());
         return out;
     }
-    size_t died = 0, spotted = 0;
+    size_t died = 0, spotted = 0, found = 0;
     for (const auto& r : j["runs"]) {
         if (!r.is_object() || !r.value("events", nlohmann::json()).is_array())
             continue;
@@ -351,8 +352,8 @@ std::vector<engine::SceneCopy> PlayMarkCopies(const std::string& file, const std
                 !e["at"][0].is_number() || !e["at"][1].is_number() || !e["at"][2].is_number())
                 continue;
             std::string kind = e.value("kind", "");
-            size_t& n = kind == "died" ? died : spotted;
-            if ((kind != "died" && kind != "spotted") || n >= kMaxPlayMarks)
+            size_t& n = kind == "died" ? died : kind == "spotted" ? spotted : found;
+            if ((kind != "died" && kind != "spotted" && kind != "body_found") || n >= kMaxPlayMarks)
                 continue;
             PlayMark m;
             m.name = "Plays_" + kind + std::to_string(n++);
@@ -361,13 +362,14 @@ std::vector<engine::SceneCopy> PlayMarkCopies(const std::string& file, const std
             engine::SceneCopy c;
             c.name = m.name;
             c.point = true;
-            c.mapIcon = kind == "died" ? kDiedIcon : kSpottedIcon;
+            c.mapIcon = kind == "died" ? kDiedIcon : kind == "spotted" ? kSpottedIcon : kFoundIcon;
             memcpy(c.pos, m.at, sizeof(c.pos));
             out.push_back(c);
             g_playMarks.push_back(m);
         }
     }
-    Log("level: the players' plays on the in-game map: %zu deaths, %zu times spotted (%s)", died, spotted, file.c_str());
+    Log("level: the players' plays on the in-game map: %zu deaths, %zu times spotted, %zu bodies found (%s)", died, spotted,
+        found, file.c_str());
     return out;
 }
 

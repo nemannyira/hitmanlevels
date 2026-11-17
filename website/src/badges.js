@@ -121,12 +121,16 @@ export async function playerBadges(env, user) {
 
 // a level's badges for its page: how many of its players have each (every stage together, and per stage)
 export async function levelBadges(env, level) {
-  const [all, byStage] = await env.DB.batch([
+  const [all, byStage, finished] = await env.DB.batch([
     env.DB.prepare(`SELECT badge, COUNT(DISTINCT user_id) AS n FROM badges WHERE level_id = ? AND badge != 'tough_nut'
                      GROUP BY badge`).bind(level),
     env.DB.prepare(`SELECT stage, badge, COUNT(*) AS n FROM badges WHERE level_id = ? AND stage > 0 GROUP BY stage, badge`).bind(level),
+    // (the finished ranked runs: Under Par needs 10 of them, #66)
+    env.DB.prepare(`SELECT COALESCE(stage, 0) AS stage, COUNT(*) AS n FROM runs WHERE level_id = ? AND ranked = 1
+                     AND result = 'completed' GROUP BY COALESCE(stage, 0)`).bind(level),
   ]);
   const stages = {};
   for (const s of byStage.results) (stages[s.stage] ||= {})[s.badge] = s.n;
-  return { all: Object.fromEntries(all.results.map((b) => [b.badge, b.n])), by_stage: stages };
+  const done = Object.fromEntries(finished.results.map((f) => [f.stage, f.n]));
+  return { all: Object.fromEntries(all.results.map((b) => [b.badge, b.n])), by_stage: stages, finished: done };
 }

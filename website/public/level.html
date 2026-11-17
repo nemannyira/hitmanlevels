@@ -65,7 +65,7 @@
         <p class="muted" id="boards-stage" hidden>Choose a stage above: an escalation's times are compared within a stage.</p>
       </section>
       <section id="badges-box" style="margin-top:28px" hidden>
-        <div class="section-title"><h2>Badges</h2><span class="muted">the share of its players (signed in) who earned each</span></div>
+        <div class="section-title"><h2>Badges</h2><span class="muted">the share of its players (signed in) who earned each · <a href="badges.html">what they mean</a></span></div>
         <div class="badges" id="badges"></div>
       </section>
       <div class="versions">
@@ -178,18 +178,31 @@
     // whole-level badges in "all stages" only
     var LEVEL = ["finished", "silent_assassin", "ghost", "no_saves", "clean_hands", "no_shots", "under_par",
       "first_to_finish", "board_top3", "suit_only", "precision", "no_bodies"];
-    function showBadges(n, whole) {
+    // `stage`: the stage shown (0: the whole level). A badge no one can earn here now is grey, its hover says why
+    // (#66): Under Par before 10 finished runs, First to Finish once taken, Precision with no target to kill.
+    function showBadges(n, whole, stage) {
       $("badges").textContent = "";
       var players = n.played || 0;
       $("badges-box").hidden = !players;
+      var done = badges.finished || {};
+      var finished = stage || !l.stages.length ? done[stage] || 0 : Object.keys(done).reduce(function (s, k) { return s + done[k]; }, 0);
+      var why = {
+        under_par: finished < 10 ? "Not yet: the par time comes from 10 finished runs (" + finished + " so far)" : "",
+        first_to_finish: (stage || !l.stages.length) && n.first_to_finish ? "Taken: someone finished it first" : "",
+        precision: l.kill_targets === 0 ? "This level has no target of its own to kill" : ""
+      };
       LEVEL.concat(whole ? ["escalation_complete", "clean_sweep"] : []).forEach(function (id) {
         var chip = badgeChip(id);
         chip.appendChild(el("span", "n", percent(n[id] || 0, players)));
+        if (why[id]) {
+          chip.classList.add("off");
+          chip.title = why[id];
+        }
         $("badges").appendChild(chip);
       });
     }
     var badges = l.badges || { all: {}, by_stage: {} };
-    showBadges(badges.all, l.stages.length > 0);
+    showBadges(badges.all, l.stages.length > 0, 0);
 
     var p = l.plays;
     $("d-plays").textContent = p.plays ? p.plays + " (" + percent(p.finished, p.plays) + " finished)" : "none shared yet";
@@ -219,7 +232,7 @@
         var b = l.by_stage[Number(pick.value) - 1];
         showPlays(b ? b.plays : l.plays);
         showBoards(b ? b.boards : null);
-        showBadges(b ? badges.by_stage[b.stage] || {} : badges.all, !b);
+        showBadges(b ? badges.by_stage[b.stage] || {} : badges.all, !b, b ? b.stage : 0);
       });
     }
     $("download").href = l.path;

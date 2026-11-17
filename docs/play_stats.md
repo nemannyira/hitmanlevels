@@ -77,7 +77,7 @@ Built 2026-11-14 (#52; website/src/worker.js `postRun`, migration 0004_runs.sql)
   *Download for the editor* gives `plays.json`; saved in the level's folder (`Mods\<level>\plays.json`, the
   author's own level: its `package` id must be the file's `level`), the map loaded with the level gets a map
   icon at each place, on the floor of its place (Hitman died: Icon_Target, red; spotted: Icon_PointOfInterest,
-  "!"; at most 100 of each, the map draws 256 icons a floor). The in-game map's x and z run as the site's plot.
+  "!"; a body found: Icon_Innocent, #66; at most 100 of each, the map draws 256 icons a floor). The in-game map's x and z run as the site's plot.
   The file is not packaged (ExportLevelFolder takes the level's own files only).
 * **privacy.html** (done with #52): the runs (anonymous numbers and places in a level), kept as long as the
   level is on the site.

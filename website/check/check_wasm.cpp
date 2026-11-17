@@ -74,11 +74,16 @@ __attribute__((export_name("check_package"))) const char* check_package(const ui
             if (mission.is_object() && mission.value("briefing", json()).is_string())
                 out["briefing"] = mission["briefing"];
             out["objectives"] = json::array();
+            int killTargets = 0;  // (the level's own targets to kill: the Precision badge needs one, #66)
             if (mission.is_object() && mission.value("objectives", json()).is_array())
-                for (const json& o : mission["objectives"])
+                for (const json& o : mission["objectives"]) {
                     if (o.is_object() && !o.value("hidden", false) && o.value("text", json()).is_string() &&
                         !o["text"].get<std::string>().empty())
                         out["objectives"].push_back(o["text"]);
+                    if (o.is_object() && !o.value("hidden", false) && o.value("goal", json()) == "kill")
+                        ++killTargets;
+                }
+            out["kill_targets"] = killTargets;
             // an escalation's stages (docs/escalation.md): their names and texts, in order
             out["stages"] = json::array();
             if (level.is_object() && level.value("stages", json()).is_array())

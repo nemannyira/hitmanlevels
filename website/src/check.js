@@ -30,7 +30,7 @@ const CHECKS = [
   "The level's file passes the game's own check",
 ];
 
-// { ok, error?, manifest?, page? { readme, briefing, objectives, stages [{ name, text }], preview (PNG bytes) },
+// { ok, error?, manifest?, page? { readme, briefing, objectives, stages [{ name, text }], killTargets, preview (PNG bytes) },
 //   checks: [names passed] }
 export async function checkPackage(bytes) {
   let instance;
@@ -46,6 +46,7 @@ export async function checkPackage(bytes) {
     const r = JSON.parse(text);
     if (!r.ok) return { ok: false, error: r.error, checks: [] };
     const page = { readme: r.readme || "", briefing: r.briefing || "", objectives: r.objectives || [], stages: r.stages || [],
+      killTargets: Number.isInteger(r.kill_targets) ? r.kill_targets : null,
       preview: r.preview ? Uint8Array.from(atob(r.preview), (c) => c.charCodeAt(0)) : null };
     return { ok: true, manifest: r.manifest, files: r.files, page, checks: CHECKS };
   } catch (e) {

@@ -43,7 +43,11 @@ none having happened.
 escalation's stages are counted together (a badge of any stage counts once).
 
 **Rarity**: the level's page shows each badge with the share of the players with a ranked run on the level
-(stage) who have it.
+(stage) who have it. A badge no one can earn there now is grey, its hover says why (decided with the owner
+2026-11-17, #66): Under Par before the level (stage) has 10 finished ranked runs, First to Finish once someone
+has it, Precision when the level has no target of its own to kill (its package's non-hidden "kill"
+objectives, counted by the upload's check: `versions.kill_targets`, migration 0009; not known for versions
+uploaded before). `badges.html` explains every badge (linked from the player's and the level's Badges).
 
 ## 2. An escalation's badges
 

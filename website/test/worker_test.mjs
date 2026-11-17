@@ -4,7 +4,8 @@
 // refused), the plays players share (a run levelpack sent: stored, refused, counted on the level's page), the
 // owner's take-down publishing a list the client (levelpack) accepts.
 //   npx wrangler d1 migrations apply hitmanlevels --local
-//   npx wrangler dev --local --port 8787 --ip 127.0.0.1 --test-scheduled   (the daily clean-up run by hand)
+//   npx wrangler dev --local --port 8787 --ip 127.0.0.1 --local-upstream 127.0.0.1:8787 --test-scheduled
+//     (the daily clean-up run by hand; --local-upstream: else wrangler answers as hitmanlevels.com, the route)
 //   node test/worker_test.mjs ../build/Release/levelpack.exe
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
@@ -114,6 +115,9 @@ try {
   check("the level's page: its README, both versions, the author's key", page.readme === readme &&
     page.versions.length === 2 && /^[0-9a-f]{64}$/.test(page.author.key) && page.path === `/levels/${id}/2.h2lvl`);
   check("... a downloaded package counted", page.downloads >= 1, String(page.downloads));
+  check("... its targets to kill, from the package (Courier: one; #66)", page.kill_targets === 1, String(page.kill_targets));
+  check("... the finished runs the badges' par needs (none yet)", page.badges && typeof page.badges.finished === "object" &&
+    !Object.keys(page.badges.finished).length, JSON.stringify(page.badges));
   check("no page for a level not listed", (await get("/api/levels/nosuchlevel1")).status === 404);
 
   // the plays players share (POST /api/v1/runs, #52): a run as levelpack sends it (version 2 installed by it, a run

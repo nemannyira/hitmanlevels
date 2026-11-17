@@ -66,10 +66,11 @@ async function upload(request, env, user) {
     env.DB.prepare("INSERT OR IGNORE INTO levels (id, game, author_key) VALUES (?, ?, ?)").bind(m.id, m.game, m.author.key),
     env.DB.prepare(
       `INSERT INTO versions (level_id, version, title, base_scene, license, author_name, path, size, sha256, uploaded_by, created,
-                             readme, briefing, objectives, preview, stages)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                             readme, briefing, objectives, preview, stages, kill_targets)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(m.id, m.version, m.title, m.base_scene, m.license, m.author.name, path, bytes.length, sha256, user.id, now,
-      page.readme, page.briefing, JSON.stringify(page.objectives), page.preview ? 1 : 0, JSON.stringify(page.stages)),
+      page.readme, page.briefing, JSON.stringify(page.objectives), page.preview ? 1 : 0, JSON.stringify(page.stages),
+      page.killTargets),
   ]);
   await publishList(env);
   await awardProfile(env, user.id, "first_level");
@@ -118,7 +119,7 @@ async function level(env, id) {
     plays: await playStats(env, id), boards: await boards(env, id), stages: JSON.parse(v.stages || "[]"),
     by_stage: await Promise.all(JSON.parse(v.stages || "[]").map(async (s, i) => ({
       stage: i + 1, plays: await playStats(env, id, i + 1), boards: await boards(env, id, i + 1) }))),
-    badges: await levelBadges(env, id),
+    badges: await levelBadges(env, id), kill_targets: v.kill_targets ?? null,
   });
 }
 

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Badges - Hitman Levels</title>
+<meta name="description" content="The badges of Hitman Levels: what a player earns on a level, an escalation and a profile, and how.">
+<link rel="stylesheet" href="site.css">
+<style>
+  dl .row { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 14px; align-items: center; margin: 8px 0; }
+  dl dt, dl dd { margin: 0; }
+  @media (max-width: 560px) { dl .row { grid-template-columns: 1fr; gap: 4px; } }
+</style>
+</head>
+<body>
+<div class="rain" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Hitman Levels<span>.</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">Levels</a>
+      <a href="get-started.html">Get started</a>
+      <a href="tools.html">Editor &amp; tools</a>
+      <a href="upload.html">Upload</a>
+    </nav>
+    <a class="btn small signin" href="signin.html">Sign in</a>
+  </div>
+</header>
+
+<main class="wrap legal">
+  <div class="head">
+    <h1>Badges</h1>
+    <p>What your plays of the players' levels earn. They count the plays levelpack sends signed in to your
+      account with their ticket (the site checks their time), from when the badges came; a play with testing
+      aids or the editor's developer settings is never sent. Badges are public, on your player page and on the
+      levels' pages (the share of a level's players who have each).</p>
+  </div>
+
+  <h2>On a level</h2>
+  <p>Each by one play of the level (an escalation's: of one stage).</p>
+  <dl id="level"></dl>
+  <p><b>Mastery</b> of a level: its badges you have, as one to five marks (1, 3, 5, 7 and 9 of them; an
+    escalation's stages counted together). A badge a level's page shows grey cannot be earned there now: its
+    hover says why (Under Par before the level has 10 finished runs, First to Finish once someone has it,
+    Precision on a level with no target of its own to kill). Suit Only, Precision and No Bodies Found come
+    from plays of the editor's newer versions, which tell the site what Hitman wore, killed and left behind.</p>
+
+  <h2>On an escalation</h2>
+  <dl id="escalation"></dl>
+
+  <h2>On your profile</h2>
+  <dl id="profile"></dl>
+
+  <h2>For a level's author</h2>
+  <dl id="author"></dl>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A fan site. Not affiliated with or endorsed by IO Interactive. Hitman and its games' names are trademarks of IO Interactive A/S.</span>
+    <span><a href="terms.html">Terms</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="https://github.com/nemannyira/hitmanlevels">Source</a></span>
+  </div>
+</footer>
+<script src="site.js"></script>
+<script>
+  // the names and what earns them: site.js BADGES (one list for every page)
+  var GROUPS = {
+    level: ["finished", "silent_assassin", "ghost", "no_saves", "clean_hands", "no_shots", "under_par", "first_to_finish",
+      "board_top3", "suit_only", "precision", "no_bodies"],
+    escalation: ["escalation_complete", "clean_sweep"],
+    profile: ["finished_1", "finished_10", "finished_50", "silent_assassin_5", "silent_assassin_25", "map_tourist_5",
+      "map_tourist_10", "escalation_master", "verified_runner", "board_holder"],
+    author: ["first_level", "played_by_10", "played_by_100", "tough_nut"]
+  };
+  Object.keys(GROUPS).forEach(function (g) {
+    GROUPS[g].forEach(function (id) {
+      var row = el("div", "row");
+      var dt = el("dt");
+      dt.appendChild(badgeChip(id));
+      row.appendChild(dt);
+      row.appendChild(el("dd", null, BADGES[id][1]));
+      document.getElementById(g).appendChild(row);
+    });
+  });
+</script>
+</body>
+</html>

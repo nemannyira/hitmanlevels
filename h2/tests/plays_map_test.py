@@ -53,11 +53,12 @@ def since(at):
         return f.read()
 
 
-def plays(level, at_died, at_spotted):
+def plays(level, at_died, at_spotted, at_found=None):
     with open(os.path.join(FOLDER, "plays.json"), "w", encoding="utf-8") as f:
         json.dump({"format": 1, "level": level, "title": "T", "base_scene": "C1-1\\C1-1__MAIN", "runs": [
             {"version": 1, "result": "failed", "time": 90, "counters": {"alerts": 1}, "events": [
-                {"kind": "spotted", "t": 40, "at": at_spotted}, {"kind": "died", "t": 80, "at": at_died}]},
+                {"kind": "spotted", "t": 40, "at": at_spotted}, {"kind": "died", "t": 80, "at": at_died}] +
+                ([{"kind": "body_found", "t": 60, "at": at_found}] if at_found else [])},
             {"version": 1, "result": "left", "time": 20, "counters": {"alerts": 0}, "events": []}]}, f)
 
 
@@ -72,13 +73,15 @@ try:
     doc["package"] = {"id": PACKAGE, "version": 1}  # (as an export stamps it: the plays name it)
     json.dump(doc, open(os.path.join(FOLDER, "level.json"), "w", encoding="utf-8"), indent=1)
     died, spotted = [round(x + 600), round(y), round(z)], [round(x - 600), round(y), round(z + 400)]
-    plays(PACKAGE, died, spotted)
+    found = [round(x), round(y), round(z + 700)]  # (a body found, #66)
+    plays(PACKAGE, died, spotted, found)
     mark = size()
     load(LEVEL)
     log = since(mark)
-    check("plays.json read: 1 death, 1 time spotted", "1 deaths, 1 times spotted" in log,
+    check("plays.json read: 1 death, 1 time spotted, 1 body found", "1 deaths, 1 times spotted, 1 bodies found" in log,
           [l.strip()[-80:] for l in log.splitlines() if "plays" in l][:2])
-    for name, icon in (("Plays_died0", "Icon_Target"), ("Plays_spotted0", "Icon_PointOfInterest")):
+    for name, icon in (("Plays_died0", "Icon_Target"), ("Plays_spotted0", "Icon_PointOfInterest"),
+                       ("Plays_body_found0", "Icon_Innocent")):
         out = lua('local o = h2.find("%s_MapIcon") if not o then return "missing|" end '
                   'local a, b = h2.dev_mapicon(o:path()) return a .. "|" .. b' % name)
         check("%s: %s on the floor of its place (Outside)" % (name, icon), out == icon + " shown|MAP_Outside", out)
@@ -88,7 +91,8 @@ try:
     dev.shot("plays_map", 0.6)
     lua("h2.dev_key(%d, 0.1) return 1" % DIK_M)
     time.sleep(1.5)
-    check("the map draws them", "Plays_died0_MapIcon" in drawn and "Plays_spotted0_MapIcon" in drawn,
+    check("the map draws them", "Plays_died0_MapIcon" in drawn and "Plays_spotted0_MapIcon" in drawn and
+          "Plays_body_found0_MapIcon" in drawn,
           [l for l in drawn.splitlines() if "Plays" in l][:2])
 
     plays("someotherlevel1", died, spotted)

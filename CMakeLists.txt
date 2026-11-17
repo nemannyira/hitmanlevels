@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(HitmanLevels VERSION 0.1.0 LANGUAGES C CXX)
+project(HitmanLevels VERSION 0.1.1 LANGUAGES C CXX)
 
 # The games' editors (h2/: Hitman 2: Silent Assassin; h3/, h4/ to come), what they share (shared/), the
 # tools for every game (tools/) and the site (website/, not built here).

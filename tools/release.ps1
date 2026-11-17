@@ -61,7 +61,12 @@ Copy-Item "h2\H2Fix.ini" $stage
 Copy-Item "LICENSE" "$stage\LICENSE.txt"
 # a double click makes .h2lvl files open with levelpack (levelpack register: the user's own file types)
 "@echo off`r`n""%~dp0levelpack.exe"" register`r`npause`r`n" | Set-Content "$stage\Open .h2lvl files with levelpack.cmd" -NoNewline
-(Get-Content "release\README.txt" -Raw).Replace("{VERSION}", $version) | Set-Content "$stage\README.txt" -NoNewline
+$readme = (Get-Content "release\README.txt" -Raw).Replace("{VERSION}", $version)
+if (-not $Sign) {  # (an intermediate build: its README does not say it is signed)
+    $readme = $readme -replace '(?s)SIGNED FILES(\r?\n)\r?\n.*?new to it\. ', ('NOT CODE-SIGNED$1$1  An intermediate build: dinput8.dll and ' +
+        'levelpack.exe are not code-signed, so Windows SmartScreen$1  or an antivirus may warn about them. ')
+}
+$readme | Set-Content "$stage\README.txt" -NoNewline
 # the example missions played through (h2/docs/playtest_log.md): folders to copy into Mods
 foreach ($e in "TheAccountant", "DeadDrop", "EstateRun", "TheInformant", "Arena") {
     Copy-Item -Recurse "h2\examples\missions\$e" "$stage\examples\$e"

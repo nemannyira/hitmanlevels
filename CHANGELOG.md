@@ -3,6 +3,13 @@
 What changed for level makers, newest first. The details (addresses, the
 game's functions) are in `h2/docs/roadmap.md`, `h2/docs/mission.md`, `h2/docs/lua.md`.
 
+## 2026-11-17: v0.1.1 (an intermediate build, not code-signed)
+
+* Since v0.1.0: Simple mode's readable names and routes (#44, #45), the debug view (#46), a target's
+  readable name on the laptop, the runs' clothes, kills and bodies found (#59, #62), the bodies found on
+  the editor's map from plays.json (#66), levelpack's message after an install.
+* The site (deployed separately): badges, the play history, the author page's kills, clothes and bodies.
+
 ## 2026-11-16: badges, and what a run tells of clothes, kills and bodies
 
 * The site gives badges (docs/badges.md): a level's (Finished, Silent Assassin, Ghost, No Saves, Clean

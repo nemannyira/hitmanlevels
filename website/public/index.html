@@ -61,8 +61,8 @@
   function card(l) {
     var a = el("a", "card");
     a.href = "level.html?id=" + encodeURIComponent(l.id);
-    var shot = el("div", l.preview ? "shot" : "shot none");
-    if (l.preview) shot.style.backgroundImage = "url(" + l.preview + ")";
+    var pic = pictureOf(l), shot = el("div", pic ? "shot" : "shot none");  // (its own, its package's, its map's)
+    if (pic) shot.style.backgroundImage = "url(" + pic + ")";
     else shot.appendChild(el("span", null, mapName(l.base_scene)));
     a.appendChild(shot);
     var body = el("div", "body");

@@ -23,17 +23,26 @@
   </div>
 </header>
 
-<main class="wrap">
-  <div class="crumbs"><a href="index.html">Silent Assassin levels</a> / <span id="crumb"></span></div>
+<!-- the level's head: its picture (its own, its package's or its map's), the title, the key numbers, the download -->
+<div class="hero none" id="hero" hidden>
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">Silent Assassin levels</a> / <span id="crumb"></span></div>
+    <div class="kicker" id="kicker"></div>
+    <h1 id="title"></h1>
+    <div class="by" id="by"></div>
+    <div class="tiles" id="tiles"></div>
+    <div class="actions">
+      <a class="btn red" id="download" href="#">Download</a>
+      <a class="btn ghost" href="get-started.html">How to play it</a>
+    </div>
+  </div>
+</div>
 
+<main class="wrap">
   <p class="muted" id="missing" hidden style="padding:40px 0">No such level here: it may have been taken down. <a href="index.html">All levels</a></p>
 
   <div class="level" id="level" hidden>
     <div>
-      <h1 id="title"></h1>
-      <div class="by" id="by"></div>
-      <div class="shot" id="shot"></div>
-
       <div class="laptop" id="laptop" hidden>
         <h2 id="briefing-title">Mission briefing</h2>
         <p id="briefing" style="white-space:pre-line"></p>
@@ -54,7 +63,7 @@
         <div class="section-title"><h2>Plays</h2><span class="muted">shared by the players who chose to</span></div>
         <p><select id="stage-pick" aria-label="Stage" hidden></select></p>
         <p id="plays"></p>
-        <ul id="ratings"></ul>
+        <div class="charts" id="charts"></div>
       </section>
       <section id="boards-box" style="margin-top:28px" hidden>
         <div class="section-title"><h2>Fastest Silent Assassins</h2><span class="muted">players signed in in levelpack</span></div>
@@ -87,9 +96,16 @@
         <div class="row"><dt>Downloads</dt><dd id="d-downloads"></dd></div>
         <div class="row"><dt>Plays</dt><dd id="d-plays"></dd></div>
       </dl>
-      <a class="choice on" id="download" href="#">Download</a>
+      <a class="choice on" id="download2" href="#">Download</a>
       <a class="choice" href="get-started.html">How to play it</a>
       <a class="choice dim" id="report" href="#">Report this level</a>
+      <div class="cover-box" id="cover-box" hidden>
+        <b>Your level's picture</b>
+        <div id="cover-what"></div>
+        <input type="file" id="cover-file" accept="image/png,image/jpeg">
+        <div><button class="btn small" id="cover-remove" type="button" hidden>Remove it</button></div>
+        <div id="cover-note"></div>
+      </div>
       <div class="note" id="note">Installing checks the author's signature: a level changed by anyone else is refused.</div>
     </aside>
   </div>
@@ -112,13 +128,18 @@
     if (/^[a-z0-9]{8,32}$/.test(id)) {
       try { var r = await fetch("/api/levels/" + id); if (r.ok) l = await r.json(); } catch (e) { l = null; }
     }
-    if (!l) { $("missing").hidden = false; $("crumb").textContent = "not found"; return; }
+    if (!l) { $("missing").hidden = false; return; }
     document.title = l.title + " - Hitman Levels";
     $("crumb").textContent = l.title;
     $("title").textContent = l.title;
-    $("by").textContent = mapName(l.base_scene) + " · by " + l.author.name + " · " + day(l.updated);
-    if (l.preview) $("shot").style.backgroundImage = "url(" + l.preview + ")";
-    else { $("shot").className = "shot none"; $("shot").appendChild(el("span", null, mapName(l.base_scene))); }
+    $("kicker").textContent = mapName(l.base_scene) + (l.stages.length ? " · an escalation of " + l.stages.length + " stages" : "");
+    $("by").textContent = "by " + l.author.name + " · version " + l.version + " · " + day(l.updated);
+    function showPicture(src) {
+      $("hero").className = src ? "hero" : "hero none";
+      $("hero").style.backgroundImage = src ? "url(" + src + ")" : "";
+    }
+    showPicture(pictureOf(l));
+    $("hero").hidden = false;
 
     if (l.briefing || l.objectives.length) {
       $("laptop").hidden = false;
@@ -161,18 +182,38 @@
         if (!b[k].length) list.appendChild(el("li", "muted", "nobody yet"));
       });
     }
-    function showPlays(p) {
-      $("ratings").textContent = "";
+    // the key numbers in the head, the line and the charts under Plays (of the stage chosen)
+    function showPlays(p, c) {
+      $("tiles").textContent = "";
+      [[p.plays, "plays"], [p.plays ? percent(p.finished, p.plays) : "-", "finished"],
+       [p.plays ? percent(p.silent_assassin, p.plays) : "-", "Silent Assassin"],
+       [p.median_time !== null ? clock(p.median_time) : "-", "median time"], [l.downloads, "downloads"]].forEach(function (t) {
+        var tile = el("div", "tile");
+        tile.appendChild(el("b", null, String(t[0])));
+        tile.appendChild(el("span", null, t[1]));
+        $("tiles").appendChild(tile);
+      });
       $("plays").textContent = !p.plays ? "None shared yet." : p.plays + (p.plays === 1 ? " play" : " plays") + " · " +
         p.finished + " finished (" + percent(p.finished, p.plays) + ") · Silent Assassin " + p.silent_assassin + " (" +
         percent(p.silent_assassin, p.plays) + ")" + (p.median_time !== null ? " · median time of the finished ones " +
         clock(p.median_time) : "");
-      p.ratings.forEach(function (r) {
-        var li = el("li");
-        li.appendChild(el("b", null, ratingName(r.rating)));
-        li.appendChild(el("span", "muted", " · " + r.n));
-        $("ratings").appendChild(li);
-      });
+      var box = $("charts");
+      box.textContent = "";
+      if (!p.plays || !c) return;
+      function card(title, body, wide) {
+        var d = el("div", "chart" + (wide ? " wide" : ""));
+        d.appendChild(el("h3", null, title));
+        d.appendChild(body);
+        box.appendChild(d);
+      }
+      var e = c.ends || {};
+      card("How the plays end", barChart([["Finished", e.completed || 0, "#6fa86b"], ["Failed", e.failed || 0, "var(--red-hi)"],
+        ["Left", e.left || 0, "#8b969b"]], p.plays));
+      card("Ratings of the finished", p.ratings.length ? barChart(p.ratings.map(function (r) {
+        return [ratingName(r.rating), r.n, r.rating === "SilentAssassin" ? "#d9a33a" : "#8b969b"];
+      }), p.finished) : el("p", "muted", "No finished run yet."));
+      card("Finishing times", timesChart(c.times || []));
+      card("Plays, the last 30 days", daysChart(c.days || []));
     }
     // the badges earned here (docs/badges.md): each with the share of the players who have it; an escalation's
     // whole-level badges in "all stages" only
@@ -208,7 +249,7 @@
     $("d-plays").textContent = p.plays ? p.plays + " (" + percent(p.finished, p.plays) + " finished)" : "none shared yet";
     $("plays-box").hidden = !p.plays;
     $("boards-box").hidden = !p.plays;
-    showPlays(p);
+    showPlays(p, l.charts);
     showBoards(l.stages.length ? null : l.boards);
     if (l.stages.length) {  // an escalation: its stages, the numbers and boards of each
       $("stages-box").hidden = false;
@@ -230,13 +271,13 @@
       });
       pick.addEventListener("input", function () {
         var b = l.by_stage[Number(pick.value) - 1];
-        showPlays(b ? b.plays : l.plays);
+        showPlays(b ? b.plays : l.plays, b ? b.charts : l.charts);
         showBoards(b ? b.boards : null);
         showBadges(b ? badges.by_stage[b.stage] || {} : badges.all, !b, b ? b.stage : 0);
       });
     }
-    $("download").href = l.path;
-    $("download").setAttribute("download", l.title.replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/ +/g, "_") + "_v" + l.version + ".h2lvl");
+    var fileName = l.title.replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/ +/g, "_") + "_v" + l.version + ".h2lvl";
+    ["download", "download2"].forEach(function (k) { $(k).href = l.path; $(k).setAttribute("download", fileName); });
     $("level").hidden = false;
 
     $("report").addEventListener("click", async function (ev) {
@@ -249,6 +290,36 @@
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ level: l.id, version: l.version, reason: reason }) });
       $("note").textContent = r.ok ? "Thank you: the report reached the owner of the site." : "The report could not be sent.";
     });
+
+    // the level's author (signed in): its own picture, chosen or removed here
+    try {
+      var meR = await fetch("/api/me", { credentials: "same-origin" });
+      var me = meR.ok ? await meR.json() : null;
+      if (!me || !me.levels.some(function (x) { return x.id === l.id; })) return;
+    } catch (e) { return; }
+    function coverState() {
+      $("cover-what").textContent = l.cover ? "Your own picture is shown." :
+        l.preview ? "The package's picture is shown; choose one of your own (PNG or JPEG, at least 640 x 360, at most 2 MB)." :
+        "The map's picture is shown; choose one of your own (PNG or JPEG, at least 640 x 360, at most 2 MB).";
+      $("cover-remove").hidden = !l.cover;
+    }
+    $("cover-box").hidden = false;
+    coverState();
+    async function send(path, body) {
+      $("cover-note").textContent = "...";
+      var r = await fetch(path, { method: "POST", credentials: "same-origin", body: body });
+      var j = await r.json().catch(function () { return {}; });
+      if (!r.ok) { $("cover-note").textContent = j.error || "Not changed."; return; }
+      l.cover = j.cover;
+      showPicture(pictureOf(l));
+      coverState();
+      $("cover-note").textContent = j.cover ? "Your picture is on the page now." : "Removed.";
+    }
+    $("cover-file").addEventListener("change", function () {
+      var f = $("cover-file").files[0];
+      if (f) send("/api/levels/" + l.id + "/cover", f);
+    });
+    $("cover-remove").addEventListener("click", function () { send("/api/levels/" + l.id + "/cover/remove", ""); });
   })();
 </script>
 </body>

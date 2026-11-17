@@ -67,6 +67,85 @@ var BADGES = {
   tough_nut: ["Tough Nut", "A level 20 players played and fewer than a fifth finished"]
 };
 
+// a level's picture: the one its author uploaded on the site, else its package's (preview.png), else its map's
+// (maps/<map>.jpg: a picture of the game's map, the same for every level on it)
+function pictureOf(l) {
+  if (l.cover) return l.cover;
+  if (l.preview) return l.preview;
+  var map = String(l.base_scene || "").split("\\")[0];
+  return MAPS[map] ? "maps/" + map + ".jpg" : null;
+}
+
+// ---- charts (no library: HTML bars, SVG columns) ----
+
+// rows [[label, value, colour]] as bars of the largest: "label  ████  value"
+function barChart(rows, total) {
+  var box = el("div", "bars"), max = Math.max.apply(null, rows.map(function (r) { return r[1]; }).concat([1]));
+  rows.forEach(function (r) {
+    var row = el("div", "bar-row"), track = el("div", "bar-track"), fill = el("div", "bar-fill");
+    fill.style.width = (100 * r[1] / max) + "%";
+    if (r[2]) fill.style.background = r[2];
+    track.appendChild(fill);
+    row.appendChild(el("span", "bar-label", r[0]));
+    row.appendChild(track);
+    row.appendChild(el("span", "bar-value", String(r[1]) + (total ? " · " + percent(r[1], total) : "")));
+    box.appendChild(row);
+  });
+  return box;
+}
+
+// columns [[label, value]]: an SVG stretched to its box (no text in it: it scales), the first and last labels under
+// it in HTML; `title`: each column's hover
+function columnChart(cols, title) {
+  var W = 600, H = 120, n = Math.max(cols.length, 1), w = W / n, gap = Math.min(2, w * 0.15);
+  var max = Math.max.apply(null, cols.map(function (c) { return c[1]; }).concat([1]));
+  var ns = "http://www.w3.org/2000/svg", s = document.createElementNS(ns, "svg");
+  s.setAttribute("viewBox", "0 0 " + W + " " + H);
+  s.setAttribute("preserveAspectRatio", "none");
+  s.setAttribute("class", "columns");
+  s.setAttribute("role", "img");
+  cols.forEach(function (c, i) {
+    var h = c[1] ? Math.max(2, (H - 2) * c[1] / max) : 0, r = document.createElementNS(ns, "rect");
+    r.setAttribute("x", i * w + gap);
+    r.setAttribute("width", Math.max(1, w - 2 * gap));
+    r.setAttribute("y", H - h);
+    r.setAttribute("height", h);
+    var t = document.createElementNS(ns, "title");
+    t.textContent = title(c);
+    r.appendChild(t);
+    s.appendChild(r);
+  });
+  var box = el("div"), axis = el("div", "axis");
+  box.appendChild(s);
+  if (cols.length) {
+    axis.appendChild(el("span", null, cols[0][0]));
+    axis.appendChild(el("span", null, "most: " + max));
+    axis.appendChild(el("span", null, cols[cols.length - 1][0]));
+  }
+  box.appendChild(axis);
+  return box;
+}
+
+// the finished runs' times in about 10 columns of whole minutes (or seconds for short levels)
+function timesChart(times) {
+  if (!times.length) return el("p", "muted", "No finished run yet.");
+  var lo = Math.min.apply(null, times), hi = Math.max.apply(null, times);
+  var steps = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800], step = steps[steps.length - 1];
+  for (var i = 0; i < steps.length; i++) if ((hi - lo) / steps[i] <= 12) { step = steps[i]; break; }
+  var from = Math.floor(lo / step) * step, cols = [];
+  for (var t = from; t <= hi; t += step) cols.push([clock(t), times.filter(function (x) { return x >= t && x < t + step; }).length, t]);
+  return columnChart(cols, function (c) { return c[0] + " - " + clock(c[2] + step) + ": " + c[1] + (c[1] === 1 ? " run" : " runs"); });
+}
+
+// the plays a day ([[day number, plays]]) over the last 30 days, the empty days too
+function daysChart(days) {
+  var today = Math.floor(Date.now() / 86400000), by = {}, cols = [];
+  days.forEach(function (d) { by[d[0]] = d[1]; });
+  for (var d = today - 29; d <= today; d++)
+    cols.push([day(d * 86400).replace(/ \d{4}$/, ""), by[d] || 0]);
+  return columnChart(cols, function (c) { return c[0] + ": " + c[1] + (c[1] === 1 ? " play" : " plays"); });
+}
+
 // a badge as a chip: its name, what earned it on hover; `stage`: an escalation's
 function badgeChip(id, stage) {
   var b = BADGES[id] || [id, ""];

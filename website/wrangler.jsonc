@@ -9,7 +9,7 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/levels/*", "/downloads/*"]
+    "run_worker_first": ["/api/*", "/levels/*", "/covers/*", "/downloads/*"]
   },
   "d1_databases": [
     { "binding": "DB", "database_name": "hitmanlevels", "database_id": "fc6394a6-ff82-499e-85e9-045661de42e6", "migrations_dir": "migrations" }

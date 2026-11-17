@@ -141,7 +141,26 @@ node tools/make_site_key.mjs --env staging     (its SITE_SEED; prints the public
 * **Language**: English.
 * **Look**: after Hitman: Contracts' mood (night, rain, film noir: near-black, silver grey type, one
   blood-red accent; the menus' label left, value right), not its logos, art or fonts (IO
-  Interactive's): a logo of the site's own and a "not affiliated with IO Interactive" notice.
+  Interactive's): a logo of the site's own and a "not affiliated with IO Interactive" notice. One
+  exception the owner asked for (2026-11-17): a picture of each of Hitman 2's maps taken in the game
+  (`website/public/maps/<map>.jpg`), a level's default picture (below).
+
+## A level's page and its picture (2026-11-17)
+
+* The page: the level's picture across its head with the title, the key numbers (plays, finished, Silent
+  Assassin, median time, downloads) and the download; under it the briefing, the README, the stages,
+  the plays with charts (how they end, the ratings, the finishing times, the plays a day over 30 days:
+  GET /api/levels/<id> `charts`, per stage too), the boards, the badges, the versions; the dossier
+  beside. Charts are the site's own (site.js: HTML bars, SVG columns, no library); the author's page
+  has the same (without the days: its runs carry no day).
+* Its picture: the one its author uploaded on the page (POST /api/levels/<id>/cover, the picture's
+  bytes: PNG or JPEG by its own header, at least 640 x 360, at most 8000 on a side and 2 MB; R2
+  `covers/<id>/<time>.png|jpg`, `levels.cover`, migration 0010; POST .../cover/remove: the author or
+  the owner), else the package's `preview.png`, else its map's picture (`maps/<map>.jpg`: the same for
+  an escalation and every level on that map).
+* The maps' pictures: each map loaded in the game, its opening cutscene waited out, the free camera above
+  Hitman's start (the game's camera raised, or one of 12 directions and heights chosen by eye), a
+  screenshot cropped to 16:9 without the HUD's corner (and a subtitle's line), 1280 x 720 JPEG.
 
 ## Still to do (the owner)
 

@@ -161,6 +161,23 @@
     left.appendChild(el("p", "muted", "In the editor: save plays.json in your level's folder (Mods\\<your level>), open the level: " +
       "the places are on the game's map (M); an escalation's, of the stage the map is loaded for."));
     var count = function (f) { return runs.filter(f).length; };
+    // the same charts as the level's page (site.js): how they end, the ratings, the finishing times
+    var grid = el("div", "charts"), ratings = {};
+    runs.forEach(function (r) { if (r.rating) ratings[r.rating] = (ratings[r.rating] || 0) + 1; });
+    [["How the plays end", barChart([["Finished", count(function (r) { return r.result === "completed"; }), "#6fa86b"],
+       ["Failed", count(function (r) { return r.result === "failed"; }), "var(--red-hi)"],
+       ["Left", count(function (r) { return r.result === "left"; }), "#8b969b"]], runs.length)],
+     ["Ratings of the finished", Object.keys(ratings).length ? barChart(Object.keys(ratings).map(function (k) {
+       return [ratingName(k), ratings[k], k === "SilentAssassin" ? "#d9a33a" : "#8b969b"]; })) : el("p", "muted", "No finished run yet.")],
+     ["Finishing times", timesChart(runs.filter(function (r) { return r.result === "completed"; }).map(function (r) { return r.time; })), true]]
+      .forEach(function (c) {
+        var d = el("div", "chart" + (c[2] ? " wide" : ""));
+        d.appendChild(el("h3", null, c[0]));
+        d.appendChild(c[1]);
+        grid.appendChild(d);
+      });
+    grid.style.marginTop = "18px";
+    left.appendChild(grid);
     var finished = count(function (r) { return r.result === "completed"; });
     var alerts = runs.reduce(function (n, r) { return n + (r.counters.alerts || 0); }, 0);
     right.appendChild(el("h2", null, "Plays"));

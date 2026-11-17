@@ -12,6 +12,7 @@ import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { crc32, deflateSync } from "node:zlib";
 
 const BASE = "http://127.0.0.1:8787";
 const levelpack = process.argv[2];
@@ -116,6 +117,36 @@ try {
     page.versions.length === 2 && /^[0-9a-f]{64}$/.test(page.author.key) && page.path === `/levels/${id}/2.h2lvl`);
   check("... a downloaded package counted", page.downloads >= 1, String(page.downloads));
   check("... its targets to kill, from the package (Courier: one; #66)", page.kill_targets === 1, String(page.kill_targets));
+  // its own picture (its author on the site): a PNG of at least 640 x 360, shown before the package's and the map's
+  const png = (w, h) => {
+    const chunk = (type, data) => {
+      const len = Buffer.alloc(4), crc = Buffer.alloc(4), td = Buffer.concat([Buffer.from(type), data]);
+      len.writeUInt32BE(data.length);
+      crc.writeUInt32BE(crc32(td) >>> 0);
+      return Buffer.concat([len, td, crc]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+    const rows = Buffer.alloc(h * (1 + w * 3), 90);
+    for (let y = 0; y < h; y++) rows[y * (1 + w * 3)] = 0;
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr),
+      chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
+  };
+  check("a picture: not a picture refused", (await post(`/api/levels/${id}/cover`, Buffer.from("not a picture at all"), me)).status === 422);
+  check("... too small refused", (await post(`/api/levels/${id}/cover`, png(320, 200), me)).status === 422);
+  check("... another account's refused", (await post(`/api/levels/${id}/cover`, png(640, 360), other)).status === 403);
+  r = await post(`/api/levels/${id}/cover`, png(640, 360), me);
+  const cover = (await r.json()).cover;
+  check("... the author's taken", r.status === 200 && /^\/covers\/[a-z0-9]+\/\d+\.png$/.test(cover || ""), cover);
+  r = await get(cover);
+  check("... served as a PNG", r.status === 200 && r.headers.get("Content-Type") === "image/png");
+  check("... on the level's page and in the list", (await (await get(`/api/levels/${id}`)).json()).cover === cover &&
+    (await (await get("/api/levels")).json()).levels.find((l) => l.id === id).cover === cover);
+  r = await post(`/api/levels/${id}/cover/remove`, "", me);
+  check("... removed", r.status === 200 && (await r.json()).cover === null && (await get(cover)).status === 404);
+  const lc = (await (await get(`/api/levels/${id}`)).json()).charts;
+  check("the level's charts' data: endings, times, days", lc && typeof lc.ends === "object" && Array.isArray(lc.times) && Array.isArray(lc.days),
+    JSON.stringify(lc));
   check("... the finished runs the badges' par needs (none yet)", page.badges && typeof page.badges.finished === "object" &&
     !Object.keys(page.badges.finished).length, JSON.stringify(page.badges));
   check("no page for a level not listed", (await get("/api/levels/nosuchlevel1")).status === 404);

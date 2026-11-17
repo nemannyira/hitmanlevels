@@ -29,6 +29,49 @@ async function file(env, key, type) {
   });
 }
 
+// a picture's kind and size from its own header (PNG: IHDR; JPEG: its frame's SOF marker), null: neither
+function imageInfo(b) {
+  if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[12] === 0x49 && b[15] === 0x52) {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    return { type: "image/png", ext: "png", w: dv.getUint32(16), h: dv.getUint32(20) };
+  }
+  if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
+    for (let i = 2; i + 9 < b.length;) {
+      if (b[i] !== 0xff) return null;
+      const m = b[i + 1], len = (b[i + 2] << 8) | b[i + 3];
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc)
+        return { type: "image/jpeg", ext: "jpg", h: (b[i + 5] << 8) | b[i + 6], w: (b[i + 7] << 8) | b[i + 8] };
+      i += 2 + len;
+    }
+  }
+  return null;
+}
+
+// POST /api/levels/<id>/cover (the picture's bytes; signed in, the level's author): the level's own picture, shown
+// before the package's preview.png and the map's; POST .../cover/remove takes it off (the author or the owner)
+const MAX_COVER = 2 * 1024 * 1024;
+async function setCover(request, env, user, id, remove) {
+  const l = await env.DB.prepare(
+    "SELECT l.id, l.cover, a.user_id FROM levels l JOIN authors a ON a.key = l.author_key WHERE l.id = ?").bind(id).first();
+  if (!l) return json({ error: "No such level" }, 404);
+  if (l.user_id !== user.id && !(remove && user.admin)) return json({ error: "Only the level's author can change its picture." }, 403);
+  let key = null;
+  if (!remove) {
+    if (Number(request.headers.get("Content-Length") || 0) > MAX_COVER) return json({ error: "A picture is at most 2 MB." }, 413);
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.length > MAX_COVER) return json({ error: "A picture is at most 2 MB." }, 413);
+    const img = imageInfo(bytes);
+    if (!img) return json({ error: "A PNG or JPEG picture." }, 422);
+    if (img.w < 640 || img.h < 360 || img.w > 8000 || img.h > 8000)
+      return json({ error: "At least 640 x 360 (and at most 8000 on a side)." }, 422);
+    key = `covers/${id}/${Date.now()}.${img.ext}`;
+    await env.FILES.put(key, bytes, { httpMetadata: { contentType: img.type } });
+  }
+  await env.DB.prepare("UPDATE levels SET cover = ? WHERE id = ?").bind(key, id).run();
+  if (l.cover) await env.FILES.delete(l.cover);
+  return json({ cover: key ? "/" + key : null });
+}
+
 // POST /api/upload (the package's bytes; ?agree=1): checked as the client checks it, then listed
 async function upload(request, env, user) {
   if (new URL(request.url).searchParams.get("agree") !== "1")
@@ -93,21 +136,21 @@ function blurb(v) {
 async function levels(env) {
   const { results } = await env.DB.prepare(
     `SELECT v.level_id, l.game, v.title, v.base_scene, v.author_name, v.version, v.created, v.license, v.size,
-            v.briefing, v.readme, v.preview, l.downloads, v.stages,
+            v.briefing, v.readme, v.preview, l.downloads, v.stages, l.cover,
             (SELECT COUNT(*) FROM runs r WHERE r.level_id = v.level_id) AS plays,
             (SELECT COUNT(*) FROM runs r WHERE r.level_id = v.level_id AND r.result = 'completed') AS finished
        ${LISTED} ORDER BY v.created DESC`).all();
   return json({ levels: results.map((v) => ({
     id: v.level_id, game: v.game, title: v.title, base_scene: v.base_scene, author: v.author_name, version: v.version,
     updated: v.created, license: v.license, size: v.size, blurb: blurb(v), downloads: v.downloads, plays: v.plays,
-    finished: v.finished, stages: JSON.parse(v.stages || "[]").length,
+    finished: v.finished, stages: JSON.parse(v.stages || "[]").length, cover: v.cover ? "/" + v.cover : null,
     preview: v.preview ? `/levels/${v.level_id}/${v.version}/preview.png` : null,
   })) });
 }
 
 async function level(env, id) {
   const v = await env.DB.prepare(
-    `SELECT v.*, l.game, l.author_key, l.downloads ${LISTED} AND v.level_id = ?`).bind(id).first();
+    `SELECT v.*, l.game, l.author_key, l.downloads, l.cover ${LISTED} AND v.level_id = ?`).bind(id).first();
   if (!v) return json({ error: "No such level" }, 404);
   const { results } = await env.DB.prepare(
     "SELECT version, created, size FROM versions WHERE level_id = ? AND taken_down = 0 ORDER BY version DESC").bind(id).all();
@@ -116,9 +159,11 @@ async function level(env, id) {
     version: v.version, updated: v.created, license: v.license, size: v.size, downloads: v.downloads,
     readme: v.readme, briefing: v.briefing, objectives: JSON.parse(v.objectives || "[]"), path: v.path,
     preview: v.preview ? `/levels/${id}/${v.version}/preview.png` : null, versions: results,
+    cover: v.cover ? "/" + v.cover : null,
     plays: await playStats(env, id), boards: await boards(env, id), stages: JSON.parse(v.stages || "[]"),
+    charts: await charts(env, id),
     by_stage: await Promise.all(JSON.parse(v.stages || "[]").map(async (s, i) => ({
-      stage: i + 1, plays: await playStats(env, id, i + 1), boards: await boards(env, id, i + 1) }))),
+      stage: i + 1, plays: await playStats(env, id, i + 1), boards: await boards(env, id, i + 1), charts: await charts(env, id, i + 1) }))),
     badges: await levelBadges(env, id), kill_targets: v.kill_targets ?? null,
   });
 }
@@ -201,6 +246,20 @@ async function postRun(request, env) {
     try { await awardRun(env, user.id, r); } catch (e) { console.error("badges: " + e); }
   }
   return json({ ok: true, ranked: !notRanked, ...(notRanked && { why: notRanked }) }, 201);
+}
+
+// a level's charts (its page): how the runs end, the finished runs' times (the newest 1000), the plays a day (the
+// day the site got them, the last 120 days); `stage`: an escalation's stage only
+async function charts(env, id, stage) {
+  const s = stage ? ` AND stage = ${Number(stage)}` : "";
+  const [ends, times, days] = await env.DB.batch([
+    env.DB.prepare(`SELECT result, COUNT(*) AS n FROM runs WHERE level_id = ?${s} GROUP BY result`).bind(id),
+    env.DB.prepare(`SELECT time FROM runs WHERE level_id = ?${s} AND result = 'completed' ORDER BY received DESC LIMIT 1000`).bind(id),
+    env.DB.prepare(`SELECT received / 86400 AS day, COUNT(*) AS n FROM runs WHERE level_id = ?${s} AND received > ?
+                     GROUP BY day ORDER BY day`).bind(id, Math.floor(Date.now() / 1000) - 120 * 86400),
+  ]);
+  return { ends: Object.fromEntries(ends.results.map((e) => [e.result, e.n])), times: times.results.map((t) => t.time),
+           days: days.results.map((d) => [d.day, d.n]) };
 }
 
 // a level's numbers from its runs (every version): plays, finished, Silent Assassin, the ratings, the median time;
@@ -293,8 +352,10 @@ async function deleteUser(env, id) {
   const levels = await env.DB.prepare(
     "SELECT l.id FROM levels l JOIN authors a ON a.key = l.author_key WHERE a.user_id = ?").bind(id).all();
   for (const { id: level } of levels.results) {
-    const files = await env.FILES.list({ prefix: `levels/${level}/` });
-    if (files.objects.length) await env.FILES.delete(files.objects.map((o) => o.key));
+    for (const prefix of [`levels/${level}/`, `covers/${level}/`]) {
+      const files = await env.FILES.list({ prefix });
+      if (files.objects.length) await env.FILES.delete(files.objects.map((o) => o.key));
+    }
   }
   await env.DB.batch([
     env.DB.prepare("UPDATE runs SET user_id = NULL, ranked = 0, video = NULL, verified = 0 WHERE user_id = ?").bind(id),
@@ -396,6 +457,8 @@ async function route(request, env, ctx) {
     }
     if ((m = path.match(/^\/levels\/([a-z0-9]{8,32})\/([1-9][0-9]{0,8})\/preview\.png$/)))
       return file(env, `levels/${m[1]}/${m[2]}/preview.png`, "image/png");
+    if ((m = path.match(/^\/covers\/([a-z0-9]{8,32})\/([0-9]{1,16})\.(png|jpg)$/)))  // a level's own picture
+      return file(env, `covers/${m[1]}/${m[2]}.${m[3]}`, m[3] === "png" ? "image/png" : "image/jpeg");
     if ((m = path.match(/^\/downloads\/(hitmanlevels-[a-z0-9.-]+\.zip)$/)))  // the releases (tools.html)
       return file(env, `downloads/${m[1]}`, "application/zip");
     if (path === "/api/levels") return levels(env);
@@ -459,6 +522,7 @@ async function route(request, env, ctx) {
     if (path === "/api/me/video") return setVideo(request, env, user);
     if (path === "/api/me/name") return setName(request, env, user);
     if (path === "/api/me/history") return setHistory(request, env, user);
+    if ((m = path.match(/^\/api\/levels\/([a-z0-9]{8,32})\/cover(\/remove)?$/))) return setCover(request, env, user, m[1], !!m[2]);
     if ((m = path.match(/^\/api\/admin\/(takedown|restore|block|unblock|handled|verify|unverify|delete-user)$/))) {
       if (!user.admin) return json({ error: "The owner's only" }, 403);
       return admin(request, env, m[1], user);

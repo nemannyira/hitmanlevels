@@ -3,6 +3,9 @@
   "name": "hitmanlevels",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
+  // the site's own domain (SITE_ORIGIN: the sign-in's return address, the pages' Origin); Cloudflare Access on
+  // the Worker covers it too while the site is hidden
+  "routes": [{ "pattern": "hitmanlevels.com", "custom_domain": true }],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
@@ -36,6 +39,7 @@
   "env": {
     "staging": {
       "name": "hitmanlevels-staging",
+      "routes": [],  // (the domain is the real site's only)
       "d1_databases": [
         { "binding": "DB", "database_name": "hitmanlevels-staging", "database_id": "18525c32-c6d4-4d1d-b1b3-94100774b86d", "migrations_dir": "migrations" }
       ],

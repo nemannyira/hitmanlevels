@@ -92,6 +92,14 @@ rotated). The site's key was made 2026-11-13 (`website/tools/make_site_key.mjs`:
 Worker's `SITE_SEED`, never shown): `239ef6a67cdacbfb7c7e5c031f5ebc5c97744e9d0d7047a76f1b3e47167b28e2`. For a staging copy of the site, `HITMANLEVELS_SITE_KEYS` (comma
 separated hex) names other keys, and `--source <folder>` reads a site from disk (tests).
 
+## The domain
+
+`hitmanlevels.com` is the Worker's custom domain (2026-11-17, `wrangler.jsonc` `routes`; its workers.dev
+address is off then): the sign-in's return address and the pages' Origin are `SITE_ORIGIN`
+(https://hitmanlevels.com), so the site works only there (#61). Cloudflare Access on the Worker covers the
+domain while the site is hidden (checked: every path answers 302 to the Access sign-in); levelpack cannot
+reach it until Access is off.
+
 ## Staging
 
 A copy of the site to test on before the real one (made 2026-11-14 with the owner's OK):
